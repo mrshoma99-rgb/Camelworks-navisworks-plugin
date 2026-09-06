@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using CamelWorks.Core.Clash;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.OpenBim;
 
@@ -126,19 +127,33 @@ namespace CamelWorks.Core.Findings
         /// date, tags and the assignee are latest-wins, because that is what setting one means. The
         /// title is taken, because a reviewer who renamed it meant something by it. The rule, the
         /// source and the elements are not, because they are what the finding is.
+        ///
+        /// The status word is read through <see cref="ClashStatusMap"/>, which is the one mapping
+        /// for both readers. This used to be a bare name parse, so the same pack read here and
+        /// through <c>ClashBcf</c> gave two different statuses for every word outside the five.
         /// </summary>
         /// <param name="topic">The topic as it came back.</param>
         /// <param name="finding">The finding it names.</param>
         /// <param name="source">Which file it arrived in.</param>
+        /// <param name="guessStatus">
+        /// Whether a status word the conventional vocabulary does not hold may be read for its
+        /// sense. False leaves the status alone instead, for a caller that must not guess.
+        /// </param>
         /// <returns>Whether anything on the finding changed.</returns>
-        public static bool Apply(BcfTopic? topic, Finding? finding, string? source = null)
+        public static bool Apply(BcfTopic? topic, Finding? finding, string? source = null,
+                                 bool guessStatus = true)
         {
             if (topic == null || finding == null) return false;
 
             var before = Snapshot(finding);
 
-            if (FindingStatusLattice.TryParse(topic.TopicStatus, out var status))
-                finding.Status = FindingStatusLattice.Merge(finding.Status, status);
+            // A topic that set no status word says nothing about the status, which is not the
+            // same as saying New: the map's Unsaid tier answers for a fresh import, and applying
+            // it here would be a file with a field left blank overwriting a decision.
+            if (!string.IsNullOrWhiteSpace(topic.TopicStatus)
+                && (guessStatus || ClashStatusMap.IsConventional(topic.TopicStatus)))
+                finding.Status = FindingStatusLattice.Merge(
+                    finding.Status, ClashStatusMap.Read(topic.TopicStatus));
 
             if (!string.IsNullOrWhiteSpace(topic.Title)) finding.Title = topic.Title;
             if (!string.IsNullOrWhiteSpace(topic.Priority)) finding.Priority = topic.Priority;

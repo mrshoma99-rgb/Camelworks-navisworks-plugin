@@ -37,8 +37,6 @@ namespace CamelWorks.UI.Views
     /// </summary>
     public static class ClearanceViews
     {
-        private static readonly string[] Statuses = { "New", "Active", "Reviewed", "Approved", "Resolved" };
-
         /// <summary>The guess, named as one — and the only option that reads a category.</summary>
         internal const string Guessed = "Walking surfaces (a guess)";
 
@@ -193,8 +191,7 @@ namespace CamelWorks.UI.Views
 
             internal List<Row> Rows { get; } = new List<Row>();
 
-            internal int Of(string status) =>
-                Rows.Count(r => string.Equals(r.Status, status, StringComparison.OrdinalIgnoreCase));
+            internal int Of(FindingStatus status) => Rows.Count(r => r.Status == status);
         }
 
         /// <summary>
@@ -228,7 +225,7 @@ namespace CamelWorks.UI.Views
             /// <summary>How far short of what was asked for, in metres.</summary>
             internal double Short => Math.Max(0, Minimum - Span.Clear);
 
-            internal string Status { get; set; } = "New";
+            internal FindingStatus Status { get; set; } = FindingStatus.New;
             internal string Assigned { get; set; } = string.Empty;
             internal string Group { get; set; } = string.Empty;
 
@@ -275,12 +272,12 @@ namespace CamelWorks.UI.Views
             private readonly TextBox _group;
             private readonly ComboBox _assign;
 
-            private readonly HashSet<string> _show =
-                new HashSet<string>(Statuses, StringComparer.OrdinalIgnoreCase);
+            private readonly HashSet<FindingStatus> _show =
+                new HashSet<FindingStatus>(FindingStatusWords.All);
 
             private readonly HashSet<string> _pickedGroups = new HashSet<string>(StringComparer.Ordinal);
 
-            private string _mark = "Reviewed";
+            private FindingStatus _mark = FindingStatus.Reviewed;
             private string _filterIn = AnyColumn;
             private bool _onlyCommented;
             private double _markerAcross = 300;
@@ -359,12 +356,13 @@ namespace CamelWorks.UI.Views
                 row.Children.Add(Ui.Loose(_filterScope));
                 row.Children.Add(new Border { Width = 14 });
 
-                foreach (var status in Statuses)
+                foreach (var status in FindingStatusWords.All)
                 {
                     var here = status;
 
                     row.Children.Add(new Border { Width = 10 });
-                    row.Children.Add(Ui.Check(here, _show.Contains(here), on =>
+                    row.Children.Add(Ui.Check(
+                        FindingStatusWords.Of(here), _show.Contains(here), on =>
                     {
                         if (on) _show.Add(here); else _show.Remove(here);
                         RedrawGroups();
@@ -682,9 +680,10 @@ namespace CamelWorks.UI.Views
             }
 
             private UIElement VerbsPage() => Bench.Group("What the symbols under the findings write",
-                Ui.Field("Mark as", Ui.Choice(Statuses, _mark, pick =>
+                Ui.Field("Mark as", Ui.Choice(
+                    FindingStatusWords.Words, FindingStatusWords.Of(_mark), pick =>
                 {
-                    _mark = pick;
+                    _mark = FindingStatusWords.Read(pick);
                     RedrawResults();
                 }, 150)),
                 Ui.Field("Assign to", _assign, "the project's parties, or type a name"),
@@ -1012,7 +1011,7 @@ namespace CamelWorks.UI.Views
 
                 if (finding == null) return;
 
-                row.Status = FindingStatusLattice.ToName(finding.Status);
+                row.Status = finding.Status;
                 row.Assigned = finding.AssignedTo ?? string.Empty;
                 row.Group = finding.Group ?? string.Empty;
 
@@ -1085,7 +1084,7 @@ namespace CamelWorks.UI.Views
                         case "Over": return Has(row.Over.Name);
                         case "Category (surface)": return Has(row.Floor.Category);
                         case "Category (over)": return Has(row.Over.Category);
-                        case "Status": return Has(row.Status);
+                        case "Status": return Has(FindingStatusWords.Of(row.Status));
                         case "Assigned": return Has(row.Assigned);
                         case "Group": return Has(row.Group);
                         case "Comment": return Has(row.LastComment);
@@ -1095,7 +1094,7 @@ namespace CamelWorks.UI.Views
 
                 if (Has(row.Name) || Has(row.Floor.Name) || Has(row.Over.Name)
                     || Has(row.Floor.Category) || Has(row.Over.Category)
-                    || Has(row.Status) || Has(row.Assigned) || Has(row.Group)
+                    || Has(FindingStatusWords.Of(row.Status)) || Has(row.Assigned) || Has(row.Group)
                     || Has(row.LastComment))
                     return true;
 
@@ -1164,16 +1163,20 @@ namespace CamelWorks.UI.Views
                     b.Name,
                     Skin.Num(b.Rows.Count),
                     Units.Bare(b.Rows.Min(r => r.Clear)),
-                    Skin.Num(b.Of("New")),
-                    Skin.Num(b.Of("Active")),
-                    Skin.Num(b.Of("Reviewed")),
-                    Skin.Num(b.Of("Approved")),
-                    Skin.Num(b.Of("Resolved")))
+                    Skin.Num(b.Of(FindingStatus.New)),
+                    Skin.Num(b.Of(FindingStatus.Active)),
+                    Skin.Num(b.Of(FindingStatus.Reviewed)),
+                    Skin.Num(b.Of(FindingStatus.Approved)),
+                    Skin.Num(b.Of(FindingStatus.Resolved)))
                 {
-                    Tone = b.Of("New") > 0 ? Tone.Warn : Tone.Plain,
+                    Tone = b.Of(FindingStatus.New) > 0 ? Tone.Warn : Tone.Plain,
                 }).ToList(),
-                    ("Group", 280), ("Findings", 70), ("Lowest", 70), ("New", 55),
-                    ("Active", 55), ("Reviewed", 70), ("Approved", 70), ("Resolved", 0));
+                    ("Group", 280), ("Findings", 70), ("Lowest", 70),
+                    (FindingStatusWords.Of(FindingStatus.New), 55),
+                    (FindingStatusWords.Of(FindingStatus.Active), 55),
+                    (FindingStatusWords.Of(FindingStatus.Reviewed), 70),
+                    (FindingStatusWords.Of(FindingStatus.Approved), 70),
+                    (FindingStatusWords.Of(FindingStatus.Resolved), 0));
 
                 table.SelectionChanged += (s, e) =>
                 {
@@ -1256,7 +1259,7 @@ namespace CamelWorks.UI.Views
                     var cells = new List<string?>
                     {
                         r.Name, Units.Bare(r.Clear), Units.Bare(r.Short),
-                        r.Floor.Name, r.Over.Name, r.Status,
+                        r.Floor.Name, r.Over.Name, FindingStatusWords.Of(r.Status),
                     };
 
                     foreach (var column in _columns)
@@ -1269,8 +1272,7 @@ namespace CamelWorks.UI.Views
 
                     return new TableRow(r, cells.ToArray())
                     {
-                        Tone = string.Equals(r.Status, "Resolved", StringComparison.OrdinalIgnoreCase)
-                               || string.Equals(r.Status, "Approved", StringComparison.OrdinalIgnoreCase)
+                        Tone = FindingStatusLattice.IsClosed(r.Status)
                             ? Tone.Good
                             : r.Clear < r.Minimum * 0.8 ? Tone.Bad : Tone.Warn,
                     };
@@ -1284,7 +1286,7 @@ namespace CamelWorks.UI.Views
                 _results.Children.Add(Ui.Picking(table,
                     new Ui.OnPicked("Focus {n}", Focus, primary: true),
                     new Ui.OnPicked("Isolate {n}", Isolate),
-                    new Ui.OnPicked("Mark {n} " + _mark, Mark),
+                    new Ui.OnPicked("Mark {n} " + FindingStatusWords.Of(_mark), Mark),
                     new Ui.OnPicked("Assign {n}", AssignPicked),
                     new Ui.OnPicked("Comment {n}", CommentPicked),
                     new Ui.OnPicked("Group {n}", GroupPicked),
@@ -1373,12 +1375,12 @@ namespace CamelWorks.UI.Views
                 {
                     row.Status = _mark;
 
-                    if (row.Found != null && FindingStatusLattice.TryParse(_mark, out var marked))
-                        row.Found.Status = marked;
+                    if (row.Found != null) row.Found.Status = _mark;
                 }
 
                 KeepFindings(say);
-                Done(say, "Marked " + Ui.Count(rows.Count, "finding") + " as " + _mark + ".");
+                Done(say, "Marked " + Ui.Count(rows.Count, "finding") + " as "
+                          + FindingStatusWords.Of(_mark) + ".");
             }
 
             private void AssignPicked(IReadOnlyList<object> picked, Panel say)
@@ -1491,9 +1493,7 @@ namespace CamelWorks.UI.Views
                         r.Span.Y / perUnit,
                         (r.Floor.Box.MaxZ + r.Clear / 2) / perUnit,
                         radius,
-                        ClashMarkers.Colour(Enum.TryParse<FindingStatus>(r.Status, true, out var s)
-                            ? s
-                            : FindingStatus.New)))
+                        ClashMarkers.Colour(r.Status)))
                     .ToList();
 
                 _session.View.ShowMarkers(marks);
@@ -1556,7 +1556,7 @@ namespace CamelWorks.UI.Views
 
                 var table = Ui.Table(
                     open.Select(i => new TableRow(i, i.Id, i.Title,
-                                                  FindingStatusLattice.ToName(i.Status),
+                                                  FindingStatusWords.Of(i.Status),
                                                   i.AssignedTo ?? string.Empty,
                                                   Ui.Count(i.Findings.Count, "finding"))),
                     ("Issue", 70), ("Title", 240), ("Status", 90), ("Assigned", 110),
@@ -1843,7 +1843,7 @@ namespace CamelWorks.UI.Views
             {
                 switch (key)
                 {
-                    case "status": return row.Status;
+                    case "status": return FindingStatusWords.Of(row.Status);
                     case "assigned": return row.Assigned.Length == 0 ? "(unassigned)" : row.Assigned;
                     case "group": return row.Group.Length == 0 ? "(no group)" : row.Group;
                     case "surface": return Blankless(row.Floor.Name, "(unnamed)");
@@ -2009,7 +2009,7 @@ namespace CamelWorks.UI.Views
                     {
                         row.Name, Units.Bare(row.Clear), Units.Bare(row.Short),
                         row.Floor.Name, row.Floor.Category, row.Over.Name, row.Over.Category,
-                        row.Status,
+                        FindingStatusWords.Of(row.Status),
                     };
 
                     foreach (var column in _columns)
@@ -2084,9 +2084,7 @@ namespace CamelWorks.UI.Views
                         X = row.Span.X,
                         Y = row.Span.Y,
                         Z = z,
-                        Status = Enum.TryParse<FindingStatus>(row.Status, true, out var parsed)
-                            ? parsed
-                            : FindingStatus.New,
+                        Status = row.Status,
                         AssignedTo = row.Assigned.Length == 0 ? null : row.Assigned,
                         CarriedGroup = row.Group.Length == 0 ? null : row.Group,
                         ModelA = row.Floor.Name,

@@ -298,6 +298,62 @@ namespace CamelWorks.Core.Tests
             Assert.Equal(BcfResponse.StatusOf(said) ?? expected, expected);
         }
 
+        [Theory]
+        [InlineData("Reviewed", FindingStatus.Reviewed)]
+        [InlineData("Open", FindingStatus.Active)]
+        [InlineData("Awaiting client", ClashStatusMap.Unknown)]
+        [InlineData("Closed out", FindingStatus.Resolved)]
+        public void OnePackReadByBothLegsLandsOnOneStatus(string said, FindingStatus expected)
+        {
+            // The two readers over the same file. The clash leg went through ClashStatusMap and
+            // the finding leg parsed the name, so a word outside the five landed on Active in one
+            // and was ignored in the other: the same pack gave the board and the register two
+            // different statuses. "Closed out" is the case only the guess tier maps.
+            var item = Item("11111111-1111-1111-1111-111111111111",
+                            "22222222-2222-2222-2222-222222222222");
+
+            using var stream = new MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
+
+            var topic = BcfReader.Read(stream).Topics.Single();
+            topic.TopicStatus = said;
+
+            using var theirs = new MemoryStream();
+
+            BcfWriter.Write(theirs, new[] { topic }, BcfVersion.V21);
+            theirs.Position = 0;
+
+            var finding = Finding.Create(FindingSource.Clash, "MEP vs Structure",
+                                         "Duct through beam", new[] { item.Key.A, item.Key.B },
+                                         "10,20,30");
+
+            Assert.True(FindingBcf.Apply(topic, finding));
+
+            Assert.Equal(expected, ClashBcf.Read(theirs).Results.Single().Status);
+            Assert.Equal(expected, finding.Status);
+        }
+
+        [Fact]
+        public void ACallerThatMustNotGuessRefusesAWordOnlyTheSenseTierReads()
+        {
+            // The flag exists so an unattended merge can decline to promote a finding on a word
+            // the conventional vocabulary does not hold.
+            var item = Item("11111111-1111-1111-1111-111111111111",
+                            "22222222-2222-2222-2222-222222222222");
+
+            using var stream = new MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
+
+            var topic = BcfReader.Read(stream).Topics.Single();
+            topic.TopicStatus = "Closed out";
+
+            var finding = Finding.Create(FindingSource.Clash, "MEP vs Structure",
+                                         "Duct through beam", new[] { item.Key.A, item.Key.B },
+                                         "10,20,30");
+
+            FindingBcf.Apply(topic, finding, null, guessStatus: false);
+
+            Assert.Equal(FindingStatus.New, finding.Status);
+        }
+
         [Fact]
         public void AWordNobodyKnowsIsCountedRatherThanApplied()
         {

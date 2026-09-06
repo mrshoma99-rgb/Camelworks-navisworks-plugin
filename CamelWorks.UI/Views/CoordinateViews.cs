@@ -2561,8 +2561,8 @@ namespace CamelWorks.UI.Views
             var rows = report.Matched.Select(m => new TableRow(m,
                 m.GroupName,
                 m.Topic.TopicStatus,
-                FindingStatusLattice.ToName(m.Current),
-                m.Changes ? FindingStatusLattice.ToName(m.Merged) : "-",
+                FindingStatusWords.Of(m.Current),
+                m.Changes ? FindingStatusWords.Of(m.Merged) : "-",
                 m.UnknownStatus != null ? "not a status we know"
                     : m.Refused ? "kept where it is"
                     : m.IsReopen && m.Changes ? "re-opened"

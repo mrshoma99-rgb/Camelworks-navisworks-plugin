@@ -128,15 +128,15 @@ namespace CamelWorks.UI.Views
         /// <summary>The five status words, in the order they read.</summary>
         internal static readonly string[] Marks =
         {
-            FindingStatusLattice.ToName(FindingStatus.New),
-            FindingStatusLattice.ToName(FindingStatus.Active),
-            FindingStatusLattice.ToName(FindingStatus.Reviewed),
-            FindingStatusLattice.ToName(FindingStatus.Approved),
-            FindingStatusLattice.ToName(FindingStatus.Resolved),
+            FindingStatusWords.Of(FindingStatus.New),
+            FindingStatusWords.Of(FindingStatus.Active),
+            FindingStatusWords.Of(FindingStatus.Reviewed),
+            FindingStatusWords.Of(FindingStatus.Approved),
+            FindingStatusWords.Of(FindingStatus.Resolved),
         };
 
         /// <summary>The word for an issue nobody has to do anything more about.</summary>
-        internal const string Settled = "Resolved";
+        internal static readonly string Settled = FindingStatusWords.Of(FindingStatus.Resolved);
 
         /// <summary>
         /// Every provenance this build knows, in the order the filter offers them.
@@ -400,7 +400,7 @@ namespace CamelWorks.UI.Views
                     value != null && value.IndexOf(wanted, StringComparison.OrdinalIgnoreCase) >= 0;
 
                 return _register.Issues
-                    .Where(i => _show.Contains(FindingStatusLattice.ToName(i.Status)))
+                    .Where(i => _show.Contains(FindingStatusWords.Of(i.Status)))
                     .Where(i => !_onlyOverdue || i.IsOverdue(Today))
                     .Where(i => !_onlyMine
                                 || string.Equals(i.AssignedTo, me, StringComparison.OrdinalIgnoreCase)
@@ -486,7 +486,7 @@ namespace CamelWorks.UI.Views
                 new TableRow(issue,
                     issue.Id,
                     issue.Title,
-                    FindingStatusLattice.ToName(issue.Status),
+                    FindingStatusWords.Of(issue.Status),
                     issue.Priority ?? string.Empty,
                     string.IsNullOrWhiteSpace(issue.AssignedTo) ? "—" : issue.AssignedTo,
                     Due(issue.DueDayNumber),
@@ -527,7 +527,7 @@ namespace CamelWorks.UI.Views
                 description.TextWrapping = TextWrapping.Wrap;
                 description.MinHeight = 60;
 
-                var status = Ui.Choice(Marks, FindingStatusLattice.ToName(issue.Status), null, 150);
+                var status = Ui.Choice(Marks, FindingStatusWords.Of(issue.Status), null, 150);
                 var type = Ui.Choice(Types(issue), issue.Type ?? string.Empty, null, 150);
                 var priority = Ui.Choice(PriorityWords(issue), issue.Priority ?? string.Empty, null, 130);
                 var cause = Ui.Choice(Causes(issue), issue.RootCause ?? string.Empty, null, 150);
@@ -677,7 +677,7 @@ namespace CamelWorks.UI.Views
                 if (moved > 0)
                     _session.Record(ActivityKind.Regroup,
                         "marked " + Ui.Count(moved, "finding") + " "
-                        + FindingStatusLattice.ToName(cascade.To) + " with " + issue.Id);
+                        + FindingStatusWords.Of(cascade.To) + " with " + issue.Id);
 
                 says.Children.Add(Ui.Done(cascade.Describe()));
             }
@@ -701,7 +701,7 @@ namespace CamelWorks.UI.Views
 
                 var table = Ui.Table(
                     findings.Select(f => new TableRow(f, f.Rule, f.Title,
-                                                      FindingStatusLattice.ToName(f.Status),
+                                                      FindingStatusWords.Of(f.Status),
                                                       f.IsPresent ? string.Empty : "gone",
                                                       f.Detail ?? string.Empty)),
                     ("Check", 150), ("Finding", 220), ("Status", 90), ("Still there", 90),
@@ -1120,7 +1120,7 @@ namespace CamelWorks.UI.Views
 
                 foreach (var issue in rows)
                     block.Row(issue.Id, issue.Title, issue.Description ?? string.Empty,
-                              FindingStatusLattice.ToName(issue.Status),
+                              FindingStatusWords.Of(issue.Status),
                               issue.Type ?? string.Empty, issue.Priority ?? string.Empty,
                               issue.AssignedTo ?? string.Empty,
                               Due(issue.DueDayNumber), Origin(issue.Provenance),
@@ -1332,7 +1332,7 @@ namespace CamelWorks.UI.Views
             private void Write(Job job)
             {
                 var going = _register.Issues
-                    .Where(i => _show.Contains(FindingStatusLattice.ToName(i.Status)))
+                    .Where(i => _show.Contains(FindingStatusWords.Of(i.Status)))
                     .Where(i => !_openOnly || i.IsOpen)
                     .ToList();
 

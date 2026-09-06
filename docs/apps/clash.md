@@ -132,6 +132,17 @@ move, compact, delete and copy tests; focus, isolate, mark, assign, comment, gro
 rename, sphere, snapshot, raise an issue and copy results; property columns; the duplicate
 finder, the spreadsheet, the baseline and the whole review round.
 
+**A status is a status, not a word.** A result's status was a string from the host read to the
+board, and the five words were written out at eighty-odd places across this tab and Clearance.
+Two of those places ranked an unrecognised word differently — one dropped it from the test's tally
+altogether, the other sorted it last — so a result could be counted one way and ordered another,
+and nothing in the build could see the disagreement. The board now holds `FindingStatus`
+throughout: the tally, the status strip's filter, the group row's worst-of-its-members, the chip,
+the marker colour and the row's tone bar. A word is read from outside once, through
+`ClashStatusMap.Read`, at the host and file boundaries, and a status becomes text once, through
+`FindingStatusWords.Of`. Nothing on screen changed: the status column still sorts by the word, so
+its order is alphabetical as before rather than the lattice's.
+
 ## Tests — removed
 
 The tab listed the engine's tests and carried a matrix builder. The Matrix tab has been the place
@@ -223,6 +234,10 @@ answer, and printed a table nobody could do anything with.
 - **Out of the tab:** the grid to a spreadsheet exactly as filtered, and every shown finding as a
   clash file — which the Manage tab's "A file" source opens, so a clearance list runs the same
   offline review round as a clash export.
+- *Changed:* the row's status is `FindingStatus`, the same as Manage's. The tick-box filter, the
+  "Mark as" choice, the group tally's five columns and the marker colour all key off it, and the
+  three places that re-parsed a status out of the row's own text are gone. Nothing on screen
+  changed.
 
 ## Freeze — moved out
 

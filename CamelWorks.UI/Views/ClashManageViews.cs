@@ -33,8 +33,6 @@ namespace CamelWorks.UI.Views
     /// </summary>
     public static class ClashManageViews
     {
-        private static readonly string[] Statuses = { "New", "Active", "Reviewed", "Approved", "Resolved" };
-
         private const string FromModel = "The model";
         private const string FromFile = "A file";
 
@@ -174,27 +172,20 @@ namespace CamelWorks.UI.Views
             /// line. The tally is thrown away by <see cref="Restate"/>, which the row's own status
             /// setter calls.
             /// </summary>
-            /// <param name="status">The status, by name.</param>
-            internal int Of(string status)
+            /// <param name="status">The status.</param>
+            internal int Of(FindingStatus status)
             {
                 if (_tally == null || _tallyOf != Rows.Count)
                 {
                     var tally = new int[5];
 
-                    foreach (var row in Rows)
-                    {
-                        var at = Rank(row.Status);
-
-                        if (at >= 0 && at < tally.Length) tally[at]++;
-                    }
+                    foreach (var row in Rows) tally[(int)row.Status]++;
 
                     _tally = tally;
                     _tallyOf = Rows.Count;
                 }
 
-                var which = Rank(status);
-
-                return which >= 0 && which < _tally.Length ? _tally[which] : 0;
+                return _tally[(int)status];
             }
 
             /// <summary>Say that a row's status changed, so the tally is counted again.</summary>
@@ -223,16 +214,6 @@ namespace CamelWorks.UI.Views
             private int[]? _tally;
             private int _tallyOf = -1;
 
-            /// <summary>The five statuses, in the order the tally holds them.</summary>
-            /// <param name="status">The status, by name.</param>
-            private static int Rank(string? status) =>
-                string.Equals(status, "New", StringComparison.OrdinalIgnoreCase) ? 0
-                : string.Equals(status, "Active", StringComparison.OrdinalIgnoreCase) ? 1
-                : string.Equals(status, "Reviewed", StringComparison.OrdinalIgnoreCase) ? 2
-                : string.Equals(status, "Approved", StringComparison.OrdinalIgnoreCase) ? 3
-                : string.Equals(status, "Resolved", StringComparison.OrdinalIgnoreCase) ? 4
-                : -1;
-
             /// <summary>Take a new name without re-reading anything.</summary>
             /// <param name="named">The test's new name.</param>
             internal void Rename(string named) =>
@@ -253,7 +234,10 @@ namespace CamelWorks.UI.Views
                 TestId = testId;
                 TestName = testName;
                 Info = info;
-                Status = info.HostStatus ?? "New";
+                // Through the map rather than a name parse: a host or a file can spell a status
+                // its own way, and an unrecognised word used to fall out of the tally entirely.
+                // Empty rather than null only to keep the argument non-nullable; both read Unsaid.
+                Status = ClashStatusMap.Read(info.HostStatus ?? string.Empty);
                 Assigned = info.HostAssignedTo ?? string.Empty;
                 Group = info.GroupName ?? string.Empty;
                 Comments = info.CommentCount;
@@ -262,7 +246,7 @@ namespace CamelWorks.UI.Views
                 foreach (var comment in info.Comments) Trail.Add(comment);
             }
 
-            private string _status = string.Empty;
+            private FindingStatus _status;
             private string _assigned = string.Empty;
             private string _group = string.Empty;
             private string _lastComment = string.Empty;
@@ -275,7 +259,7 @@ namespace CamelWorks.UI.Views
             // away as it is written. Done here rather than at the ten places that write them,
             // because a blob somebody forgot to clear is a row that cannot be found by the value
             // it is now showing.
-            internal string Status
+            internal FindingStatus Status
             {
                 get => _status;
                 set { _status = value; Blob = null; Owner?.Restate(); }
@@ -498,7 +482,7 @@ namespace CamelWorks.UI.Views
             // the last test is a board that says "nothing matches" about a test somebody has not
             // filtered, and the only clue is a chip they did not put there.
 
-            private string? _status;
+            private FindingStatus? _status;
             private string? _party;
             private string _boardFind = string.Empty;
 
@@ -1433,8 +1417,9 @@ namespace CamelWorks.UI.Views
                 // already on screen as columns.
                 var orders = new[]
                 {
-                    ("New", MostNew), ("Active", MostOpen), ("Rev.", MostReviewed),
-                    ("Appr.", MostApproved), ("Res.", MostClosed),
+                    (FindingStatusWords.Of(FindingStatus.New), MostNew),
+                    (FindingStatusWords.Of(FindingStatus.Active), MostOpen),
+                    ("Rev.", MostReviewed), ("Appr.", MostApproved), ("Res.", MostClosed),
                 };
 
                 foreach (var (label, order) in orders)
@@ -1824,7 +1809,7 @@ namespace CamelWorks.UI.Views
             private UIElement RailRow(TestEntry entry, string common)
             {
                 var on = string.Equals(entry.Test.Id, _current, StringComparison.OrdinalIgnoreCase);
-                var open = entry.Of("New") + entry.Of("Active");
+                var open = entry.Of(FindingStatus.New) + entry.Of(FindingStatus.Active);
 
                 var name = new TextBlock
                 {
@@ -1856,8 +1841,9 @@ namespace CamelWorks.UI.Views
                 var band = Parts.CountBand(
                     new[]
                     {
-                        entry.Of("New"), entry.Of("Active"), entry.Of("Reviewed"),
-                        entry.Of("Approved"), entry.Of("Resolved"),
+                        entry.Of(FindingStatus.New), entry.Of(FindingStatus.Active),
+                        entry.Of(FindingStatus.Reviewed), entry.Of(FindingStatus.Approved),
+                        entry.Of(FindingStatus.Resolved),
                     },
                     open == 0);
 
@@ -1892,7 +1878,7 @@ namespace CamelWorks.UI.Views
                 // anything is open, green when the test is finished — and the accent when it is
                 // the one on the board, because "where am I" beats "how is it" on that one row.
                 tone.BorderBrush = on ? Skin.Of("Accent")
-                    : entry.Of("New") > 0 ? Skin.Of("RedTx")
+                    : entry.Of(FindingStatus.New) > 0 ? Skin.Of("RedTx")
                     : open > 0 ? Skin.Of("AmberTx")
                     : Skin.Of("Ok");
 
@@ -2263,11 +2249,11 @@ namespace CamelWorks.UI.Views
                 /// The status the row reads as.
                 ///
                 /// A group's members can disagree, and the worst of them is what the row says:
-                /// a group showing "Resolved" because four of its five are is how an unresolved
+                /// a group showing Resolved because four of its five are is how an unresolved
                 /// conflict leaves the board green and ends up in the building.
                 /// </summary>
-                internal string Status =>
-                    Rows.OrderBy(r => Rank(r.Status)).Select(r => r.Status).FirstOrDefault() ?? "New";
+                internal FindingStatus Status =>
+                    Rows.Count == 0 ? FindingStatus.New : Rows.Min(r => r.Status);
 
                 /// <summary>Who it is with, or empty when its members disagree.</summary>
                 internal string Assigned
@@ -2283,17 +2269,6 @@ namespace CamelWorks.UI.Views
                         return names.Count == 1 ? names[0] : string.Empty;
                     }
                 }
-
-                /// <summary>Where a status sits in the promote-only lattice, worst first.</summary>
-                /// <param name="status">The status.</param>
-                private static int Rank(string status) => status switch
-                {
-                    "New" => 0,
-                    "Active" => 1,
-                    "Reviewed" => 2,
-                    "Approved" => 3,
-                    _ => 4,
-                };
             }
 
             private readonly StackPanel _title = Ui.Stack();
@@ -2871,20 +2846,20 @@ namespace CamelWorks.UI.Views
             {
                 var strip = new StackPanel { Orientation = Orientation.Horizontal };
 
-                var tabs = new (string Label, int Count, string Key, string? Status)[]
+                var tabs = new (string Label, int Count, string Key, FindingStatus? Status)[]
                 {
                     ("all", entry.Rows.Count, "Text", null),
-                    ("new", entry.Of("New"), "RedTx", "New"),
-                    ("active", entry.Of("Active"), "Text", "Active"),
-                    ("reviewed", entry.Of("Reviewed"), "AmberTx", "Reviewed"),
-                    ("approved", entry.Of("Approved"), "Ok", "Approved"),
-                    ("resolved", entry.Of("Resolved"), "Ok", "Resolved"),
+                    ("new", entry.Of(FindingStatus.New), "RedTx", FindingStatus.New),
+                    ("active", entry.Of(FindingStatus.Active), "Text", FindingStatus.Active),
+                    ("reviewed", entry.Of(FindingStatus.Reviewed), "AmberTx", FindingStatus.Reviewed),
+                    ("approved", entry.Of(FindingStatus.Approved), "Ok", FindingStatus.Approved),
+                    ("resolved", entry.Of(FindingStatus.Resolved), "Ok", FindingStatus.Resolved),
                 };
 
                 for (var i = 0; i < tabs.Length; i++)
                 {
                     var tab = tabs[i];
-                    var on = string.Equals(_status, tab.Status, StringComparison.Ordinal);
+                    var on = _status == tab.Status;
 
                     var figure = new TextBlock
                     {
@@ -3665,7 +3640,7 @@ namespace CamelWorks.UI.Views
                 {
                     case ItemA: return row.IsGroup ? string.Empty : row.Only.Info.NameA ?? string.Empty;
                     case ItemB: return row.IsGroup ? string.Empty : row.Only.Info.NameB ?? string.Empty;
-                    case Status: return row.Status;
+                    case Status: return FindingStatusWords.Of(row.Status);
                     case Assigned: return row.Assigned;
                     case Level: return Storey(row);
 
@@ -4578,8 +4553,10 @@ namespace CamelWorks.UI.Views
             /// <param name="inside">True when it is a member of an open group.</param>
             private UIElement Finish(Grid grid, BoardRow row, bool on, bool inside)
             {
-                Put(grid, Parts.InlineChip(row.Status, Statuses,
-                        value => SetStatus(row, value), Reads(row.Status), "Set status"),
+                Put(grid, Parts.InlineChip(
+                        FindingStatusWords.Of(row.Status), FindingStatusWords.Words,
+                        value => SetStatus(row, FindingStatusWords.Read(value)),
+                        Reads(row.Status), "Set status"),
                     Where(Status));
 
                 Put(grid, Parts.Presser(Responsible.Shown(row.Assigned), Marked(row.Assigned),
@@ -5144,7 +5121,7 @@ namespace CamelWorks.UI.Views
 
                 _bar.Child = Parts.SelectionBar(_picked.Count, "row",
                     () => { _picked.Clear(); _pickedFrom = null; RedrawRows(); },
-                    Parts.InlineChip(null, Statuses,
+                    Parts.InlineChip(null, FindingStatusWords.Words,
                         value => SetMany(picked, value, true), Tone.Plain, "Set status"),
                     Parts.Presser(null, null, "Assign to",
                         chip => Assigning(chip, picked, Common(rows))),
@@ -5831,7 +5808,7 @@ namespace CamelWorks.UI.Views
                         result.Item?.Key.A ?? default,
                         result.Item?.Key.B ?? default,
                         result.X, result.Y, result.Z,
-                        result.Status.ToString(),
+                        FindingStatusWords.Of(result.Status),
                         result.AssignedTo)
                     {
                         Name = result.Name,
@@ -6062,7 +6039,7 @@ namespace CamelWorks.UI.Views
 
                 void Show()
                 {
-                    var colour = Tinted("New");
+                    var colour = Tinted(FindingStatus.New);
 
                     swatch.Background = new System.Windows.Media.SolidColorBrush(
                         System.Windows.Media.Color.FromRgb(colour.R, colour.G, colour.B));
@@ -6296,7 +6273,8 @@ namespace CamelWorks.UI.Views
                     && (_byParty.Count == 0 || Trades(e).Any(d => _byParty.Contains(d)))
                     && (_byFolder.Count == 0 || _byFolder.Contains(e.Test.Folder ?? string.Empty))
                     && Carries(e)
-                    && (!_openOnly || e.Of("New") + e.Of("Active") > 0)).ToList();
+                    && (!_openOnly
+                        || e.Of(FindingStatus.New) + e.Of(FindingStatus.Active) > 0)).ToList();
 
                 var token = Token(_sort);
 
@@ -6307,25 +6285,26 @@ namespace CamelWorks.UI.Views
                 switch (_sort)
                 {
                     case MostOpen:
-                        return shown.OrderByDescending(e => e.Of("New") + e.Of("Active")).ToList();
+                        return shown.OrderByDescending(
+                            e => e.Of(FindingStatus.New) + e.Of(FindingStatus.Active)).ToList();
 
                     case ByName:
                         return shown.OrderBy(e => e.Test.Name, StringComparer.CurrentCulture).ToList();
 
                     case MostReviewed:
-                        return shown.OrderByDescending(e => e.Of("Reviewed")).ToList();
+                        return shown.OrderByDescending(e => e.Of(FindingStatus.Reviewed)).ToList();
 
                     case MostApproved:
-                        return shown.OrderByDescending(e => e.Of("Approved")).ToList();
+                        return shown.OrderByDescending(e => e.Of(FindingStatus.Approved)).ToList();
 
                     case MostClosed:
-                        return shown.OrderByDescending(e => e.Of("Resolved")).ToList();
+                        return shown.OrderByDescending(e => e.Of(FindingStatus.Resolved)).ToList();
 
                     case LastRun:
                         return shown.OrderByDescending(e => e.Test.LastRunTicks).ToList();
 
                     default:
-                        return shown.OrderByDescending(e => e.Of("New")).ToList();
+                        return shown.OrderByDescending(e => e.Of(FindingStatus.New)).ToList();
                 }
             }
 
@@ -6517,7 +6496,8 @@ namespace CamelWorks.UI.Views
 
                 var parts = new List<string?>
                 {
-                    row.Info.Name, row.TestName, row.Status, row.Group, row.Assigned,
+                    row.Info.Name, row.TestName, FindingStatusWords.Of(row.Status),
+                    row.Group, row.Assigned,
                     row.LastComment, row.Info.NameA, row.Info.NameB,
                     row.Info.CategoryA, row.Info.CategoryB, row.Review?.Describe(),
                 };
@@ -6543,9 +6523,7 @@ namespace CamelWorks.UI.Views
                 // is true of the colour and not of the filter. Navisworks has five statuses, the
                 // chip on the row writes all five, and a status that can be written and not found
                 // is a row somebody loses.
-                if (_status != null
-                    && !string.Equals(row.Status, _status, StringComparison.OrdinalIgnoreCase))
-                    return false;
+                if (_status != null && row.Status != _status.Value) return false;
 
                 if (_party != null
                     && !Roster().Covers(Responsible.Read(row.Assigned),
@@ -6655,7 +6633,7 @@ namespace CamelWorks.UI.Views
                 var now = string.Join("\u001f", new[]
                 {
                     entry.Test.Id,
-                    _status ?? string.Empty,
+                    _status == null ? string.Empty : FindingStatusWords.Of(_status.Value),
                     _party ?? string.Empty,
                     _boardFind.Trim(),
                     _showing,
@@ -6791,7 +6769,7 @@ namespace CamelWorks.UI.Views
                         return row.Assigned.Length == 0 ? "Unassigned" : row.Assigned;
 
                     case ByStatus:
-                        return row.Status;
+                        return FindingStatusWords.Of(row.Status);
 
                     case ByHowBad:
                         // Against this test's own tolerance, not a number typed once into a
@@ -7001,23 +6979,23 @@ namespace CamelWorks.UI.Views
 
             /// <summary>How a status reads.</summary>
             /// <param name="status">The status.</param>
-            private static Tone Reads(string status) => status switch
+            private static Tone Reads(FindingStatus status) => status switch
             {
-                "New" => Tone.Bad,
-                "Reviewed" => Tone.Warn,
-                "Approved" => Tone.Good,
-                "Resolved" => Tone.Good,
+                FindingStatus.New => Tone.Bad,
+                FindingStatus.Reviewed => Tone.Warn,
+                FindingStatus.Approved => Tone.Good,
+                FindingStatus.Resolved => Tone.Good,
                 _ => Tone.Plain,
             };
 
             /// <summary>The tone bar down the left of a row, or nothing while it is only active.</summary>
             /// <param name="status">The row's status.</param>
-            private static System.Windows.Media.Brush Edge(string status) => status switch
+            private static System.Windows.Media.Brush Edge(FindingStatus status) => status switch
             {
-                "New" => Skin.Of("RedTx"),
-                "Reviewed" => Skin.Of("AmberTx"),
-                "Approved" => Skin.Of("Ok"),
-                "Resolved" => Skin.Of("Ok"),
+                FindingStatus.New => Skin.Of("RedTx"),
+                FindingStatus.Reviewed => Skin.Of("AmberTx"),
+                FindingStatus.Approved => Skin.Of("Ok"),
+                FindingStatus.Resolved => Skin.Of("Ok"),
                 _ => System.Windows.Media.Brushes.Transparent,
             };
 
@@ -7188,7 +7166,7 @@ namespace CamelWorks.UI.Views
             /// <summary>Set the status from the chip on a row, over everything picked.</summary>
             /// <param name="row">The row the chip is on.</param>
             /// <param name="status">The new status.</param>
-            private void SetStatus(BoardRow row, string status) =>
+            private void SetStatus(BoardRow row, FindingStatus status) =>
                 Mark(Reaching(row), status, _toast);
 
             /// <summary>
@@ -7260,7 +7238,7 @@ namespace CamelWorks.UI.Views
             /// <param name="status">True for a status, false for an assignee.</param>
             private void SetMany(IReadOnlyList<object> picked, string value, bool status)
             {
-                if (status) { Mark(picked, value, _toast); return; }
+                if (status) { Mark(picked, FindingStatusWords.Read(value), _toast); return; }
 
                 AssignPicked(picked, value == Nobody ? string.Empty : value, _toast);
             }
@@ -7758,10 +7736,14 @@ namespace CamelWorks.UI.Views
                 foreach (var entry in read)
                     lines.Add(string.Join("\t", entry.Test.Name, entry.Test.Folder ?? string.Empty,
                                           entry.Rows.Count.ToString(CultureInfo.InvariantCulture),
-                                          entry.Of("New").ToString(CultureInfo.InvariantCulture),
-                                          entry.Of("Active").ToString(CultureInfo.InvariantCulture),
-                                          entry.Of("Reviewed").ToString(CultureInfo.InvariantCulture),
-                                          (entry.Of("Approved") + entry.Of("Resolved"))
+                                          entry.Of(FindingStatus.New)
+                                               .ToString(CultureInfo.InvariantCulture),
+                                          entry.Of(FindingStatus.Active)
+                                               .ToString(CultureInfo.InvariantCulture),
+                                          entry.Of(FindingStatus.Reviewed)
+                                               .ToString(CultureInfo.InvariantCulture),
+                                          (entry.Of(FindingStatus.Approved)
+                                           + entry.Of(FindingStatus.Resolved))
                                               .ToString(CultureInfo.InvariantCulture)));
 
                 Ui.Copy(lines, _toast, "test");
@@ -7790,7 +7772,7 @@ namespace CamelWorks.UI.Views
 
                     foreach (var column in _columns) cells.Add(Custom(row, column));
 
-                    cells.Add(row.Status);
+                    cells.Add(FindingStatusWords.Of(row.Status));
                     cells.Add(row.Assigned);
 
                     lines.Add(string.Join("\t", cells));
@@ -8346,7 +8328,7 @@ namespace CamelWorks.UI.Views
 
                 var table = Ui.Table(
                     open.Select(i => new TableRow(i, i.Id, i.Title,
-                                                  FindingStatusLattice.ToName(i.Status),
+                                                  FindingStatusWords.Of(i.Status),
                                                   i.AssignedTo ?? string.Empty,
                                                   Ui.Count(i.Findings.Count, "finding"))),
                     ("Issue", 70), ("Title", 240), ("Status", 90), ("Assigned", 110),
@@ -8570,18 +8552,16 @@ namespace CamelWorks.UI.Views
             /// <param name="picked">The results.</param>
             /// <param name="status">The status to write.</param>
             /// <param name="say">Where the outcome goes.</param>
-            private void Mark(IReadOnlyList<object> picked, string status, Panel say) =>
-                Write(picked, say, "Marked {0} as " + status + ".",
-                      (testId, ids) => _session.Clash.SetStatus(testId, ids, status),
-                      row => row.Status = status,
-                      (finding, row) =>
-                      {
-                          _ = row;
+            private void Mark(IReadOnlyList<object> picked, FindingStatus status, Panel say)
+            {
+                var word = FindingStatusWords.Of(status);
 
-                          if (FindingStatusLattice.TryParse(status, out var marked))
-                              finding.Status = marked;
-                      },
+                Write(picked, say, "Marked {0} as " + word + ".",
+                      (testId, ids) => _session.Clash.SetStatus(testId, ids, word),
+                      row => row.Status = status,
+                      (finding, row) => { _ = row; finding.Status = status; },
                       FindingField.Status);
+            }
 
             /// <summary>Assign everything picked, or clear the assignment.</summary>
             /// <param name="picked">The results.</param>
@@ -9115,9 +9095,7 @@ namespace CamelWorks.UI.Views
                         X = r.Info.PointX,
                         Y = r.Info.PointY,
                         Z = r.Info.PointZ,
-                        Status = Enum.TryParse<FindingStatus>(r.Status, true, out var s)
-                            ? s
-                            : FindingStatus.New,
+                        Status = r.Status,
                     }).ToList(),
                     new MarkerRecipe
                     {
@@ -9228,16 +9206,13 @@ namespace CamelWorks.UI.Views
 
             /// <summary>What colour one row's marker is drawn.</summary>
             /// <param name="status">The row's status.</param>
-            private Colour Tinted(string? status)
+            private Colour Tinted(FindingStatus status)
             {
                 foreach (var one in MarkerColours)
                     if (string.Equals(one.Name, _markerColour, StringComparison.OrdinalIgnoreCase))
                         return new Colour(one.R, one.G, one.B);
 
-                return ClashMarkers.Colour(
-                    Enum.TryParse<FindingStatus>(status, true, out var known)
-                        ? known
-                        : FindingStatus.New);
+                return ClashMarkers.Colour(status);
             }
 
             // -------------------------------------------------------------------------------
@@ -9664,7 +9639,7 @@ namespace CamelWorks.UI.Views
 
                         if (OnFile)
                         {
-                            dupe.Status = "Approved";
+                            dupe.Status = FindingStatus.Approved;
                             dupe.Comments++;
                             dupe.LastComment = note;
                             dupe.Trail.Add(new ClashComment(
@@ -9675,12 +9650,14 @@ namespace CamelWorks.UI.Views
 
                         var one = new[] { dupe.Info.Id };
 
-                        if (!_session.Clash.SetStatus(dupe.TestId, one, "Approved")) continue;
+                        if (!_session.Clash.SetStatus(
+                                dupe.TestId, one, FindingStatusWords.Of(FindingStatus.Approved)))
+                            continue;
 
                         _session.Clash.Comment(dupe.TestId, one, note,
                                                Environment.UserName ?? "reviewer");
 
-                        dupe.Status = "Approved";
+                        dupe.Status = FindingStatus.Approved;
                         dupe.Comments++;
                         dupe.LastComment = note;
                         marked++;
@@ -9730,9 +9707,7 @@ namespace CamelWorks.UI.Views
                         X = row.Info.PointX * scale,
                         Y = row.Info.PointY * scale,
                         Z = row.Info.PointZ * scale,
-                        Status = Enum.TryParse<FindingStatus>(row.Status, true, out var status)
-                            ? status
-                            : FindingStatus.New,
+                        Status = row.Status,
                         AssignedTo = row.Assigned.Length == 0 ? null : row.Assigned,
                         CarriedGroup = row.Group.Length == 0 ? null : row.Group,
                         CategoryA = row.Info.CategoryA,
@@ -9872,8 +9847,8 @@ namespace CamelWorks.UI.Views
                 {
                     var cells = new List<string>
                     {
-                        row.TestName, row.Info.Name ?? string.Empty, row.Group, row.Status,
-                        Millimetres(row),
+                        row.TestName, row.Info.Name ?? string.Empty, row.Group,
+                        FindingStatusWords.Of(row.Status), Millimetres(row),
                     };
 
                     foreach (var column in _columns)
@@ -9957,9 +9932,7 @@ namespace CamelWorks.UI.Views
                         continue;
                     }
 
-                    item.Status = Enum.TryParse<FindingStatus>(row.Status, true, out var status)
-                        ? status
-                        : FindingStatus.New;
+                    item.Status = row.Status;
                     item.AssignedTo = row.Assigned.Length == 0 ? null : row.Assigned;
                     item.CarriedGroup = row.Group.Length == 0 ? null : row.Group;
 
@@ -10138,7 +10111,7 @@ namespace CamelWorks.UI.Views
                     }
 
                     // Gathered per test so each write is one seam call, then applied.
-                    var setStatus = new Dictionary<(string Test, string Status), List<string>>();
+                    var setStatus = new Dictionary<(string Test, FindingStatus Status), List<string>>();
                     var setAssign = new Dictionary<(string Test, string Who), List<string>>();
                     var setGroup = new Dictionary<(string Test, string Group), List<string>>();
                     var say = new List<(string Test, string Id, ClashComment Comment)>();
@@ -10176,9 +10149,9 @@ namespace CamelWorks.UI.Views
                             continue;
                         }
 
-                        var status = result.Status.ToString();
+                        var status = result.Status;
 
-                        if (!string.Equals(status, found.Status, StringComparison.OrdinalIgnoreCase))
+                        if (status != found.Status)
                             Bucket(setStatus, (found.TestId, status), found.ResultId);
 
                         var who = result.AssignedTo ?? string.Empty;
@@ -10238,7 +10211,8 @@ namespace CamelWorks.UI.Views
                     {
                         touched.Add(batch.Key.Test);
 
-                        if (_session.Clash.SetStatus(batch.Key.Test, batch.Value, batch.Key.Status))
+                        if (_session.Clash.SetStatus(batch.Key.Test, batch.Value,
+                                                     FindingStatusWords.Of(batch.Key.Status)))
                             statuses += batch.Value.Count;
                         else
                             problems.Add(_session.Clash.LastProblem ?? "A status write was refused.");
@@ -10504,7 +10478,7 @@ namespace CamelWorks.UI.Views
             {
                 if (finding == null) return;
 
-                row.Status = FindingStatusLattice.ToName(finding.Status);
+                row.Status = finding.Status;
 
                 if (finding.AssignedTo != null) row.Assigned = finding.AssignedTo;
                 if (finding.Group != null) row.Group = finding.Group;
@@ -10562,7 +10536,7 @@ namespace CamelWorks.UI.Views
                         {
                             FindingField.Status =>
                                 Kept(_session.Clash.SetStatus(
-                                    test, ids, FindingStatusLattice.ToName(finding.Status)), problems),
+                                    test, ids, FindingStatusWords.Of(finding.Status)), problems),
 
                             FindingField.AssignedTo =>
                                 Kept(_session.Clash.Assign(
@@ -10932,7 +10906,7 @@ namespace CamelWorks.UI.Views
                 internal ClashKey Key;
                 internal string TestId = string.Empty;
                 internal string ResultId = string.Empty;
-                internal string Status = string.Empty;
+                internal FindingStatus Status;
                 internal string Assigned = string.Empty;
                 internal string Group = string.Empty;
             }
