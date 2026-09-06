@@ -447,8 +447,10 @@ namespace CamelWorks.UI.Views
                     one.AssignedTo ?? string.Empty,
                     one.Level ?? string.Empty)).ToList();
 
+                // Every column fixed. With the first one flexible it took the whole leftover
+                // width and pushed the last column past the right edge of the pane.
                 var table = Ui.Table(rows,
-                    ("Clash", 0), ("Test", 130), ("Status", 80),
+                    ("Clash", 150), ("Test", 130), ("Status", 80),
                     ("Assigned to", 100), ("Level", 56)).Multi();
 
                 Ui.SetFills(_results, true);
