@@ -549,6 +549,17 @@ namespace CamelWorks.Core.Report
 
             sb.Append("<sheetData>");
 
+            // How far right each row has to reach, worked out in one pass over the merges and the
+            // styles rather than a pass over both per row.
+            var reaches = Reaches(sheet);
+
+            // Where each style landed in the stylesheet. Asking the list per cell was a scan of
+            // every style in the workbook for every painted cell on the sheet.
+            var indexed = new Dictionary<XlsxStyle, int>();
+
+            for (var i = 0; i < wanted.Count; i++)
+                if (!indexed.ContainsKey(wanted[i])) indexed[wanted[i]] = i;
+
             for (var r = 0; r < sheet.Rows.Count; r++)
             {
                 var row = sheet.Rows[r];
@@ -564,11 +575,11 @@ namespace CamelWorks.Core.Report
                 // A merged block is written as its top-left cell and as empty cells for the rest
                 // of it - so a row shorter than the block still has to reach the far side of it,
                 // or Excel reads the merge as covering cells that are not there.
-                var wide = Math.Max(row.Count, Reaches(sheet, r));
+                var wide = Math.Max(row.Count, reaches.TryGetValue(r, out var far) ? far : 0);
 
                 for (var c = 0; c < wide; c++)
                     AppendCell(sb, Reference(c, r + 1), c < row.Count ? row[c] : null,
-                               Format(sheet, wanted, r, c));
+                               Format(sheet, indexed, r, c));
 
                 sb.Append("</row>");
             }
@@ -592,37 +603,44 @@ namespace CamelWorks.Core.Report
             return sb.ToString();
         }
 
-        /// <summary>How far right a row has to be written, counting the merges that cross it.</summary>
+        /// <summary>
+        /// How far right each row has to be written, counting the merges that cross it.
+        ///
+        /// A merged block is written as its top-left cell and as empty cells for the rest of it,
+        /// so a row shorter than the block still has to reach the far side of it. Only the rows
+        /// that reach past their own contents are in the table.
+        /// </summary>
         /// <param name="sheet">The sheet.</param>
-        /// <param name="row">The row, from nought.</param>
-        private static int Reaches(XlsxSheet sheet, int row)
+        private static Dictionary<int, int> Reaches(XlsxSheet sheet)
         {
-            var wide = 0;
+            var reaches = new Dictionary<int, int>();
+
+            void Widen(int row, int column)
+            {
+                if (!reaches.TryGetValue(row, out var wide) || column > wide)
+                    reaches[row] = column;
+            }
 
             foreach (var block in sheet.Merges)
-                if (row >= block.Row && row <= block.ToRow && block.ToColumn + 1 > wide)
-                    wide = block.ToColumn + 1;
+                for (var row = block.Row; row <= block.ToRow; row++)
+                    Widen(row, block.ToColumn + 1);
 
-            foreach (var at in sheet.Styles.Keys)
-                if (at.Row == row && at.Column + 1 > wide) wide = at.Column + 1;
+            foreach (var at in sheet.Styles.Keys) Widen(at.Row, at.Column + 1);
 
-            return wide;
+            return reaches;
         }
 
         /// <summary>Which cell format one cell uses: its own, the header's, or the plain one.</summary>
         /// <param name="sheet">The sheet.</param>
-        /// <param name="wanted">The styles, in the order they were written.</param>
+        /// <param name="wanted">Where each style landed in the stylesheet.</param>
         /// <param name="row">The row, from nought.</param>
         /// <param name="column">The column, from nought.</param>
-        private static int Format(XlsxSheet sheet, List<XlsxStyle> wanted,
+        private static int Format(XlsxSheet sheet, Dictionary<XlsxStyle, int> wanted,
                                   int row, int column)
         {
-            if (sheet.Styles.TryGetValue((row, column), out var style) && !style.IsPlain)
-            {
-                var at = wanted.IndexOf(style);
-
-                if (at >= 0) return at;
-            }
+            if (sheet.Styles.TryGetValue((row, column), out var style) && !style.IsPlain
+                && wanted.TryGetValue(style, out var at))
+                return at;
 
             // The first row is the header of a report that said nothing about colour, and is
             // bold for the same reason it always was. A sheet that paints its own cells has

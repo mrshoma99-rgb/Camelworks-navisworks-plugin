@@ -548,6 +548,55 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void TheStoreyTheBoardIsAboutFillsTheLevelTokenAndSurvivesASave()
+        {
+            var board = new MatrixBoard();
+
+            board.AddRow(new MatrixLine("Steel", null, MatrixSource.SelectionSet("STR")));
+            board.AddRow(new MatrixLine("Ducts", null, MatrixSource.SelectionSet("MEP")));
+            board.SquareOffRows();
+
+            board.Level = "L03";
+            board.Set(board.Rows[0], board.Columns[1], "A");
+
+            var legend = new MatrixLegend(new[] { new MatrixSymbol("A") });
+
+            var plan = MatrixPlanner.Plan(board, legend, "{level} - {row} v {column}");
+
+            Assert.Equal("L03 - Steel v Ducts", Assert.Single(plan.Tests).Name);
+
+            var read = MatrixBoard.FromJson(board.ToJson());
+
+            Assert.Equal("L03", read.Level);
+
+            // A board that is not per-storey leaves the token empty rather than writing a gap
+            // into every name.
+            board.Level = string.Empty;
+
+            Assert.Equal("Steel v Ducts",
+                         MatrixPlanner.Plan(board, legend,
+                                            "{level} - {row} v {column}").Tests[0].Name);
+        }
+
+        [Fact]
+        public void ADisciplineAgainstItselfIsAPlannableTestOnceSomebodyWritesIt()
+        {
+            // Bulk gestures leave the diagonal alone, but a cell written by hand is a decision,
+            // and everything that reads the board has to follow it.
+            var board = Named("Steel", "Ducts");
+
+            Assert.Null(board.At(board.Rows[1], board.Columns[1]));
+
+            board.Set(board.Rows[1], board.Columns[1], "A");
+
+            Assert.True(board.IsSelfPair(board.Rows[1], board.Columns[1]));
+            Assert.Equal("A", board.At(board.Rows[1], board.Columns[1]));
+
+            Assert.Contains(board.Cells(),
+                            cell => board.IsSelfPair(cell.Row, cell.Column) && cell.Symbol == "A");
+        }
+
+        [Fact]
         public void OnePressFillsEveryPairNobodyHasRuledOn()
         {
             var board = Named("Steel", "Ducts", "Pipes");

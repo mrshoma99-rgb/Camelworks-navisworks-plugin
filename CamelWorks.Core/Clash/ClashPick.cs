@@ -103,10 +103,17 @@ namespace CamelWorks.Core.Clash
         /// <summary>Every facet these results offer: the standing ones, and each property they carry.</summary>
         /// <param name="items">The results in hand.</param>
         /// <param name="plan">The project's storeys.</param>
+        /// <param name="issued">What has already gone out, or null for a profile with no log.</param>
         public static IReadOnlyList<ClashFacet> Every(IEnumerable<ClashItem>? items,
-                                                      LevelPlan? plan = null)
+                                                      LevelPlan? plan = null,
+                                                      ClashIssueLog? issued = null)
         {
             var list = new List<ClashFacet>(Standing(plan));
+
+            // What has already gone out, when there is a log to read it from. A profile written
+            // before anything went out has none, and these would answer the same way for every
+            // result.
+            if (issued != null && issued.Count > 0) list.AddRange(issued.Facets());
 
             var keys = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -138,8 +145,9 @@ namespace CamelWorks.Core.Clash
         /// <param name="key">The saved key.</param>
         /// <param name="items">The results in hand, for a property key.</param>
         /// <param name="plan">The project's storeys.</param>
+        /// <param name="issued">What has already gone out, or null for a profile with no log.</param>
         public static ClashFacet? Of(string? key, IEnumerable<ClashItem>? items = null,
-                                     LevelPlan? plan = null)
+                                     LevelPlan? plan = null, ClashIssueLog? issued = null)
         {
             var said = (key ?? string.Empty).Trim();
 
@@ -149,6 +157,14 @@ namespace CamelWorks.Core.Clash
                 one => string.Equals(one.Key, said, StringComparison.OrdinalIgnoreCase));
 
             if (found != null) return found;
+
+            if (issued != null)
+            {
+                var sent = issued.Facets().FirstOrDefault(
+                    one => string.Equals(one.Key, said, StringComparison.OrdinalIgnoreCase));
+
+                if (sent != null) return sent;
+            }
 
             if (!said.StartsWith(PropertyPrefix, StringComparison.OrdinalIgnoreCase))
                 return null;
@@ -436,14 +452,16 @@ namespace CamelWorks.Core.Clash
         /// <summary>The results that get through, in order.</summary>
         /// <param name="items">Every result on the board.</param>
         /// <param name="plan">The project's storeys, for the storey facet.</param>
-        public IReadOnlyList<ClashItem> Take(IEnumerable<ClashItem>? items, LevelPlan? plan = null)
+        /// <param name="issued">What has already gone out, for a clause that names it.</param>
+        public IReadOnlyList<ClashItem> Take(IEnumerable<ClashItem>? items, LevelPlan? plan = null,
+                                             ClashIssueLog? issued = null)
         {
             var all = (items ?? Array.Empty<ClashItem>()).Where(one => one != null).ToList();
 
             // Resolved once for the whole pass. A property facet is built from its key, so
             // resolving per clause per result walks the same string work four hundred times.
             var facets = _clauses
-                .Select(one => ClashFacets.Of(one.Facet, all, plan))
+                .Select(one => ClashFacets.Of(one.Facet, all, plan, issued))
                 .ToList();
 
             var kept = new List<ClashItem>();
@@ -458,18 +476,20 @@ namespace CamelWorks.Core.Clash
                 if (takes) kept.Add(item);
             }
 
-            return Ordered(kept, plan);
+            return Ordered(kept, plan, issued);
         }
 
         /// <summary>The same results, put in the pick's order.</summary>
         /// <param name="items">The results to order.</param>
         /// <param name="plan">The project's storeys.</param>
+        /// <param name="issued">What has already gone out, for an order that names it.</param>
         public IReadOnlyList<ClashItem> Ordered(IReadOnlyList<ClashItem>? items,
-                                                LevelPlan? plan = null)
+                                                LevelPlan? plan = null,
+                                                ClashIssueLog? issued = null)
         {
             var all = (items ?? Array.Empty<ClashItem>()).ToList();
 
-            var by = ClashFacets.Of(Sort, all, plan);
+            var by = ClashFacets.Of(Sort, all, plan, issued);
 
             if (by == null) return all;
 
@@ -487,12 +507,14 @@ namespace CamelWorks.Core.Clash
 
         /// <summary>How the whole pick reads, in one line.</summary>
         /// <param name="plan">The project's storeys, so a facet reads by its title.</param>
-        public string Describe(LevelPlan? plan = null)
+        /// <param name="issued">What has already gone out, so those facets read by title too.</param>
+        public string Describe(LevelPlan? plan = null, ClashIssueLog? issued = null)
         {
             if (_clauses.Count == 0) return "Every clash.";
 
             var said = string.Join(", ",
-                _clauses.Select(one => one.Describe(ClashFacets.Of(one.Facet, null, plan))));
+                _clauses.Select(one => one.Describe(
+                    ClashFacets.Of(one.Facet, null, plan, issued))));
 
             return said + ".";
         }

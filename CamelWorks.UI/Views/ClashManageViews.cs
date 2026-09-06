@@ -134,9 +134,6 @@ namespace CamelWorks.UI.Views
             internal string Name { get; }
 
             internal List<Row> Rows { get; } = new List<Row>();
-
-            internal int Of(string status) =>
-                Rows.Count(r => string.Equals(r.Status, status, StringComparison.OrdinalIgnoreCase));
         }
 
         /// <summary>One file, read for markup, with where it came from.</summary>
@@ -168,8 +165,73 @@ namespace CamelWorks.UI.Views
 
             internal List<Row> Rows { get; } = new List<Row>();
 
-            internal int Of(string status) =>
-                Rows.Count(r => string.Equals(r.Status, status, StringComparison.OrdinalIgnoreCase));
+            /// <summary>
+            /// How many of this test's results stand at one status.
+            ///
+            /// Counted once into five slots rather than scanned per ask. The rail asks a test for
+            /// five of these to draw one row, and the ordering asks for two more per test: on a
+            /// test with five thousand results that was forty thousand comparisons to draw one
+            /// line. The tally is thrown away by <see cref="Restate"/>, which the row's own status
+            /// setter calls.
+            /// </summary>
+            /// <param name="status">The status, by name.</param>
+            internal int Of(string status)
+            {
+                if (_tally == null || _tallyOf != Rows.Count)
+                {
+                    var tally = new int[5];
+
+                    foreach (var row in Rows)
+                    {
+                        var at = Rank(row.Status);
+
+                        if (at >= 0 && at < tally.Length) tally[at]++;
+                    }
+
+                    _tally = tally;
+                    _tallyOf = Rows.Count;
+                }
+
+                var which = Rank(status);
+
+                return which >= 0 && which < _tally.Length ? _tally[which] : 0;
+            }
+
+            /// <summary>Say that a row's status changed, so the tally is counted again.</summary>
+            internal void Restate() => _tally = null;
+
+            /// <summary>Put a result under this test, so its status changes reach the tally.</summary>
+            /// <param name="row">The result.</param>
+            internal Row Take(Row row)
+            {
+                row.Owner = this;
+                Rows.Add(row);
+                _tally = null;
+
+                return row;
+            }
+
+            /// <summary>Take every result out, before reading them again.</summary>
+            internal void Empty()
+            {
+                foreach (var row in Rows) row.Owner = null;
+
+                Rows.Clear();
+                _tally = null;
+            }
+
+            private int[]? _tally;
+            private int _tallyOf = -1;
+
+            /// <summary>The five statuses, in the order the tally holds them.</summary>
+            /// <param name="status">The status, by name.</param>
+            private static int Rank(string? status) =>
+                string.Equals(status, "New", StringComparison.OrdinalIgnoreCase) ? 0
+                : string.Equals(status, "Active", StringComparison.OrdinalIgnoreCase) ? 1
+                : string.Equals(status, "Reviewed", StringComparison.OrdinalIgnoreCase) ? 2
+                : string.Equals(status, "Approved", StringComparison.OrdinalIgnoreCase) ? 3
+                : string.Equals(status, "Resolved", StringComparison.OrdinalIgnoreCase) ? 4
+                : -1;
 
             /// <summary>Take a new name without re-reading anything.</summary>
             /// <param name="named">The test's new name.</param>
@@ -216,8 +278,11 @@ namespace CamelWorks.UI.Views
             internal string Status
             {
                 get => _status;
-                set { _status = value; Blob = null; }
+                set { _status = value; Blob = null; Owner?.Restate(); }
             }
+
+            /// <summary>The test this row belongs to, so a status change re-counts its tally.</summary>
+            internal TestEntry? Owner { get; set; }
 
             internal string Assigned
             {
@@ -597,6 +662,25 @@ namespace CamelWorks.UI.Views
                     : "Across " + Ui.Count(held.Count, "level");
             }
 
+            /// <summary>The storey one result is on.</summary>
+            /// <param name="one">The result.</param>
+            private string Storey(Row one)
+            {
+                if (Plan.IsEmpty) return NoLevels;
+
+                var scale = OnFile ? 1.0 : _session.MetresPerUnit;
+
+                return Plan.LevelAt(one.Info.PointZ * scale) ?? Underneath;
+            }
+
+            /// <summary>
+            /// Whether the project has said what its storeys are.
+            ///
+            /// The Level column only exists when it has. A column reading "No levels set up" on
+            /// every row costs the board 96 pixels to say nothing.
+            /// </summary>
+            private bool HasLevels => !Plan.IsEmpty;
+
             /// <summary>Write the naming back to the project file.</summary>
             /// <returns>True when the project file took it.</returns>
             private bool KeepBook()
@@ -954,7 +1038,7 @@ namespace CamelWorks.UI.Views
                 {
                     Padding = new Thickness(14, 10, 14, 10),
                     BorderThickness = new Thickness(0, 0, 0, 1),
-                    Child = Ui.Stack(top, _railPanel),
+                    Child = top,
                 };
 
                 head.Tint(Border.BorderBrushProperty, "Bd");
@@ -969,6 +1053,18 @@ namespace CamelWorks.UI.Views
 
                 Grid.SetRow(list, 1);
                 grid.Children.Add(list);
+
+                // The filter panel is drawn over the rows, not above them. Inside the head it
+                // pushed the test list down by its own height, so the rail's column headings and
+                // the board's stopped lining up the moment the panel was opened — two panes of one
+                // table with their heads at different heights.
+                _railPanel.Margin = new Thickness(10, 0, 10, 0);
+                _railPanel.VerticalAlignment = VerticalAlignment.Top;
+                _railPanel.HorizontalAlignment = HorizontalAlignment.Stretch;
+
+                Grid.SetRow(_railPanel, 1);
+                Panel.SetZIndex(_railPanel, 2);
+                grid.Children.Add(Ui.Loose(_railPanel));
 
                 Grid.SetRow(_railFoot, 2);
                 grid.Children.Add(Ui.Loose(_railFoot));
@@ -1158,6 +1254,8 @@ namespace CamelWorks.UI.Views
                         RedrawRail();
                     }));
 
+                // Card, not the pane's own ground: this is drawn over the rows, and a panel the
+                // same colour as what is behind it reads as a hole in the list.
                 var panel = new Border
                 {
                     BorderThickness = new Thickness(1),
@@ -1167,8 +1265,16 @@ namespace CamelWorks.UI.Views
                     Child = body,
                 };
 
-                panel.Tint(Border.BackgroundProperty, "Bg");
+                panel.Tint(Border.BackgroundProperty, "Card");
                 panel.Tint(Border.BorderBrushProperty, "Bd");
+
+                panel.Effect = new System.Windows.Media.Effects.DropShadowEffect
+                {
+                    BlurRadius = 12,
+                    ShadowDepth = 2,
+                    Direction = 270,
+                    Opacity = 0.18,
+                };
 
                 return panel;
             }
@@ -2303,6 +2409,7 @@ namespace CamelWorks.UI.Views
                 _toleranceMm = ToleranceMm(entry);
 
                 _title.Children.Add(Title(entry));
+                _title.Children.Add(Standing(entry));
 
                 _strip.Content = Strip(entry);
 
@@ -2526,9 +2633,11 @@ namespace CamelWorks.UI.Views
                     // heading over all of them divides nothing.
                     if (shape.Groups.Count > 0)
                         lines.Add(BoardLine.Banner(() => Parts.ViewBand(
-                            Glyphs.Clash, "Not grouped",
-                            Ui.Count(shape.Loose.Count, "loose result"),
-                            "of " + Skin.Num(shape.LooseTotal) + " — tick two or more and press Group",
+                            Glyphs.Clash, "In no group",
+                            Ui.Count(shape.Loose.Count, "result"),
+                            "of " + Skin.Num(shape.LooseTotal)
+                            + " — tick two or more to group them, or run the rules on the "
+                            + "Coordinate tab",
                             () => PickAll(shape.Loose))));
 
                     foreach (var row in shape.Loose) Add(row);
@@ -2714,6 +2823,38 @@ namespace CamelWorks.UI.Views
                 words.Children.Add(head.Wearing("Head"));
 
                 row.Children.Add(words);
+
+                return row;
+            }
+
+            /// <summary>
+            /// What the carry-over did, in one line under the title.
+            ///
+            /// Built on every board build and never said, which is why reviewers read these
+            /// screens as a product with no memory across runs. Restricted to this test's rows
+            /// and to a delta from this document: the delta is board-wide and counts results the
+            /// rules suppressed, so printed raw it says a number the screen cannot account for.
+            ///
+            /// The grouping funnel is deliberately not here. It describes the pipeline's run over
+            /// every test on the Coordinate tab, and this board's groups are the host's own — a
+            /// sentence claiming the rules made them would be the kind of thing this phase exists
+            /// to stop.
+            /// </summary>
+            /// <param name="entry">The test on the board.</param>
+            private UIElement Standing(TestEntry entry)
+            {
+                var row = new WrapPanel { Margin = new Thickness(0, 2, 0, 0) };
+
+                var delta = CoordinateViews.LastDelta;
+
+                if (delta == null) return row;
+
+                var mine = new HashSet<ClashKey>(entry.Rows.Select(one => one.Info.Key()));
+
+                row.Children.Add(Ui.Small(
+                    delta.OnBoard(delta.New.Concat(delta.Persisting).Concat(delta.Regressed)
+                                       .Where(one => mine.Contains(one.Key)))
+                         .Carried()));
 
                 return row;
             }
@@ -3249,13 +3390,13 @@ namespace CamelWorks.UI.Views
                     if (string.Equals(name, Named, StringComparison.Ordinal))
                         Named2(Named, 2, tight ? 110 : 130);
                     else if (string.Equals(name, ItemA, StringComparison.Ordinal))
-                        Named2(ItemA, 1, tight ? 58 : 74);
+                        Named2(ItemA, 1, tight ? 74 : 90);
                     else if (string.Equals(name, ItemB, StringComparison.Ordinal))
-                        Named2(ItemB, 1, tight ? 58 : 74);
-                    else if (string.Equals(name, Clashes, StringComparison.Ordinal))
-                        columns.Add((Clashes, new GridLength(Wide(Clashes, tight ? 44 : 48)), 0));
+                        Named2(ItemB, 1, tight ? 74 : 90);
                     else if (string.Equals(name, Worst, StringComparison.Ordinal))
                         columns.Add((Worst, new GridLength(Wide(Worst, tight ? 60 : 64)), 0));
+                    else if (string.Equals(name, Level, StringComparison.Ordinal))
+                        columns.Add((Level, new GridLength(Wide(Level, 96)), 0));
                     else if (string.Equals(name, Status, StringComparison.Ordinal))
                         columns.Add((Status, new GridLength(Wide(Status, 104)), 0));
                     else if (string.Equals(name, Assigned, StringComparison.Ordinal))
@@ -3266,7 +3407,7 @@ namespace CamelWorks.UI.Views
                         // that grows by 95 pixels every time somebody adds a column scrolls
                         // sideways off its own row verbs on the second one. It takes a share of
                         // what there is and ellipsises, with the whole value on the tooltip.
-                        Named2(name, 1, 60);
+                        Named2(name, 1, 76);
                 }
 
                 // Four row buttons, at the tighter margin the bar below sets on them. The
@@ -3275,6 +3416,20 @@ namespace CamelWorks.UI.Views
                 Fixed(120);
 
                 return columns;
+            }
+
+            /// <summary>
+            /// How narrow the table can be before it has to scroll: every column's floor, plus
+            /// the padding either side of a row.
+            /// </summary>
+            private double Floors()
+            {
+                var least = 26.0;
+
+                foreach (var column in Widths())
+                    least += column.Width.IsAbsolute ? column.Width.Value : column.Least;
+
+                return least;
             }
 
             /// <summary>Put one cell in a row.</summary>
@@ -3311,7 +3466,9 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private List<string> Order()
             {
-                var natural = new List<string> { Named, ItemA, ItemB, Clashes, Worst };
+                var natural = new List<string> { Named, ItemA, ItemB, Worst };
+
+                if (HasLevels) natural.Add(Level);
 
                 natural.AddRange(_columns.Select(c => c.Title));
                 natural.Add(Status);
@@ -3339,19 +3496,55 @@ namespace CamelWorks.UI.Views
                 return order;
             }
 
-            /// <summary>Which cell of a row a named column is drawn in.</summary>
-            /// <param name="column">The column.</param>
-            private int Where(string column)
+            /// <summary>
+            /// Where each column sits, by name.
+            ///
+            /// Every cell of every row asks where its column is, which is about fifteen asks per
+            /// row; each one rebuilt the order and then scanned it. The key is what the order is
+            /// made of, so it goes stale when a column is added, removed or dragged.
+            /// </summary>
+            private Dictionary<string, int> Places()
             {
-                var at = Order().FindIndex(
-                    one => string.Equals(one, column, StringComparison.Ordinal));
+                var key = string.Join("\u001f", _arranged) + "\u001e"
+                        + string.Join("\u001f", _columns.Select(c => c.Title))
+                        + "\u001e" + (HasLevels ? "L" : string.Empty);
 
-                // Column zero is the tick box, so every column is one to the right of its place.
-                return at < 0 ? 1 : at + 1;
+                if (_places != null && string.Equals(_placesKey, key, StringComparison.Ordinal))
+                    return _places;
+
+                var order = Order();
+                var places = new Dictionary<string, int>(order.Count, StringComparer.Ordinal);
+
+                for (var i = 0; i < order.Count; i++)
+                    if (!places.ContainsKey(order[i])) places[order[i]] = i;
+
+                _places = places;
+                _placesKey = key;
+                _placesCount = order.Count;
+
+                return places;
             }
 
+            private Dictionary<string, int>? _places;
+            private string? _placesKey;
+            private int _placesCount;
+
+            /// <summary>Which cell of a row a named column is drawn in.</summary>
+            /// <param name="column">The column.</param>
+            private int Where(string column) =>
+                // Column zero is the tick box, so every column is one to the right of its place.
+                Places().TryGetValue(column, out var at) ? at + 1 : 1;
+
             /// <summary>The last cell of a row, which holds the verbs.</summary>
-            private int VerbsColumn => Order().Count + 1;
+            private int VerbsColumn
+            {
+                get
+                {
+                    Places();
+
+                    return _placesCount + 1;
+                }
+            }
 
             /// <summary>
             /// The order the headers have been dragged into, or empty while nobody has moved one.
@@ -3393,10 +3586,10 @@ namespace CamelWorks.UI.Views
             private const string Named = "Group or result";
             private const string ItemA = "Item 1";
             private const string ItemB = "Item 2";
-            private const string Clashes = "Clashes";
             private const string Worst = "Worst";
             private const string Status = "Status";
             private const string Assigned = "Assigned";
+            private const string Level = "Level";
 
             /// <summary>
             /// How wide each column is: a share for the three that flex, pixels for the rest.
@@ -3409,7 +3602,7 @@ namespace CamelWorks.UI.Views
                 new Dictionary<string, double>(StringComparer.Ordinal)
                 {
                     { Named, 2 }, { ItemA, 1 }, { ItemB, 1 },
-                    { Clashes, 48 }, { Worst, 64 }, { Status, 104 }, { Assigned, 104 },
+                    { Worst, 64 }, { Status, 104 }, { Assigned, 104 }, { Level, 96 },
                 };
 
             /// <summary>
@@ -3474,10 +3667,10 @@ namespace CamelWorks.UI.Views
                     case ItemB: return row.IsGroup ? string.Empty : row.Only.Info.NameB ?? string.Empty;
                     case Status: return row.Status;
                     case Assigned: return row.Assigned;
+                    case Level: return Storey(row);
 
                     // Numbers, ordered as numbers. Sorting "-9 mm" against "-48 mm" as text puts
                     // the shallower one first, which is the wrong end of the board entirely.
-                    case Clashes: return Ordered(row.IsGroup ? row.Rows.Count : 0);
                     case Worst: return Ordered((int)(Deep(row) ?? 0));
 
                     default:
@@ -3554,10 +3747,12 @@ namespace CamelWorks.UI.Views
 
                 var card = new Border
                 {
-                    // The columns' own floors, plus the 12 of padding either side of a row.
-                    // Left out, the card came up two dozen pixels narrower than its contents and
-                    // the last column lost a symbol off its right-hand end.
-                    MinWidth = (_columns.Count == 0 ? 744 : 686 + (_columns.Count * 60)) + 26,
+                    // The columns' own floors, plus the 12 of padding either side of a row. Left
+                    // out, the card came up narrower than its contents and the last column lost a
+                    // symbol off its right-hand end. Summed from Widths() rather than written
+                    // down twice: a figure copied from the column list goes stale the first time
+                    // a column's floor moves, and the card then clips instead of scrolling.
+                    MinWidth = Floors(),
                     BorderThickness = new Thickness(1),
                     CornerRadius = new CornerRadius(10),
                     Child = frame,
@@ -3630,8 +3825,9 @@ namespace CamelWorks.UI.Views
                 Put(grid, Head(Named, false), Where(Named));
                 Put(grid, Head(ItemA, false), Where(ItemA));
                 Put(grid, Head(ItemB, false), Where(ItemB));
-                Put(grid, Head(Clashes, true), Where(Clashes));
                 Put(grid, Head(Worst, true), Where(Worst));
+
+                if (HasLevels) Put(grid, Head(Level, false), Where(Level));
 
                 foreach (var column in _columns)
                     Put(grid, Head(column.Title, false), Where(column.Title));
@@ -3893,6 +4089,22 @@ namespace CamelWorks.UI.Views
                     TextWrapping = TextWrapping.NoWrap,
                 }.Wearing("Hint");
 
+            /// <summary>
+            /// The Level cell, with the whole storey name on its tooltip.
+            ///
+            /// A storey name is as long as the project made it and the column is 96 pixels, so
+            /// the cell trims. The tooltip is how a row still says which floor it is on.
+            /// </summary>
+            /// <param name="storey">The storey.</param>
+            private static TextBlock Storeyed(string storey)
+            {
+                var cell = Hint(storey);
+
+                cell.ToolTip = storey;
+
+                return cell;
+            }
+
             /// <summary>Push a cell to the right of its column, for a figure.</summary>
             /// <param name="cell">The cell.</param>
             private static TextBlock Right(TextBlock cell)
@@ -4000,15 +4212,48 @@ namespace CamelWorks.UI.Views
                     Opened(row.Id);
                 });
 
-                Put(grid, words, Where(Named));
+                // The member count, at the right of the name's own cell. It had a column of its
+                // own, which carried an em-dash on every clash row. The figure alone, with the
+                // word on its tooltip: "7 clashes" spelt out took most of a 110-pixel column and
+                // left the group's name showing one letter.
+                var many = new TextBlock
+                {
+                    Text = Skin.Num(row.Rows.Count),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(8, 0, 0, 0),
+                    TextAlignment = TextAlignment.Right,
+                    TextWrapping = TextWrapping.NoWrap,
+                    ToolTip = Ui.Count(row.Rows.Count, "clash") + " in this group",
+                };
 
-                // Em-dashes, not the first member's items. A group aggregates many different item
-                // pairs and has no pair of its own; borrowing one member's would be a lie the eye
-                // reads as fact.
-                Put(grid, Right(Hint("—")), Where(ItemA));
-                Put(grid, Right(Hint("—")), Where(ItemB));
-                Put(grid, Figure(Skin.Num(row.Rows.Count), false), Where(Clashes));
+                var named = new DockPanel { LastChildFill = true };
+
+                DockPanel.SetDock(many, Dock.Right);
+                named.Children.Add(many.Wearing("Hint"));
+                named.Children.Add(words);
+
+                Put(grid, named, Where(Named));
+
+                // A group has no item pair of its own, so the two item columns hold nothing on
+                // this row. When they sit directly after the name, the name takes all three
+                // rather than ellipsising at 110 pixels next to 180 pixels of em-dash. The
+                // columns can be reordered, so the span is only taken when they are adjacent.
+                var spans = Where(ItemA) == Where(Named) + 1 && Where(ItemB) == Where(Named) + 2;
+
+                if (spans)
+                {
+                    Grid.SetColumnSpan(named, 3);
+                }
+                else
+                {
+                    // Em-dashes, not the first member's items. Borrowing one member's pair would
+                    // read as fact.
+                    Put(grid, Right(Hint("—")), Where(ItemA));
+                    Put(grid, Right(Hint("—")), Where(ItemB));
+                }
                 Put(grid, Figure(Deepest(row), Bad(row)), Where(Worst));
+
+                if (HasLevels) Put(grid, Storeyed(Storey(row)), Where(Level));
 
                 for (var i = 0; i < _columns.Count; i++)
                     Put(grid, Hint(Custom(row.Only, _columns[i])), Where(_columns[i].Title));
@@ -4311,10 +4556,9 @@ namespace CamelWorks.UI.Views
                 Put(grid, Item(itemA), Where(ItemA));
                 Put(grid, Item(itemB), Where(ItemB));
 
-                // A loose clash is not a count of anything, so the column that counts is empty
-                // rather than showing one.
-                Put(grid, Right(Hint("—")), Where(Clashes));
                 Put(grid, Figure(Millimetres(result), Bad(result)), Where(Worst));
+
+                if (HasLevels) Put(grid, Storeyed(Storey(result)), Where(Level));
 
                 for (var i = 0; i < _columns.Count; i++)
                     Put(grid, Hint(Custom(result, _columns[i])), Where(_columns[i].Title));
@@ -5296,7 +5540,7 @@ namespace CamelWorks.UI.Views
                     var entry = new TestEntry(read.Test) { Shape = read.Shape };
 
                     foreach (var result in read.Results)
-                        entry.Rows.Add(Restored(new Row(read.Test.Id, read.Test.Name, result),
+                        entry.Take(Restored(new Row(read.Test.Id, read.Test.Name, result),
                                                 carried));
 
                     entries.Add(entry);
@@ -5387,12 +5631,29 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
+            /// Add one finding to the way back from a row, without rebuilding the index.
+            /// </summary>
+            /// <param name="register">The register, for the first build.</param>
+            /// <param name="one">The finding just raised.</param>
+            private static void Index(FindingRegister register, Finding one)
+            {
+                if (_byHost == null) { Index(register); return; }
+
+                if (one.IsPresent
+                    && one.Facts.TryGetValue(ClashFindings.HostTest, out var test)
+                    && one.Facts.TryGetValue(ClashFindings.HostId, out var result)
+                    && test != null && result != null)
+                    _byHost[Where(test, result)] = one;
+            }
+
+            /// <summary>
             /// Build the way back from a row to its finding.
             ///
             /// Only findings this run reported: one marked absent points at a result the host no
             /// longer has, and an index entry for it would hand a row to the wrong clash the next
             /// time the engine reused the id.
             /// </summary>
+            /// <param name="register">The register.</param>
             private static void Index(FindingRegister register)
             {
                 var index = new Dictionary<string, Finding>(StringComparer.OrdinalIgnoreCase);
@@ -5500,7 +5761,10 @@ namespace CamelWorks.UI.Views
                                  origin: _session.Store.Path,
                                  scope: f => false);
 
-                Index(register);
+                // One entry rather than a rebuild: grouping five hundred rows raises a finding for
+                // each one that has none yet, and rebuilding the index behind every one of them
+                // walked the whole register five hundred times.
+                Index(register, register.Find(made.Id) ?? made);
 
                 return Found(row);
             }
@@ -5628,7 +5892,7 @@ namespace CamelWorks.UI.Views
                         Distance = result.Item?.Distance,
                     };
 
-                    entry.Rows.Add(new Row(result.Test, result.Test, info)
+                    entry.Take(new Row(result.Test, result.Test, info)
                     {
                         FileItem = result.Item,
                     });
@@ -6813,16 +7077,44 @@ namespace CamelWorks.UI.Views
             // What is picked
             // -------------------------------------------------------------------------------
 
-            /// <summary>Every result under what is ticked, each one once.</summary>
+            private List<Row>? _picks;
+            private string? _picksKey;
+
+            /// <summary>
+            /// Every result under what is ticked, each one once.
+            ///
+            /// Worked out once per redraw and kept. This is reached from <c>Verbs</c> through
+            /// <c>Reaching</c> for every realised row, and it used to re-run the filters over the
+            /// whole test each time: scrolling a screenful of a 5,000-result test with 40 rows
+            /// ticked was on the order of 450,000 filter evaluations, which is the scroll stutter
+            /// that survived the virtualiser. The key is the board's own shape key plus what is
+            /// ticked, so it goes stale for the same reasons the rows do.
+            ///
+            /// A copy is returned because a caller keeps it — a drag holds the list for the length
+            /// of the gesture.
+            /// </summary>
             private List<Row> Picked()
             {
                 var entry = Entry();
                 if (entry == null) return new List<Row>();
 
+                var shape = Shape(entry);
+
+                var mark = 17;
+
+                foreach (var id in _picked) mark ^= StringComparer.Ordinal.GetHashCode(id);
+
+                var now = _shapeKey + "\u001f"
+                        + _picked.Count.ToString(CultureInfo.InvariantCulture) + "\u001f"
+                        + mark.ToString(CultureInfo.InvariantCulture);
+
+                if (_picks != null && string.Equals(_picksKey, now, StringComparison.Ordinal))
+                    return new List<Row>(_picks);
+
                 var rows = new List<Row>();
                 var seen = new HashSet<string>(StringComparer.Ordinal);
 
-                foreach (var row in GroupRows(entry).Concat(LooseRows(entry)))
+                foreach (var row in shape.Groups.Concat(shape.Loose))
                 {
                     if (!_picked.Contains(row.Id)) continue;
 
@@ -6834,7 +7126,10 @@ namespace CamelWorks.UI.Views
                 foreach (var member in entry.Rows)
                     if (_picked.Contains(Id(member)) && seen.Add(Id(member))) rows.Add(member);
 
-                return rows;
+                _picks = rows;
+                _picksKey = now;
+
+                return new List<Row>(rows);
             }
 
             /// <summary>The results among these that are in no clash group.</summary>
@@ -10150,7 +10445,7 @@ namespace CamelWorks.UI.Views
                         var entry = new TestEntry(read.Test) { Shape = read.Shape };
 
                         foreach (var result in read.Results)
-                            entry.Rows.Add(Restored(new Row(read.Test.Id, read.Test.Name, result),
+                            entry.Take(Restored(new Row(read.Test.Id, read.Test.Name, result),
                                                     carried));
 
                         entries.Add(entry);
@@ -10193,10 +10488,10 @@ namespace CamelWorks.UI.Views
                 {
                     if (!wanted.Contains(entry.Test.Id)) continue;
 
-                    entry.Rows.Clear();
+                    entry.Empty();
 
                     foreach (var result in _session.Clash.Results(entry.Test.Id))
-                        entry.Rows.Add(Restored(new Row(entry.Test.Id, entry.Test.Name, result),
+                        entry.Take(Restored(new Row(entry.Test.Id, entry.Test.Name, result),
                                                 carried));
                 }
 
@@ -10743,7 +11038,9 @@ namespace CamelWorks.UI.Views
 
                 var row = new DockPanel { LastChildFill = true };
 
-                var dismiss = Ui.Link("Dismiss", Clear);
+                // A button, not a text link. Dismissing a notice is an action on the notice, and
+                // a link beside a sentence reads as part of the sentence.
+                var dismiss = Ui.Quiet("Dismiss", Clear);
                 dismiss.VerticalAlignment = VerticalAlignment.Center;
                 DockPanel.SetDock(dismiss, Dock.Right);
                 row.Children.Add(dismiss);

@@ -17,6 +17,15 @@ Two things are out of scope by decision:
 
 ---
 
+## Status
+
+Phases 1 to 4 are implemented, with Phase 5 and Phase 6 partly done. What is left
+is listed under **Not yet done** at the foot of this file, with the reason in
+each case. Every phase was reviewed adversarially after it landed and the
+findings fixed; those fixes are in the commits alongside the work.
+
+---
+
 ## Phase 0 — merged
 
 | What | Where |
@@ -161,6 +170,23 @@ the virtualiser.
 
 `MatrixWindow`'s per-cell `ContextMenu` construction is suspected, not
 confirmed. Measure before changing it.
+
+**Read and left alone.** Three items on the list above were traced and judged
+not worth the change they would take:
+
+- `NavDocument.Sets()`. The document generation bumps when a model is appended,
+  removed or refreshed and never when somebody makes a selection set, so a cache
+  keyed on it would answer with the list from before the set they just made. The
+  host offers no cheaper signal.
+- `MatrixWindow.Hidden`/`Folded`. Both return before the scan unless the line's
+  folder is actually shut, so the quadratic only bites while folders are
+  collapsed, and the cache it would take has no reliable invalidation.
+- The issue register re-read. The four call sites are edit actions, not
+  per-row draws.
+
+`ElementKey.UnscopedValue` stays eager. Making it lazy means the struct
+retaining its parts array, which pins a host tree path for each of 500,000
+leaves — a memory cost in place of a hash that is now cheap.
 
 **Do not touch:** `BoardList`, `Shape`, `Row.Blob`, the 160 ms search debounce,
 `Resize()`, `RailChanged`/`RepaintRail`, `NavClashSource.Described` and `Focus`,
@@ -470,3 +496,61 @@ Recorded so they are not raised again. Each was reported from screenshots.
 
 The pattern is that a thin harness fixture reads as a missing feature. Phase 3.3
 addresses the instrument itself.
+
+---
+
+## Not yet done
+
+Everything above that has not been implemented, with why.
+
+### Phase 4
+
+- **4.3, the matrix.** The results view filling one triangle, the toolbar row
+  splitting, the details panel's fixed footer, labelled row actions, the pinned
+  discipline band, one coordinate system, and the start screen's single primary
+  path. The legend ramp, the reserved warning triangle and the blank-versus-
+  uncovered distinction are done. The rest needs the matrix rendered and read
+  screen by screen, which is a pass of its own.
+- **4.2, the footers.** Three stacked footers collapsing to one command bar, and
+  the count columns' key and full names.
+
+### Phase 5
+
+- **5.6, element identity on the board.** A grid reference, and a preview of the
+  two elements. The Level column is done; the preview needs a host render per
+  row, which is a seam that does not exist yet, and a grid reference needs the
+  project's grid, which nothing reads.
+- **5.7, priority at the right grain.** Moving priority from the matrix cell to
+  the clash or the group, and deriving it from penetration depth, category and
+  level. It changes where priority is stored, so it belongs with 6.1.
+- **5.8, run state.** Per-test last-run time and duration, which tests are stale
+  because their source models changed, and a queue.
+- **5.9, one item.** Reporting geometry that belongs to no matrix row. It needs
+  an element count per source, which the matrix screen cannot ask for: rows
+  point at saved sets and nothing resolves a set to a count. Reported at the
+  model level instead, it would call a discipline uncovered because its row
+  reaches it through a set. The rest of 5.9 is done: the levels unit control,
+  ordering, duplicate validation, undo on Remove and a line saying what the
+  list is for; the bucket for tests on no naming pattern; the `{level}` token;
+  "Least digits"; and "Read the tests" saying it replaces the matrix on screen.
+
+### Phase 6
+
+- **6.1, one spine.** `Finding` becoming the record and `ClashItem` a derived
+  view. The plan says this is a quarter of work rather than a week, and nothing
+  in phases 1 to 5 depends on it; 1.1 is the first payment against it.
+- **6.2, one BCF writer.** `ClashBcf` and `FindingBcf` are still two round trips
+  over one format.
+- **6.3, one status type.** 31 status literals across UI and Nav.
+- **6.4, one grouping vocabulary**, and **6.5, one clash parameter descriptor**.
+- **6.7, the two large files**, and **6.9, the harness drawing the real views**.
+  Both wait on 6.1.
+
+`FakeClashSource` and `ClashSeamContractTests` (6.6) are done, as are the named
+project-file keys and the two file splits from 6.8. The fake now refuses what
+the host refuses, and `SelfTest` runs the same assertions on a support machine.
+
+Note on the rendered pages: the Manage board in `shots/app-clash-manage` is
+drawn by the Studio harness's own table, not by `ClashManageViews`. Changes to
+the product's board — the Level column and the group name taking the two item
+columns among them — do not appear in it. That is 6.9.

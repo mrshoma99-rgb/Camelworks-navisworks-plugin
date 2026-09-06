@@ -266,8 +266,9 @@ namespace CamelWorks.Core.Tests
         }
 
         [Theory]
-        [InlineData("Open", FindingStatus.New)]
+        [InlineData("Open", FindingStatus.Active)]
         [InlineData("In Progress", FindingStatus.Active)]
+        [InlineData("Awaiting client", ClashStatusMap.Unknown)]
         [InlineData("Closed", FindingStatus.Resolved)]
         [InlineData("Solved", FindingStatus.Resolved)]
         [InlineData("Verified", FindingStatus.Reviewed)]
@@ -291,6 +292,28 @@ namespace CamelWorks.Core.Tests
             theirs.Position = 0;
 
             Assert.Equal(expected, ClashBcf.Read(theirs).Results.Single().Status);
+
+            // The same word, through the issue register's leg of the same format. One vocabulary
+            // means one answer, or the word is reported by name rather than mapped either way.
+            Assert.Equal(BcfResponse.StatusOf(said) ?? expected, expected);
+        }
+
+        [Fact]
+        public void AWordNobodyKnowsIsCountedRatherThanApplied()
+        {
+            var tally = ClashStatusMap.Tally(new[] { "Rejected", "rejected", "Closed", null });
+
+            Assert.Equal(3, tally.Count);
+
+            var rejected = tally[0];
+
+            Assert.Equal("Rejected", rejected.Word);
+            Assert.Equal(2, rejected.Count);
+            Assert.True(rejected.IsGuess);
+            Assert.Equal(ClashStatusMap.Unknown, rejected.Lands);
+
+            Assert.False(tally.Single(w => w.Word == "Closed").IsGuess);
+            Assert.Equal(ClashStatusMap.Unsaid, tally.Single(w => w.Word.Length == 0).Lands);
         }
 
         [Fact]
@@ -321,6 +344,38 @@ namespace CamelWorks.Core.Tests
             Assert.Equal(2, viewpoint.Colouring.Count);
             Assert.NotNull(viewpoint.Camera);
             Assert.All(viewpoint.Selection, c => Assert.Equal("CamelWorks", c.OriginatingSystem));
+        }
+
+        [Fact]
+        public void ASectionBoxIsSixPlanesFacingAwayFromTheClashAndSurvivesTheRoundTrip()
+        {
+            var item = Item("11111111-1111-1111-1111-111111111111",
+                            "22222222-2222-2222-2222-222222222222");
+
+            var how = new ClashBcfOptions { Section = true, SectionMetres = 2 };
+
+            using var stream = new MemoryStream(ClashBcf.Write(new[] { item }, null, how).Bytes);
+
+            var viewpoint = BcfReader.Read(stream).Topics.Single().Viewpoints.Single();
+
+            Assert.Equal(6, viewpoint.ClippingPlanes.Count);
+
+            // The six sit at the reach either side of the clash, so their mean is the clash
+            // point. A plane's normal names the side that is cut away, so each of the six points
+            // away from that centre: pointed inwards, the six between them cut away everything
+            // the topic is about.
+            var cx = viewpoint.ClippingPlanes.Average(one => one.X);
+            var cy = viewpoint.ClippingPlanes.Average(one => one.Y);
+            var cz = viewpoint.ClippingPlanes.Average(one => one.Z);
+
+            foreach (var plane in viewpoint.ClippingPlanes)
+            {
+                var away = (plane.X - cx) * plane.DirectionX
+                         + (plane.Y - cy) * plane.DirectionY
+                         + (plane.Z - cz) * plane.DirectionZ;
+
+                Assert.Equal(2, away, 6);
+            }
         }
 
         [Fact]

@@ -121,6 +121,41 @@ namespace CamelWorks.UI.Views
         /// <summary>How many cells the row has.</summary>
         public int Count => _cells.Length;
 
+        /// <summary>
+        /// Whether this row's tick box is on, for a table with a ticked column.
+        ///
+        /// Written by the box itself through a two-way binding, which is why the setter is what
+        /// tells the caller: a routed handler on a template factory is the other way to do this
+        /// and it makes the row presenter throw while it measures.
+        /// </summary>
+        public bool? Ticked
+        {
+            get => _ticked;
+            set
+            {
+                if (_ticked == value) return;
+
+                _ticked = value;
+                _onTicked?.Invoke(value == true);
+            }
+        }
+
+        private bool? _ticked;
+        private Action<bool>? _onTicked;
+
+        /// <summary>
+        /// Give this row a tick box, on a table whose column is drawn by <c>Ticking</c>.
+        /// </summary>
+        /// <param name="on">Where the box starts.</param>
+        /// <param name="onTicked">What to do when somebody ticks or unticks it.</param>
+        public TableRow Ticking(bool on, Action<bool> onTicked)
+        {
+            _ticked = on;
+            _onTicked = onTicked;
+
+            return this;
+        }
+
         /// <inheritdoc />
         public override string ToString() => string.Join(" | ", _cells);
     }
@@ -2363,12 +2398,17 @@ namespace CamelWorks.UI.Views
             Grid.SetColumn(text, 1);
             row.Children.Add(text);
 
+            // Centred in whatever it is dropped into, and never wider than a paragraph. Stretched
+            // across an empty pane the card read as a banner over content that was not there, and
+            // a sentence three feet wide is one nobody reads to the end of.
             var frame = new Border
             {
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(9),
                 Padding = new Thickness(14),
-                Margin = new Thickness(0, 4, 0, 4),
+                Margin = new Thickness(0, 16, 0, 4),
+                MaxWidth = 460,
+                HorizontalAlignment = HorizontalAlignment.Center,
                 Child = row,
             };
 
@@ -2811,21 +2851,30 @@ namespace CamelWorks.UI.Views
                     ascending = sortedBy == index ? !ascending : true;
                     sortedBy = index;
 
-                    var numeric = current.All(row =>
-                    {
-                        var cell = row[index];
-                        return cell.Length == 0
-                               || double.TryParse(cell, NumberStyles.Any,
-                                                  CultureInfo.InvariantCulture, out _);
-                    });
+                    // One pass over the column, deciding whether it reads as numbers and keeping
+                    // each row's key as it goes. Asking twice parsed every cell of an
+                    // eighteen-thousand-row column twice over before the sort began.
+                    var numeric = true;
+                    var keys = new double[current.Count];
 
-                    var sorted = numeric
-                        ? current.OrderBy(row => double.TryParse(row[index], NumberStyles.Any,
-                              CultureInfo.InvariantCulture, out var value)
-                              ? value
-                              : double.MinValue).ToList()
-                        : current.OrderBy(row => row[index],
-                                          StringComparer.OrdinalIgnoreCase).ToList();
+                    for (var i = 0; i < current.Count; i++)
+                    {
+                        var cell = current[i][index];
+
+                        if (cell.Length == 0) { keys[i] = double.MinValue; continue; }
+
+                        if (double.TryParse(cell, NumberStyles.Any, CultureInfo.InvariantCulture,
+                                            out var value))
+                            keys[i] = value;
+                        else { numeric = false; break; }
+                    }
+
+                    var order = Enumerable.Range(0, current.Count);
+
+                    var sorted = (numeric
+                        ? order.OrderBy(i => keys[i])
+                        : order.OrderBy(i => current[i][index], StringComparer.OrdinalIgnoreCase))
+                        .Select(i => current[i]).ToList();
 
                     if (!ascending) sorted.Reverse();
 
@@ -2842,16 +2891,42 @@ namespace CamelWorks.UI.Views
                 if (table.ItemContainerGenerator.Status != System.Windows.Controls.Primitives.GeneratorStatus.ContainersGenerated)
                     return;
 
-                foreach (var item in table.Items)
+                // The realised containers, not every item. ContainerFromItem is a walk of the
+                // whole list, so asking it once per item was quadratic in the rows on every
+                // scroll batch — and a recycled container kept the colour of the row it used to
+                // hold, which is why the brush is set either way.
+                foreach (var container in Realised(table))
                 {
-                    if (!(item is TableRow row)) continue;
-                    if (!(table.ItemContainerGenerator.ContainerFromItem(item) is ListViewItem container)) continue;
+                    if (!(container.DataContext is TableRow row)) continue;
 
-                    if (row.Tone != Tone.Plain) container.BorderBrush = Skin.Ink(row.Tone);
+                    container.BorderBrush = row.Tone == Tone.Plain
+                        ? System.Windows.Media.Brushes.Transparent
+                        : Skin.Ink(row.Tone);
                 }
             };
 
             return table;
+        }
+
+        /// <summary>
+        /// The row containers a virtualised list has actually made.
+        ///
+        /// Walked out of the visual tree, because that is the only place a virtualising panel says
+        /// which rows exist right now.
+        /// </summary>
+        /// <param name="table">The list.</param>
+        private static IEnumerable<ListViewItem> Realised(DependencyObject table)
+        {
+            var count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(table);
+
+            for (var i = 0; i < count; i++)
+            {
+                var child = System.Windows.Media.VisualTreeHelper.GetChild(table, i);
+
+                if (child is ListViewItem row) { yield return row; continue; }
+
+                foreach (var deeper in Realised(child)) yield return deeper;
+            }
         }
 
         /// <summary>
@@ -2933,6 +3008,37 @@ namespace CamelWorks.UI.Views
         /// instead of replacing it surprises people into selecting things they did not mean to.
         /// </summary>
         /// <param name="table">The table.</param>
+        /// <summary>
+        /// Draw one column as a tick box rather than as text.
+        ///
+        /// A column of ticks and blanks says the same thing as a column of boxes and reads as a
+        /// decoration rather than a control: on a board where every other list of things to
+        /// include has a box, one that draws a tick is one somebody tries to click and cannot.
+        /// Rows set <see cref="TableRow.Ticked"/> and <see cref="TableRow.OnTicked"/>.
+        /// </summary>
+        /// <param name="table">The table.</param>
+        /// <param name="column">Which column, from nought.</param>
+        public static ListView Ticking(this ListView table, int column)
+        {
+            if (!(table.View is GridView grid) || column < 0 || column >= grid.Columns.Count)
+                return table;
+
+            var box = new FrameworkElementFactory(typeof(CheckBox));
+
+            box.SetBinding(ToggleButton.IsCheckedProperty, new Binding("Ticked")
+            {
+                Mode = BindingMode.TwoWay,
+                UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged,
+            });
+
+            box.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            box.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+
+            grid.Columns[column].CellTemplate = new DataTemplate { VisualTree = box };
+
+            return table;
+        }
+
         public static ListView Multi(this ListView table)
         {
             table.SelectionMode = SelectionMode.Extended;

@@ -46,6 +46,34 @@ namespace CamelWorks.Core.Clash
         public double MetresPerUnit { get; set; } = 1.0;
 
         /// <summary>
+        /// Which way each topic's camera looks at its clash.
+        ///
+        /// A reviewer works through a pack faster when every topic faces the same way, and which
+        /// way that is depends on the job: a plan for a ceiling void, an elevation for a riser.
+        /// </summary>
+        public OpenBim.BcfView View { get; set; } = OpenBim.BcfView.Standing;
+
+        /// <summary>
+        /// Whether the two clashing elements are coloured in the viewpoint.
+        ///
+        /// On by default: red for the first side and amber for the second, so the reviewer can see
+        /// which is which without reading the description. Off for a receiving tool that treats a
+        /// colouring as a permanent override on the model.
+        /// </summary>
+        public bool Highlight { get; set; } = true;
+
+        /// <summary>
+        /// Whether the viewpoint carries a section box around the clash.
+        ///
+        /// A camera on a clash inside a plant room shows the wall in front of it. The box is the
+        /// clash point plus <see cref="SectionMetres"/> each way.
+        /// </summary>
+        public bool Section { get; set; }
+
+        /// <summary>How far the section box reaches from the clash point, in metres.</summary>
+        public double SectionMetres { get; set; } = 2.0;
+
+        /// <summary>
         /// Renders one clash as a PNG, or returns null.
         ///
         /// A callback rather than an image, because rendering needs the host. This assembly has no
@@ -536,7 +564,8 @@ namespace CamelWorks.Core.Clash
 
             var view = new BcfViewpoint(guid + "-v");
 
-            view.Camera = BcfFraming.Around(new[] { point }).ToCamera();
+            view.Camera = BcfFraming.Around(new[] { point },
+                                            BcfFraming.DefaultFieldOfView, how.View).ToCamera();
 
             var a = Component(item.Key.A, item.IfcGuidA);
             var b = Component(item.Key.B, item.IfcGuidB);
@@ -544,10 +573,30 @@ namespace CamelWorks.Core.Clash
             view.Selection.Add(a);
             view.Selection.Add(b);
 
-            // Red for the first side, amber for the second: the receiving tool colours them and
-            // the reviewer can see which is which without reading the description.
-            view.Colouring.Add(new BcfColouring("FF3B30", new[] { a }));
-            view.Colouring.Add(new BcfColouring("FF9F0A", new[] { b }));
+            if (how.Highlight)
+            {
+                // Red for the first side, amber for the second: the receiving tool colours them
+                // and the reviewer can see which is which without reading the description.
+                view.Colouring.Add(new BcfColouring("FF3B30", new[] { a }));
+                view.Colouring.Add(new BcfColouring("FF9F0A", new[] { b }));
+            }
+
+            if (how.Section && how.SectionMetres > 0)
+            {
+                // BCF has no box of its own; a box is what six planes make. Each plane sits at the
+                // stated reach from the clash point with its normal pointing away from that point,
+                // because a plane's normal names the side that is cut away - the convention the
+                // repo's own single-plane fixture uses. Pointed the other way, all six cut towards
+                // the clash and the topic opens showing everything except the clash.
+                var reach = how.SectionMetres;
+
+                view.ClippingPlanes.Add(new BcfClippingPlane(point.X - reach, point.Y, point.Z, -1, 0, 0));
+                view.ClippingPlanes.Add(new BcfClippingPlane(point.X + reach, point.Y, point.Z, 1, 0, 0));
+                view.ClippingPlanes.Add(new BcfClippingPlane(point.X, point.Y - reach, point.Z, 0, -1, 0));
+                view.ClippingPlanes.Add(new BcfClippingPlane(point.X, point.Y + reach, point.Z, 0, 1, 0));
+                view.ClippingPlanes.Add(new BcfClippingPlane(point.X, point.Y, point.Z - reach, 0, 0, -1));
+                view.ClippingPlanes.Add(new BcfClippingPlane(point.X, point.Y, point.Z + reach, 0, 0, 1));
+            }
 
             return view;
         }
@@ -950,32 +999,12 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// The status, mapped from whatever word the sending tool uses.
         ///
-        /// BCF does not fix its status list - a project defines its own in <c>extensions</c> - so
-        /// an imported file says "Closed", "In Progress" or "Solucionado" as readily as one of
-        /// ours. The five we hold are recognised by name and the rest are read for their sense,
-        /// which beats reading every unfamiliar word as New.
+        /// <see cref="ClashStatusMap"/> holds the mapping. This reader used to have its own
+        /// substring pass, which disagreed with the conventional vocabulary about "Open" and read
+        /// every unfamiliar word as Active without saying so.
         /// </summary>
-        private static FindingStatus Status(BcfTopic topic)
-        {
-            var said = (topic.TopicStatus ?? string.Empty).Trim();
-
-            if (Enum.TryParse<FindingStatus>(said, true, out var exact)) return exact;
-
-            var lower = said.ToLowerInvariant();
-
-            if (lower.Length == 0 || lower.Contains("open") || lower.Contains("new"))
-                return FindingStatus.New;
-
-            if (lower.Contains("close") || lower.Contains("resolve") || lower.Contains("solve")
-                || lower.Contains("fixed") || lower.Contains("done"))
-                return FindingStatus.Resolved;
-
-            if (lower.Contains("approve") || lower.Contains("accept")) return FindingStatus.Approved;
-
-            if (lower.Contains("review") || lower.Contains("verif")) return FindingStatus.Reviewed;
-
-            return FindingStatus.Active;
-        }
+        private static FindingStatus Status(BcfTopic topic) =>
+            ClashStatusMap.Read(topic.TopicStatus);
 
         /// <summary>
         /// The reviewer's own fields, as a record the project file can keep.

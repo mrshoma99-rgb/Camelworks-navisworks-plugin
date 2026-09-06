@@ -41,6 +41,8 @@ ALLOWED = {
     # Storage plumbing. Every tool writes through it; no tool is it.
     "PhysicalFileSystem", "AtomicFile", "JournalEntry", "JournalFold", "JsonReader",
     "JsonValue", "VersionedDocument", "SectionDiff",
+    # The names of the keys the clash section holds. A list of strings, not a capability.
+    "ClashKeys", "Retired",
     # Primitives.
     "Hash", "IfcGuid", "Measure", "BcfGuid",
     # File-format writers' internal blocks - the report IS the surface, not its parts.

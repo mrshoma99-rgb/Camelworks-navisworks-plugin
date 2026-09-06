@@ -179,7 +179,12 @@ namespace CamelWorks.Core.Clash
 
                 if (held == null)
                 {
-                    if (board.IsKeptHalf(row, column) && !board.IsSelfPair(row, column)) open = true;
+                    // An empty diagonal cell is not a gap in the coordination: a discipline is
+                    // not left untested because it was not run against itself. A written one is a
+                    // test somebody asked for, and it is not empty, so it never reaches here.
+                    if (board.IsKeptHalf(row, column) && !board.IsSelfPair(row, column))
+                        open = true;
+
                     continue;
                 }
 

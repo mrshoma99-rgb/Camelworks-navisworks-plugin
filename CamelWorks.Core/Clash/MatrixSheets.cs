@@ -209,7 +209,7 @@ namespace CamelWorks.Core.Clash
                     var at = (Body + down, First + across);
                     var symbol = board.At(row, column);
 
-                    if (board.IsSelfPair(row, column))
+                    if (board.IsSelfPair(row, column) && board.At(row, column) == null)
                     {
                         sheet.Paint(at.Item1, at.Item2,
                                     new XlsxStyle(MatrixInk.Spine, centre: true, boxed: true));
@@ -265,7 +265,7 @@ namespace CamelWorks.Core.Clash
                     var column = board.Columns[across];
                     var at = (Body + down, First + across);
 
-                    if (board.IsSelfPair(row, column))
+                    if (board.IsSelfPair(row, column) && board.At(row, column) == null)
                     {
                         sheet.Paint(at.Item1, at.Item2,
                                     new XlsxStyle(MatrixInk.Spine, centre: true, boxed: true));
@@ -323,7 +323,7 @@ namespace CamelWorks.Core.Clash
                     var column = board.Columns[across];
                     var at = (Body + down, First + across);
 
-                    if (board.IsSelfPair(row, column))
+                    if (board.IsSelfPair(row, column) && board.At(row, column) == null)
                     {
                         sheet.Paint(at.Item1, at.Item2,
                                     new XlsxStyle(MatrixInk.Spine, centre: true, boxed: true));

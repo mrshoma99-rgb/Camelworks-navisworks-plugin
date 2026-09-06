@@ -378,9 +378,11 @@ namespace CamelWorks.Core.Clash
         /// <param name="items">Everything on the board.</param>
         /// <param name="groups">The board's folders, or null when it has none.</param>
         /// <param name="plan">The project's storeys, for a filter that names one.</param>
+        /// <param name="issued">What has already gone out, for a filter that names it.</param>
         public ExportSelection Choose(IEnumerable<ClashItem>? items,
                                       IEnumerable<ClashGroup>? groups = null,
-                                      Data.LevelPlan? plan = null)
+                                      Data.LevelPlan? plan = null,
+                                      ClashIssueLog? issued = null)
         {
             var board = (items ?? Array.Empty<ClashItem>()).Where(i => i != null).ToList();
 
@@ -429,14 +431,14 @@ namespace CamelWorks.Core.Clash
 
             if (!Pick.IsEverything)
             {
-                var narrowed = Pick.Take(keeping, plan);
+                var narrowed = Pick.Take(keeping, plan, issued);
 
                 byFilter = keeping.Count - narrowed.Count;
                 keeping = narrowed.ToList();
             }
             else
             {
-                keeping = Pick.Ordered(keeping, plan).ToList();
+                keeping = Pick.Ordered(keeping, plan, issued).ToList();
             }
 
             var kept = new HashSet<ClashKey>(keeping.Select(i => i.Key));
@@ -480,16 +482,18 @@ namespace CamelWorks.Core.Clash
         /// <param name="items">Everything on the board.</param>
         /// <param name="groups">The board's folders.</param>
         /// <param name="plan">The project's storeys.</param>
+        /// <param name="issued">What has already gone out, for a filter that names it.</param>
         public IReadOnlyList<ExportRound> Rounds(IEnumerable<ClashItem>? items,
                                                  IEnumerable<ClashGroup>? groups = null,
-                                                 Data.LevelPlan? plan = null)
+                                                 Data.LevelPlan? plan = null,
+                                                 ClashIssueLog? issued = null)
         {
-            var chosen = Choose(items, groups, plan);
+            var chosen = Choose(items, groups, plan, issued);
 
             if (string.IsNullOrWhiteSpace(SplitBy))
                 return new[] { new ExportRound(Name, chosen) };
 
-            var facet = ClashFacets.Of(SplitBy, chosen.Items, plan);
+            var facet = ClashFacets.Of(SplitBy, chosen.Items, plan, issued);
 
             if (facet == null) return new[] { new ExportRound(Name, chosen) };
 
@@ -497,6 +501,10 @@ namespace CamelWorks.Core.Clash
 
             var order = new List<string>();
             var byWhom = new Dictionary<string, List<ClashItem>>(StringComparer.OrdinalIgnoreCase);
+            // A list, not one recipient. Two tests can report the same conflict in the same cell,
+            // and both results can be on the board and in one folder: a key that kept only the
+            // last recipient dropped the other one's member out of that recipient's group.
+            var whose = new Dictionary<ClashKey, List<string>>();
 
             foreach (var item in chosen.Items)
             {
@@ -512,38 +520,67 @@ namespace CamelWorks.Core.Clash
                 }
 
                 held.Add(item);
+
+                if (!whose.TryGetValue(item.Key, out var claimants))
+                {
+                    claimants = new List<string>();
+                    whose[item.Key] = claimants;
+                }
+
+                if (!claimants.Contains(said, StringComparer.OrdinalIgnoreCase))
+                    claimants.Add(said);
             }
 
             order.Sort(StringComparer.OrdinalIgnoreCase);
 
+            // One pass over the folders, routing each member to its recipient's copy of the group
+            // it is in. Trimming every group for every recipient in turn walked the whole board
+            // once per recipient, and a split by assignee on a large job has thirty of them.
+            var trimmed = new Dictionary<string, List<ClashGroup>>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var group in folders)
+            {
+                var copies = new Dictionary<string, ClashGroup>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var member in group.Items)
+                {
+                    if (member == null || !whose.TryGetValue(member.Key, out var claimants))
+                        continue;
+
+                    foreach (var who in claimants)
+                    {
+                        if (!copies.TryGetValue(who, out var copy))
+                        {
+                            copy = new ClashGroup(group.Id, group.Name)
+                            {
+                                AssignedTo = group.AssignedTo,
+                            };
+
+                            copies[who] = copy;
+
+                            if (!trimmed.TryGetValue(who, out var theirs))
+                            {
+                                theirs = new List<ClashGroup>();
+                                trimmed[who] = theirs;
+                            }
+
+                            theirs.Add(copy);
+                        }
+
+                        copy.Items.Add(member);
+                    }
+                }
+            }
+
             var rounds = new List<ExportRound>();
 
             foreach (var who in order)
-            {
-                var mine = byWhom[who];
-                var keys = new HashSet<ClashKey>(mine.Select(one => one.Key));
-                var trimmed = new List<ClashGroup>();
-
-                foreach (var group in folders)
-                {
-                    var survivors = group.Items.Where(m => m != null && keys.Contains(m.Key))
-                                               .ToList();
-
-                    if (survivors.Count == 0) continue;
-
-                    var copy = new ClashGroup(group.Id, group.Name)
-                    {
-                        AssignedTo = group.AssignedTo,
-                    };
-
-                    foreach (var member in survivors) copy.Items.Add(member);
-
-                    trimmed.Add(copy);
-                }
-
-                rounds.Add(new ExportRound(who,
-                    new ExportSelection(mine, trimmed, 0, 0, 0, 0)));
-            }
+                rounds.Add(new ExportRound(who, new ExportSelection(
+                    byWhom[who],
+                    trimmed.TryGetValue(who, out var groupsFor)
+                        ? groupsFor
+                        : (IReadOnlyList<ClashGroup>)Array.Empty<ClashGroup>(),
+                    0, 0, 0, 0)));
 
             return rounds;
         }
@@ -569,7 +606,23 @@ namespace CamelWorks.Core.Clash
                 SourceFile = sourceFile,
                 WhenTicks = whenTicks,
                 MetresPerUnit = metresPerUnit <= 0 ? 1.0 : metresPerUnit,
+                View = View,
+                Highlight = Highlight,
+                Section = Section,
+                SectionMetres = SectionMetres,
             };
+
+        /// <summary>Which way each topic's camera looks at its clash.</summary>
+        public OpenBim.BcfView View { get; set; } = OpenBim.BcfView.Standing;
+
+        /// <summary>Whether the two clashing elements are coloured in the viewpoint.</summary>
+        public bool Highlight { get; set; } = true;
+
+        /// <summary>Whether the viewpoint carries a section box around the clash.</summary>
+        public bool Section { get; set; }
+
+        /// <summary>How far that box reaches from the clash point, in metres.</summary>
+        public double SectionMetres { get; set; } = 2.0;
 
         /// <summary>
         /// Record that these tests have just been written into a file.
@@ -615,6 +668,10 @@ namespace CamelWorks.Core.Clash
             JsonValue.Object()
                 .Set("name", Name)
                 .Set("keepGroups", KeepGroups)
+                .Set("view", View.ToString())
+                .Set("highlight", Highlight)
+                .Set("section", Section)
+                .Set("sectionMetres", SectionMetres)
                 .Set("tests", JsonValue.Array(_tests.Select(t => t.ToJson())))
                 .Set("statuses", JsonValue.Array(
                     Statuses.OrderBy(s => (int)s).Select(s => JsonValue.String(s.ToString()))))
@@ -632,6 +689,16 @@ namespace CamelWorks.Core.Clash
 
             profile.Name = json["name"].AsString("Everything") ?? "Everything";
             profile.KeepGroups = json["keepGroups"].AsBool(true);
+
+            if (Enum.TryParse<OpenBim.BcfView>(json["view"].AsString(), out var view))
+                profile.View = view;
+
+            profile.Highlight = json["highlight"].AsBool(true);
+            profile.Section = json["section"].AsBool(false);
+
+            var reach = json["sectionMetres"];
+
+            if (reach.Kind == Store.JsonKind.Number) profile.SectionMetres = reach.AsDouble();
 
             foreach (var item in json["tests"].Items)
             {

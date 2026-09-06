@@ -663,6 +663,10 @@ namespace CamelWorks.Nav
         /// <summary>Every saved selection and search set in the document, folders included.</summary>
         public IReadOnlyList<SelectionSet> Sets()
         {
+            // Not cached. The generation bumps when a model is appended, removed or refreshed —
+            // never when somebody makes a selection set — so a cache keyed on it would keep
+            // answering with the set list from before the set they just made, and there is no
+            // cheaper signal the host offers that a set has changed.
             var sets = new List<SelectionSet>();
 
             try

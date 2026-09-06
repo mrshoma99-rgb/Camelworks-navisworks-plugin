@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
+using CamelWorks.Core.Measurement;
 
 namespace CamelWorks.Core.Clash
 {
@@ -224,6 +225,50 @@ namespace CamelWorks.Core.Clash
 
         /// <summary>Every result this delta accounts for: new, still there, and back again.</summary>
         public int Accounted => New.Count + Persisting.Count + Regressed.Count;
+
+        /// <summary>
+        /// What the carry-over did, for the line the board leads with.
+        ///
+        /// Written from the coordinator's side of it: what kept its history, what is genuinely
+        /// new, and what came back. The neighbour-cell count rides along because a large one means
+        /// the model is shifting under the keys and every carried status is a weaker claim than it
+        /// looks.
+        /// </summary>
+        public string Carried()
+        {
+            if (Accounted == 0 && Resolved.Count == 0) return "Nothing on this board to compare.";
+
+            var kept = Persisting.Count + Regressed.Count;
+
+            // A first run has no previous record at all, and "no result kept its status" reads as
+            // a loss rather than as the ordinary state of a board nobody has run before.
+            if (kept == 0 && Resolved.Count == 0)
+                return "Nothing to compare against — this is the first run on this board, and all "
+                     + Measure.Count(New.Count) + " are new.";
+
+            var parts = new List<string>();
+
+            parts.Add(kept == 0
+                ? "No result carried a status from the last run"
+                : Measure.Count(kept) + (kept == 1 ? " result kept its status" : " results kept their statuses")
+                  + " from the last run");
+
+            if (New.Count > 0) parts.Add(Measure.Count(New.Count) + " new");
+            if (Regressed.Count > 0)
+                parts.Add(Measure.Count(Regressed.Count)
+                          + (Regressed.Count == 1 ? " is back after being resolved"
+                                                  : " are back after being resolved"));
+            if (Resolved.Count > 0) parts.Add(Measure.Count(Resolved.Count) + " gone from the model");
+
+            var line = string.Join(", ", parts) + ".";
+
+            if (MatchedOnNeighbourCell > 0)
+                line += " " + Measure.Count(MatchedOnNeighbourCell)
+                      + " matched a neighbouring cell rather than exactly, so the model has moved "
+                      + "under them.";
+
+            return line;
+        }
 
         /// <summary>The one-line readout.</summary>
         public override string ToString()
