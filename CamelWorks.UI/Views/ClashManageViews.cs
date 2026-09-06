@@ -4169,14 +4169,17 @@ namespace CamelWorks.UI.Views
                 });
 
                 // The member count, at the right of the name's own cell. It had a column of its
-                // own, which carried an em-dash on every clash row. Docked rather than trailing
-                // the name, so it survives a group name too long for the column.
+                // own, which carried an em-dash on every clash row. The figure alone, with the
+                // word on its tooltip: "7 clashes" spelt out took most of a 110-pixel column and
+                // left the group's name showing one letter.
                 var many = new TextBlock
                 {
-                    Text = Ui.Count(row.Rows.Count, "clash"),
+                    Text = Skin.Num(row.Rows.Count),
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(8, 0, 0, 0),
+                    TextAlignment = TextAlignment.Right,
                     TextWrapping = TextWrapping.NoWrap,
+                    ToolTip = Ui.Count(row.Rows.Count, "clash") + " in this group",
                 };
 
                 var named = new DockPanel { LastChildFill = true };

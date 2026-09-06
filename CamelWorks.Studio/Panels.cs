@@ -1492,13 +1492,16 @@ namespace CamelWorks.Studio
 
             if (made) words.Children.Add(Parts.Note("grouped by you"));
 
-            // The member count, at the right of the name's own cell.
+            // The member count, at the right of the name's own cell. The figure alone, with the
+            // word on its tooltip: spelt out it left the group's name showing one letter.
             var many = new TextBlock
             {
-                Text = Ui.Count(count, "clash"),                     // harness: data
+                Text = count.ToString(CultureInfo.InvariantCulture),  // harness: data
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(8, 0, 0, 0),
+                TextAlignment = TextAlignment.Right,
                 TextWrapping = TextWrapping.NoWrap,
+                ToolTip = Ui.Count(count, "clash") + " in this group",
             };
 
             var named = new DockPanel { LastChildFill = true };
