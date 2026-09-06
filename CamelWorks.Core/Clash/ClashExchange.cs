@@ -38,7 +38,7 @@ namespace CamelWorks.Core.Clash
         public int Results => Read?.Results.Count ?? 0;
 
         /// <inheritdoc />
-        public override string ToString() => Party + " - " + (FileName ?? "a pack");
+        public override string ToString() => Party + " - " + (FileName ?? "unnamed pack");
     }
 
     /// <summary>What one party said about one clash.</summary>
@@ -77,7 +77,7 @@ namespace CamelWorks.Core.Clash
         /// <summary>How the answer reads.</summary>
         public string Explain()
         {
-            var said = Party + " says " + Incoming;
+            var said = Party + " returned " + Incoming;
 
             if (AssignedTo != null) said += ", assigned to " + AssignedTo;
 
@@ -187,18 +187,18 @@ namespace CamelWorks.Core.Clash
         /// <summary>How the row reads in one line.</summary>
         public string Explain()
         {
-            if (_answers.Count == 0) return "No pack answered this one.";
+            if (_answers.Count == 0) return "No pack answered this clash.";
 
             if (IsDisputed && Chosen == null)
-                return "Disputed: " + string.Join(" ", _answers.Select(one => one.Explain()));
+                return "Conflict. " + string.Join(" ", _answers.Select(one => one.Explain()));
 
             var settled = Settled;
 
             if (settled == null) return "Nothing to apply.";
 
             return Would == Current
-                ? settled.Party + " agrees it is " + Current + "."
-                : settled.Party + " moves it from " + Current + " to " + Would + ".";
+                ? settled.Party + " confirms " + Current + "."
+                : settled.Party + " changes it from " + Current + " to " + Would + ".";
         }
 
         internal void Add(ExchangeSay say) => _answers.Add(say);
@@ -245,19 +245,19 @@ namespace CamelWorks.Core.Clash
         public string Explain()
         {
             if (Rows.Count == 0 && Strangers.Count == 0)
-                return "Nothing in these packs answers a clash on this board.";
+                return "These packs answer no clash on this board.";
 
             var parts = new List<string>
             {
-                Measure.Count(Rows.Count) + (Rows.Count == 1 ? " clash came back" : " clashes came back"),
+                Measure.Count(Rows.Count) + (Rows.Count == 1 ? " clash returned" : " clashes returned"),
             };
 
-            if (Disputed > 0) parts.Add(Measure.Count(Disputed) + " disputed");
+            if (Disputed > 0) parts.Add(Measure.Count(Disputed) + " in conflict");
             if (Comments > 0) parts.Add(Measure.Count(Comments) + " comments");
             if (Strangers.Count > 0)
-                parts.Add(Measure.Count(Strangers.Count) + " this board has no clash for");
+                parts.Add(Measure.Count(Strangers.Count) + " matching no clash on this board");
             if (Raised.Count > 0)
-                parts.Add(Measure.Count(Raised.Count) + " raised as new issues");
+                parts.Add(Measure.Count(Raised.Count) + " raised as issues");
 
             return string.Join(", ", parts) + ".";
         }
@@ -290,8 +290,9 @@ namespace CamelWorks.Core.Clash
         public string Explain()
         {
             if (Moved == 0 && Assigned == 0 && Comments == 0)
-                return Held == 0 ? "Nothing to apply." : "Nothing applied; " + Measure.Count(Held)
-                       + " left as they were.";
+                return Held == 0
+                    ? "Nothing to apply."
+                    : "Nothing applied; " + Measure.Count(Held) + " left unchanged.";
 
             var parts = new List<string>();
 
@@ -301,7 +302,7 @@ namespace CamelWorks.Core.Clash
 
             var line = string.Join(", ", parts);
 
-            if (Held > 0) line += "; " + Measure.Count(Held) + " left as they were";
+            if (Held > 0) line += "; " + Measure.Count(Held) + " left unchanged";
 
             return line + ".";
         }

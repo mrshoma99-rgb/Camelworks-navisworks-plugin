@@ -66,10 +66,10 @@ namespace CamelWorks.UI.Views
             new Desk(store, projectName ?? "Untitled project", board).View;
 
         /// <summary>The two halves of a round.</summary>
-        private const string SendOut = "Send out";
+        private const string SendOut = "Export";
 
         /// <summary>The two halves of a round.</summary>
-        private const string TakeBack = "Take back";
+        private const string TakeBack = "Import";
 
         private sealed class Desk
         {
@@ -88,7 +88,7 @@ namespace CamelWorks.UI.Views
             private readonly StackPanel _clauses = Ui.Stack();
             private readonly StackPanel _grid = Ui.Stack();
             private readonly StackPanel _sending = Ui.Stack();
-            private readonly TextBox _find = Ui.Text(string.Empty, "a clash, a test, a trade", null, 220);
+            private readonly TextBox _find = Ui.Text(string.Empty, "clash, test, party or level", null, 220);
             private readonly TextBox _named = Ui.Text("Everything", null, 180);
 
             private ListView? _table;
@@ -200,13 +200,13 @@ namespace CamelWorks.UI.Views
                     Ui.Across(Ui.Field("Find", _find), Sorting(), Splitting()),
                     _clauses,
                     _grid,
-                    Ui.Commit("Show me what would go out", "Write", "pack", Rehearse, Publish),
+                    Ui.Commit("Preview the export", "Write", "pack", Rehearse, Publish),
                     _sending);
 
                 var foot = new WrapPanel();
 
-                foot.Children.Add(Ui.Icon(Glyphs.Filter, "What goes in", () => Configure("in")));
-                foot.Children.Add(Ui.Icon(Glyphs.Save, "This profile", () => Configure("profile")));
+                foot.Children.Add(Ui.Icon(Glyphs.Filter, "Export scope", () => Configure("in")));
+                foot.Children.Add(Ui.Icon(Glyphs.Save, "Export profile", () => Configure("profile")));
 
                 Redraw();
 
@@ -257,7 +257,7 @@ namespace CamelWorks.UI.Views
                     _grid.Children.Add(Ui.Empty(
                         Results().Count == 0
                             ? "No clashes on the board."
-                            : "Nothing gets through the filter.",
+                            : "No clash meets the filter.",
                         Results().Count == 0
                             ? "Run the tests on the Manage tab first."
                             : _profile.Pick.Describe(Storeys())));
@@ -270,41 +270,40 @@ namespace CamelWorks.UI.Views
                     one.TestName,
                     one.Status.ToString(),
                     one.AssignedTo ?? string.Empty,
-                    one.Level ?? string.Empty,
-                    one.ModelPair)).ToList();
+                    one.Level ?? string.Empty)).ToList();
 
                 _table = Ui.Table(rows,
-                    ("Clash", 0), ("Test", 150), ("Status", 80),
-                    ("Assigned to", 110), ("Level", 70), ("Models", 0)).Multi();
+                    ("Clash", 0), ("Test", 170), ("Status", 90),
+                    ("Assigned to", 130), ("Level", 80)).Multi();
 
                 _grid.Children.Add(Ui.Line(
-                    Ui.Count(showing.Count, "clash") + " to go out"
+                    Ui.Count(showing.Count, "clash") + " in scope"
                     + (showing.Count > rows.Count
-                        ? ", " + Ui.Count(rows.Count, "row") + " drawn"
+                        ? ", first " + Ui.Count(rows.Count, "row") + " listed"
                         : string.Empty), 1, true));
 
                 _grid.Children.Add(Ui.Loose(_table));
 
                 _grid.Children.Add(Ui.Picking(_table,
-                    new Ui.OnPicked("Just these {n}", (picked, said) =>
+                    new Ui.OnPicked("Limit to {n} selected", (picked, said) =>
                     {
                         _only = new HashSet<Core.Identity.ClashKey>(
                             picked.OfType<ClashItem>().Select(one => one.Key));
 
                         said.Children.Add(Ui.Note(
-                            Ui.Count(_only.Count, "clash") + " will go, not the whole list. "
-                            + "Press “The whole list” to undo it."));
+                            "The export is limited to " + Ui.Count(_only.Count, "clash")
+                            + ". Restore the full list to lift the limit."));
                     }, primary: true),
-                    new Ui.OnPicked("The whole list", (picked, said) =>
+                    new Ui.OnPicked("Restore the full list", (picked, said) =>
                     {
                         _only = null;
 
-                        said.Children.Add(Ui.Note("The whole filtered list will go."));
+                        said.Children.Add(Ui.Note("The export covers the full filtered list."));
                     })));
 
                 if (_only != null)
                     _grid.Children.Add(Ui.Note(
-                        Ui.Count(Going().Count, "clash") + " picked by hand, not the whole list."));
+                        "Limited to " + Ui.Count(Going().Count, "clash") + " selected by hand."));
             }
 
             /// <summary>The filter, as a chip per clause and a way to add one.</summary>
@@ -365,7 +364,8 @@ namespace CamelWorks.UI.Views
 
                 if (held.Count == 0)
                 {
-                    Ui.Told("Nothing on the board holds a " + facet.Title.ToLowerInvariant() + ".");
+                    Ui.Told("No clash on the board carries a value for "
+                            + facet.Title.ToLowerInvariant() + ".");
                     return;
                 }
 
@@ -384,7 +384,7 @@ namespace CamelWorks.UI.Views
                 }
 
                 var page = new Ui.Page(facet.Title,
-                    () => Bench.Group("Which " + facet.Title.ToLowerInvariant() + " goes in", box));
+                    () => Bench.Group(facet.Title + " values to include", box));
 
                 Ui.Configure(facet.Title, () =>
                 {
@@ -402,14 +402,14 @@ namespace CamelWorks.UI.Views
             private UIElement Sorting()
             {
                 var by = Ui.Link(_profile.Pick.Sort == null
-                    ? "Sort by…"
+                    ? "Sort…"
                     : "Sorted by " + Titled(_profile.Pick.Sort), () => { });
 
                 by.Click += (s, e) => Ui.Safely(() =>
                 {
                     var items = new List<Parts.Entry> { Parts.Entry.Heading("Sort by") };
 
-                    items.Add(Parts.Entry.Act("As they came", null, () =>
+                    items.Add(Parts.Entry.Act("Unsorted", null, () =>
                     {
                         _profile.Pick.Sort = null;
                         Rebuild();
@@ -430,7 +430,7 @@ namespace CamelWorks.UI.Views
                     {
                         items.Add(Parts.Entry.Rule());
                         items.Add(Parts.Entry.Act(
-                            _profile.Pick.Descending ? "Smallest first" : "Largest first", null,
+                            _profile.Pick.Descending ? "Ascending" : "Descending", null,
                             () =>
                             {
                                 _profile.Pick.Descending = !_profile.Pick.Descending;
@@ -448,16 +448,16 @@ namespace CamelWorks.UI.Views
             private UIElement Splitting()
             {
                 var by = Ui.Link(_profile.SplitBy == null
-                    ? "One file"
-                    : "A file per " + Titled(_profile.SplitBy).ToLowerInvariant(), () => { });
+                    ? "Single file"
+                    : "Split by " + Titled(_profile.SplitBy).ToLowerInvariant(), () => { });
 
-                by.ToolTip = "Six trades, six packs, each holding only that trade's clashes.";
+                by.ToolTip = "Writes one pack per value, each holding only that party's clashes.";
 
                 by.Click += (s, e) => Ui.Safely(() =>
                 {
-                    var items = new List<Parts.Entry> { Parts.Entry.Heading("A file per") };
+                    var items = new List<Parts.Entry> { Parts.Entry.Heading("Split by") };
 
-                    items.Add(Parts.Entry.Act("One file for everything", null, () =>
+                    items.Add(Parts.Entry.Act("Do not split", null, () =>
                     {
                         _profile.SplitBy = null;
                         Rebuild();
@@ -523,22 +523,23 @@ namespace CamelWorks.UI.Views
 
                 if (going.Count == 0)
                 {
-                    into.Children.Add(Ui.Problem("Nothing gets through the filter."));
+                    into.Children.Add(Ui.Problem("No clash meets the filter."));
                     return 0;
                 }
 
                 var rounds = Rounds(going);
 
                 into.Children.Add(Ui.Line(
-                    Ui.Count(rounds.Count, "pack") + " holding "
+                    Ui.Count(rounds.Count, "pack") + " covering "
                     + Ui.Count(going.Count, "clash") + ".", 1, true));
 
                 var rows = rounds.Select(one => new TableRow(one,
                     one.Recipient,
                     one.FileStem() + ClashFile.Extension,
-                    Ui.Count(one.Selection.Items.Count, "clash"))).ToList();
+                    one.Selection.Items.Count.ToString(CultureInfo.InvariantCulture))).ToList();
 
-                into.Children.Add(Ui.Table(rows, ("For", 0), ("File", 220), ("Holding", 120)));
+                into.Children.Add(Ui.Table(rows,
+                    ("Recipient", 0), ("File", 240), ("Clashes", 100)));
 
                 _ = job;
 
@@ -564,7 +565,9 @@ namespace CamelWorks.UI.Views
                     : (_projectName);
 
                 var path = Ui.AskToSave(
-                    rounds.Count == 1 ? "Write the pack" : "Write the first pack, and the rest beside it",
+                    rounds.Count == 1
+                        ? "Write the pack"
+                        : "Write the first pack; the rest are written beside it",
                     ClashFile.Filter, suggested + ClashFile.Extension, ClashFile.Extension);
 
                 if (path == null) return;
@@ -612,7 +615,7 @@ namespace CamelWorks.UI.Views
                 Keep(quiet: true);
 
                 _sending.Children.Add(Ui.Line(
-                    Ui.Count(wrote, "pack") + " written into " + folder + ".", 1, true));
+                    Ui.Count(wrote, "pack") + " written to " + folder + ".", 1, true));
             }
 
             // -------------------------------------------------------------------------------
@@ -625,22 +628,22 @@ namespace CamelWorks.UI.Views
 
                 var strip = Ui.Stack(
                     Switch(TakeBack),
-                    Ui.Small("One file per party. The party is the file's own name, so a pack "
-                             + "called Mechanical.bcfzip is Mechanical's answer."),
+                    Ui.Small("One file per party. The party is taken from the file name, so "
+                             + "Mechanical.bcfzip is read as Mechanical's response."),
                     _files,
                     Ui.Across(
-                        Ui.Quiet("Add a pack", () => Ui.Safely(() => AddReturn(null))),
-                        Ui.Quiet("Choose several…", Chosen)));
+                        Ui.Quiet("Another file", () => Ui.Safely(() => AddReturn(null))),
+                        Ui.Quiet("Browse…", Chosen)));
 
                 _back.Children.Clear();
                 _back.Children.Add(Bench.Ready(
-                    "Reads the returned packs and says what came back.",
-                    "Two parties who answered the same clash differently are marked and applied "
-                    + "to nothing until one side is chosen."));
+                    "Reads the returned packs and reports what they change.",
+                    "Where two parties returned different answers for one clash, the row is "
+                    + "marked as a conflict and applied only once a side is chosen."));
 
                 var stage = Ui.Stack(strip, _back, _rows, _applied);
 
-                return Bench.Surface(null, Ui.Runner("Read them", _back, Receive), stage);
+                return Bench.Surface(null, Ui.Runner("Read the packs", _back, Receive), stage);
             }
 
             /// <summary>Add a row for one returned pack.</summary>
@@ -659,7 +662,7 @@ namespace CamelWorks.UI.Views
             /// <summary>Take several packs at once, which is how they arrive.</summary>
             private void Chosen()
             {
-                var picked = Ui.AskToOpenMany("Choose the returned packs", ClashFile.Filter);
+                var picked = Ui.AskToOpenMany("Returned packs", ClashFile.Filter);
 
                 if (picked.Count == 0) return;
 
@@ -720,7 +723,7 @@ namespace CamelWorks.UI.Views
                 if (packs.Count == 0)
                 {
                     _back.Children.Add(Ui.Empty("No packs named.",
-                        "Choose the files the parties sent back."));
+                        "Name the files the parties returned."));
 
                     return;
                 }
@@ -751,22 +754,22 @@ namespace CamelWorks.UI.Views
                     one.Item.Name ?? one.Item.Key.ToString(),
                     one.Item.TestName,
                     one.Current.ToString(),
-                    one.IsDisputed && one.Chosen == null ? "disputed" : one.Would.ToString(),
+                    one.IsDisputed && one.Chosen == null ? "Conflict" : one.Would.ToString(),
                     string.Join(", ", one.Answers.Select(say => say.Party)),
-                    one.Take ? "yes" : "no")
+                    one.Take ? "Yes" : "No")
                 {
                     Tone = one.IsDisputed && one.Chosen == null ? Tone.Warn
                          : one.Changes ? Tone.Good : Tone.Plain,
                 }).ToList();
 
                 var table = Ui.Table(rows,
-                    ("Clash", 0), ("Test", 140), ("Board has", 90),
-                    ("Coming back", 100), ("Who answered", 0), ("Taking", 70)).Multi();
+                    ("Clash", 0), ("Test", 150), ("On the board", 100),
+                    ("Returned", 100), ("Parties", 160), ("Accepted", 90)).Multi();
 
-                _rows.Children.Add(Ui.Eyebrow("What came back"));
+                _rows.Children.Add(Ui.Eyebrow("Returned clashes"));
                 _rows.Children.Add(table);
 
-                var settling = Ui.Link("Settle a dispute…", () => { });
+                var settling = Ui.Link("Resolve the conflict…", () => { });
 
                 settling.Click += (s, e) => Ui.Safely(() =>
                 {
@@ -775,7 +778,7 @@ namespace CamelWorks.UI.Views
 
                     if (picked.Count == 0)
                     {
-                        Ui.Told("Pick a disputed row first.");
+                        Ui.Told("Select a row marked as a conflict first.");
                         return;
                     }
 
@@ -783,27 +786,27 @@ namespace CamelWorks.UI.Views
                 });
 
                 _rows.Children.Add(Ui.Picking(table, settling,
-                    new Ui.OnPicked("Take these {n}", (picked, said) =>
+                    new Ui.OnPicked("Accept these {n}", (picked, said) =>
                         Decide(picked, said, row =>
                         {
                             if (row.Settled != null) row.Take = true;
                         }), primary: true),
-                    new Ui.OnPicked("Leave these {n}", (picked, said) =>
+                    new Ui.OnPicked("Reject these {n}", (picked, said) =>
                         Decide(picked, said, row => row.Take = false))));
 
                 if (_reading.Undecided > 0)
                     _rows.Children.Add(Ui.Note(
                         Ui.Count(_reading.Undecided, "clash")
-                        + " two parties answered differently. They apply to nothing until "
-                        + "one side is chosen."));
+                        + " returned conflicting answers. They are applied only once a side "
+                        + "is chosen."));
 
                 if (_reading.Strangers.Count > 0)
                     _rows.Children.Add(Ui.Note(
                         Ui.Count(_reading.Strangers.Count, "result")
-                        + " name elements this federation does not have - a party working "
-                        + "against older models."));
+                        + " reference elements this federation does not hold, which usually "
+                        + "means a party worked against an earlier model issue."));
 
-                _rows.Children.Add(Ui.Runner("Apply them to the board", _applied, Apply));
+                _rows.Children.Add(Ui.Runner("Apply to the board", _applied, Apply));
             }
 
             /// <summary>Do something to the picked rows, then draw them again.</summary>
@@ -816,13 +819,13 @@ namespace CamelWorks.UI.Views
 
                 if (rows.Count == 0)
                 {
-                    said.Children.Add(Ui.Note("Pick some rows first."));
+                    said.Children.Add(Ui.Note("Select at least one row."));
                     return;
                 }
 
                 foreach (var row in rows) what(row);
 
-                said.Children.Add(Ui.Note(Ui.Count(rows.Count, "row") + " decided."));
+                said.Children.Add(Ui.Note(Ui.Count(rows.Count, "row") + " updated."));
 
                 DrawReading();
             }
@@ -838,7 +841,7 @@ namespace CamelWorks.UI.Views
 
                 var items = new List<Parts.Entry>
                 {
-                    Parts.Entry.Heading("Take the answer from"),
+                    Parts.Entry.Heading("Accept the answer from"),
                 };
 
                 foreach (var party in parties)
@@ -863,8 +866,8 @@ namespace CamelWorks.UI.Views
 
                 items.Add(Parts.Entry.Rule());
 
-                items.Add(Parts.Entry.Saying("Leave them where they are", null,
-                    "No party's answer is taken", () =>
+                items.Add(Parts.Entry.Saying("Leave unresolved", null,
+                    "No party's answer is applied", () =>
                     {
                         foreach (var row in picked) { row.Chosen = null; row.Take = false; }
 
@@ -892,8 +895,8 @@ namespace CamelWorks.UI.Views
                 // Manage seat with an .nwf open, back into Navisworks. Written here would be a
                 // second path to the same place that could disagree with the first.
                 _applied.Children.Add(Ui.Note(
-                    "Save on the Manage tab to carry this into the project database. "
-                    + "It reaches Navisworks when the open model is an .nwf on a Manage seat."));
+                    "Save on the Manage tab to write this to the project database. It reaches "
+                    + "Navisworks when the open model is an .nwf and the edition is Manage."));
 
                 DrawReading();
             }
@@ -907,8 +910,8 @@ namespace CamelWorks.UI.Views
             private void Configure(string section)
             {
                 var page = section == "profile"
-                    ? new Ui.Page("This profile", () => Bench.Group("This profile", Profiles()))
-                    : new Ui.Page("What goes in", () => Bench.Group("What goes in", Filters()));
+                    ? new Ui.Page("Export profile", () => Bench.Group("Export profile", Profiles()))
+                    : new Ui.Page("Export scope", () => Bench.Group("Export scope", Filters()));
 
                 Ui.Configure(page.Name, Rebuild, page);
             }
@@ -932,9 +935,9 @@ namespace CamelWorks.UI.Views
                         }));
                 }
 
-                box.Children.Add(Ui.Small("None ticked means every status goes."));
+                box.Children.Add(Ui.Small("With none ticked, every status is exported."));
 
-                box.Children.Add(Ui.Check("Keep the folders", _profile.KeepGroups,
+                box.Children.Add(Ui.Check("Keep the folder structure", _profile.KeepGroups,
                                           on => _profile.KeepGroups = on));
 
                 return box;
@@ -956,8 +959,8 @@ namespace CamelWorks.UI.Views
                         Ui.Danger("Forget", Forget),
                         Ui.Quiet("Save…", ToFile),
                         Ui.Quiet("Load…", FromFile)),
-                    Ui.Small("A profile holds the tests, the statuses, the filter, the order and "
-                             + "the split, so a weekly issue is set up once."));
+                    Ui.Small("A profile holds the tests, statuses, filter, order and split, so "
+                             + "a recurring issue is configured once."));
             }
 
             /// <summary>Switch to a saved profile.</summary>
@@ -991,7 +994,7 @@ namespace CamelWorks.UI.Views
 
                 Save();
 
-                if (!quiet) Ui.Told("Kept “" + _profile.Name + "”.");
+                if (!quiet) Ui.Told("Saved “" + _profile.Name + "”.");
             }
 
             private void Forget()

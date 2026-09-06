@@ -184,7 +184,7 @@ namespace CamelWorks.UI.Shell
                "Send each party the clashes that are theirs as BCF, and take their answers back "
                + "onto the board, showing where two of them disagree rather than letting the last "
                + "one win.",
-               "Show me what would go out"),
+               "Preview the export"),
 
             // ---- Compare ----------------------------------------------------------------------
 

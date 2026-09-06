@@ -100,7 +100,7 @@ namespace CamelWorks.Core.Tests
 
             Assert.Empty(reading.Rows);
             Assert.Single(reading.Strangers);
-            Assert.Contains("no clash for", reading.Explain(), System.StringComparison.Ordinal);
+            Assert.Contains("matching no clash", reading.Explain(), System.StringComparison.Ordinal);
         }
 
         // -----------------------------------------------------------------------------------
@@ -259,7 +259,7 @@ namespace CamelWorks.Core.Tests
             var reading = ClashExchange.Read(null, new[] { Item("a") });
 
             Assert.Empty(reading.Rows);
-            Assert.Contains("Nothing in these packs", reading.Explain(),
+            Assert.Contains("answer no clash", reading.Explain(),
                             System.StringComparison.Ordinal);
         }
     }
