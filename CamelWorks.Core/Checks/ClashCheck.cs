@@ -184,14 +184,26 @@ namespace CamelWorks.Core.Checks
         /// out reports every clash gone and an equal number new. The 26 neighbouring cells are
         /// offered so a run comparison can match across that, and a match made through one of them
         /// is counted separately because a large count means the model has moved.
+        ///
+        /// Within the test, and deliberately so. A finding's id carries the test that found it and
+        /// so does every alias offered here, so a result re-scoped from one test to another is one
+        /// gone and one new rather than one carried across. The alternative — aliases that ignore
+        /// the test — lets a finding match a result in a different test, and a journalled id is
+        /// claimed once, so whichever finding offered it first would take another test's history.
+        /// A re-scoped result losing its history is visible in the counts and can be put right by
+        /// hand; a sign-off moved onto a different test's clash is neither.
+        ///
+        /// Nothing is offered for a finding with no point: its own id carries no cell, so a
+        /// neighbouring cell is not an id it could have been recorded under.
         /// </summary>
         /// <param name="finding">The finding.</param>
         public IEnumerable<string> Aliases(Finding finding)
         {
             if (finding == null || finding.Elements.Count != 2) yield break;
+            if (finding.X == null || finding.Y == null || finding.Z == null) yield break;
 
             var key = ClashKey.Create(finding.Elements[0], finding.Elements[1],
-                                      finding.X ?? 0, finding.Y ?? 0, finding.Z ?? 0, _cell);
+                                      finding.X.Value, finding.Y.Value, finding.Z.Value, _cell);
 
             var identity = ClashFindings.Identity(TestOf(finding));
 

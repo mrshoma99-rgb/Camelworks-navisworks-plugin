@@ -2983,8 +2983,9 @@ namespace CamelWorks.UI.Views
             ///
             /// Built on every board build and never said, which is why reviewers read these
             /// screens as a product with no memory across runs. Restricted to this test's rows and
-            /// to a comparison from this document: the comparison is board-wide and counts results
-            /// the rules suppressed, so printed raw it says a number the screen cannot account for.
+            /// to this test's run: the comparison covers every test the read touched, so printed
+            /// raw it counts results this screen does not draw and results that went from other
+            /// tests, which is a number the screen cannot account for.
             ///
             /// The grouping funnel is deliberately not here. It describes the pipeline's run over
             /// every test on the Coordinate tab, and this board's groups are the host's own — a
@@ -3000,8 +3001,8 @@ namespace CamelWorks.UI.Views
 
                 if (delta == null) return row;
 
-                row.Children.Add(Ui.Small(delta.OnBoard(entry.Rows.Select(one => one.Fact.Id))
-                                               .Explain()));
+                row.Children.Add(Ui.Small(delta.OnBoard(entry.Rows.Select(one => one.Fact.Id),
+                                                       entry.Run.Id).Explain()));
 
                 return row;
             }

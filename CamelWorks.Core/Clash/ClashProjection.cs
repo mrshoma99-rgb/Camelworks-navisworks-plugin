@@ -9,20 +9,18 @@ namespace CamelWorks.Core.Clash
     /// A held finding, as the <see cref="ClashItem"/> the rules pipeline and the Coordinate tabs
     /// consume.
     ///
-    /// The board used to read the host twice: once through the check, into findings, and once
-    /// directly, into items. Two reads of one document disagree the moment anything is decided
-    /// between them, and only one of them carried what somebody had recorded. So the register is
-    /// the spine for state and identity, and the item is derived from it.
+    /// The board reads the host once, through the check and into findings. The register is the
+    /// spine for state and identity and the item is derived from it, so a status, an assignee, a
+    /// comment or a hand-made group recorded against a finding reaches the board.
     ///
-    /// What an item holds that a finding does not is supplied here rather than looked up: the
-    /// level, the disciplines and the model display names come from the seat, and the projection
-    /// takes them as lookups so it stays a pure function and can be asserted against a host read.
+    /// The three things an item holds that a finding does not — the level, the disciplines and the
+    /// model display names — are supplied as lookups by the seat, so the projection stays a pure
+    /// function and can be asserted against a host read.
     ///
-    /// Nothing here resolves an element key. Everything the item needs about a participant is
-    /// either in the key itself — the model scope — or was written onto the finding by the producer
-    /// while it was holding the element. Resolving a key builds an index of every geometry leaf in
-    /// the federation, and a projection over eighteen thousand findings is the worst place in the
-    /// product to pay for one.
+    /// Nothing here resolves an element key. What the item needs about a participant is either in
+    /// the key — the model scope — or was written onto the finding by the producer while it held
+    /// the element. Resolving a key builds an index of every geometry leaf in the federation,
+    /// which a projection over eighteen thousand findings cannot afford.
     /// </summary>
     public sealed class ClashProjection
     {
@@ -59,11 +57,14 @@ namespace CamelWorks.Core.Clash
         public Func<string?, string?>? Folder { get; set; }
 
         /// <summary>
-        /// One finding as an item, or null when it is not a clash between two resolved elements.
+        /// One finding as an item, or null when it is not a clash between two resolved elements at
+        /// a known point.
         ///
-        /// Null rather than an item with an empty key: a result the adapter could not resolve both
-        /// sides of has no clash key at all, and the rules, the grouping and the carry-over all
-        /// index on one.
+        /// Null rather than an item with an empty key or an invented point. A result the adapter
+        /// could not resolve both sides of has no clash key at all, and the rules, the grouping
+        /// and the run comparison all index on one. A finding with no point has no cell either:
+        /// taking the missing coordinate as nought would put it in the origin cell, on whatever
+        /// level that is, under a key that matches nothing really there.
         /// </summary>
         /// <param name="finding">The held finding.</param>
         public ClashItem? Item(Finding? finding)
@@ -74,13 +75,14 @@ namespace CamelWorks.Core.Clash
             var b = finding.Elements[1];
 
             if (a.IsEmpty || b.IsEmpty) return null;
+            if (finding.X == null || finding.Y == null || finding.Z == null) return null;
 
             // Metres on the finding, model units in the key. Divided rather than multiplied by the
             // reciprocal, and left alone on a metric document, so a metric seat quantises the same
             // number the host read quantised rather than one a rounding trip away from it.
-            var x = finding.X ?? 0;
-            var y = finding.Y ?? 0;
-            var z = finding.Z ?? 0;
+            var x = finding.X.Value;
+            var y = finding.Y.Value;
+            var z = finding.Z.Value;
 
             var item = new ClashItem(ClashKey.Create(a, b, InUnits(x), InUnits(y), InUnits(z), _cell),
                                      finding.Rule)
@@ -140,7 +142,10 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// Every finding that projects into an item, in the order they were given.
         /// </summary>
-        /// <param name="findings">The held findings. Anything that is not a resolved pair is left out.</param>
+        /// <param name="findings">
+        /// The held findings. Anything that is not a resolved pair at a known point is left out;
+        /// a caller that has to account for every finding compares the counts.
+        /// </param>
         public IReadOnlyList<ClashItem> Items(IEnumerable<Finding>? findings)
         {
             var items = new List<ClashItem>();

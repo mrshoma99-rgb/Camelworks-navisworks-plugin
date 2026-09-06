@@ -84,10 +84,15 @@ namespace CamelWorks.Core.Findings
             {
                 var facts = JsonValue.Object();
 
+                // Empty facts are not stored. A producer writes the facts it owns on every read,
+                // empty where the run reported nothing, so that the merge overwrites the last
+                // run's value rather than leaving it; every reader treats an empty fact as absent,
+                // and storing one would put several empty keys on each of eighteen thousand clash
+                // findings.
                 foreach (var pair in finding.Facts.OrderBy(f => f.Key, StringComparer.Ordinal))
-                    facts.Set(pair.Key, pair.Value);
+                    if (!string.IsNullOrEmpty(pair.Value)) facts.Set(pair.Key, pair.Value);
 
-                json.Set("facts", facts);
+                if (facts.Keys.Count > 0) json.Set("facts", facts);
             }
 
             if (finding.Locations.Count > 0)

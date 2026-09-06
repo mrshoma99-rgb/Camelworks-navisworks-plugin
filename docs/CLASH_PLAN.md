@@ -191,7 +191,8 @@ leaves — a memory cost in place of a hash that is now cheap.
 **Do not touch:** `BoardList`, `Shape`, `Row.Blob`, the 160 ms search debounce,
 `Resize()`, `RailChanged`/`RepaintRail`, `NavClashSource.Described` and `Focus`,
 the `_byId` generation cache, `ClashPick.Take`'s facet hoisting,
-`ClashCarryOver.Match`, `MatrixCounts`, the `Ruler` and measurement caches,
+`CheckDelta.Between`'s two-pass claim (the carry-over match this replaced),
+`MatrixCounts`, the `Ruler` and measurement caches,
 `Job`'s pump throttle, `BcfWriter`'s compression choice. The performance review
 names each of these as already correct.
 
@@ -218,8 +219,9 @@ which reads as though hand-grouping is the only mechanism.
 
 ### 3.2 Say that statuses carried over
 
-`ClashCarryOver.Apply` runs on every board build and `delta` is already
-reported as a note among others.
+The carry-over runs on every board build and `delta` is already reported as a
+note among others. (Since Phase 8 the carry-over is `CheckDelta` over
+`RunJournal`; `ClashCarryOver` is deleted.)
 
 - The carry-over result is a first-class line on the board head: how many
   carried, how many are new, how many regressed, how many matched only on a
@@ -491,7 +493,7 @@ Recorded so they are not raised again. Each was reported from screenshots.
 
 | Finding | Evidence against |
 |---|---|
-| "Nothing handles clash identity across re-runs" | `ClashCarryOver.Apply` runs on every board build, keyed on `ClashKey`, two-pass claim with neighbour tolerance. The architecture review calls it the hardest logic in the product and correct. |
+| "Nothing handles clash identity across re-runs" | A carry-over runs on every board build: two-pass claim with neighbour tolerance, keyed on `ClashKey` then, since Phase 8, on the finding id with the neighbouring cells as aliases. The architecture review calls it the hardest logic in the product and correct. |
 | "Grouping is manual, one tick at a time" | `ClashPipeline` + `GroupingRules`: level, grid, zone, model pair, discipline, test, system, property, same item, proximity. The board reports the funnel. |
 | "Assigned to is a discipline, not a person" | `TeamRoster`/`TeamMember` hold people, roles, companies and teams. The fixture uses disciplines. |
 | "BCF export has no viewpoints" | `ClashBcf.Viewpoint` writes a camera per topic and snapshots are counted. The controls are missing; the viewpoints are not. |

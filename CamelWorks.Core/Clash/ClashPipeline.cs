@@ -391,6 +391,11 @@ namespace CamelWorks.Core.Clash
 
                 if (pinned) pinnedNames.Add(name);
 
+                // On the result, not only on the group. The group is keyed by name and a derived
+                // name can collide with a hand-made one, so a group is pinned when any member was
+                // put there by hand while each member says for itself how it got there.
+                item.GroupedByHand = pinned;
+
                 if (!byName.TryGetValue(name, out var group))
                 {
                     group = new ClashGroup(GroupIdFor(name), name);

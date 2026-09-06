@@ -19,10 +19,11 @@ namespace CamelWorks.Core.Checks
     /// recording who the open findings were with at that moment, which cannot be reconstructed
     /// from live state afterwards.
     ///
-    /// One journal per check and run, and two of them kept — the same one-undo-slot shape the clash
-    /// board already has. Retention is stated rather than left open because a journal is a full id
-    /// list: twelve runs of eighteen thousand results at two journals each is the largest thing in
-    /// the project file, and an unbounded history would double it on every run.
+    /// One journal per check and run, and one of them kept. A journal is a full id list — twelve
+    /// runs of eighteen thousand results is the largest thing in the project file — and only the
+    /// last one is read: the comparison is against what the run stood at when it last ran.
+    /// <see cref="Write"/> therefore replaces it, and a caller that needs the outgoing journal must
+    /// read <see cref="Current"/> before it writes.
     ///
     /// A run with no journal is a first run. Nothing is seeded from anything else, because there is
     /// no function from a snapshot back to a finding id, and a seed invented for one would report a
@@ -39,8 +40,18 @@ namespace CamelWorks.Core.Checks
         /// <summary>What the current journal is called inside a slot.</summary>
         public const string CurrentKey = "current";
 
-        /// <summary>What the one kept before it is called inside a slot.</summary>
+        /// <summary>
+        /// What a slot written by an earlier build called the journal before the current one.
+        ///
+        /// Nothing writes or reads it any more — one slot is kept — and <see cref="Write"/> drops
+        /// it, so a project file written by an earlier build sheds half its journals on the next
+        /// run.
+        /// </summary>
         public const string PreviousKey = "previous";
+
+        // Which run reported each finding, on a journal that is several runs merged. Null on a
+        // per-run journal, where the answer is always RunId.
+        private readonly IReadOnlyDictionary<string, string>? _runOf;
 
         /// <summary>Record what a run stood at.</summary>
         /// <param name="checkKey">Which check, as <see cref="ICheck.Key"/>.</param>
@@ -48,10 +59,17 @@ namespace CamelWorks.Core.Checks
         /// <param name="whenTicks">When it ran, as UTC ticks.</param>
         /// <param name="statuses">Each finding id and the status it held.</param>
         /// <param name="openByParty">How many open findings each party held.</param>
+        /// <param name="runOfFinding">
+        /// Which run reported each finding, for a journal that is several runs read as one. Null
+        /// means every finding is <paramref name="runId"/>'s, which is what a per-run journal is.
+        /// </param>
         public RunJournal(string checkKey, string runId, long whenTicks,
                           IReadOnlyDictionary<string, FindingStatus>? statuses,
-                          IReadOnlyDictionary<string, int>? openByParty)
+                          IReadOnlyDictionary<string, int>? openByParty,
+                          IReadOnlyDictionary<string, string>? runOfFinding = null)
         {
+            _runOf = runOfFinding;
+
             if (string.IsNullOrWhiteSpace(checkKey))
                 throw new ArgumentException("checkKey is required", nameof(checkKey));
             if (string.IsNullOrWhiteSpace(runId))
@@ -88,6 +106,18 @@ namespace CamelWorks.Core.Checks
         /// <summary>True when it holds the id.</summary>
         /// <param name="findingId">The finding id.</param>
         public bool Holds(string? findingId) => findingId != null && Statuses.ContainsKey(findingId);
+
+        /// <summary>
+        /// Which run reported a journalled finding, or null when the journal does not hold it.
+        ///
+        /// This journal's run, unless it is several runs read as one — see <see cref="Together"/> —
+        /// in which case it is the run whose journal the finding came from. A screen drawing one
+        /// run of a board uses it to say what went from that run rather than from the read.
+        /// </summary>
+        /// <param name="findingId">The finding id.</param>
+        public string? RunOf(string? findingId) =>
+            !Holds(findingId) ? null
+            : _runOf != null && _runOf.TryGetValue(findingId!, out var run) ? run : RunId;
 
         /// <summary>
         /// The slot key one check's run is journalled under.
@@ -156,6 +186,18 @@ namespace CamelWorks.Core.Checks
         ///
         /// Null when every journal is null, so a board none of whose runs has ever run still reads
         /// as a first run rather than as an empty comparison.
+        ///
+        /// Two things a merge has to settle, because two runs can hold one finding id:
+        ///
+        ///   * The status. The later journal wins, by <see cref="WhenTicks"/>, and on equal ticks
+        ///     the status further along <see cref="FindingStatusLattice"/> does. Taking whichever
+        ///     journal was enumerated last made the answer depend on the order the runs were read
+        ///     in, so the same two runs could merge differently from one board to the next.
+        ///   * <see cref="OpenByParty"/>. Summed, so a finding that two runs both report open is
+        ///     counted under its party once per run. The journal holds counts and not ids, so the
+        ///     double count cannot be taken out here; it is a per-run tally read as one, which is
+        ///     what the rail draws. <see cref="Statuses"/> and <see cref="Count"/> are per finding
+        ///     and do not double.
         /// </summary>
         /// <param name="checkKey">Which check.</param>
         /// <param name="journals">The runs' journals. Nulls are runs that have never run.</param>
@@ -163,6 +205,8 @@ namespace CamelWorks.Core.Checks
         {
             var statuses = new Dictionary<string, FindingStatus>(StringComparer.Ordinal);
             var parties = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var runOf = new Dictionary<string, string>(StringComparer.Ordinal);
+            var settled = new Dictionary<string, long>(StringComparer.Ordinal);
             var when = 0L;
             var any = false;
 
@@ -173,17 +217,34 @@ namespace CamelWorks.Core.Checks
                 any = true;
                 when = Math.Max(when, journal.WhenTicks);
 
-                foreach (var pair in journal.Statuses) statuses[pair.Key] = pair.Value;
+                foreach (var pair in journal.Statuses)
+                {
+                    if (settled.TryGetValue(pair.Key, out var was)
+                        && !Wins(journal.WhenTicks, pair.Value, was, statuses[pair.Key])) continue;
 
-                // Summed, which is how the rail tallies too: a finding in two runs is counted
-                // under both and drawn once.
+                    statuses[pair.Key] = pair.Value;
+                    settled[pair.Key] = journal.WhenTicks;
+                    runOf[pair.Key] = journal.RunId;
+                }
+
                 foreach (var pair in journal.OpenByParty)
                     parties[pair.Key] = (parties.TryGetValue(pair.Key, out var held) ? held : 0)
                                         + pair.Value;
             }
 
-            return any ? new RunJournal(checkKey, EveryRun, when, statuses, parties) : null;
+            return any ? new RunJournal(checkKey, EveryRun, when, statuses, parties, runOf) : null;
         }
+
+        /// <summary>Whether one journal's record of a finding replaces another's.</summary>
+        /// <param name="ticks">When the arriving journal was taken.</param>
+        /// <param name="status">What it says the finding stood at.</param>
+        /// <param name="heldTicks">When the journal already merged was taken.</param>
+        /// <param name="held">What that one says.</param>
+        private static bool Wins(long ticks, FindingStatus status, long heldTicks,
+                                 FindingStatus held) =>
+            ticks != heldTicks
+                ? ticks > heldTicks
+                : FindingStatusLattice.Merge(status, held) == status && status != held;
 
         /// <summary>
         /// What the run is called on a journal that is several runs read as one.
@@ -262,19 +323,13 @@ namespace CamelWorks.Core.Checks
                                           IList<string>? notes = null) =>
             Read(store, checkKey, runId, CurrentKey, notes);
 
-        /// <summary>The journal before that, or null when there has only been one run.</summary>
-        /// <param name="store">The project file.</param>
-        /// <param name="checkKey">Which check.</param>
-        /// <param name="runId">Which run.</param>
-        /// <param name="notes">Anything worth saying about what was read.</param>
-        public static RunJournal? Previous(ProjectStore store, string checkKey, string runId,
-                                           IList<string>? notes = null) =>
-            Read(store, checkKey, runId, PreviousKey, notes);
-
         /// <summary>
-        /// Write this journal into the project file as the current one, moving the current one into
-        /// the previous slot and dropping whatever was there. Every other key in the section — the
-        /// saved runs among them — is left as it was.
+        /// Write this journal into the project file as the run's current one, replacing what was
+        /// there and dropping the previous slot an earlier build wrote. Every other key in the
+        /// section — the saved runs among them — is left as it was.
+        ///
+        /// A caller comparing against the outgoing journal reads <see cref="Current"/> first: after
+        /// this, the run's current journal is this one.
         /// </summary>
         /// <param name="store">The project file.</param>
         public void Write(ProjectStore store)
@@ -298,11 +353,8 @@ namespace CamelWorks.Core.Checks
                 journals.Set(Slot(CheckKey, RunId), slot);
             }
 
-            var current = slot[CurrentKey];
-
-            if (current.Kind == JsonKind.Object) slot.Set(PreviousKey, current);
-
             slot.Set(CurrentKey, ToJson());
+            slot.Remove(PreviousKey);
         }
 
         private static RunJournal? Read(ProjectStore store, string checkKey, string runId,

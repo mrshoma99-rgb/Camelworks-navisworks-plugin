@@ -122,22 +122,30 @@ namespace CamelWorks.Core.Clash
             // it. Not part of identity: the engine reissues these on a re-run.
             finding.Facts[HostId] = result.Id;
 
-            Fact(finding, NameA, result.NameA);
-            Fact(finding, NameB, result.NameB);
-            Fact(finding, CategoryA, result.CategoryA);
-            Fact(finding, CategoryB, result.CategoryB);
+            // The facts the run owns, written on every read whether the host said anything or not.
+            // FindingRegister.Observe merges facts additively and removes none, so a fact written
+            // only when there was something to say leaves the last run's answer on the finding for
+            // the life of the project. Distance is the one that does harm: the suppress and flag
+            // rules read it, so a result the host stopped measuring would keep last week's depth
+            // and could be taken off the board by a distance rule with nothing on screen to say
+            // why.
+            //
+            // Empty stands for "this run reported nothing". Every reader treats it as absent and
+            // FindingJson does not store it, so an empty fact costs nothing in the project file.
+            Reported(finding, NameA, result.NameA);
+            Reported(finding, NameB, result.NameB);
+            Reported(finding, CategoryA, result.CategoryA);
+            Reported(finding, CategoryB, result.CategoryB);
 
             // What the host says about the result, kept as an observation rather than folded into
             // the finding's own status and assignee. The board draws both columns, and the
             // projection has no other way to fill them: a seat reading the register is not reading
-            // the host. Written on every read, empty included, because facts merge additively and
-            // a fact written only when the host had something to say would leave last month's
-            // answer on the finding for good.
-            finding.Facts[HostStatus] = result.HostStatus ?? string.Empty;
-            finding.Facts[HostAssignee] = result.HostAssignedTo ?? string.Empty;
+            // the host.
+            Reported(finding, HostStatus, result.HostStatus);
+            Reported(finding, HostAssignee, result.HostAssignedTo);
 
-            if (result.Distance != null)
-                finding.Facts[Distance] = Written(result.Distance.Value * scale);
+            Reported(finding, Distance,
+                     result.Distance != null ? Written(result.Distance.Value * scale) : null);
 
             if (!string.IsNullOrWhiteSpace(result.HostAssignedTo))
                 finding.AssignedTo = result.HostAssignedTo;
@@ -191,7 +199,7 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// Write what the board did with each result back onto the finding behind it.
         ///
-        /// Three things the register would otherwise not hold, and each one is the difference
+        /// Two things the register would otherwise not hold, and each one is the difference
         /// between a rebuilt board and a wrong one:
         ///
         ///   * The group and whether somebody made it by hand, which is what restores
@@ -201,30 +209,60 @@ namespace CamelWorks.Core.Clash
         ///   * The rule that suppressed a result. Without it every suppressed result arrives as
         ///     new the moment somebody turns the rule off.
         ///
-        /// Every fact is written or removed on every board, never left alone. Facts merge
-        /// additively and none is ever dropped by the register, so a fact written only when there
-        /// was something to say would leave a stale group name and a stale rule on findings the
-        /// board has since moved.
+        /// Every fact is written or removed on every board, never left alone, and that covers the
+        /// findings the board never drew as well as the ones it did — see <paramref name="offered"/>.
+        /// Facts merge additively and none is ever dropped by the register, so a fact written only
+        /// when there was something to say would leave a stale group name and a stale rule on
+        /// findings the board has since moved.
         /// </summary>
         /// <param name="board">The board, as the rules left it.</param>
         /// <param name="register">The findings the board's items were projected from.</param>
-        public static void Recorded(ClashPipelineResult? board, FindingRegister? register)
+        /// <param name="offered">
+        /// The findings the board was built from, so the ones that did not reach it can be
+        /// cleared. A result folded into a cross-test duplicate is on no group and on no
+        /// suppressed list, and without this it keeps the group and the rule it was recorded with
+        /// the last time it was a survivor. Null clears nothing, which is what a caller holding a
+        /// board and no read has to do.
+        /// </param>
+        public static void Recorded(ClashPipelineResult? board, FindingRegister? register,
+                                    IEnumerable<Finding>? offered = null)
         {
             if (board == null || register == null) return;
 
+            var reached = new HashSet<string>(StringComparer.Ordinal);
+
             foreach (var group in board.Groups)
                 foreach (var item in group.Items)
-                    Recorded(register.Find(item.FindingId), item, group.Name, group.IsPinned);
+                {
+                    if (item.FindingId != null) reached.Add(item.FindingId);
+                    Recorded(register.Find(item.FindingId), item, group.Name, item.GroupedByHand);
+                }
 
             foreach (var item in board.Suppressed)
+            {
+                if (item.FindingId != null) reached.Add(item.FindingId);
                 Recorded(register.Find(item.FindingId), item, null, false);
+            }
+
+            foreach (var finding in offered ?? Array.Empty<Finding>())
+            {
+                if (finding == null || reached.Contains(finding.Id)) continue;
+
+                Set(finding, BoardGroup, null);
+                Set(finding, BoardGroupPinned, null);
+                Set(finding, SuppressedBy, null);
+            }
         }
 
         /// <summary>One result's board facts.</summary>
         /// <param name="finding">The held finding, or null when the item has none.</param>
         /// <param name="item">The item on the board.</param>
         /// <param name="group">The group it is in, or null when the rules took it off the board.</param>
-        /// <param name="pinned">Whether that group was made by hand.</param>
+        /// <param name="pinned">
+        /// Whether this result was put in that group by hand. Per result rather than per group: a
+        /// derived group name can collide with a hand-made one, and stamping the pin on the whole
+        /// group would put every result the rules sent there beyond the reach of the rules.
+        /// </param>
         private static void Recorded(Finding? finding, ClashItem item, string? group, bool pinned)
         {
             if (finding == null) return;
@@ -370,9 +408,16 @@ namespace CamelWorks.Core.Clash
             return parts.Count == 0 ? null : string.Join(", ", parts);
         }
 
-        private static void Fact(Finding finding, string name, string? value)
-        {
-            if (!string.IsNullOrWhiteSpace(value)) finding.Facts[name] = value;
-        }
+        /// <summary>
+        /// Write a fact this run owns, empty when the run has nothing to say.
+        ///
+        /// Empty rather than removed: the finding being written is the fresh one, and removing a
+        /// key from it would leave the held finding's value in place when the two are merged.
+        /// </summary>
+        /// <param name="finding">The finding the read just built.</param>
+        /// <param name="name">The fact.</param>
+        /// <param name="value">What the run says, or null when it says nothing.</param>
+        private static void Reported(Finding finding, string name, string? value) =>
+            finding.Facts[name] = string.IsNullOrWhiteSpace(value) ? string.Empty : value!;
     }
 }

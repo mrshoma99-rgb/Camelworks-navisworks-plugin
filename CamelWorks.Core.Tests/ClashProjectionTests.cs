@@ -62,6 +62,23 @@ namespace CamelWorks.Core.Tests
             DisciplineByScope.TryGetValue(key.ModelScope, out var name) ? name : null;
 
         /// <summary>
+        /// Which folder each test sits in, by the host's id for it.
+        ///
+        /// A lookup and not a constant, and two different folders, so a projection that dropped
+        /// the test id or answered the same folder for every test fails rather than passing on a
+        /// value it never looked up.
+        /// </summary>
+        private static readonly Dictionary<string, string> FolderByTest =
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["t1"] = "Weekly",
+                ["t2"] = "Ad hoc",
+            };
+
+        private static string? FolderOf(string? testId) =>
+            testId != null && FolderByTest.TryGetValue(testId, out var folder) ? folder : null;
+
+        /// <summary>
         /// A level derived from the height, so an item whose coordinates came back wrong lands on
         /// the wrong level rather than passing on a constant.
         /// </summary>
@@ -74,7 +91,7 @@ namespace CamelWorks.Core.Tests
                 ModelName = ModelOf,
                 Discipline = DisciplineOf,
                 Level = LevelAt,
-                Folder = _ => "Weekly",
+                Folder = FolderOf,
             };
 
         // ---------------------------------------------------------------------------------
@@ -119,7 +136,7 @@ namespace CamelWorks.Core.Tests
                 .With("L03 MEP v STR", "Weekly", "t1")
                 .Finding(Mep("Duct 1"), Arch("Beam 1"), 1.1, 2.2, 3.3)
                 .Finding(Mep("Duct 2"), Arch("Beam 2"), 4.4, 5.5, 6.6)
-                .With("L04 MEP v STR", "Weekly", "t2")
+                .With("L04 MEP v STR", "Ad hoc", "t2")
                 .Finding(Mep("Duct 3"), Arch("Beam 3"), 7.7, 8.8, 9.9);
 
             var read = new ClashCheck(seat, Feet).Read(null, null);
@@ -351,6 +368,261 @@ namespace CamelWorks.Core.Tests
 
             Assert.All(register.Present,
                        finding => Assert.False(finding.Facts.ContainsKey(ClashFindings.SuppressedBy)));
+        }
+
+        [Fact]
+        public void A_finding_with_no_point_projects_to_nothing_and_offers_no_alias()
+        {
+            // The origin cell is a real place. A finding with no point taken as nought lands there,
+            // on whatever level that is, under a key that matches nothing really there — and the
+            // suppress rules, the grouping and the run comparison all read that key.
+            var finding = Finding.Create(FindingSource.Clash, "L03 MEP v STR", "Clash1",
+                                         new[] { Mep("Duct 1"), Arch("Beam 1") }, "0,0,0");
+
+            Assert.Null(finding.X);
+            Assert.Null(Projection().Item(finding));
+            Assert.Empty(Projection().Items(new[] { finding }));
+
+            // And no alias either: its own id carries no cell, so a neighbouring cell is not an id
+            // it could have been recorded under.
+            Assert.Empty(new ClashCheck(new FakeClashSource()).Aliases(finding));
+        }
+
+        [Fact]
+        public void A_fact_the_run_stops_reporting_is_taken_off_the_finding()
+        {
+            // Facts merge additively and the register removes none, so a producer that writes a
+            // fact only when it has something to say leaves the last run's number in place. The
+            // distance is the one that does harm: a suppress rule reads it, so a result the host
+            // stopped measuring would go on being taken off the board on last week's depth.
+            var register = new FindingRegister();
+
+            var deep = new ClashCheck(new FakeClashSource()
+                .With("L03 MEP v STR", "Weekly", "t1")
+                .Finding(Mep("Duct 1"), Arch("Beam 1"), 1, 2, 3).Deep(-0.05)).Read(null, null);
+
+            register.Observe(FindingSource.Clash, deep.Findings, 1, null, deep.Scope);
+
+            var held = Assert.Single(register.Present);
+
+            Assert.Equal(-0.05, ClashFindings.DistanceMetres(held)!.Value, 6);
+
+            // The same result, on a run where the host reports no distance for it.
+            var flat = new ClashCheck(new FakeClashSource()
+                .With("L03 MEP v STR", "Weekly", "t1")
+                .Finding(Mep("Duct 1"), Arch("Beam 1"), 1, 2, 3)).Read(null, null);
+
+            register.Observe(FindingSource.Clash, flat.Findings, 2, null, flat.Scope);
+
+            Assert.Same(held, Assert.Single(register.Present));
+            Assert.Null(ClashFindings.DistanceMetres(held));
+            Assert.Null(Projection().Item(held)!.Distance);
+        }
+
+        [Fact]
+        public void A_result_folded_into_a_duplicate_loses_the_board_facts_it_was_recorded_with()
+        {
+            // A survivor last week, folded away this week. It reaches no group and no suppressed
+            // list, so unless the board clears it, it keeps last week's group and last week's
+            // suppressing rule for the life of the project — and a seat rebuilding the board off
+            // the register draws it in a group nothing put it in.
+            var register = new FindingRegister();
+
+            var read = new ClashCheck(new FakeClashSource()
+                .With("L03 Hard", "Weekly", "t1")
+                .Finding(Mep("Duct 1"), Arch("Beam 1"), 1, 2, 3)
+                .With("L03 Clearance", "Weekly", "t2")
+                .Finding(Mep("Duct 1"), Arch("Beam 1"), 1, 2, 3)).Read(null, null);
+
+            register.Observe(FindingSource.Clash, read.Findings, 1, null, read.Scope);
+
+            var held = register.Present.OrderBy(one => one.Id, StringComparer.Ordinal).ToList();
+            var items = Projection().Items(held);
+
+            Assert.Equal(2, items.Count);
+
+            var collapse = DuplicateCollapse.Across(items);
+            var folded = register.Find(Assert.Single(collapse.Collapsed).FindingId)!;
+
+            // What the board recorded on it the week it was the survivor.
+            folded.Facts[ClashFindings.BoardGroup] = "Riser 3";
+            folded.Facts[ClashFindings.BoardGroupPinned] = "yes";
+            folded.Facts[ClashFindings.SuppressedBy] = "Same model";
+
+            var board = ClashPipeline.Run(collapse.Kept, new ClashPipelineOptions());
+
+            ClashFindings.Recorded(board, register, held);
+
+            Assert.False(folded.Facts.ContainsKey(ClashFindings.BoardGroup));
+            Assert.False(folded.Facts.ContainsKey(ClashFindings.BoardGroupPinned));
+            Assert.False(folded.Facts.ContainsKey(ClashFindings.SuppressedBy));
+
+            // The survivor still carries what the board did with it.
+            var survivor = register.Find(Assert.Single(collapse.Kept).FindingId)!;
+
+            Assert.True(survivor.Facts.ContainsKey(ClashFindings.BoardGroup));
+        }
+
+        // ---------------------------------------------------------------------------------
+        // The delta a screen is allowed to print
+        // ---------------------------------------------------------------------------------
+
+        /// <summary>
+        /// A read, observed, journalled and compared: the delta the board holds.
+        /// </summary>
+        /// <param name="register">The register to observe into.</param>
+        /// <param name="store">The project file the journals are written to.</param>
+        /// <param name="seat">What the host reports on this run.</param>
+        private static CheckDelta Run(FindingRegister register, ProjectStore store,
+                                      FakeClashSource seat)
+        {
+            var check = new ClashCheck(seat);
+            var read = check.Read(null, null);
+
+            var before = RunJournal.Together(
+                check.Key, read.Runs.Select(run => RunJournal.Current(store, check.Key, run.Id)));
+
+            var intake = register.Observe(FindingSource.Clash, read.Findings, 1, null, read.Scope);
+            var delta = CheckDelta.Between(before, intake, register, read.Scope, check.Aliases);
+
+            var held = register.Present.Where(read.Scope).ToList();
+
+            foreach (var run in read.Runs) RunJournal.Of(check.Key, run.Id, 1, held).Write(store);
+
+            return delta;
+        }
+
+        /// <summary>The finding ids of every row on a board.</summary>
+        /// <param name="board">The board.</param>
+        private static IReadOnlyList<string> Rows(ClashPipelineResult board) =>
+            board.Groups.SelectMany(group => group.Items)
+                 .Select(item => item.FindingId!).Where(id => id != null).ToList();
+
+        /// <summary>The same test, before it found anything, so the next run has a run to compare
+        /// against.</summary>
+        private static FakeClashSource Quiet() =>
+            new FakeClashSource().With("L03 MEP v STR", "Weekly", "t1");
+
+        /// <summary>Two results, one of which the same-model rule takes off the board.</summary>
+        private static FakeClashSource Mixed() =>
+            new FakeClashSource()
+                .With("L03 MEP v STR", "Weekly", "t1")
+                .Finding(Mep("Duct 1"), Arch("Beam 1"), 1, 2, 3)
+                .Finding(Arch("Wall 1"), Arch("Beam 3"), 7, 8, 9);
+
+        private static readonly ClashPipelineOptions SameModelSuppressed = new ClashPipelineOptions
+        {
+            Filters = new[] { new FilterRule("Same model", ClashPredicates.SameModel(), suppress: true) },
+        };
+
+        [Fact]
+        public void Restricting_to_the_board_drops_what_the_rules_took_out()
+        {
+            // "Two new" over a board holding one is two populations in one row, and the reader
+            // cannot find the other.
+            var register = new FindingRegister();
+            var store = Project();
+
+            Run(register, store, Quiet());
+
+            var delta = Run(register, store, Mixed());
+
+            Assert.Equal(2, delta.New.Count);
+
+            var board = ClashPipeline.Run(Projection().Items(register.Present.ToList()),
+                                          SameModelSuppressed);
+
+            Assert.Single(board.Suppressed);
+            Assert.Single(delta.OnBoard(Rows(board)).New);
+        }
+
+        [Fact]
+        public void A_result_the_rules_hid_is_not_reported_as_gone()
+        {
+            // The failure that would make the week look like progress: a rule hides something and
+            // the screen says it went away.
+            var register = new FindingRegister();
+            var store = Project();
+
+            Run(register, store, Mixed());
+
+            var delta = Run(register, store, Mixed());
+
+            var board = ClashPipeline.Run(Projection().Items(register.Present.ToList()),
+                                          SameModelSuppressed);
+
+            // The rule took one of the two results off the board. The run reported it, so it was
+            // claimed, and it is on neither list.
+            Assert.Single(board.Suppressed);
+            Assert.Empty(delta.Gone);
+            Assert.Empty(delta.OnBoard(Rows(board)).Gone);
+        }
+
+        [Fact]
+        public void Restricting_to_the_board_keeps_what_is_really_gone()
+        {
+            // Gone is about the model, not about the board: a result the run no longer reports is
+            // on no board to be restricted to.
+            var register = new FindingRegister();
+            var store = Project();
+
+            Run(register, store, Mixed());
+
+            var delta = Run(register, store, new FakeClashSource()
+                .With("L03 MEP v STR", "Weekly", "t1")
+                .Finding(Mep("Duct 1"), Arch("Beam 1"), 1, 2, 3));
+
+            Assert.Single(delta.Gone);
+            Assert.Single(delta.OnBoard(Array.Empty<string>()).Gone);
+        }
+
+        [Fact]
+        public void Restricting_to_nothing_given_leaves_the_delta_alone()
+        {
+            var register = new FindingRegister();
+            var store = Project();
+
+            Run(register, store, Quiet());
+
+            var delta = Run(register, store, Mixed());
+
+            Assert.Equal(2, delta.New.Count);
+
+            var same = delta.OnBoard(null);
+
+            Assert.Equal(delta.New.Count, same.New.Count);
+            Assert.Equal(delta.Persisting.Count, same.Persisting.Count);
+            Assert.Equal(delta.Gone.Count, same.Gone.Count);
+        }
+
+        [Fact]
+        public void A_screen_drawing_one_test_is_told_what_went_from_that_test()
+        {
+            // The board compares every test the read touched. A per-test screen printing that
+            // whole count said "812 gone" over one test's rows, which is a number the screen
+            // cannot account for.
+            var register = new FindingRegister();
+            var store = Project();
+
+            Run(register, store, new FakeClashSource()
+                .With("L03 Hard", "Weekly", "t1")
+                .Finding(Mep("Duct 1"), Arch("Beam 1"), 1, 2, 3)
+                .With("L04 Hard", "Ad hoc", "t2")
+                .Finding(Mep("Duct 3"), Arch("Beam 3"), 7, 8, 9));
+
+            // Both tests still run; t2's result has been fixed.
+            var delta = Run(register, store, new FakeClashSource()
+                .With("L03 Hard", "Weekly", "t1")
+                .Finding(Mep("Duct 1"), Arch("Beam 1"), 1, 2, 3)
+                .With("L04 Hard", "Ad hoc", "t2"));
+
+            var gone = Assert.Single(delta.Gone);
+
+            Assert.Empty(delta.OnBoard(null, "t1").Gone);
+            Assert.Equal(gone, Assert.Single(delta.OnBoard(null, "t2").Gone));
+
+            // And a run the read does not cover is told nothing went from it.
+            Assert.Empty(delta.OnBoard(null, "t3").Gone);
         }
     }
 }

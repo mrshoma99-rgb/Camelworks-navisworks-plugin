@@ -109,6 +109,17 @@ namespace CamelWorks.Core.Clash
         public string? CarriedGroup { get; set; }
 
         /// <summary>
+        /// Whether this result was put in its group by hand, as against by the rules.
+        ///
+        /// Set by <see cref="ClashPipeline"/> on the way through and read by the write-back, which
+        /// is what makes the pin travel to a seat with no clash engine. Per result and not per
+        /// group: a derived group name can collide with a hand-made one, and the whole group
+        /// carrying the pin would mean the rules that put those results there could never move
+        /// them again.
+        /// </summary>
+        public bool GroupedByHand { get; set; }
+
+        /// <summary>
         /// Who this result is assigned to, or null.
         ///
         /// Carried for the review round: the file a reviewer marks up travels with its

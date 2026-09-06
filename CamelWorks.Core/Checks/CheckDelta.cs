@@ -29,7 +29,8 @@ namespace CamelWorks.Core.Checks
     {
         private CheckDelta(bool noPreviousRun, IReadOnlyList<string> added,
                            IReadOnlyList<string> persisting, IReadOnlyList<string> regressed,
-                           IReadOnlyList<string> gone, int matchedOnAlias)
+                           IReadOnlyList<string> gone, int matchedOnAlias,
+                           IReadOnlyDictionary<string, string>? goneRun = null)
         {
             NoPreviousRun = noPreviousRun;
             New = added;
@@ -37,7 +38,12 @@ namespace CamelWorks.Core.Checks
             Regressed = regressed;
             Gone = gone;
             MatchedOnAlias = matchedOnAlias;
+            _goneRun = goneRun;
         }
+
+        // Which run reported each gone finding, off the journal it was in. Null when the caller
+        // compared against a single run's journal, where every gone finding is that run's.
+        private readonly IReadOnlyDictionary<string, string>? _goneRun;
 
         /// <summary>
         /// True when there is no journal at all, as against a journal that held nothing.
@@ -74,29 +80,57 @@ namespace CamelWorks.Core.Checks
         /// <summary>
         /// The same delta, restricted to the findings that reached the board.
         ///
-        /// A read observes every result into the register, and the board then collapses
-        /// duplicates and lets the rules take results out. "Twelve new" over a board holding four
-        /// is two populations printed as one row, and the eight are nowhere the reader can find
-        /// them, so a screen restricts the delta to what it is drawing.
+        /// A read observes every result into the register, and the board then collapses duplicates
+        /// and lets the rules take results out. Printed raw, "twelve new" over a board holding four
+        /// is two populations in one row and the reader cannot find the other eight, so a screen
+        /// restricts the delta to what it draws.
         ///
-        /// <see cref="Gone"/> is carried across untouched. A finding the rules suppressed is not
-        /// gone from the model; it never entered that list, because the run reported it and it was
-        /// claimed. <see cref="MatchedOnAlias"/> is carried across for the same reason: it is a
-        /// diagnostic about the whole read, not a count of rows.
+        /// <see cref="Gone"/> is not restricted by the rows. A finding the rules suppressed is not
+        /// gone from the model, and it never entered that list: the run reported it and it was
+        /// claimed. What is on the list is the findings the journal held and nothing answered for,
+        /// which by definition are on no board. <see cref="MatchedOnAlias"/> is carried across
+        /// whole for the same reason — it is a diagnostic about the read, not a count of rows.
         /// </summary>
         /// <param name="shown">The finding ids on the board. Null restricts nothing.</param>
-        public CheckDelta OnBoard(IEnumerable<string>? shown)
+        /// <param name="runId">
+        /// The run the screen draws, when it draws one. <see cref="Gone"/> is then the findings
+        /// that run's journal held, rather than every run's: a per-test screen printing the whole
+        /// read's gone count says a number its own rows cannot account for. Null keeps the whole
+        /// read's, which is what a board over every run wants.
+        /// </param>
+        public CheckDelta OnBoard(IEnumerable<string>? shown, string? runId = null)
         {
-            if (shown == null) return this;
+            if (shown == null && runId == null) return this;
 
-            var kept = new HashSet<string>(shown.Where(id => id != null), StringComparer.Ordinal);
+            var kept = shown == null ? null
+                : new HashSet<string>(shown.Where(id => id != null), StringComparer.Ordinal);
 
             return new CheckDelta(NoPreviousRun,
-                                  New.Where(kept.Contains).ToList(),
-                                  Persisting.Where(kept.Contains).ToList(),
-                                  Regressed.Where(kept.Contains).ToList(),
-                                  Gone, MatchedOnAlias);
+                                  Restricted(New, kept),
+                                  Restricted(Persisting, kept),
+                                  Restricted(Regressed, kept),
+                                  runId == null ? Gone : GoneIn(runId),
+                                  MatchedOnAlias, _goneRun);
         }
+
+        /// <summary>
+        /// The findings one run's journal held that nothing in this read answers for.
+        ///
+        /// The whole list when the comparison was against a single run's journal, since every
+        /// gone finding is then that run's.
+        /// </summary>
+        /// <param name="runId">The run.</param>
+        public IReadOnlyList<string> GoneIn(string? runId) =>
+            runId == null || _goneRun == null ? Gone
+            : Gone.Where(id => _goneRun.TryGetValue(id, out var run)
+                               && string.Equals(run, runId, StringComparison.Ordinal)).ToList();
+
+        /// <summary>One of the three lists, restricted to the rows a screen draws.</summary>
+        /// <param name="ids">The list.</param>
+        /// <param name="kept">The ids on the board, or null to restrict nothing.</param>
+        private static IReadOnlyList<string> Restricted(IReadOnlyList<string> ids,
+                                                        HashSet<string>? kept) =>
+            kept == null ? ids : ids.Where(kept.Contains).ToList();
 
         /// <summary>True when nothing came, went or came back.</summary>
         public bool IsQuiet => New.Count == 0 && Gone.Count == 0 && Regressed.Count == 0;
@@ -208,7 +242,18 @@ namespace CamelWorks.Core.Checks
             var gone = before.Statuses.Keys.Where(id => !claimed.Contains(id))
                              .OrderBy(id => id, StringComparer.Ordinal).ToList();
 
-            return new CheckDelta(false, added, persisting, regressed, gone, matchedOnAlias);
+            // Which run each gone finding was journalled by, so a screen drawing one run can say
+            // what went from that run rather than from the whole read.
+            var goneRun = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            foreach (var id in gone)
+            {
+                var run = before.RunOf(id);
+
+                if (run != null) goneRun[id] = run;
+            }
+
+            return new CheckDelta(false, added, persisting, regressed, gone, matchedOnAlias, goneRun);
         }
 
         private static string Count(IReadOnlyCollection<string> of) => Count(of.Count);

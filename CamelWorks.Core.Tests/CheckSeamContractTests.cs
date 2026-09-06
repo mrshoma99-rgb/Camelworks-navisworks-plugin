@@ -376,18 +376,119 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void Two_journals_are_kept_and_a_third_replaces_the_older_one()
+        public void One_journal_is_kept_per_run_and_a_write_replaces_it()
         {
+            // One slot, because only the last journal is ever read and a journal is a full id
+            // list. A second slot doubled the largest thing in the project file for a reader that
+            // does not exist.
             var store = Project();
 
             Journal("first").Write(store);
-            Assert.Null(RunJournal.Previous(store, "Fake", "run-a"));
-
             Journal("second").Write(store);
             Journal("third").Write(store);
 
             Assert.Equal(new[] { "third" }, RunJournal.Current(store, "Fake", "run-a")!.Statuses.Keys);
-            Assert.Equal(new[] { "second" }, RunJournal.Previous(store, "Fake", "run-a")!.Statuses.Keys);
+
+            Assert.Equal(new[] { RunJournal.CurrentKey },
+                         store.Section(CheckRunStore.Section)[RunJournal.Key]
+                              [RunJournal.Slot("Fake", "run-a")].Keys);
+        }
+
+        [Fact]
+        public void A_write_drops_the_previous_slot_an_earlier_build_left()
+        {
+            // A project file written before the second slot went away carries one. It is read by
+            // nothing, so the next run sheds it rather than keeping it for good.
+            var store = Project();
+            var slot = JsonValue.Object();
+
+            slot.Set(RunJournal.PreviousKey, Journal("older").ToJson());
+            slot.Set(RunJournal.CurrentKey, Journal("first").ToJson());
+
+            store.Section(CheckRunStore.Section)
+                 .Set(RunJournal.Key, JsonValue.Object().Set(RunJournal.Slot("Fake", "run-a"), slot));
+
+            Journal("second").Write(store);
+
+            Assert.Equal(new[] { RunJournal.CurrentKey },
+                         store.Section(CheckRunStore.Section)[RunJournal.Key]
+                              [RunJournal.Slot("Fake", "run-a")].Keys);
+
+            Assert.Equal(new[] { "second" }, RunJournal.Current(store, "Fake", "run-a")!.Statuses.Keys);
+        }
+
+        [Fact]
+        public void A_merged_journal_takes_the_later_run_and_not_the_last_one_read()
+        {
+            // Two runs can hold one finding id. Taking whichever journal was enumerated last made
+            // the merged status depend on the order the runs were read in, so the same two runs
+            // could merge one way on one board and the other way on the next.
+            var early = new RunJournal("Fake", "run-a", 10,
+                                       new Dictionary<string, FindingStatus>
+                                       {
+                                           ["f1"] = FindingStatus.Approved,
+                                       },
+                                       new Dictionary<string, int> { ["Mechanical"] = 2 });
+
+            var late = new RunJournal("Fake", "run-b", 20,
+                                      new Dictionary<string, FindingStatus>
+                                      {
+                                          ["f1"] = FindingStatus.Active,
+                                      },
+                                      new Dictionary<string, int> { ["Mechanical"] = 3 });
+
+            foreach (var order in new[] { new[] { early, late }, new[] { late, early } })
+            {
+                var merged = RunJournal.Together("Fake", order)!;
+
+                Assert.Equal(FindingStatus.Active, merged.Statuses["f1"]);
+                Assert.Equal("run-b", merged.RunOf("f1"));
+                Assert.Equal(20, merged.WhenTicks);
+
+                // Documented and asserted rather than left to be discovered: the party counts are
+                // summed, so a finding two runs both report open is counted under its party once
+                // per run. The journal holds counts and not ids, so the merge cannot take that
+                // out; the findings themselves do not double.
+                Assert.Equal(5, merged.OpenByParty["Mechanical"]);
+                Assert.Equal(1, merged.Count);
+            }
+        }
+
+        [Fact]
+        public void Two_runs_journalled_at_the_same_moment_merge_to_the_further_status()
+        {
+            // Equal ticks is the tie the clock cannot break — two tests read in one pass are
+            // journalled with one timestamp. The lattice breaks it, so the answer is the same
+            // whichever run is read first.
+            var one = new RunJournal("Fake", "run-a", 10,
+                                     new Dictionary<string, FindingStatus>
+                                     {
+                                         ["f1"] = FindingStatus.Active,
+                                     }, null);
+
+            var two = new RunJournal("Fake", "run-b", 10,
+                                     new Dictionary<string, FindingStatus>
+                                     {
+                                         ["f1"] = FindingStatus.Approved,
+                                     }, null);
+
+            Assert.Equal(FindingStatus.Approved, RunJournal.Together("Fake", new[] { one, two })!.Statuses["f1"]);
+            Assert.Equal(FindingStatus.Approved, RunJournal.Together("Fake", new[] { two, one })!.Statuses["f1"]);
+        }
+
+        [Fact]
+        public void A_board_whose_runs_have_never_run_has_no_merged_journal()
+        {
+            Assert.Null(RunJournal.Together("Fake", new RunJournal?[] { null, null }));
+            Assert.Null(RunJournal.Together("Fake", null));
+
+            // A run that ran and found nothing is not the same thing: there is a journal, and the
+            // comparison against it is an empty one rather than a first run.
+            var empty = RunJournal.Together("Fake", new[] { Journal("f1") })!;
+
+            Assert.Equal(RunJournal.EveryRun, empty.RunId);
+            Assert.Equal("run-a", empty.RunOf("f1"));
+            Assert.Null(empty.RunOf("f2"));
         }
 
         [Fact]
@@ -733,7 +834,6 @@ namespace CamelWorks.Core.Tests
 
             Assert.Equal(new[] { "one" }, RunJournal.Current(store, "a", "b/c")!.Statuses.Keys);
             Assert.Equal(new[] { "two" }, RunJournal.Current(store, "a/b", "c")!.Statuses.Keys);
-            Assert.Null(RunJournal.Previous(store, "a", "b/c"));
         }
 
         private static RunJournal Journal(string findingId) =>

@@ -258,6 +258,31 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void AnEmptyFactIsNotStored()
+        {
+            // A producer writes the facts it owns on every read, empty where the run reported
+            // nothing, so the merge overwrites the last run's value rather than leaving it. Absent
+            // and empty read the same to every reader, so the empty one is not written: eighteen
+            // thousand clash findings would otherwise each carry several empty keys.
+            var register = new FindingRegister();
+            var finding = Clash(A, B, "MEP vs Structure", "cell-40-80-120");
+
+            finding.Facts["Level"] = "L03";
+            finding.Facts["Distance"] = string.Empty;
+
+            register.Put(finding);
+
+            var written = register.ToJson().ToJson();
+
+            Assert.DoesNotContain("Distance", written, StringComparison.Ordinal);
+
+            var read = FindingRegister.FromJson(JsonReader.Parse(written)).All.Single();
+
+            Assert.Equal("L03", read.Facts["Level"]);
+            Assert.False(read.Facts.ContainsKey("Distance"));
+        }
+
+        [Fact]
         public void TheIdIsDerivedAgainOnLoadAndStillMatches()
         {
             // An issue points at the id. If loading invented a different one, every link would

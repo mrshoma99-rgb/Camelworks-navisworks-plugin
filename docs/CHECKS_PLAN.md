@@ -570,12 +570,13 @@ public sealed class RunJournal
 }
 ```
 
-**One journal per (check, run), and two of them kept.** `checks/journals` is an
-object keyed `"<checkKey>/<runId>"`, each holding `current` and `previous` — the
-same one-undo-slot shape `ClashKeys.Previous` has today. A third is dropped on
-write. Retention is stated because a journal is a full id list: twelve runs of
-eighteen thousand results at two journals each is the largest thing in the project
-file, and an unbounded history would double it every run.
+**One journal per (check, run), and one of them kept.** `checks/journals` is an
+object keyed `"<checkKey>/<runId>"`, each holding `current`. Retention is stated
+because a journal is a full id list: twelve runs of eighteen thousand results is
+the largest thing in the project file, and an unbounded history would grow it
+every run. The `previous` slot an earlier build wrote is read by nothing and is
+dropped on the next write; a caller that needs the outgoing journal reads
+`Current` before it writes.
 
 A run with no journal is a first run, and `NoPreviousRun` says so. No journal is
 seeded from anything: there is no function from a `ClashKey` to a finding id, so

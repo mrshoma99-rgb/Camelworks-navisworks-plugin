@@ -149,10 +149,16 @@ namespace CamelWorks.UI.Views
         /// would do before anybody commits them. Null reads the project file, which is what every
         /// other caller wants.
         /// </param>
+        /// <param name="preview">
+        /// Whether this is the Rules tab trying a rule set out. A preview writes no journal,
+        /// records no board and does not become what the report and the BCF are taken from: a
+        /// journal written by a preview is what the next real read would compare against, so every
+        /// run after it would report nothing changed.
+        /// </param>
         internal static ClashPipelineResult? Build(Session session, Job job, ICollection<string> notes,
-                                                   ClashRuleSet? trying = null)
+                                                   ClashRuleSet? trying = null, bool preview = false)
         {
-            if (!session.Clash.IsAvailable) return Hydrate(session, job, notes, trying);
+            if (!session.Clash.IsAvailable) return Hydrate(session, job, notes, trying, preview);
 
             var check = new ClashCheck(session.Clash, session.MetresPerUnit, session.ClashProblem);
             var register = session.Findings.Findings;
@@ -163,10 +169,9 @@ namespace CamelWorks.UI.Views
 
             foreach (var note in read.Notes) notes.Add(note);
 
-            // Read before the journals are written, because writing moves the current journal into
-            // the previous slot: what is current now is what the last run stood at, and it is what
-            // this run is compared against. After the write below, the same journal is the one
-            // RunJournal.Previous returns.
+            // Read before the journals are written. A write replaces a run's journal, so what is
+            // current now is what the last run stood at, and it is what this run is compared
+            // against.
             var before = RunJournal.Together(
                 check.Key, read.Runs.Select(run => RunJournal.Current(session.Store, check.Key, run.Id)));
 
@@ -180,9 +185,18 @@ namespace CamelWorks.UI.Views
             // The held findings, not the ones the read produced: the register merges a fresh
             // finding into the one it holds, and the held object is what carries the decisions and
             // what the board draws.
-            var held = register.Present.Where(read.Scope).ToList();
+            //
+            // In the order the host reported them, not the order the register enumerates. The
+            // register is a dictionary and its enumeration order changes on any remove, so a board
+            // ordered by it would reorder its rows and its groups with no edit to the model or the
+            // rules.
+            var held = Held(register, read);
 
-            foreach (var run in read.Runs) RunJournal.Of(check.Key, run.Id, now, held).Write(session.Store);
+            // Not on a preview: a journal written here is what the next real read compares
+            // against, so a preview would leave every following run reporting nothing changed.
+            if (!preview)
+                foreach (var run in read.Runs)
+                    RunJournal.Of(check.Key, run.Id, now, held).Write(session.Store);
 
             job.Say("Describing " + Ui.Count(held.Count, "result") + "...");
 
@@ -243,12 +257,42 @@ namespace CamelWorks.UI.Views
                           + "into the one the funnel keeps. They are counted, not hidden.");
             if (rules.IsDefault) notes.Add("Nothing is configured, so the built-in rules ran: " + board.Funnel);
 
+            // A preview is not a run: it is neither recorded nor held as the board the report, the
+            // BCF and the clash file are taken from.
+            if (preview) return board;
+
             LastBoard = board;
             LastBoardLabel = session.Profile.ProjectName;
             LastDelta = delta;
 
-            Save(session, board);
+            Save(session, board, offered: held);
             return board;
+        }
+
+        /// <summary>
+        /// The findings a read reported, as the register holds them, in the order the host read
+        /// them.
+        ///
+        /// One entry per finding: two results of one test that quantise into one finding are one
+        /// row, and taking the read's order without that would draw the row twice.
+        /// </summary>
+        /// <param name="register">The register the read was observed into.</param>
+        /// <param name="read">What the check read.</param>
+        private static IReadOnlyList<Finding> Held(FindingRegister register, CheckRead read)
+        {
+            var held = new List<Finding>(read.Findings.Count);
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var fresh in read.Findings)
+            {
+                if (fresh == null || !seen.Add(fresh.Id)) continue;
+
+                var one = register.Find(fresh.Id);
+
+                if (one != null && one.IsPresent && read.Scope(one)) held.Add(one);
+            }
+
+            return held;
         }
 
         /// <summary>
@@ -275,19 +319,34 @@ namespace CamelWorks.UI.Views
         /// <param name="job">The run this is part of, for progress and for stopping.</param>
         /// <param name="notes">Anything the reader has to know, added as it is found.</param>
         /// <param name="trying">A rule set to use instead of the saved one, or null for the saved one.</param>
+        /// <param name="preview">
+        /// Whether this is the Rules tab trying a rule set out. A hydrated board records nothing
+        /// either way; a preview additionally does not become the board the report and the BCF are
+        /// taken from.
+        /// </param>
         private static ClashPipelineResult? Hydrate(Session session, Job job, ICollection<string> notes,
-                                                    ClashRuleSet? trying = null)
+                                                    ClashRuleSet? trying = null, bool preview = false)
         {
             job.Say("Reading what this project has recorded...");
 
+            // Ordered explicitly: the register is a dictionary and its enumeration order changes
+            // on any remove, so a board ordered by it would reorder its rows and its groups
+            // between two loads of the same record.
             var held = session.Findings.Findings.From(FindingSource.Clash)
-                              .Where(finding => finding.IsPresent).ToList();
+                              .Where(finding => finding.IsPresent)
+                              .OrderBy(finding => finding.Id, StringComparer.Ordinal).ToList();
 
             job.Say("Describing " + Ui.Count(held.Count, "result") + "...");
 
             // No folder lookup: naming a test's folder needs the host's test list, and this seat
             // has no clash engine to ask.
             var items = Project(session, job, Array.Empty<CheckRun>()).Items(held);
+
+            // What the record holds and this seat could not rebuild: a clash finding needs two
+            // resolved elements and a point to be an item. Counted and said, because a board that
+            // silently drew fewer results than the project holds is the one failure a rebuilt
+            // board must not have.
+            var unusable = held.Count - items.Count;
 
             if (items.Count == 0)
             {
@@ -298,17 +357,25 @@ namespace CamelWorks.UI.Views
                 return null;
             }
 
+            // Cross-test duplicates go first, before anything counts, exactly as on a read. Two
+            // tests that both reported one pipe through one wall are one problem, and a rebuilt
+            // board that drew both would assign and report the same conflict twice.
+            job.Say("Collapsing duplicates...");
+
+            var collapse = DuplicateCollapse.Across(items, session.Profile.DuplicateBand);
+
             job.Say("Applying rules...");
 
             var rules = trying
                         ?? ClashRuleSet.FromJson(session.Store.Section(ProjectStore.ClashSection)[ClashKeys.Rules]);
             var options = rules.ToOptions(session.Profile.ClashProximity);
+            options.CollapsedDuplicates = collapse.Count;
             options.Decisions = Decisions(session);
             options.PinnedGroups = Pinned(session);
 
             var raised = Issues(session);
 
-            var everything = new List<ClashItem>(items);
+            var everything = new List<ClashItem>(collapse.Kept);
             everything.AddRange(IssueItems.Open(raised));
 
             var board = ClashPipeline.Run(everything, options);
@@ -320,6 +387,21 @@ namespace CamelWorks.UI.Views
                       + "no clash engine. Everything on it can be triaged, assigned, reported and "
                       + "issued as BCF. Two things it cannot do: run a test, and notice a conflict "
                       + "that has appeared since the run it came from.");
+
+            if (collapse.Count > 0)
+                notes.Add(Ui.Count(collapse.Count, "result")
+                          + " were the same conflict found by more than one test, and were folded "
+                          + "into the one the funnel keeps. They are counted, not hidden.");
+
+            if (unusable > 0)
+                notes.Add(Ui.Count(unusable, "recorded result")
+                          + " could not be rebuilt and " + (unusable == 1 ? "is" : "are")
+                          + " not on this board: a clash needs two resolved elements and a point, "
+                          + "and the record does not hold both. "
+                          + (unusable == 1 ? "It is" : "They are")
+                          + " still in the project's findings.");
+
+            if (preview) return board;
 
             LastBoard = board;
             LastBoardLabel = session.Profile.ProjectName;
@@ -614,7 +696,13 @@ namespace CamelWorks.UI.Views
         /// <param name="session">The session.</param>
         /// <param name="board">The board to record.</param>
         /// <param name="summary">What to write in the activity log.</param>
-        private static void Save(Session session, ClashPipelineResult board, string? summary = null)
+        /// <param name="offered">
+        /// The findings the board was built from, for the board facts written back onto them. A
+        /// caller with a board and no read passes nothing, and the findings the board never drew
+        /// are then left as they were.
+        /// </param>
+        private static void Save(Session session, ClashPipelineResult board, string? summary = null,
+                                 IReadOnlyList<Finding>? offered = null)
         {
             BoardEdits++;
 
@@ -651,8 +739,10 @@ namespace CamelWorks.UI.Views
             // What the board did with each result, back onto the finding behind it: the group and
             // whether it was made by hand, and the rule that took a result off the board. Without
             // them a seat with no clash engine rebuilds a board with no hand grouping, and every
-            // suppressed result arrives as new the moment somebody turns the rule off.
-            ClashFindings.Recorded(board, session.Findings.Findings);
+            // suppressed result arrives as new the moment somebody turns the rule off. The
+            // findings the read offered are passed too, so a result folded into a cross-test
+            // duplicate loses the facts it was recorded with when it was the survivor.
+            ClashFindings.Recorded(board, session.Findings.Findings, offered);
 
             var kept = session.Findings.Save();
 
@@ -793,7 +883,11 @@ namespace CamelWorks.UI.Views
                 var tryOut = Ui.Runner("Try these on the board", _status, job =>
                 {
                     var notes = new List<string>();
-                    var board = CoordinateViews.Build(session, job, notes, _rules);
+                    // A preview and not a run: it writes no journal, records no board and does
+                    // not become what the report and the BCF are taken from. Without that, trying
+                    // a rule out left the next real read comparing against the preview and
+                    // reporting nothing changed.
+                    var board = CoordinateViews.Build(session, job, notes, _rules, preview: true);
 
                     foreach (var note in notes) _status.Children.Add(Ui.Note(note));
 

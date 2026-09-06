@@ -253,16 +253,31 @@ the findings that held the decisions were two descriptions of one document, made
 only one of them carried what anybody had recorded.
 
 - **The tab reads `ClashCheck` and projects the items from the findings register.** A row's status,
-  assignee, comments, group, priority and stage come off the finding; its distance, name, host id
-  and host test off the facts the producer wrote; its level, disciplines and model names are
+  assignee, comments, priority and stage come off the finding, and its name off the finding's
+  title; its distance, categories, item names, host id, host test and the rule that suppressed it
+  come off the facts. A carried group comes off a fact as well, and only where the board recorded
+  that somebody made that group by hand: a derived name is re-derived by the rules, and carrying it
+  would freeze the board against its own rule stack. Level, disciplines and model names are
   re-derived by the seat, which is what the projection takes its three lookups for. Nothing in the
   projection resolves an element key: a participant's model scope is in the key itself and its
   category was read while the adapter held the element, so a board of eighteen thousand results
   costs no walk of the federation.
+- **A finding with fewer than two resolved elements, or with no point, is not an item.** Both are
+  keyless, and the rules, the grouping and the run comparison all index on a key. A missing
+  coordinate read as nought would put the result in the origin cell, on whatever level that is,
+  under a key matching nothing that is really there.
+- **The facts a read owns are written on every read, empty where the host said nothing.** Facts
+  merge additively into a held finding and none is ever removed, so a fact written only when there
+  was something to say leaves the last run's answer in place. Distance is the one that does harm:
+  the suppress and flag rules read it, so a result the host stopped measuring would keep last
+  week's depth and could be taken off the board by a rule with nothing on screen to say why. An
+  empty fact is not stored in the project file, since absent and empty read the same.
 - **The point is metres on the finding and model units in the key.** The scale is undone once, at
   the projection, which is the only place the two spines differ.
 - **What changed since the last run is a `CheckDelta` over a `RunJournal`.** A journal is written
-  after every read, one per check and run, two kept. Matching is through the ids the check says a
+  after every read, one per check and run, and one kept: a journal is a full id list, only the last
+  one is read, and a caller comparing against the outgoing one reads it before it writes. Matching
+  is through the ids the check says a
   finding may also be recognised under — for clash, the 26 neighbouring position cells — so a model
   re-exported 40 mm out reports drift rather than every clash gone and an equal number new. A run
   with no journal reads as a first run and the board says "no previous run recorded" rather than
@@ -278,7 +293,25 @@ only one of them carried what anybody had recorded.
   group, the priority, the stage and the topic guid. Two things the snapshot carried that the
   register now carries as facts: the board group and whether somebody made it by hand, which is
   what restores a carried group, and the rule that suppressed a result, without which every
-  suppressed result arrives as new the moment somebody turns the rule off.
+  suppressed result arrives as new the moment somebody turns the rule off. A rebuilt board folds
+  cross-test duplicates exactly as a read does, and says how many recorded results it could not
+  rebuild rather than drawing fewer rows than the project holds without a word.
+- **Identity carries the test, and so the history does not cross tests.** A finding's id names the
+  test that found it and so does every alias the check offers, so a result somebody re-scopes from
+  one test to another is one gone and one new rather than one carried across. Aliases that ignored
+  the test would let a finding match a result in a different test; a journalled id is claimed once,
+  so the first finding to offer it would take the other test's history — a sign-off moved onto a
+  clash nobody signed off. A lost history is visible in the counts and can be put right by hand,
+  and that is the trade being made.
+- **Gone is attributed to the run that journalled it.** A read covers every test on the tab, so a
+  per-test screen printing the whole read's gone count says a number its own rows cannot account
+  for. It is restricted to that test's run; New, Persisting and Regressed are restricted to the
+  rows the screen draws. Gone is not restricted by the rows, because a finding nothing answered
+  for is by definition on no board.
+- **Trying a rule set out records nothing.** The Rules tab builds a board with the edited rules to
+  show what they would do. It writes no journal, saves no board and does not become what the
+  report and the BCF are taken from — a preview that journalled would leave the next real read
+  comparing against it and reporting nothing changed.
 - **The snapshot is still written.** The per-party comparison reads it. The journal and the
   register are what the board's own figures come from.
 

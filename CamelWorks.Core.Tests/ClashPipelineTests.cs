@@ -418,6 +418,35 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void A_derived_group_name_colliding_with_a_pinned_one_does_not_pin_its_members()
+        {
+            // Groups are keyed by name, so a result the level rule sends to "L03" joins a group
+            // somebody pinned under that same name. The group is pinned, because a member was put
+            // there by hand; the result the rules sent there is not, or the rules could never move
+            // it again.
+            var byHand = Item("a");
+            var byRule = Item("b");
+
+            var result = ClashPipeline.Run(new[] { byHand, byRule }, new ClashPipelineOptions
+            {
+                Grouping = new[] { GroupingRules.ByLevel() },
+                PinnedGroups = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+                {
+                    ["L03"] = new[] { byHand.Key.ToString() },
+                },
+            });
+
+            var group = Assert.Single(result.Groups);
+
+            Assert.Equal("L03", group.Name);
+            Assert.True(group.IsPinned);
+            Assert.Equal(2, group.Items.Count);
+
+            Assert.True(byHand.GroupedByHand);
+            Assert.False(byRule.GroupedByHand);
+        }
+
+        [Fact]
         public void A_group_id_is_derived_from_its_name_so_it_is_stable()
         {
             var a = ClashPipeline.Run(new[] { Item("x") }, ClashFixture.Stack(GroupingRules.ByLevel()));
