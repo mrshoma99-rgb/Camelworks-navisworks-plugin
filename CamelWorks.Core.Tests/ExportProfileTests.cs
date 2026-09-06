@@ -322,6 +322,101 @@ namespace CamelWorks.Core.Tests
         }
 
         // -----------------------------------------------------------------------------------
+        // -----------------------------------------------------------------------------------
+        // The filter, and one file per recipient
+        // -----------------------------------------------------------------------------------
+
+        [Fact]
+        public void The_profiles_filter_narrows_what_the_tests_and_statuses_let_through()
+        {
+            var mine = Item("a", "Hard", FindingStatus.New, 1);
+            var high = Item("b", "Hard", FindingStatus.New, 2);
+
+            mine.Z = 1;
+            high.Z = 12;
+
+            var profile = Everything("Hard");
+            var band = profile.Pick.Add("elevation", ClashCompare.AtMost);
+
+            band.High = 5;
+
+            var picked = profile.Choose(new[] { mine, high });
+
+            Assert.Equal(1, Assert.Single(picked.Items).Z);
+            Assert.Equal(1, picked.ByFilter);
+            Assert.Contains("outside the filter", picked.Explain(), StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_run_splits_into_one_pack_per_recipient()
+        {
+            // One press, six files. Building that by editing the filter six times is how the
+            // wrong pack reaches the wrong trade.
+            var mech = Item("a", "Hard", FindingStatus.New, 1);
+            var also = Item("b", "Hard", FindingStatus.New, 2);
+            var structure = Item("c", "Hard", FindingStatus.New, 3);
+            var nobody = Item("d", "Hard", FindingStatus.New, 4);
+
+            mech.AssignedTo = "Mechanical";
+            also.AssignedTo = "Mechanical";
+            structure.AssignedTo = "Structure";
+
+            var profile = Everything("Hard");
+
+            profile.SplitBy = "assignee";
+
+            var rounds = profile.Rounds(new[] { mech, also, structure, nobody });
+
+            Assert.Equal(3, rounds.Count);
+            Assert.Equal(new[] { "Mechanical", "Structure", ExportProfile.Nobody },
+                         rounds.Select(r => r.Recipient).OrderBy(r => r == ExportProfile.Nobody)
+                               .ThenBy(r => r, StringComparer.OrdinalIgnoreCase));
+
+            var mechanical = rounds.Single(r => r.Recipient == "Mechanical");
+
+            Assert.Equal(2, mechanical.Selection.Items.Count);
+        }
+
+        [Fact]
+        public void Clashes_nobody_was_assigned_get_their_own_pack_rather_than_none()
+        {
+            var loose = Item("a", "Hard", FindingStatus.New, 1);
+
+            var profile = Everything("Hard");
+
+            profile.SplitBy = "assignee";
+
+            var round = Assert.Single(profile.Rounds(new[] { loose }));
+
+            Assert.Equal(ExportProfile.Nobody, round.Recipient);
+            Assert.Equal("Unassigned", round.FileStem());
+        }
+
+        [Fact]
+        public void With_nothing_to_split_by_there_is_one_pack()
+        {
+            var profile = Everything("Hard");
+
+            var round = Assert.Single(profile.Rounds(new[] { Item("a", "Hard", FindingStatus.New, 1) }));
+
+            Assert.Equal(profile.Name, round.Recipient);
+        }
+
+        [Fact]
+        public void A_recipients_name_becomes_a_filename_a_file_system_will_take()
+        {
+            var awkward = Item("a", "Hard", FindingStatus.New, 1);
+
+            awkward.AssignedTo = "M&E / Sub-contractor";
+
+            var profile = Everything("Hard");
+
+            profile.SplitBy = "assignee";
+
+            Assert.Equal("M E Sub-contractor",
+                         Assert.Single(profile.Rounds(new[] { awkward })).FileStem());
+        }
+
         // Living in the project file
         // -----------------------------------------------------------------------------------
 

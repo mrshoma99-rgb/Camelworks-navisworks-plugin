@@ -159,9 +159,10 @@ namespace CamelWorks.Core.Clash
     public sealed class ExportSelection
     {
         internal ExportSelection(IReadOnlyList<ClashItem> items, IReadOnlyList<ClashGroup> groups,
-                                 int byTest, int byStatus, int byParty)
+                                 int byTest, int byStatus, int byParty, int byFilter = 0)
         {
-            Items = items; Groups = groups; ByTest = byTest; ByStatus = byStatus; ByParty = byParty;
+            Items = items; Groups = groups;
+            ByTest = byTest; ByStatus = byStatus; ByParty = byParty; ByFilter = byFilter;
         }
 
         /// <summary>What goes in the file.</summary>
@@ -179,8 +180,11 @@ namespace CamelWorks.Core.Clash
         /// <summary>How many were left out by the party filter.</summary>
         public int ByParty { get; }
 
+        /// <summary>How many were left out by the profile's own filter.</summary>
+        public int ByFilter { get; }
+
         /// <summary>How many were left out altogether.</summary>
-        public int Left => ByTest + ByStatus + ByParty;
+        public int Left => ByTest + ByStatus + ByParty + ByFilter;
 
         /// <summary>True when there is something to write.</summary>
         public bool IsUsable => Items.Count > 0;
@@ -210,12 +214,47 @@ namespace CamelWorks.Core.Clash
             if (ByTest > 0) why.Add(Measure.Count(ByTest) + " from tests not chosen");
             if (ByStatus > 0) why.Add(Measure.Count(ByStatus) + " at a status left out");
             if (ByParty > 0) why.Add(Measure.Count(ByParty) + " assigned elsewhere");
+            if (ByFilter > 0) why.Add(Measure.Count(ByFilter) + " outside the filter");
 
             return line + "; " + string.Join(", ", why) + ".";
         }
 
         /// <inheritdoc />
         public override string ToString() => Explain();
+    }
+
+    /// <summary>One recipient's pack: who it is for, and what goes in it.</summary>
+    public sealed class ExportRound
+    {
+        internal ExportRound(string recipient, ExportSelection selection)
+        {
+            Recipient = recipient; Selection = selection;
+        }
+
+        /// <summary>Who the pack is for, as the facet named them.</summary>
+        public string Recipient { get; }
+
+        /// <summary>What goes in it.</summary>
+        public ExportSelection Selection { get; }
+
+        /// <summary>A filename stem for this round, with nothing a file system will refuse.</summary>
+        public string FileStem()
+        {
+            var made = new System.Text.StringBuilder();
+
+            foreach (var letter in Recipient)
+                made.Append(char.IsLetterOrDigit(letter) || letter == '-' || letter == '_'
+                    ? letter
+                    : ' ');
+
+            var said = string.Join(" ",
+                made.ToString().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries));
+
+            return said.Length == 0 ? "pack" : said;
+        }
+
+        /// <inheritdoc />
+        public override string ToString() => Recipient + ": " + Selection.Explain();
     }
 
     /// <summary>
@@ -255,6 +294,24 @@ namespace CamelWorks.Core.Clash
 
         /// <summary>Whether the folders survive into the file.</summary>
         public bool KeepGroups { get; set; } = true;
+
+        /// <summary>
+        /// Which clashes go in, and in what order, by any parameter they carry.
+        ///
+        /// The statuses and parties above are the two questions asked often enough to have their
+        /// own controls; this is every other one - the storey, the model, a property the models
+        /// carry - and it is why a profile can express "Mechanical's open items on levels 3 to 5"
+        /// rather than approximate it.
+        /// </summary>
+        public ClashPick Pick { get; private set; } = new ClashPick();
+
+        /// <summary>
+        /// The facet a run is split by, so one press writes a file per recipient.
+        ///
+        /// Usually the assignee: six trades, six packs, each holding only that trade's clashes.
+        /// Null writes one file holding everything the profile picked.
+        /// </summary>
+        public string? SplitBy { get; set; }
 
         /// <summary>The tests that would go in.</summary>
         public IReadOnlyList<ProfileTest> Chosen => _tests.Where(t => t.Chosen).ToList();
@@ -320,8 +377,10 @@ namespace CamelWorks.Core.Clash
         /// <summary>Pick the results out of the board.</summary>
         /// <param name="items">Everything on the board.</param>
         /// <param name="groups">The board's folders, or null when it has none.</param>
+        /// <param name="plan">The project's storeys, for a filter that names one.</param>
         public ExportSelection Choose(IEnumerable<ClashItem>? items,
-                                      IEnumerable<ClashGroup>? groups = null)
+                                      IEnumerable<ClashGroup>? groups = null,
+                                      Data.LevelPlan? plan = null)
         {
             var board = (items ?? Array.Empty<ClashItem>()).Where(i => i != null).ToList();
 
@@ -363,6 +422,23 @@ namespace CamelWorks.Core.Clash
                 keeping.Add(item);
             }
 
+            // The filter last, and counted separately, so the readout can say which gate a
+            // result fell at. "Nothing came out" is a different problem depending on whether the
+            // tests were unticked or the filter was too narrow.
+            var byFilter = 0;
+
+            if (!Pick.IsEverything)
+            {
+                var narrowed = Pick.Take(keeping, plan);
+
+                byFilter = keeping.Count - narrowed.Count;
+                keeping = narrowed.ToList();
+            }
+            else
+            {
+                keeping = Pick.Ordered(keeping, plan).ToList();
+            }
+
             var kept = new HashSet<ClashKey>(keeping.Select(i => i.Key));
             var trimmed = new List<ClashGroup>();
 
@@ -386,8 +462,94 @@ namespace CamelWorks.Core.Clash
                 trimmed.Add(copy);
             }
 
-            return new ExportSelection(keeping, trimmed, byTest, byStatus, byParty);
+            return new ExportSelection(keeping, trimmed, byTest, byStatus, byParty, byFilter);
         }
+
+        /// <summary>
+        /// The profile split into one selection per recipient.
+        ///
+        /// One press, six files. A weekly issue is not one pack: it is the mechanical
+        /// contractor's clashes to the mechanical contractor and the structural engineer's to the
+        /// structural engineer, and building that by editing the filter six times is how the wrong
+        /// pack reaches the wrong trade.
+        ///
+        /// Results holding nothing under the facet are their own round, named so somebody can see
+        /// them. Dropped, they would be in no pack at all, which is how a clash nobody was
+        /// assigned reaches nobody.
+        /// </summary>
+        /// <param name="items">Everything on the board.</param>
+        /// <param name="groups">The board's folders.</param>
+        /// <param name="plan">The project's storeys.</param>
+        public IReadOnlyList<ExportRound> Rounds(IEnumerable<ClashItem>? items,
+                                                 IEnumerable<ClashGroup>? groups = null,
+                                                 Data.LevelPlan? plan = null)
+        {
+            var chosen = Choose(items, groups, plan);
+
+            if (string.IsNullOrWhiteSpace(SplitBy))
+                return new[] { new ExportRound(Name, chosen) };
+
+            var facet = ClashFacets.Of(SplitBy, chosen.Items, plan);
+
+            if (facet == null) return new[] { new ExportRound(Name, chosen) };
+
+            var folders = (groups ?? Array.Empty<ClashGroup>()).Where(g => g != null).ToList();
+
+            var order = new List<string>();
+            var byWhom = new Dictionary<string, List<ClashItem>>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var item in chosen.Items)
+            {
+                var said = (facet.Read(item) ?? string.Empty).Trim();
+
+                if (said.Length == 0) said = Nobody;
+
+                if (!byWhom.TryGetValue(said, out var held))
+                {
+                    held = new List<ClashItem>();
+                    byWhom[said] = held;
+                    order.Add(said);
+                }
+
+                held.Add(item);
+            }
+
+            order.Sort(StringComparer.OrdinalIgnoreCase);
+
+            var rounds = new List<ExportRound>();
+
+            foreach (var who in order)
+            {
+                var mine = byWhom[who];
+                var keys = new HashSet<ClashKey>(mine.Select(one => one.Key));
+                var trimmed = new List<ClashGroup>();
+
+                foreach (var group in folders)
+                {
+                    var survivors = group.Items.Where(m => m != null && keys.Contains(m.Key))
+                                               .ToList();
+
+                    if (survivors.Count == 0) continue;
+
+                    var copy = new ClashGroup(group.Id, group.Name)
+                    {
+                        AssignedTo = group.AssignedTo,
+                    };
+
+                    foreach (var member in survivors) copy.Items.Add(member);
+
+                    trimmed.Add(copy);
+                }
+
+                rounds.Add(new ExportRound(who,
+                    new ExportSelection(mine, trimmed, 0, 0, 0, 0)));
+            }
+
+            return rounds;
+        }
+
+        /// <summary>What a round is called when the facet says nothing about who it is for.</summary>
+        public const string Nobody = "Unassigned";
 
         /// <summary>
         /// The profile, as the writer's settings.
@@ -457,7 +619,9 @@ namespace CamelWorks.Core.Clash
                 .Set("statuses", JsonValue.Array(
                     Statuses.OrderBy(s => (int)s).Select(s => JsonValue.String(s.ToString()))))
                 .Set("parties", JsonValue.Array(
-                    Parties.OrderBy(p => p, StringComparer.OrdinalIgnoreCase).Select(JsonValue.String)));
+                    Parties.OrderBy(p => p, StringComparer.OrdinalIgnoreCase).Select(JsonValue.String)))
+                .Set("pick", Pick.ToJson() ?? JsonValue.Null)
+                .Set("splitBy", SplitBy ?? string.Empty);
 
         /// <summary>Read one back.</summary>
         public static ExportProfile FromJson(JsonValue? json)
@@ -490,6 +654,12 @@ namespace CamelWorks.Core.Clash
                 var party = (item.AsString() ?? string.Empty).Trim();
                 if (party.Length > 0) profile.Parties.Add(party);
             }
+
+            profile.Pick = ClashPick.FromJson(json["pick"]);
+
+            var split = (json["splitBy"].AsString() ?? string.Empty).Trim();
+
+            profile.SplitBy = split.Length == 0 ? null : split;
 
             return profile;
         }
