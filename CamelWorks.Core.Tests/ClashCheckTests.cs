@@ -482,14 +482,105 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void A_model_in_feet_is_measured_against_its_tolerance_in_metres()
         {
-            var seat = Seat();
+            // The host reports −0.082 ft, which is 25 mm, which is exactly this test's tolerance.
+            var seat = new FakeClashSource()
+                .With("L03 MEP v STR", "Weekly", "t1")
+                .Finding(Key("Duct 1"), Key("Beam 1"), 1, 2, 3)
+                .Deep(-0.082);
+
             var check = new ClashCheck(seat, metresPerUnit: 0.3048);
             var finding = check.Read(new[] { "t1" }, null).Findings[0];
 
-            // 0.082 ft is 25 mm, which is exactly this test's tolerance.
-            finding.Facts["Distance"] = "-0.082";
-
+            // Converted once, at the producer, so nothing above it has to know the leg.
+            Assert.Equal(-0.025, ClashCheck.DistanceMetres(finding)!.Value, 4);
             Assert.Equal(1.0, check.Severity(finding)!.Value, 2);
+        }
+
+        [Fact]
+        public void A_length_fact_is_metres_whatever_the_document_is_in()
+        {
+            ClashCheck Read(double metresPerUnit) =>
+                new ClashCheck(new FakeClashSource()
+                                   .With("L03 MEP v STR", "Weekly", "t1")
+                                   .Finding(Key("Duct 1"), Key("Beam 1"), 1, 2, 3)
+                                   .Deep(metresPerUnit == 1.0 ? -0.025 : -0.082),
+                               metresPerUnit);
+
+            var metric = Read(1.0).Read(new[] { "t1" }, null).Findings[0];
+            var feet = Read(0.3048).Read(new[] { "t1" }, null).Findings[0];
+
+            // The same physical depth, so the same fact, to the millimetre.
+            Assert.Equal(-0.025, ClashCheck.DistanceMetres(metric)!.Value, 4);
+            Assert.Equal(-0.025, ClashCheck.DistanceMetres(feet)!.Value, 4);
+
+            // And the point with it: a foot-unit model's clash at Z = 3 is 0.9144 m up.
+            Assert.Equal(0.9144, feet.Z!.Value, 4);
+            Assert.Equal(3.0, metric.Z!.Value, 4);
+        }
+
+        [Fact]
+        public void The_depth_column_sorts_on_its_number_and_not_on_what_it_prints()
+        {
+            var seat = new FakeClashSource()
+                .With("L03 MEP v STR", "Weekly", "t1")
+                .Finding(Key("Duct 1"), Key("Beam 1"), 1, 2, 3).Deep(-0.0002)
+                .Finding(Key("Duct 2"), Key("Beam 2"), 4, 5, 6).Deep(-0.0004);
+
+            var check = new ClashCheck(seat);
+            var read = check.Read(new[] { "t1" }, null);
+
+            var worst = check.Columns.Single(one => one.Kind == ColumnKind.Number);
+
+            // Both print as nothing at the resolution the board draws.
+            Assert.Equal("-0 mm", worst.Format!(worst.Number!(read.Findings[0])!.Value));
+            Assert.Equal("-0 mm", worst.Format!(worst.Number!(read.Findings[1])!.Value));
+
+            // The deeper one still sorts below the shallower one.
+            var sorted = read.Findings.OrderBy(one => worst.Number!(one) ?? double.MaxValue).ToList();
+
+            Assert.Equal(-0.0004, worst.Number!(sorted[0])!.Value, 6);
+            Assert.Equal(-0.0002, worst.Number!(sorted[1])!.Value, 6);
+        }
+
+        [Fact]
+        public void A_depth_bands_the_same_read_from_the_host_and_read_from_a_file()
+        {
+            var seat = new FakeClashSource()
+                .With("L03 MEP v STR", "Weekly", "t1")
+                .Finding(Key("Duct 1"), Key("Beam 1"), 1, 2, 3)
+                .Deep(-0.164);
+
+            // A foot-unit document, and the same clash 50 mm deep in metres as a file would
+            // carry it.
+            var host = new ClashCheck(seat, metresPerUnit: 0.3048)
+                .Read(new[] { "t1" }, null).Findings[0];
+
+            var column = new ClashCheck(seat).Columns.Single(one => one.Kind == ColumnKind.Number);
+
+            Assert.Equal(ClashColumns.Banded(-0.05), column.Bucket!(column.Number!(host)!.Value));
+            Assert.Equal("25 to 100 mm", column.Bucket!(column.Number!(host)!.Value));
+        }
+
+        [Fact]
+        public void A_run_with_no_tolerance_still_tones_but_reports_no_measure()
+        {
+            var seat = new FakeClashSource()
+                .With("L03 MEP v STR", "Weekly", "t1")
+                .Finding(Key("Duct 1"), Key("Beam 1"), 1, 2, 3)
+                .Deep(-0.030);
+
+            seat.Retune("t1", 0, MatrixTest.Hard);
+
+            var check = new ClashCheck(seat);
+            var finding = check.Read(new[] { "t1" }, null).Findings[0];
+            var worst = check.Columns.Single(one => one.Kind == ColumnKind.Number);
+
+            // No threshold to normalise against, so the check says so rather than inventing one.
+            Assert.Null(check.Severity(finding));
+            Assert.Equal("no measure", check.SeverityBand(check.Severity(finding)));
+
+            // The figure still tones, against clash's own default rather than the board's.
+            Assert.True(worst.IsBad!(finding));
         }
 
         [Fact]
@@ -506,6 +597,24 @@ namespace CamelWorks.Core.Tests
         }
 
         // ---------------------------------------------------------------------------------
+
+        [Fact]
+        public void A_file_board_and_a_document_board_declare_the_same_columns()
+        {
+            var host = new ClashCheck(Seat()).Columns;
+            var file = File(Seat()).Columns;
+
+            Assert.Equal(host.Select(one => one.Key), file.Select(one => one.Key));
+            Assert.Equal(host.Select(one => one.Title), file.Select(one => one.Title));
+            Assert.Equal(host.Select(one => one.Kind), file.Select(one => one.Kind));
+
+            // The same ranges, so one register slice read from both legs bands under one
+            // vocabulary rather than two.
+            var deep = -0.05;
+
+            Assert.Equal(host.Single(one => one.Kind == ColumnKind.Number).Bucket!(deep),
+                         file.Single(one => one.Kind == ColumnKind.Number).Bucket!(deep));
+        }
 
         /// <summary>Take a test's results out of the document, as a re-run that found none does.</summary>
         /// <param name="seat">The fake host.</param>

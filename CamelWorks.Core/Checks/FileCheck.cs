@@ -74,8 +74,17 @@ namespace CamelWorks.Core.Checks
         /// <inheritdoc />
         public string? Unavailable => IsAvailable ? null : _read.Explain();
 
-        /// <summary>No declared columns yet: the board still holds its own column set.</summary>
-        public IReadOnlyList<ResultColumn> Columns { get; } = Array.Empty<ResultColumn>();
+        /// <summary>
+        /// The same three columns the document leg declares.
+        ///
+        /// The same columns and not a copy of them: a file board and a document board show one
+        /// register slice between them, and two declarations of "Worst" would be two definitions
+        /// of what the figure in that cell means. A file carries no tolerance of its own, so the
+        /// depth is toned against clash's own default, which is what this board has always done
+        /// on a file.
+        /// </summary>
+        public IReadOnlyList<ResultColumn> Columns { get; } =
+            ClashColumns.Declare(_ => null);
 
         /// <summary>Nowhere to echo a decision to. A file is not a document.</summary>
         public ICheckHostEcho? HostEcho => null;
@@ -120,7 +129,13 @@ namespace CamelWorks.Core.Checks
                 : null;
         }
 
-        /// <summary>No measure: a file carries no tolerance to hold a distance against.</summary>
+        /// <summary>
+        /// No measure: a file carries no tolerance to hold a distance against.
+        ///
+        /// The depth column still tones, against clash's own default rather than against the
+        /// run's — a file records the results and not the settings they were found under, so
+        /// there is a figure to draw and nothing to normalise it by.
+        /// </summary>
         /// <param name="finding">The finding.</param>
         public double? Severity(Finding finding)
         {
@@ -129,9 +144,16 @@ namespace CamelWorks.Core.Checks
             return null;
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// What a band is called. The same words the document leg uses, so one register slice
+        /// read from both does not band under two vocabularies.
+        /// </summary>
+        /// <param name="severity">The severity, which for a file is always null.</param>
         public string SeverityBand(double? severity) =>
-            severity == null ? "no measure" : "past tolerance";
+            severity == null ? "no measure"
+            : severity.Value >= 4 ? "far past tolerance"
+            : severity.Value >= 1 ? "past tolerance"
+            : "within tolerance";
 
         /// <summary>No aliases: a file read is matched by topic, not by neighbouring cell.</summary>
         /// <param name="finding">The finding.</param>
@@ -234,6 +256,8 @@ namespace CamelWorks.Core.Checks
                                        null, Array.Empty<string>(), results.Count, 0,
                                        isOurs: false));
 
+                // No scale: a file's points and distances are metres already, which is the unit
+                // the producer now writes on both legs.
                 var found = ClashFindings.ForTest(name, name, results, _cell);
 
                 foreach (var finding in found)

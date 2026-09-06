@@ -1402,7 +1402,14 @@ namespace CamelWorks.Studio
         }
 
         /// <summary>A column header: pressable to sort, with a handle to resize it.</summary>
-        private static UIElement Head(string column, bool right, bool on)
+        /// <param name="column">Which column, which is also what it says.</param>
+        /// <param name="right">True for a figure, whose label sits over its digits.</param>
+        /// <param name="on">True when the board is sorted by it.</param>
+        /// <param name="unit">
+        /// What the figures under it are in, for the tooltip. A declared column states its unit
+        /// there rather than in the heading, which has no room for it.
+        /// </param>
+        private static UIElement Head(string column, bool right, bool on, string? unit = null)
         {
             var label = new TextBlock
             {
@@ -1435,8 +1442,11 @@ namespace CamelWorks.Studio
             {
                 Background = Brushes.Transparent,
                 Cursor = System.Windows.Input.Cursors.Hand,
-                ToolTip = on ? "Sorted by " + column + ". Press again to turn it round."
-                             : "Sort by " + column,
+                ToolTip = (on ? "Sorted by " + column + ". Press again to turn it round."
+                              : "Sort by " + column)
+                          + (string.IsNullOrWhiteSpace(unit)
+                                 ? string.Empty
+                                 : " Figures are in " + unit + "."),
                 Child = words,
             };
         }
@@ -1527,7 +1537,7 @@ namespace CamelWorks.Studio
             Put(grid, Head("Group or result", false, false), 1);
             Put(grid, Head("Item 1", false, false), 2);
             Put(grid, Head("Item 2", false, false), 3);
-            Put(grid, Head("Worst", true, true), 4);
+            Put(grid, Head("Worst", true, true, "mm"), 4);
             Put(grid, Head("System Name", false, false), 5);
             Put(grid, Head("Status", false, false), 6);
             Put(grid, Head("Assigned", false, false), 7);

@@ -62,6 +62,7 @@ namespace CamelWorks.Core.Testing
             internal string Status { get; set; } = "New";
             internal string? AssignedTo { get; set; }
             internal string? Group { get; set; }
+            internal double? Distance { get; set; }
             internal List<ClashComment> Comments { get; } = new List<ClashComment>();
         }
 
@@ -126,6 +127,27 @@ namespace CamelWorks.Core.Testing
             return this;
         }
 
+        /// <summary>
+        /// How deep the last result added is, in the document's own units.
+        ///
+        /// The host reports a distance in model units, which is what makes the unit conversion at
+        /// the producer worth asserting: the same seat read at 0.3048 metres per unit must hand
+        /// over the same physical depth in metres.
+        /// </summary>
+        /// <param name="distance">The distance, negative for a penetration, in model units.</param>
+        public FakeClashSource Deep(double distance)
+        {
+            if (_tests.Count == 0) throw new InvalidOperationException("add a test first");
+
+            var test = _tests[_tests.Count - 1];
+
+            if (test.Results.Count == 0) throw new InvalidOperationException("add a result first");
+
+            test.Results[test.Results.Count - 1].Distance = distance;
+
+            return this;
+        }
+
         // ---- Reading ---------------------------------------------------------------------
 
         /// <inheritdoc />
@@ -153,6 +175,7 @@ namespace CamelWorks.Core.Testing
                 Name = one.Name,
                 GroupName = one.Group,
                 Comments = one.Comments.ToList(),
+                Distance = one.Distance,
             }).ToList();
         }
 

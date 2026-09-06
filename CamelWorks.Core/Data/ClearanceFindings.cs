@@ -102,12 +102,12 @@ namespace CamelWorks.Core.Data
             finding.Detail = Detail(span, minimum);
 
             Fact(finding, Obstruction, span.Obstruction.Name);
-            Fact(finding, Measured, Metres(span.Clear));
-            Fact(finding, Wanted, Metres(minimum));
+            Fact(finding, Measured, Written(span.Clear));
+            Fact(finding, Wanted, Written(minimum));
 
             var shortBy = Math.Max(0, minimum - span.Clear);
 
-            if (shortBy > 0) finding.Facts[Shortfall] = Metres(shortBy);
+            if (shortBy > 0) finding.Facts[Shortfall] = Written(shortBy);
 
             return finding;
         }
@@ -142,14 +142,46 @@ namespace CamelWorks.Core.Data
         public static string Name(HeadroomSpan span) =>
             span == null
                 ? Rule
-                : Metres(span.Clear) + " m under " + Short(span.Obstruction.Name);
+                : Printed(span.Clear) + " m under " + Short(span.Obstruction.Name);
 
         private static string Detail(HeadroomSpan span, double minimum) =>
-            Metres(span.Clear) + " m clear where " + Metres(minimum) + " m was asked for, over "
+            Printed(span.Clear) + " m clear where " + Printed(minimum) + " m was asked for, over "
             + Short(span.Floor.Name);
 
-        private static string Metres(double value) =>
-            value.ToString("0.###", CultureInfo.InvariantCulture);
+        /// <summary>
+        /// A length as the fact carries it: metres, to the micrometre.
+        ///
+        /// The facts used to be written at the resolution the sentences are printed at, three
+        /// decimal places, so a column reading one back could not tell 2.0994 m from 2.0996 m.
+        /// The number is the record; the rounding belongs to whatever prints it.
+        /// </summary>
+        /// <param name="metres">The length.</param>
+        public static string Written(double metres) =>
+            metres.ToString("0.######", CultureInfo.InvariantCulture);
+
+        /// <summary>
+        /// A length as a sentence prints it, to the millimetre.
+        /// </summary>
+        /// <param name="metres">The length.</param>
+        public static string Printed(double metres) =>
+            metres.ToString("0.###", CultureInfo.InvariantCulture);
+
+        /// <summary>
+        /// A length a fact carries, back as a number, or null when there is none.
+        ///
+        /// The typed accessor a column reads, so nothing above this parses the string for itself.
+        /// </summary>
+        /// <param name="finding">The finding.</param>
+        /// <param name="key">Which fact.</param>
+        public static double? MetresOf(Finding? finding, string key) =>
+            finding != null
+            && key != null
+            && finding.Facts.TryGetValue(key, out var written)
+            && !string.IsNullOrWhiteSpace(written)
+            && double.TryParse(written, NumberStyles.Float, CultureInfo.InvariantCulture,
+                               out var metres)
+                ? metres
+                : (double?)null;
 
         private static string Short(string? name) =>
             string.IsNullOrWhiteSpace(name) ? "something unnamed" : name!;

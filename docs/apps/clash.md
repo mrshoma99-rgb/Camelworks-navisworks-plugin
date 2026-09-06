@@ -170,6 +170,40 @@ Nothing on screen changed: the rail, the board, the verbs, the counts and the wo
 they were. Nothing in this repository can prove that, which is why the check itself is asserted in
 `Core.Tests` against a fake clash seat and the board is checked by the compiler and the validators.
 
+**The columns are declared by the check, and lengths are metres.** The board used to hold Item 1,
+Item 2 and Worst itself, at about twenty-five sites, and tone Worst against a tolerance field it
+kept for whichever run was open. Those three are now `ResultColumn`s the check declares, and the
+board's one column type covers them and the element-property columns somebody adds:
+
+- **A column carries accessors, not the name of a fact to read.** Sorting, banding, range
+  filtering and toning all go through the check's own `Number`, `Text`, `Bucket` and `IsBad`. A
+  fact string is written to be read — it is rounded for display and says nothing about its unit —
+  so nothing decides anything by parsing one.
+- **Declared columns take the natural order slots.** They sit where the three they replace sat,
+  between the name and the level, rather than being appended past Status.
+- **A numeric column sorts as a number and offers ranges.** Two clashes 0.2 mm and 0.4 mm deep
+  both print "0 mm" and used to sort in whichever order they arrived in. The filter menu offers
+  six depth ranges rather than the several hundred distinct strings a real test holds. The Status
+  column is unchanged and still sorts alphabetically by its word.
+- **How bad a row is is the check's own measure.** `_toleranceMm` and the four helpers around it
+  are gone. The band the view menu offers is `ICheck.SeverityBand` — "within tolerance", "past
+  tolerance", "far past tolerance", "no measure" — instead of "Worse than 25 mm" and "Within
+  25 mm". A run whose host records no tolerance reports no measure, and its figures still tone
+  against the 25 mm a clash test is usually run at, which is now clash's own default rather than a
+  number the board held for every check.
+- **Every length is metres, fixed at the producer.** `ClashFindings` converts the document's units
+  once, on the way in, so a finding's point, its depth fact and its identity cell mean the same
+  thing whether it was read from the model or from a file. Eight `OnFile ? 1.0 : MetresPerUnit`
+  sites on the board are gone rather than generalised, and with them two latent faults on a
+  non-metric model: a baseline whose BCF cameras were scaled twice, and a distance written into a
+  baseline in feet that the reader took for metres.
+- **`Facts["Distance"]` is metres to the micrometre, under the same key.** The fact key is not
+  renamed and never will be: facts merge additively into a held finding and none is ever removed,
+  so a producer that stopped writing one key and started writing another would leave the old key
+  drawing its last value for the life of the project. The new number goes under the old name, and
+  the first read after this change overwrites it. The clearance producer's length facts changed
+  the same way, at the same resolution.
+
 ## Tests — removed
 
 The tab listed the engine's tests and carried a matrix builder. The Matrix tab has been the place

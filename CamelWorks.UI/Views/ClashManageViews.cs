@@ -11,6 +11,7 @@ using CamelWorks.Core.Data;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Issues;
+using CamelWorks.Core.Measurement;
 using CamelWorks.Core.People;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Report;
@@ -98,11 +99,19 @@ namespace CamelWorks.UI.Views
         // -----------------------------------------------------------------------------------
 
         /// <summary>
-        /// One custom column: an element property, read from one side of each clash or both.
+        /// One column of the results table, whether the check declared it or somebody added it.
         ///
-        /// This is the move the engine's own window never learned: the results table showing the
-        /// System Name, the Workset, the fire rating - whatever the elements carry - and the
-        /// grouping chain running over exactly those values.
+        /// Two kinds of column that the table draws, sorts, bands, filters, widens, reorders and
+        /// exports the same way:
+        ///
+        /// - a column the check declares, which carries typed accessors and knows what its own
+        ///   numbers mean;
+        /// - an element property somebody added — the System Name, the Workset, the fire rating —
+        ///   which is read off the clashing elements and is always words.
+        ///
+        /// One type for both, because every one of those verbs was written against the property
+        /// column and the three the board hard-coded were carried alongside it at about
+        /// twenty-five sites. A second column type would have been a second set of them.
         /// </summary>
         private sealed class PropColumn
         {
@@ -131,11 +140,65 @@ namespace CamelWorks.UI.Views
                 Title = title;
             }
 
+            /// <summary>
+            /// A column the check declared.
+            ///
+            /// The accessors are taken across as they are. The board never reads the fact this
+            /// column exports under: the check's own <see cref="ResultColumn.Number"/> and
+            /// <see cref="ResultColumn.Text"/> are what it sorts, bands and tones by, because a
+            /// fact string is written to be read and carries neither a unit nor full precision.
+            /// </summary>
+            /// <param name="declared">The declared column.</param>
+            internal PropColumn(ResultColumn declared)
+                : this(declared.Key, string.Empty, string.Empty, string.Empty, declared.Title)
+            {
+                IsDeclared = true;
+                Kind = declared.Kind;
+                Unit = declared.Unit;
+                RightAligned = declared.RightAligned;
+                Width = declared.Width;
+                Number = declared.Number;
+                Text = declared.Text;
+                Format = declared.Format;
+                Bucket = declared.Bucket;
+                IsBad = declared.IsBad;
+            }
+
             internal string Id { get; }
             internal string Tab { get; }
             internal string Name { get; }
             internal string Side { get; }
             internal string Title { get; }
+
+            /// <summary>True for a column the check declared, false for one somebody added.</summary>
+            internal bool IsDeclared { get; }
+
+            /// <summary>What kind of value it holds. A property column is always words.</summary>
+            internal ColumnKind Kind { get; } = ColumnKind.Text;
+
+            /// <summary>The unit the figures are in, for the heading rather than every cell.</summary>
+            internal string? Unit { get; }
+
+            /// <summary>Whether the figures sit against the right edge of the cell.</summary>
+            internal bool RightAligned { get; }
+
+            /// <summary>How wide it starts, in pixels, or zero for a column that flexes.</summary>
+            internal double Width { get; }
+
+            /// <summary>The value as a number, in metres where it is a length, or null.</summary>
+            internal Func<Finding, double?>? Number { get; }
+
+            /// <summary>The value as words, or null when the value is a number.</summary>
+            internal Func<Finding, string?>? Text { get; }
+
+            /// <summary>How the number is written.</summary>
+            internal Func<double, string>? Format { get; }
+
+            /// <summary>Which range a number falls in, for the filter menu, or null.</summary>
+            internal Func<double, string>? Bucket { get; }
+
+            /// <summary>Whether this row is worse than its run's threshold, or null to never tone.</summary>
+            internal Func<Finding, bool>? IsBad { get; }
         }
 
         /// <summary>One leaf of the grouping chain, with the rows that fell into it.</summary>
@@ -324,33 +387,24 @@ namespace CamelWorks.UI.Views
             /// <summary>The second element's category.</summary>
             internal string? CategoryB => Said("Category 2");
 
-            /// <summary>Where the result is, in the units its producer read it in.</summary>
+            /// <summary>
+            /// Where the result is, in metres.
+            ///
+            /// Metres whichever leg read it. The producer converts the document's units once, on
+            /// the way in, so nothing above it has to know which leg a row came from to place it.
+            /// </summary>
             internal double PointX => Fact.X ?? 0;
 
-            /// <summary>Where the result is, in the units its producer read it in.</summary>
+            /// <summary>Where the result is, in metres.</summary>
             internal double PointY => Fact.Y ?? 0;
 
-            /// <summary>Where the result is, in the units its producer read it in.</summary>
+            /// <summary>Where the result is, in metres.</summary>
             internal double PointZ => Fact.Z ?? 0;
 
             /// <summary>What the check says about this result under one name, or null.</summary>
             /// <param name="fact">The fact's name.</param>
             internal string? Said(string fact) =>
                 Fact.Facts.TryGetValue(fact, out var value) ? value : null;
-
-            /// <summary>
-            /// How deep this result is, in the units its producer read it in, or null.
-            ///
-            /// Read back out of the fact the producer wrote, so it carries that fact's rounding of
-            /// three decimal places. The board prints and sorts it in whole millimetres, so the
-            /// rounding is below what it draws; the declared-column phase replaces this with the
-            /// check's own typed accessor and the producer's full precision.
-            /// </summary>
-            internal double? Distance =>
-                double.TryParse(Said("Distance"), NumberStyles.Float, CultureInfo.InvariantCulture,
-                                out var deep)
-                    ? deep
-                    : (double?)null;
 
             /// <summary>What identifies this result: its two elements and the cell it is in.</summary>
             /// <param name="cell">The cell size the keys are quantised to.</param>
@@ -736,10 +790,8 @@ namespace CamelWorks.UI.Views
             {
                 if (Plan.IsEmpty) return NoLevels;
 
-                var scale = OnFile ? 1.0 : _session.MetresPerUnit;
-
                 var held = row.Rows
-                    .Select(one => Plan.LevelAt(one.PointZ * scale) ?? Underneath)
+                    .Select(one => Plan.LevelAt(one.PointZ) ?? Underneath)
                     .Distinct(StringComparer.Ordinal)
                     .ToList();
 
@@ -754,9 +806,7 @@ namespace CamelWorks.UI.Views
             {
                 if (Plan.IsEmpty) return NoLevels;
 
-                var scale = OnFile ? 1.0 : _session.MetresPerUnit;
-
-                return Plan.LevelAt(one.PointZ * scale) ?? Underneath;
+                return Plan.LevelAt(one.PointZ) ?? Underneath;
             }
 
             /// <summary>
@@ -2505,8 +2555,6 @@ namespace CamelWorks.UI.Views
                     return false;
                 }
 
-                _toleranceMm = ToleranceMm(entry);
-
                 _title.Children.Add(Title(entry));
                 _title.Children.Add(Standing(entry));
 
@@ -2582,9 +2630,9 @@ namespace CamelWorks.UI.Views
             /// <summary>Rebuild the by-id column lookup the row filter uses.</summary>
             private void Indexed()
             {
-                _columnsById = _columns.GroupBy(c => c.Id, StringComparer.Ordinal)
-                                       .ToDictionary(g => g.Key, g => g.First(),
-                                                     StringComparer.Ordinal);
+                _columnsById = Filterable().GroupBy(c => c.Id, StringComparer.Ordinal)
+                                           .ToDictionary(g => g.Key, g => g.First(),
+                                                         StringComparer.Ordinal);
 
                 // A column added or taken away changes which rows the filters leave.
                 Moved();
@@ -3130,9 +3178,12 @@ namespace CamelWorks.UI.Views
 
                 if (values.Count == 0)
                 {
-                    items.Add(Parts.Entry.Barred("No values read yet", null,
-                        "Press \"Read values\" on the Columns page. It reads the property off "
-                        + "every clashing element, which is a walk of the federation."));
+                    items.Add(column.IsDeclared
+                        ? Parts.Entry.Barred("Nothing to narrow on", null,
+                            "No result on this board carries a value in this column.")
+                        : Parts.Entry.Barred("No values read yet", null,
+                            "Press \"Read values\" on the Columns page. It reads the property off "
+                            + "every clashing element, which is a walk of the federation."));
 
                     return items;
                 }
@@ -3143,8 +3194,10 @@ namespace CamelWorks.UI.Views
                 // values hanging over the board, and the twenty it could fit were rarely the one
                 // being looked for. The window it opens is filtered by typing and shows how many
                 // results each value holds, which is what the choice actually turns on.
+                var what = column.Bucket != null && column.IsDeclared ? "range" : "value";
+
                 items.Add(Parts.Entry.Act(
-                    "Filter by value  ·  " + Ui.Count(values.Count, "of them"), Glyphs.Find,
+                    "Filter by " + what + "  ·  " + Ui.Count(values.Count, "of them"), Glyphs.Find,
                     () => Parts.Search(_board, "Show results whose " + column.Title + " is any of",
                                        values, wanted,
                                        wanted.Count == 0 ? null : "Any " + column.Title,
@@ -3181,7 +3234,7 @@ namespace CamelWorks.UI.Views
             /// <param name="column">The column.</param>
             private static List<KeyValuePair<string, int>> Values(TestEntry entry, PropColumn column) =>
                 entry.Rows
-                    .Select(r => Custom(r, column))
+                    .Select(r => Banded(r, column))
                     .Where(v => v.Length > 0)
                     .GroupBy(v => v, StringComparer.OrdinalIgnoreCase)
                     .OrderByDescending(g => g.Count())
@@ -3360,7 +3413,7 @@ namespace CamelWorks.UI.Views
                     }));
                 }
 
-                foreach (var column in _columns) items.AddRange(ColumnMenu(entry, column));
+                foreach (var column in Filterable()) items.AddRange(ColumnMenu(entry, column));
 
                 return items;
             }
@@ -3487,26 +3540,52 @@ namespace CamelWorks.UI.Views
                 foreach (var name in Order())
                 {
                     if (string.Equals(name, Named, StringComparison.Ordinal))
+                    {
                         Named2(Named, 2, tight ? 110 : 130);
-                    else if (string.Equals(name, ItemA, StringComparison.Ordinal))
-                        Named2(ItemA, 1, tight ? 74 : 90);
-                    else if (string.Equals(name, ItemB, StringComparison.Ordinal))
-                        Named2(ItemB, 1, tight ? 74 : 90);
-                    else if (string.Equals(name, Worst, StringComparison.Ordinal))
-                        columns.Add((Worst, new GridLength(Wide(Worst, tight ? 60 : 64)), 0));
-                    else if (string.Equals(name, Level, StringComparison.Ordinal))
+                        continue;
+                    }
+
+                    if (string.Equals(name, Level, StringComparison.Ordinal))
+                    {
                         columns.Add((Level, new GridLength(Wide(Level, 96)), 0));
-                    else if (string.Equals(name, Status, StringComparison.Ordinal))
+                        continue;
+                    }
+
+                    if (string.Equals(name, Status, StringComparison.Ordinal))
+                    {
                         columns.Add((Status, new GridLength(Wide(Status, 104)), 0));
-                    else if (string.Equals(name, Assigned, StringComparison.Ordinal))
+                        continue;
+                    }
+
+                    if (string.Equals(name, Assigned, StringComparison.Ordinal))
+                    {
                         columns.Add((Assigned, new GridLength(Wide(Assigned, 104)), 0));
-                    else
-                        // A property column. Flexible, like the name and the two items, and for
-                        // the same reason: a fixed width adds itself to the table, and a table
-                        // that grows by 95 pixels every time somebody adds a column scrolls
-                        // sideways off its own row verbs on the second one. It takes a share of
-                        // what there is and ellipsises, with the whole value on the tooltip.
-                        Named2(name, 1, 76);
+                        continue;
+                    }
+
+                    var column = Board(name);
+
+                    // A figure is as many pixels as it asked for: its width is set by the digits
+                    // it holds and does not want a share of the table.
+                    if (column != null && column.Kind == ColumnKind.Number)
+                    {
+                        var full = column.Width > 0 ? column.Width : 64;
+
+                        columns.Add((name,
+                                     new GridLength(Wide(name, tight ? Math.Max(44, full - 4) : full)),
+                                     0));
+                        continue;
+                    }
+
+                    // Everything else flexes, and for the same reason: a fixed width adds itself
+                    // to the table, and a table that grows by 95 pixels every time somebody adds
+                    // a column scrolls sideways off its own row verbs on the second one. It takes
+                    // a share of what there is and ellipsises, with the whole value on the
+                    // tooltip.
+                    Named2(name, 1,
+                           column != null && column.Kind == ColumnKind.Element
+                               ? (tight ? 74 : 90)
+                               : 76);
                 }
 
                 // Four row buttons, at the tighter margin the bar below sets on them. The
@@ -3547,6 +3626,206 @@ namespace CamelWorks.UI.Views
                 grid.Children.Add(cell);
             }
 
+            /// <summary>The check whose declared columns are mapped, so a check swap remaps.</summary>
+            private ICheck? _declaredFrom;
+
+            /// <summary>The check's declared columns, as board columns.</summary>
+            private List<PropColumn> _declared = new List<PropColumn>();
+
+            /// <summary>
+            /// The columns the check declares, as the board's own column type.
+            ///
+            /// Mapped once per check rather than per call: this is asked on every cell of every
+            /// row, and the accessors on a declared column are captured closures rather than
+            /// values to be recomputed.
+            ///
+            /// Empty while there is no check, which on the file leg is every draw before a file
+            /// has been read. The board draws its empty page then and asks for no cells.
+            /// </summary>
+            private List<PropColumn> Declared()
+            {
+                var check = Check;
+
+                if (check == null)
+                {
+                    if (_declaredFrom != null) { _declaredFrom = null; _declared = new List<PropColumn>(); }
+
+                    return _declared;
+                }
+
+                if (ReferenceEquals(_declaredFrom, check)) return _declared;
+
+                _declaredFrom = check;
+                _declared = check.Columns.Select(one => new PropColumn(one)).ToList();
+
+                // A declared column's resting width, so a drag is what changes it and nothing
+                // else. A figure column asks for pixels; anything else takes a share of what is
+                // left, like the name and the property columns do.
+                foreach (var column in _declared)
+                    if (!_wide.ContainsKey(column.Title))
+                        _wide[column.Title] = column.Kind == ColumnKind.Number
+                            ? (column.Width > 0 ? column.Width : 64)
+                            : 1;
+
+                return _declared;
+            }
+
+            /// <summary>The declared or property column of that name, or null.</summary>
+            /// <param name="title">What the column is called, which is what the order holds.</param>
+            private PropColumn? Board(string? title)
+            {
+                if (title == null) return null;
+
+                foreach (var column in Declared())
+                    if (string.Equals(column.Title, title, StringComparison.Ordinal)) return column;
+
+                foreach (var column in _columns)
+                    if (string.Equals(column.Title, title, StringComparison.Ordinal)) return column;
+
+                return null;
+            }
+
+            /// <summary>
+            /// One column's value on one result, as the cell draws it.
+            /// </summary>
+            /// <param name="row">The result.</param>
+            /// <param name="column">The column.</param>
+            private static string Shown(Row row, PropColumn column)
+            {
+                if (!column.IsDeclared)
+                    return row.Custom.TryGetValue(column.Id, out var read) ? read : string.Empty;
+
+                var text = column.Text?.Invoke(row.Fact);
+
+                if (text != null) return text;
+
+                var number = column.Number?.Invoke(row.Fact);
+
+                if (number == null) return string.Empty;
+
+                return column.Format != null
+                    ? column.Format(number.Value)
+                    : number.Value.ToString("0.###", CultureInfo.InvariantCulture);
+            }
+
+            /// <summary>
+            /// One column's value on one result, as the filter and the band group by it.
+            ///
+            /// A range for a numeric column and the drawn value for everything else. A depth
+            /// column over a real test holds several hundred distinct strings, and a filter menu
+            /// offering all of them is a list nobody can pick out of; the check says what the
+            /// ranges are, because only it knows what its numbers mean.
+            /// </summary>
+            /// <param name="row">The result.</param>
+            /// <param name="column">The column.</param>
+            private static string Banded(Row row, PropColumn column)
+            {
+                if (column.Bucket == null) return Shown(row, column);
+
+                var number = column.Number?.Invoke(row.Fact);
+
+                return number == null ? string.Empty : column.Bucket(number.Value);
+            }
+
+            /// <summary>
+            /// A numeric column's value on a row, taking a group's worst member.
+            ///
+            /// The smallest, which for a depth column is the deepest penetration: that is the
+            /// figure this board has always shown against a group. A check whose numbers read the
+            /// other way round says so in the sign of its own accessor.
+            /// </summary>
+            /// <param name="row">The row, which may be a group.</param>
+            /// <param name="column">The column.</param>
+            private static double? Number(BoardRow row, PropColumn column)
+            {
+                if (column.Number == null) return null;
+
+                double? worst = null;
+
+                foreach (var member in row.Rows)
+                {
+                    var value = column.Number(member.Fact);
+
+                    if (value.HasValue && (!worst.HasValue || value.Value < worst.Value))
+                        worst = value;
+                }
+
+                return worst;
+            }
+
+            /// <summary>
+            /// The cell for one column of one result.
+            /// </summary>
+            /// <param name="row">The result.</param>
+            /// <param name="column">The column.</param>
+            private static UIElement Cell(Row row, PropColumn column)
+            {
+                var text = Shown(row, column);
+
+                if (column.Kind == ColumnKind.Element) return Item(text);
+
+                if (column.Kind != ColumnKind.Number) return Hint(text);
+
+                return Figure(text.Length == 0 ? Measure.Nothing : text,
+                              column.IsBad != null && column.IsBad(row.Fact));
+            }
+
+            /// <summary>
+            /// The cell for one column of a clash group.
+            ///
+            /// A group has no elements of its own, so an element column holds an em-dash rather
+            /// than one member's name borrowed as though it spoke for the rest. A figure shows the
+            /// worst of its members, which is what somebody scanning a banded board is looking
+            /// for.
+            /// </summary>
+            /// <param name="row">The group.</param>
+            /// <param name="column">The column.</param>
+            private static UIElement GroupCell(BoardRow row, PropColumn column)
+            {
+                if (column.Kind == ColumnKind.Element) return Right(Hint("—"));
+
+                if (column.Kind == ColumnKind.Number)
+                {
+                    var worst = Number(row, column);
+
+                    var text = worst == null ? Measure.Nothing
+                        : column.Format != null ? column.Format(worst.Value)
+                        : worst.Value.ToString("0.###", CultureInfo.InvariantCulture);
+
+                    var bad = column.IsBad != null
+                              && row.Rows.Any(member => column.IsBad(member.Fact));
+
+                    return Figure(text, bad);
+                }
+
+                // A property column on a group takes its first member's value, which is the only
+                // answer available: the column is a fact about an element and a group is many.
+                return Hint(row.Rows.Count == 0 ? string.Empty : Shown(row.Rows[0], column));
+            }
+
+            /// <summary>
+            /// How bad a row is, as the check measures it: the worst of a group's members.
+            /// </summary>
+            /// <param name="row">The row.</param>
+            private double? Severity(BoardRow row)
+            {
+                var check = Check;
+
+                if (check == null) return null;
+
+                double? worst = null;
+
+                foreach (var member in row.Rows)
+                {
+                    var value = check.Severity(member.Fact);
+
+                    if (value.HasValue && (!worst.HasValue || value.Value > worst.Value))
+                        worst = value;
+                }
+
+                return worst;
+            }
+
             /// <summary>
             /// The columns across the board, in the order they are drawn.
             ///
@@ -3565,7 +3844,12 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private List<string> Order()
             {
-                var natural = new List<string> { Named, ItemA, ItemB, Worst };
+                var natural = new List<string> { Named };
+
+                // The check's own columns, in the order it declares them, and in the slots the
+                // three the board used to hard-code sat in. Appending them instead would put the
+                // participants of a clash to the right of its status.
+                natural.AddRange(Declared().Select(c => c.Title));
 
                 if (HasLevels) natural.Add(Level);
 
@@ -3605,6 +3889,7 @@ namespace CamelWorks.UI.Views
             private Dictionary<string, int> Places()
             {
                 var key = string.Join("\u001f", _arranged) + "\u001e"
+                        + string.Join("\u001f", Declared().Select(c => c.Title)) + "\u001e"
                         + string.Join("\u001f", _columns.Select(c => c.Title))
                         + "\u001e" + (HasLevels ? "L" : string.Empty);
 
@@ -3683,9 +3968,6 @@ namespace CamelWorks.UI.Views
             // the design writes, and at the board's own width it came out cut mid-word, which
             // reads as a bug rather than as a long label.
             private const string Named = "Group or result";
-            private const string ItemA = "Item 1";
-            private const string ItemB = "Item 2";
-            private const string Worst = "Worst";
             private const string Status = "Status";
             private const string Assigned = "Assigned";
             private const string Level = "Level";
@@ -3700,8 +3982,7 @@ namespace CamelWorks.UI.Views
             private readonly Dictionary<string, double> _wide =
                 new Dictionary<string, double>(StringComparer.Ordinal)
                 {
-                    { Named, 2 }, { ItemA, 1 }, { ItemB, 1 },
-                    { Worst, 64 }, { Status, 104 }, { Assigned, 104 }, { Level, 96 },
+                    { Named, 2 }, { Status, 104 }, { Assigned, 104 }, { Level, 96 },
                 };
 
             /// <summary>
@@ -3749,7 +4030,18 @@ namespace CamelWorks.UI.Views
             {
                 if (_by == null) return rows;
 
-                var sorted = rows.OrderBy(Key, StringComparer.CurrentCulture).ToList();
+                var column = Board(_by);
+
+                // Numbers ordered as numbers, off the check's own accessor rather than off the
+                // text in the cell. Two clashes 0.4 mm and 0.6 mm deep both print "0 mm", and
+                // sorting the printed form puts them in whichever order they arrived in.
+                //
+                // A row the column has no number for sorts last, where a row with nothing to say
+                // belongs; it used to be treated as zero, which put it in the middle of the
+                // depths.
+                var sorted = column != null && column.Kind == ColumnKind.Number
+                    ? rows.OrderBy(row => Number(row, column) ?? double.MaxValue).ToList()
+                    : rows.OrderBy(Key, StringComparer.CurrentCulture).ToList();
 
                 if (_back) sorted.Reverse();
 
@@ -3762,31 +4054,23 @@ namespace CamelWorks.UI.Views
             {
                 switch (_by)
                 {
-                    case ItemA: return row.IsGroup ? string.Empty : row.Only.NameA ?? string.Empty;
-                    case ItemB: return row.IsGroup ? string.Empty : row.Only.NameB ?? string.Empty;
+                    // As text, and deliberately: the status words sort alphabetically rather than
+                    // up the lattice, which is the order somebody scanning for one of them expects
+                    // to find it in. Settled when the board took one status type and unchanged by
+                    // the declared columns, which sort numerically only where they are numbers.
                     case Status: return FindingStatusWords.Of(row.Status);
                     case Assigned: return row.Assigned;
                     case Level: return Storey(row);
-
-                    // Numbers, ordered as numbers. Sorting "-9 mm" against "-48 mm" as text puts
-                    // the shallower one first, which is the wrong end of the board entirely.
-                    case Worst: return Ordered((int)(Deep(row) ?? 0));
-
-                    default:
-                        // A property column, sorted on the value it read. A group takes its
-                        // first member's, which is the only answer available: the column is a
-                        // fact about an element and a group is many of them.
-                        var column = _columns.FirstOrDefault(
-                            c => string.Equals(c.Title, _by, StringComparison.Ordinal));
-
-                        return column != null ? Custom(row.Rows[0], column) : row.Name;
                 }
-            }
 
-            /// <summary>A number as text that sorts like a number, negatives included.</summary>
-            /// <param name="value">The number.</param>
-            private static string Ordered(int value) =>
-                (value + 1000000000L).ToString("D10", CultureInfo.InvariantCulture);
+                var column = Board(_by);
+
+                if (column == null) return row.Name;
+
+                // A group takes its first member's value, which is the only answer available: a
+                // column is a fact about an element and a group is many of them.
+                return row.Rows.Count == 0 ? string.Empty : Shown(row.Rows[0], column);
+            }
 
             /// <summary>
             /// The whole table: the header, the rows, and one card round both.
@@ -3922,9 +4206,10 @@ namespace CamelWorks.UI.Views
 
                 Put(grid, all, 0);
                 Put(grid, Head(Named, false), Where(Named));
-                Put(grid, Head(ItemA, false), Where(ItemA));
-                Put(grid, Head(ItemB, false), Where(ItemB));
-                Put(grid, Head(Worst, true), Where(Worst));
+
+                foreach (var column in Declared())
+                    Put(grid, Head(column.Title, column.RightAligned, column.Unit),
+                        Where(column.Title));
 
                 if (HasLevels) Put(grid, Head(Level, false), Where(Level));
 
@@ -3957,7 +4242,13 @@ namespace CamelWorks.UI.Views
             /// </summary>
             /// <param name="column">Which column, which is also what it says.</param>
             /// <param name="right">True for a figure, whose label sits over its digits.</param>
-            private UIElement Head(string column, bool right)
+            /// <param name="unit">
+            /// What the figures under it are in, for the header's own tooltip. The cells carry
+            /// the unit as well, so repeating it in the heading would cost the column width and
+            /// say nothing; a column narrow enough to have trimmed its figures is where somebody
+            /// asks, and the tooltip is where the answer goes.
+            /// </param>
+            private UIElement Head(string column, bool right, string? unit = null)
             {
                 var on = string.Equals(_by, column, StringComparison.Ordinal);
 
@@ -3998,7 +4289,10 @@ namespace CamelWorks.UI.Views
                               : _back ? "Sorted by " + column + ", the other way round. Press "
                                         + "again for the order the test holds."
                               : "Sorted by " + column + ". Press again to turn it round.")
-                              + " Drag it to move the column, or its right edge to resize it.",
+                              + " Drag it to move the column, or its right edge to resize it."
+                              + (string.IsNullOrWhiteSpace(unit)
+                                     ? string.Empty
+                                     : " Figures are in " + unit + "."),
                     Child = words,
                 };
 
@@ -4175,7 +4469,7 @@ namespace CamelWorks.UI.Views
             /// <param name="column">Which column.</param>
             private double Least(string column) =>
                 column == Named ? 90
-                : column == ItemA || column == ItemB ? 56
+                : Board(column)?.Kind == ColumnKind.Element ? 56
                 : 44;
 
             /// <summary>A column label.</summary>
@@ -4333,29 +4627,31 @@ namespace CamelWorks.UI.Views
 
                 Put(grid, named, Where(Named));
 
-                // A group has no item pair of its own, so the two item columns hold nothing on
-                // this row. When they sit directly after the name, the name takes all three
+                // A group has no elements of its own, so the element columns hold nothing on this
+                // row. Where they sit directly after the name the name takes their width too,
                 // rather than ellipsising at 110 pixels next to 180 pixels of em-dash. The
-                // columns can be reordered, so the span is only taken when they are adjacent.
-                var spans = Where(ItemA) == Where(Named) + 1 && Where(ItemB) == Where(Named) + 2;
+                // columns can be reordered, so the span is only taken over the ones still
+                // adjacent to the name.
+                var declared = Declared();
+                var spanned = new HashSet<string>(StringComparer.Ordinal);
 
-                if (spans)
+                foreach (var column in declared.Where(c => c.Kind == ColumnKind.Element))
                 {
-                    Grid.SetColumnSpan(named, 3);
+                    if (Where(column.Title) != Where(Named) + spanned.Count + 1) break;
+
+                    spanned.Add(column.Title);
                 }
-                else
-                {
-                    // Em-dashes, not the first member's items. Borrowing one member's pair would
-                    // read as fact.
-                    Put(grid, Right(Hint("—")), Where(ItemA));
-                    Put(grid, Right(Hint("—")), Where(ItemB));
-                }
-                Put(grid, Figure(Deepest(row), Bad(row)), Where(Worst));
+
+                if (spanned.Count > 0) Grid.SetColumnSpan(named, spanned.Count + 1);
+
+                foreach (var column in declared)
+                    if (!spanned.Contains(column.Title))
+                        Put(grid, GroupCell(row, column), Where(column.Title));
 
                 if (HasLevels) Put(grid, Storeyed(Storey(row)), Where(Level));
 
-                for (var i = 0; i < _columns.Count; i++)
-                    Put(grid, Hint(Custom(row.Only, _columns[i])), Where(_columns[i].Title));
+                foreach (var column in _columns)
+                    Put(grid, GroupCell(row, column), Where(column.Title));
 
                 return Finish(grid, row, on, false);
             }
@@ -4645,18 +4941,13 @@ namespace CamelWorks.UI.Views
                 Grid.SetColumn(named, Where(Named));
                 grid.Children.Add(named);
 
-                var itemA = result.NameA ?? string.Empty;
-                var itemB = result.NameB ?? string.Empty;
-
-                Put(grid, Item(itemA), Where(ItemA));
-                Put(grid, Item(itemB), Where(ItemB));
-
-                Put(grid, Figure(Millimetres(result), Bad(result)), Where(Worst));
+                foreach (var column in Declared())
+                    Put(grid, Cell(result, column), Where(column.Title));
 
                 if (HasLevels) Put(grid, Storeyed(Storey(result)), Where(Level));
 
-                for (var i = 0; i < _columns.Count; i++)
-                    Put(grid, Hint(Custom(result, _columns[i])), Where(_columns[i].Title));
+                foreach (var column in _columns)
+                    Put(grid, Cell(result, column), Where(column.Title));
 
                 var wrapper = new BoardRow(id, result.Name ?? "this clash", false,
                                            new List<Row> { result });
@@ -6381,8 +6672,6 @@ namespace CamelWorks.UI.Views
             /// <summary>The board's own message strip, over the table it is about.</summary>
             private readonly StackPanel _toast = Ui.Stack();
 
-            /// <summary>This test's tolerance in millimetres, for what counts as bad on a row.</summary>
-            private double _toleranceMm = 25;
 
             // -------------------------------------------------------------------------------
             // Drawing
@@ -6561,25 +6850,6 @@ namespace CamelWorks.UI.Views
             private static string Tolerance(TestEntry entry) =>
                 entry.Run.Threshold ?? "the tolerance it was run at";
 
-            /// <summary>
-            /// The threshold of the run being drawn, in millimetres.
-            ///
-            /// The number the check holds, never the words it prints. A run with no threshold of
-            /// its own falls back to the 25 mm a clash test is usually run at, which is what this
-            /// board has always toned against when the host would not say.
-            /// </summary>
-            /// <param name="entry">The run, or null before one is picked.</param>
-            private double ToleranceMm(TestEntry? entry)
-            {
-                var metres = entry == null
-                    ? null
-                    : (Check as ClashCheck)?.ThresholdMetres(entry.Run.Id);
-
-                return metres.HasValue && Math.Abs(metres.Value) > 0
-                    ? Math.Abs(metres.Value) * 1000
-                    : 25;
-            }
-
             /// <summary>When the host last ran a test, or empty when it has never said.</summary>
             /// <param name="entry">The test.</param>
             private static string When(TestEntry entry)
@@ -6634,7 +6904,7 @@ namespace CamelWorks.UI.Views
             /// it - a status written, a value read into a column.
             /// </summary>
             /// <param name="row">The result.</param>
-            private static string Searchable(Row row)
+            private string Searchable(Row row)
             {
                 if (row.Blob != null) return row.Blob;
 
@@ -6642,9 +6912,15 @@ namespace CamelWorks.UI.Views
                 {
                     row.Name, row.TestName, FindingStatusWords.Of(row.Status),
                     row.Group, row.Assigned,
-                    row.LastComment, row.NameA, row.NameB,
+                    row.LastComment,
                     row.CategoryA, row.CategoryB, row.Review?.Describe(),
                 };
+
+                // Every declared column's words, which is where the two participants' names now
+                // come from. Not the figures: a search for "24" that matched every clash 24 mm
+                // deep is not the search anybody typed.
+                foreach (var column in Declared())
+                    if (column.Kind != ColumnKind.Number) parts.Add(Shown(row, column));
 
                 parts.AddRange(row.Custom.Values);
 
@@ -6683,7 +6959,7 @@ namespace CamelWorks.UI.Views
                     // every result of the test on every keystroke.
                     if (!_columnsById.TryGetValue(narrowed.Key, out var column)) continue;
 
-                    if (narrowed.Value.Count > 0 && !narrowed.Value.Contains(Custom(row, column)))
+                    if (narrowed.Value.Count > 0 && !narrowed.Value.Contains(Banded(row, column)))
                         return false;
                 }
 
@@ -6916,12 +7192,11 @@ namespace CamelWorks.UI.Views
                         return FindingStatusWords.Of(row.Status);
 
                     case ByHowBad:
-                        // Against this test's own tolerance, not a number typed once into a
-                        // design: a 50 mm drainage test and a 10 mm ceiling test do not share a
-                        // definition of bad.
-                        return Past(Deep(row))
-                            ? "Worse than " + Tolerance(entry)
-                            : "Within " + Tolerance(entry);
+                        // The check's own words for its own measure, against the threshold of the
+                        // run the finding came from: a 50 mm drainage test and a 10 mm ceiling
+                        // test do not share a definition of bad, and the board has no business
+                        // naming the bands of a check it does not know the units of.
+                        return Check?.SeverityBand(Severity(row)) ?? "no measure";
 
                     case ByLevel:
                         return Storey(row);
@@ -6941,7 +7216,7 @@ namespace CamelWorks.UI.Views
                 if (column == null) return string.Empty;
 
                 var values = row.Rows
-                    .Select(r => Custom(r, column))
+                    .Select(r => Banded(r, column))
                     .Select(v => v.Length == 0 ? Blank : v)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToList();
@@ -6960,11 +7235,40 @@ namespace CamelWorks.UI.Views
 
             /// <summary>The column a band key names, or null when it names a facet or nothing.</summary>
             /// <param name="by">The facet this level bands by.</param>
-            private PropColumn? Column(string by) =>
-                by != null && by.StartsWith(ByColumn, StringComparison.Ordinal)
-                    ? _columns.FirstOrDefault(c => string.Equals(
-                          c.Id, by.Substring(ByColumn.Length), StringComparison.Ordinal))
-                    : null;
+            private PropColumn? Column(string by)
+            {
+                if (by == null || !by.StartsWith(ByColumn, StringComparison.Ordinal)) return null;
+
+                var id = by.Substring(ByColumn.Length);
+
+                // Both lists walked in place. This is asked once per row per level of the
+                // grouping chain, so a list built here to search would be one allocation per row
+                // on a board of several thousand.
+                foreach (var column in Declared())
+                    if (string.Equals(column.Id, id, StringComparison.Ordinal)) return column;
+
+                foreach (var column in _columns)
+                    if (string.Equals(column.Id, id, StringComparison.Ordinal)) return column;
+
+                return null;
+            }
+
+            /// <summary>
+            /// The columns the view menu can narrow or band on.
+            ///
+            /// Every property column, and a declared column that offers ranges. A declared column
+            /// with no ranges is one whose values are element names, and a menu listing several
+            /// hundred of those is a list nobody can pick out of — the board's own search box is
+            /// how a name is found.
+            /// </summary>
+            private List<PropColumn> Filterable()
+            {
+                var found = Declared().Where(c => c.Bucket != null).ToList();
+
+                found.AddRange(_columns);
+
+                return found;
+            }
 
             /// <summary>
             /// What a band key is called on screen.
@@ -7063,64 +7367,6 @@ namespace CamelWorks.UI.Views
             /// <param name="name">The group's name.</param>
             private static string GroupId(string name) => "group" + name;
 
-            /// <summary>One result's overlap in millimetres, negative for a penetration.</summary>
-            /// <param name="row">The result.</param>
-            private double? Deep(Row row)
-            {
-                if (!row.Distance.HasValue) return null;
-
-                return row.Distance.Value * (OnFile ? 1.0 : _session.MetresPerUnit) * 1000;
-            }
-
-            /// <summary>The worst overlap among a row's results.</summary>
-            /// <param name="row">The row.</param>
-            private double? Deep(BoardRow row)
-            {
-                double? worst = null;
-
-                foreach (var member in row.Rows)
-                {
-                    var mm = Deep(member);
-                    if (mm.HasValue && (!worst.HasValue || mm.Value < worst.Value)) worst = mm;
-                }
-
-                return worst;
-            }
-
-            /// <summary>Whether an overlap is past this test's tolerance.</summary>
-            /// <param name="mm">The overlap in millimetres, or null when the host has none.</param>
-            private bool Past(double? mm) => mm.HasValue && mm.Value <= -_toleranceMm;
-
-            /// <summary>One result's overlap, as the board prints it.</summary>
-            /// <param name="row">The result.</param>
-            private string Millimetres(Row row)
-            {
-                var mm = Deep(row);
-
-                return mm.HasValue
-                    ? mm.Value.ToString("0", CultureInfo.InvariantCulture) + " mm"
-                    : "—";
-            }
-
-            /// <summary>A group's worst overlap, as the board prints it.</summary>
-            /// <param name="row">The group.</param>
-            private string Deepest(BoardRow row)
-            {
-                var mm = Deep(row);
-
-                return mm.HasValue
-                    ? mm.Value.ToString("0", CultureInfo.InvariantCulture) + " mm"
-                    : "—";
-            }
-
-            /// <summary>Whether a result is past tolerance.</summary>
-            /// <param name="row">The result.</param>
-            private bool Bad(Row row) => Past(Deep(row));
-
-            /// <summary>Whether a row's worst is past tolerance.</summary>
-            /// <param name="row">The row.</param>
-            private bool Bad(BoardRow row) => Past(Deep(row));
-
             /// <summary>How a status reads.</summary>
             /// <param name="status">The status.</param>
             private static Tone Reads(FindingStatus status) => status switch
@@ -7142,12 +7388,6 @@ namespace CamelWorks.UI.Views
                 FindingStatus.Resolved => Skin.Of("Ok"),
                 _ => System.Windows.Media.Brushes.Transparent,
             };
-
-            /// <summary>One custom column's value on a result, or empty.</summary>
-            /// <param name="row">The result.</param>
-            /// <param name="column">The column.</param>
-            private static string Custom(Row row, PropColumn column) =>
-                row.Custom.TryGetValue(column.Id, out var value) ? value : string.Empty;
 
             // -------------------------------------------------------------------------------
             // What is picked
@@ -7917,8 +8157,11 @@ namespace CamelWorks.UI.Views
             /// <param name="rows">The results.</param>
             private void CopyRows(IReadOnlyList<Row> rows)
             {
-                var head = new List<string> { "Result", "Clash group", "Item 1", "Item 2", "Worst" };
+                var declared = Declared();
 
+                var head = new List<string> { "Result", "Clash group" };
+
+                foreach (var column in declared) head.Add(column.Title);
                 foreach (var column in _columns) head.Add(column.Title);
 
                 head.Add("Status");
@@ -7928,13 +8171,10 @@ namespace CamelWorks.UI.Views
 
                 foreach (var row in rows)
                 {
-                    var cells = new List<string>
-                    {
-                        row.Name ?? string.Empty, row.Group, row.NameA ?? string.Empty,
-                        row.NameB ?? string.Empty, Millimetres(row),
-                    };
+                    var cells = new List<string> { row.Name ?? string.Empty, row.Group };
 
-                    foreach (var column in _columns) cells.Add(Custom(row, column));
+                    foreach (var column in declared) cells.Add(Shown(row, column));
+                    foreach (var column in _columns) cells.Add(Shown(row, column));
 
                     cells.Add(FindingStatusWords.Of(row.Status));
                     cells.Add(row.Assigned);
@@ -8383,7 +8623,9 @@ namespace CamelWorks.UI.Views
                 // view rather than only what is drawn next.
                 _marked = rows;
 
-                _session.View.ShowMarkers(Marks(rows, OnFile ? 1.0 / perUnit : 1.0, radius));
+                // The overlay is drawn in the document's units and a row's point is metres on
+                // both legs, so the conversion is the same one either way round.
+                _session.View.ShowMarkers(Marks(rows, 1.0 / perUnit, radius));
             }
 
             /// <summary>The rows the markers on screen are about, or null when there are none.</summary>
@@ -8538,9 +8780,6 @@ namespace CamelWorks.UI.Views
                 var rows = Rows(picked);
                 if (rows.Count == 0) return;
 
-                // A file's results are already metres; the model's are in document units.
-                var scale = OnFile ? 1.0 : _session.MetresPerUnit;
-
                 Issue? Make(string id, IReadOnlyList<Row> from)
                 {
                     if (from.Count == 0) return null;
@@ -8563,9 +8802,10 @@ namespace CamelWorks.UI.Views
                             + (r.NameB ?? "?"))),
                         AssignedTo = first.Assigned.Length == 0 ? null : first.Assigned,
                         HasPoint = true,
-                        X = from.Average(r => r.PointX) * scale,
-                        Y = from.Average(r => r.PointY) * scale,
-                        Z = from.Average(r => r.PointZ) * scale,
+                        // An issue's point is metres, which is what a row now carries.
+                        X = from.Average(r => r.PointX),
+                        Y = from.Average(r => r.PointY),
+                        Z = from.Average(r => r.PointZ),
                     };
 
                     issue.Facts[Issue.SourceFact] =
@@ -9291,14 +9531,9 @@ namespace CamelWorks.UI.Views
                     }).ToList(),
                     new MarkerRecipe
                     {
-                        // Real metres: the file is in metres, so the size somebody typed in
-                        // millimetres converts straight and the document's units do not come into
-                        // it. They come into the coordinates instead, below.
+                        // OBJ carries no units and readers assume metres, which is what a row's
+                        // point already is on both legs, so nothing is converted here.
                         RadiusMetres = _markerAcross / 2000.0,
-
-                        // A file board's points are already metres; a model board's are in the
-                        // document's units and this is the one place that is put right.
-                        MetresPerUnit = OnFile ? 1.0 : _session.MetresPerUnit,
                     });
 
                 if (mesh.Refusal != null)
@@ -9784,7 +10019,6 @@ namespace CamelWorks.UI.Views
 
                 var of = new Dictionary<ClashItem, Row>();
                 var items = new List<ClashItem>();
-                var scale = OnFile ? 1.0 : _session.MetresPerUnit;
 
                 foreach (var row in read.SelectMany(e => e.Rows))
                 {
@@ -9792,9 +10026,9 @@ namespace CamelWorks.UI.Views
 
                     var item = new ClashItem(row.Key(), row.TestName)
                     {
-                        X = row.PointX * scale,
-                        Y = row.PointY * scale,
-                        Z = row.PointZ * scale,
+                        X = row.PointX,
+                        Y = row.PointY,
+                        Z = row.PointZ,
                     };
 
                     of[item] = row;
@@ -9884,7 +10118,6 @@ namespace CamelWorks.UI.Views
                 var from = read;
 
                 var items = new List<ClashItem>();
-                var scale = OnFile ? 1.0 : _session.MetresPerUnit;
 
                 // Which item each result became, so the trails and the ids can find it again.
                 var carrying = new Dictionary<string, ClashItem>(StringComparer.Ordinal);
@@ -9895,15 +10128,18 @@ namespace CamelWorks.UI.Views
 
                     var item = new ClashItem(row.Key(), row.TestName)
                     {
-                        X = row.PointX * scale,
-                        Y = row.PointY * scale,
-                        Z = row.PointZ * scale,
+                        X = row.PointX,
+                        Y = row.PointY,
+                        Z = row.PointZ,
                         Status = row.Status,
                         AssignedTo = row.Assigned.Length == 0 ? null : row.Assigned,
                         CarriedGroup = row.Group.Length == 0 ? null : row.Group,
                         CategoryA = row.CategoryA,
                         CategoryB = row.CategoryB,
-                        Distance = row.Distance,
+                        // Metres, which is what a file's own distance is read back as. It used
+                        // to be written in the document's units, so a baseline off a foot-unit
+                        // model came back three times as deep as it went out.
+                        Distance = ClashFindings.DistanceMetres(row.Fact),
 
                         // Back out as it came in, so a reviewer's priority is not reset by the
                         // act of sending them the file again.
@@ -9954,7 +10190,13 @@ namespace CamelWorks.UI.Views
                     SourceFile = _session.Store.Path,
                     ProjectName = _session.Profile.ProjectName,
                     Author = Environment.UserName ?? "CamelWorks",
-                    MetresPerUnit = OnFile ? 1.0 : _session.MetresPerUnit,
+
+                    // The items above are metres already, and the viewpoint writer scales what it
+                    // is given by this. Leaving it at the document's units scaled the cameras a
+                    // second time, so a foot-unit model's topics opened three metres from the
+                    // clash they are about.
+                    MetresPerUnit = 1.0,
+
                     WhenTicks = DateTime.UtcNow.Ticks,
                 });
 
@@ -10020,17 +10262,17 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                var headers = new List<string>
-                {
-                    "Test", "Result", "Group", "Status", "Worst",
-                };
+                // The check's own columns, in the order it declares them, so a spreadsheet has
+                // the headings the board had. They used to be written out here by hand, which is
+                // how a sheet ends up carrying a column the board stopped drawing.
+                var declared = Declared();
 
+                var headers = new List<string> { "Test", "Result", "Group", "Status" };
+
+                foreach (var column in declared) headers.Add(column.Title);
                 foreach (var column in _columns) headers.Add(column.Title);
 
-                headers.AddRange(new[]
-                {
-                    "Assigned", "Comments", "Latest comment", "Item 1", "Item 2",
-                });
+                headers.AddRange(new[] { "Assigned", "Comments", "Latest comment" });
 
                 var block = new TableBlock(headers.ToArray());
 
@@ -10039,20 +10281,15 @@ namespace CamelWorks.UI.Views
                     var cells = new List<string>
                     {
                         row.TestName, row.Name ?? string.Empty, row.Group,
-                        FindingStatusWords.Of(row.Status), Millimetres(row),
+                        FindingStatusWords.Of(row.Status),
                     };
 
-                    foreach (var column in _columns)
-                        cells.Add(row.Custom.TryGetValue(column.Id, out var value)
-                            ? value
-                            : string.Empty);
-
+                    foreach (var column in declared) cells.Add(Shown(row, column));
+                    foreach (var column in _columns) cells.Add(Shown(row, column));
 
                     cells.Add(row.Assigned);
                     cells.Add(row.Comments.ToString(CultureInfo.InvariantCulture));
                     cells.Add(row.LastComment);
-                    cells.Add(row.NameA ?? string.Empty);
-                    cells.Add(row.NameB ?? string.Empty);
 
                     block.Row(cells.ToArray());
                 }

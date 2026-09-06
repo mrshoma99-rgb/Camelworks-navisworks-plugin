@@ -45,6 +45,27 @@ namespace CamelWorks.Core.Tests
             ClearanceFindings.From(result.Spans.Single(), Key('a'), Key('b'), minimum);
 
         [Fact]
+        public void ALengthFactIsMetresAtMoreThanTheResolutionItIsPrintedAt()
+        {
+            // A soffit 0.4 mm below the one next to it. Both sentences read "2.099 m"; the facts
+            // do not, because a column reading one back has to be able to tell them apart.
+            var lower = One(Run(soffit: 2.0994), 2.1);
+            var higher = One(Run(soffit: 2.0998), 2.1);
+
+            Assert.NotEqual(lower.Facts[ClearanceFindings.Measured],
+                            higher.Facts[ClearanceFindings.Measured]);
+
+            var read = ClearanceFindings.MetresOf(lower, ClearanceFindings.Measured);
+
+            Assert.NotNull(read);
+            Assert.Equal(2.0994, read!.Value, 6);
+
+            // Metres, which is what the check measured in and what the fact carries. Nothing
+            // between the two converts.
+            Assert.Equal(2.1, ClearanceFindings.MetresOf(lower, ClearanceFindings.Wanted)!.Value, 6);
+        }
+
+        [Fact]
         public void ABreachCarriesWhatTheRowShows()
         {
             var result = Run();

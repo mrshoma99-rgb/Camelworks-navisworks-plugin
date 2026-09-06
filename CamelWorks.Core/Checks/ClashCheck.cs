@@ -45,8 +45,11 @@ namespace CamelWorks.Core.Checks
         /// <summary>Read the host's clash tests as a check.</summary>
         /// <param name="source">The host's clash data.</param>
         /// <param name="metresPerUnit">
-        /// How many metres one model unit is, so a distance the host reports in model units can be
-        /// compared with a tolerance it reports in metres.
+        /// How many metres one model unit is.
+        ///
+        /// The host reports points and distances in the document's own units. This is where they
+        /// become metres, once, on the way into the findings, so nothing above this has to know
+        /// which leg a finding came from to read a length off it.
         /// </param>
         /// <param name="unavailable">
         /// Why this seat has no clash engine, for the empty state. Null uses a plain sentence.
@@ -59,6 +62,8 @@ namespace CamelWorks.Core.Checks
             _metresPerUnit = metresPerUnit > 0 ? metresPerUnit : 1.0;
             _unavailable = unavailable;
             _cell = cell;
+
+            Columns = ClashColumns.Declare(finding => ThresholdMetres(TestOf(finding)));
 
             HostEcho = new Echo(this);
             Grouping = new Groups(this);
@@ -89,13 +94,14 @@ namespace CamelWorks.Core.Checks
             : _unavailable ?? "This Navisworks edition has no clash engine.";
 
         /// <summary>
-        /// No declared columns yet.
+        /// The two participants and how deep the clash is.
         ///
-        /// The board still holds its own column set. Declaring them here is the columns-and-
-        /// severity phase, which moves the whole set at once so nothing is toned against two
-        /// different definitions of the same column in the meantime.
+        /// The depth is toned against the tolerance of the test the finding came from, read off
+        /// the run rather than off a field the board holds for whichever run is open: a 50 mm
+        /// drainage test and a 10 mm ceiling test do not share a definition of bad, and a board
+        /// showing both at once was toning them against one number.
         /// </summary>
-        public IReadOnlyList<ResultColumn> Columns { get; } = Array.Empty<ResultColumn>();
+        public IReadOnlyList<ResultColumn> Columns { get; }
 
         /// <inheritdoc />
         public ICheckHostEcho? HostEcho { get; }
@@ -301,7 +307,7 @@ namespace CamelWorks.Core.Checks
         private IReadOnlyList<Finding> Found(ClashTestInfo test,
                                              IReadOnlyList<ClashResultInfo> results)
         {
-            var found = ClashFindings.ForTest(test.Id, test.Name, results, _cell);
+            var found = ClashFindings.ForTest(test.Id, test.Name, results, _cell, _metresPerUnit);
 
             var byId = new Dictionary<string, ClashResultInfo>(StringComparer.Ordinal);
 
@@ -363,22 +369,14 @@ namespace CamelWorks.Core.Checks
         /// <summary>
         /// How deep this clash is, in metres, or null when the host reported no distance.
         ///
-        /// Negative for a penetration, which is the sign the host uses. The value is read back out
-        /// of the fact the producer wrote, so it carries that fact's rounding: three decimal places
-        /// of a model unit, which is a millimetre on a metric model.
+        /// Negative for a penetration, which is the sign the host uses. No conversion: the
+        /// producer writes metres on both legs, so what used to be a scale by the document's
+        /// units here — with nothing on the finding saying whether it had already been applied —
+        /// is now nothing at all.
         /// </summary>
         /// <param name="finding">The finding.</param>
-        public double? DistanceMetres(Finding? finding)
-        {
-            if (finding == null
-                || !finding.Facts.TryGetValue("Distance", out var written)
-                || string.IsNullOrWhiteSpace(written)
-                || !double.TryParse(written, NumberStyles.Float, CultureInfo.InvariantCulture,
-                                    out var value))
-                return null;
-
-            return value * _metresPerUnit;
-        }
+        public static double? DistanceMetres(Finding? finding) =>
+            ClashFindings.DistanceMetres(finding);
 
         /// <summary>The host's id for the test a finding came from, or null.</summary>
         /// <param name="finding">The finding.</param>
