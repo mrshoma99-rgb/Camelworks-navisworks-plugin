@@ -102,7 +102,14 @@ namespace CamelWorks.Studio
             // project file rather than a document, so the table and the filter chips can be
             // looked at rather than described from a licensed seat.
             Page("app-clash-exchange", "Clash Manager · Exchange", 560,
-                 () => ClashExchangeViews.Drawn(Filed(), "Riverside", Sent())),
+                 () => new Border
+                 {
+                     // Bounded, because the tab is. The surface is a two-pane bench whose body row
+                     // is a star, and a star row measured against an unbounded height draws the
+                     // whole screen again below itself.
+                     Height = 500,
+                     Child = ClashExchangeViews.Drawn(Filed(), "Riverside", Sent()),
+                 }),
 
             Page("app-clash-levels", "Clash Manager · Levels", 620,
                  () => Ui.Loose(Bench.Group("Levels", ClashLevels.Drawn(Storeyed())))),
@@ -169,7 +176,9 @@ namespace CamelWorks.Studio
         private static IReadOnlyList<ClashGroup> Sent()
         {
             var parties = new[] { "Mechanical", "Structure", "Electrical", "Architecture" };
-            var tests = new[] { "L02 MEP v STR", "L03 MEP v STR", "L04 MEP v ARC" };
+            var tests = new[] { "L02 MEP v STR", "L03 MEP v STR", "L04 MEP v ARC",
+                                "L02 ARC v STR", "Basement services", "Roof plant" };
+            var folders = new[] { "Weekly", "Weekly", "Weekly", "Handover", "Handover", null };
             var levels = new[] { "L02", "L03", "L04" };
 
             var made = new List<ClashItem>();
@@ -178,6 +187,7 @@ namespace CamelWorks.Studio
             {
                 var item = ClashFixture(at, tests[at % tests.Length], levels[at % levels.Length]);
 
+                item.TestFolder = folders[at % tests.Length];
                 item.AssignedTo = parties[at % parties.Length];
                 item.Status = (FindingStatus)(at % 5);
 
