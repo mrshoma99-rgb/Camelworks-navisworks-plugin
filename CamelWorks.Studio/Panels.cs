@@ -1164,11 +1164,9 @@ namespace CamelWorks.Studio
         /// </summary>
         private static UIElement BoardStanding()
         {
-            var row = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Margin = new Thickness(0, 2, 0, 0),
-            };
+            // A wrap panel, not a row. Two sentences at a board's width do not fit on one
+            // line, and the second was clipped at the pane's right edge.
+            var row = new WrapPanel { Margin = new Thickness(0, 2, 0, 0) };
 
             row.Children.Add(Ui.Small(
                 "The rules made 25 groups, and left 143 results in none. "

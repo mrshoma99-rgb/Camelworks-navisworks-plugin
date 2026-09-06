@@ -397,6 +397,9 @@ namespace CamelWorks.UI.Views
 
             /// <summary>What came back, when it has been read. Empty until somebody asks.</summary>
             private MatrixCounts _counts = MatrixCounts.None;
+
+            /// <summary>The count this one replaced, so a cell can say how it has moved.</summary>
+            private MatrixCounts? _before;
             private MatrixSymbol? _pickedSymbol;
 
             /// <summary>
@@ -4082,7 +4085,7 @@ namespace CamelWorks.UI.Views
 
                 cell.Background = ground;
 
-                cell.Child = new TextBlock
+                var figure = new TextBlock
                 {
                     Text = open.ToString(CultureInfo.InvariantCulture),
                     FontSize = Math.Max(10, Lettering - 1),
@@ -4094,13 +4097,55 @@ namespace CamelWorks.UI.Views
                     Foreground = Ui.InkOn(ground),
                 };
 
+                // How the pair has moved since the count this one replaced. Without it the grid
+                // says how many clashes are open and never whether that is the week's progress or
+                // the week's problem.
+                var moved = _counts.Moved(_before, row, column);
+
+                if (moved == null || moved == 0) cell.Child = figure;
+                else
+                {
+                    var since = new TextBlock
+                    {
+                        Text = (moved > 0 ? "+" : "\u2212")
+                               + Math.Abs(moved.Value).ToString(CultureInfo.InvariantCulture),
+                        FontSize = Math.Max(8, Lettering - 4),
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        TextWrapping = TextWrapping.NoWrap,
+                        Margin = new Thickness(3, 1, 0, 0),
+                        Foreground = Ui.InkOn(ground),
+                        Opacity = 0.75,
+                    };
+
+                    var both = new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                    };
+
+                    both.Children.Add(figure);
+                    both.Children.Add(since);
+
+                    cell.Child = both;
+                }
+
                 cell.ToolTip = at + " — " + row.Titled + " against " + column.Titled + ". "
                                + (open == 0
                                    ? "Tested, nothing open"
                                    : Ui.Count(open, "clash") + " still open")
                                + (ever > open
                                    ? " of " + ever.ToString(CultureInfo.InvariantCulture) + " found."
-                                   : ".");
+                                   : ".")
+                               + (moved == null
+                                   ? string.Empty
+                                   : moved == 0
+                                       ? " Unchanged since the last count."
+                                       : " " + Math.Abs(moved.Value).ToString(CultureInfo.InvariantCulture)
+                                         + (moved > 0 ? " more" : " fewer")
+                                         + " than the last count.");
 
                 Named(cell);
             }
@@ -9700,6 +9745,7 @@ namespace CamelWorks.UI.Views
                     // moment, and a stale one silently redrawn ten minutes later is worse than
                     // counting again.
                     _counts = MatrixCounts.None;
+                    _before = null;
 
                     RedrawCells();
                     RedrawStrip();
@@ -9743,6 +9789,18 @@ namespace CamelWorks.UI.Views
                                    + "nothing could be counted onto the matrix."));
                     return;
                 }
+
+                // Keep this count, and the one it replaces, so the grid can say how each pair has
+                // moved. Runs were already kept as week folders and MatrixDiff already compared
+                // two plans; nothing compared two counts.
+                var section = _session.Store.Section(ProjectStore.ClashSection);
+
+                _before = MatrixCounts.FromJson(section["matrixCounts"]);
+
+                if (_before != null) section.Set("matrixCountsBefore", section["matrixCounts"]);
+
+                section.Set("matrixCounts", counted.ToJson(DateTimeOffset.UtcNow));
+                _session.Store.Save();
 
                 _counts = counted;
                 _shown = Showing.Results;

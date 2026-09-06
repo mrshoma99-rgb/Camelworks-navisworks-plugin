@@ -2797,11 +2797,9 @@ namespace CamelWorks.UI.Views
             /// <param name="entry">The test on the board.</param>
             private UIElement Standing(TestEntry entry)
             {
-                var row = new StackPanel
-                {
-                    Orientation = Orientation.Horizontal,
-                    Margin = new Thickness(0, 2, 0, 0),
-                };
+                // A wrap panel, not a row. Two sentences at a board's width do not fit on one
+                // line, and the second was clipped at the pane's right edge.
+                var row = new WrapPanel { Margin = new Thickness(0, 2, 0, 0) };
 
                 var board = CoordinateViews.LastBoard;
                 var shape = Shape(entry);
