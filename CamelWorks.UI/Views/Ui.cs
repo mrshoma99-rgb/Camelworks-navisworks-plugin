@@ -4130,7 +4130,7 @@ namespace CamelWorks.UI.Views
         /// </summary>
         /// <param name="count">How many.</param>
         /// <param name="unit">What of, singular.</param>
-        private static string Plural(int count, string unit)
+        public static string Plural(int count, string unit)
         {
             if (count == 1 || string.IsNullOrEmpty(unit)) return unit;
 

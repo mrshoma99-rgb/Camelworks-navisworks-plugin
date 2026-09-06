@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using CamelWorks.Core.Abstractions;
+using CamelWorks.Core.Checks;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Data;
 using CamelWorks.Core.Findings;
@@ -167,7 +168,49 @@ namespace CamelWorks.Studio
             // reads as though it could. Not in the render's default list; named on dispatch.
             Page("app-clash-clearance-surfaces", "Clash Manager · Clearance, what to measure", 760,
                  Walkable),
+
+            // The Checks tab itself, over a seat with nothing in it: the check picker, the run
+            // list and the empty state a project with no runs saved opens on. The shipping screen
+            // rather than a drawing of it, which is what Check(ISeat) buys — before the widening
+            // this tab took a Session and could only be looked at on a licensed seat.
+            // Not in the render's default list; named on dispatch.
+            Page("app-clash-checks", "Clash Manager · Checks", 760,
+                 () => ClearanceViews.Check(Seated())),
+
+            // The Manage board's check picker, opened. A menu lives in a popup and a popup needs
+            // a screen to open on, so the greyed entry and its reason — the state this control
+            // exists for — had never been drawn.
+            Page("app-clash-picker", "Clash Manager · The check picker", 420, Picker),
         };
+
+        /// <summary>
+        /// The check picker's own menu, with an unavailable check in it.
+        ///
+        /// The state worth drawing is the greyed line: a Simulate seat has no clash engine, and
+        /// the picker lists the check with the reason rather than leaving it out, which is what
+        /// stops "where did the clash results go?" being a support call.
+        /// </summary>
+        private static UIElement Picker()
+        {
+            var seat = Seated();
+
+            // The board's own list: this document's clash data first, then whatever else the
+            // session registered. On a seat with no document neither is available, which is the
+            // state the reasons are written for.
+            var offered = new List<ICheck>
+            {
+                new ClashCheck(Host.WithoutClash(), 1.0,
+                               "This Navisworks edition has no clash engine."),
+            };
+
+            offered.AddRange(seat.Checks.All);
+
+            return Ui.Stack(
+                CheckPicker.Draw(offered, offered[0], seat.Findings.Findings, _ => { }),
+                new Border { Height = 10 },
+                Parts.Drawn(CheckPicker.Entries(offered, offered[0],
+                                                seat.Findings.Findings, _ => { })));
+        }
 
         /// <summary>
         /// A seat with nothing in it, and a scratch project beside the images.
@@ -619,6 +662,8 @@ namespace CamelWorks.Studio
 
             var measure = Bench.Group("What to measure",
                 Ui.Field("Clear height", Ui.Text("2.100", null, 90), "the minimum, in m"),
+                Ui.Field("Report under", Ui.Text("0.050", null, 90),
+                         "how far under the minimum is worth reporting"),
                 Ui.Field("Measure up from", Ui.Choice(sources, said, null, 420),
                          "the walking surface"),
                 Ui.Field("Measure up to", Ui.Choice(
@@ -652,6 +697,8 @@ namespace CamelWorks.Studio
                     new Ui.OnPicked("Drop these {n}", (picked, panel) => { }),
                     new Ui.OnPicked("Put these {n} back", (picked, panel) => { })),
                 Ui.Small("406 surfaces in the check, 2 dropped"),
+                Ui.Small("What is dropped is kept in the run's own settings, so the same desk "
+                         + "tops do not have to be dropped again next time."),
                 Ui.Small("Detection reads triangles: it keeps every up-facing surface over 0.05 m², "
                          + "which is a floor, and is also a desk top, a worktop, a window sill and "
                          + "the top of a wide duct. Read the list before running the check and drop "
@@ -659,8 +706,8 @@ namespace CamelWorks.Studio
                 Ui.Small("Both ticks are off to start with: the geometric answer is the default, "
                          + "and a stair with a soffit too low over it is still worth reporting."));
 
-            return Deck("clash", "headroom",
-                        Bench.Surface(null, Ui.Runner("Check", Ui.Stack(), _ => { }),
+            return Deck("clash", "checks",
+                        Bench.Surface(null, Ui.Runner("Run", Ui.Stack(), _ => { }),
                                       Ui.Stack(measure, detected)));
         }
 

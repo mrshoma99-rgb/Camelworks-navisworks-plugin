@@ -5,6 +5,7 @@ using System.Reflection;
 using Autodesk.Navisworks.Api;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Checks;
+using CamelWorks.Core.Data;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Project;
@@ -40,14 +41,20 @@ namespace CamelWorks.UI.Views
             Findings = FindingStore.Open(PhysicalFileSystem.Instance, store);
             Checks = new CheckCatalogue();
             Baselines = SetBaselineStore.Open(PhysicalFileSystem.Instance, store);
+
+            Checks.Add(new ClearanceCheck(Findings.Findings, CheckRunStore.Read(store), model,
+                                          Triangles, MetresPerUnit,
+                                          () => SaveWork(out var problem) ? null : problem,
+                                          LevelPlan.FromJson(store.Section(ProjectStore.ProfileSection)[LevelPlan.Key]),
+                                          store));
         }
 
         /// <summary>
-        /// Every check this session can offer.
+        /// Every check this session can offer, other than clash.
         ///
-        /// Empty for now: the checks themselves move onto the seam one at a time, and the tab that
-        /// draws them is not built yet. Registered here rather than when the first check arrives so
-        /// that the seam has a call site and is compiled against.
+        /// Clash is built by the board itself, because it caches what each test is between and
+        /// reading that is a host call per test; everything else is registered here and the board
+        /// lists what it finds.
         /// </summary>
         public CheckCatalogue Checks { get; }
 

@@ -148,11 +148,18 @@ namespace CamelWorks.Core.Data
         /// <param name="obstructions">What might be above them, in metres.</param>
         /// <param name="minimumMetres">The clear height required.</param>
         /// <param name="cellMetres">The lookup cell size.</param>
+        /// <param name="worstPerSurface">
+        /// True to report each surface's worst obstruction only, false to report every obstruction
+        /// under the minimum. The reduction is right for a first pass — a slab under a plant room
+        /// has a thousand things above it and one of them is the lowest — and wrong when a
+        /// coordinator wants every duct listed, so the caller says which.
+        /// </param>
         public static HeadroomResult Check(IEnumerable<HeadroomElement> floors,
                                            IEnumerable<HeadroomElement> obstructions,
                                            double minimumMetres = DefaultMinimum,
-                                           double cellMetres = DefaultCell) =>
-            Check(floors, null, obstructions, minimumMetres, cellMetres);
+                                           double cellMetres = DefaultCell,
+                                           bool worstPerSurface = true) =>
+            Check(floors, null, obstructions, minimumMetres, cellMetres, worstPerSurface);
 
         /// <summary>
         /// Run the check over detected walkable surfaces.
@@ -176,10 +183,15 @@ namespace CamelWorks.Core.Data
         /// <param name="obstructions">What might be above them, in metres.</param>
         /// <param name="minimumMetres">The clear height required.</param>
         /// <param name="cellMetres">The lookup cell size.</param>
+        /// <param name="worstPerSurface">
+        /// True to report each surface's worst obstruction only, false to report every obstruction
+        /// under the minimum.
+        /// </param>
         public static HeadroomResult Check(IEnumerable<WalkablePatch> patches,
                                            IEnumerable<HeadroomElement> obstructions,
                                            double minimumMetres = DefaultMinimum,
-                                           double cellMetres = DefaultCell)
+                                           double cellMetres = DefaultCell,
+                                           bool worstPerSurface = true)
         {
             if (patches == null) throw new ArgumentNullException(nameof(patches));
 
@@ -208,7 +220,7 @@ namespace CamelWorks.Core.Data
                 outlines[patch.Id] = patch.Outline;
             }
 
-            return Check(floors, outlines, obstructions, minimumMetres, cellMetres);
+            return Check(floors, outlines, obstructions, minimumMetres, cellMetres, worstPerSurface);
         }
 
         /// <summary>How a detected surface reads in a result.</summary>
@@ -220,7 +232,8 @@ namespace CamelWorks.Core.Data
                                             IReadOnlyDictionary<string, IReadOnlyList<Tri2>>? outlines,
                                             IEnumerable<HeadroomElement> obstructions,
                                             double minimumMetres,
-                                            double cellMetres)
+                                            double cellMetres,
+                                            bool worstPerSurface)
         {
             if (floors == null) throw new ArgumentNullException(nameof(floors));
             if (obstructions == null) throw new ArgumentNullException(nameof(obstructions));
@@ -271,7 +284,12 @@ namespace CamelWorks.Core.Data
                     // volume by definition, so a second test against the prism as a range answers
                     // true whenever this line has already let the element through.
                     var gap = candidate.MinZ - floor.MaxZ;
-                    if (gap < 0 || gap >= minimumMetres || gap >= clear) continue;
+                    if (gap < 0 || gap >= minimumMetres) continue;
+
+                    // The pruning is only sound while one span per surface is wanted: a candidate
+                    // no lower than the lowest so far cannot become that surface's worst. Reporting
+                    // every breach has to measure it.
+                    if (worstPerSurface && gap >= clear) continue;
 
                     var overlapX = Math.Min(floor.MaxX, candidate.MaxX) - Math.Max(floor.MinX, candidate.MinX);
                     var overlapY = Math.Min(floor.MaxY, candidate.MaxY) - Math.Max(floor.MinY, candidate.MinY);
@@ -285,8 +303,6 @@ namespace CamelWorks.Core.Data
 
                     if (outline != null && !Covers(outline, lowX, lowY, highX, highY)) continue;
 
-                    worst = candidate;
-                    clear = gap;
                     atX = (lowX + highX) / 2;
                     atY = (lowY + highY) / 2;
 
@@ -294,9 +310,19 @@ namespace CamelWorks.Core.Data
                     // missing corner of an L, the courtyard inside a ring. A point nobody can stand
                     // on is a point nobody can go and look at, so it is moved onto the patch.
                     if (outline != null) Onto(outline, lowX, lowY, highX, highY, ref atX, ref atY);
+
+                    if (!worstPerSurface)
+                    {
+                        spans.Add(new HeadroomSpan(floor, candidate, gap, atX, atY, floor.MaxZ));
+                        continue;
+                    }
+
+                    worst = candidate;
+                    clear = gap;
                 }
 
-                if (worst != null) spans.Add(new HeadroomSpan(floor, worst, clear, atX, atY, floor.MaxZ));
+                if (worstPerSurface && worst != null)
+                    spans.Add(new HeadroomSpan(floor, worst, clear, atX, atY, floor.MaxZ));
             }
 
             spans.Sort((a, b) => a.Clear.CompareTo(b.Clear));

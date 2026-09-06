@@ -41,14 +41,24 @@ namespace CamelWorks.UI.Views
         // The reads survive tab switches and window closes, like the board does: re-reading
         // eighteen thousand results because somebody glanced at the Rules tab would make the tab
         // switch cost more than the work.
-        private static List<TestEntry>? _read;
+        //
+        // One board per check rather than one board. Switching check does not throw away what the
+        // last one read, so coming back to clash finds the board as it was left.
+        private static readonly Dictionary<string, List<TestEntry>> _boards =
+            new Dictionary<string, List<TestEntry>>(StringComparer.OrdinalIgnoreCase);
+
         private static FileRound? _file;
         private static string _source = FromModel;
 
+        /// <summary>Which check the board is drawing. The picker above the rail sets it.</summary>
+        private static string _checkKey = FindingSource.Clash;
+
         // The property columns and the grouping chain survive tab switches with the read: they
         // are how somebody set their bench up, and a bench that resets when glanced away from
-        // is a bench nobody trusts with a long afternoon.
-        private static readonly List<PropColumn> _columns = new List<PropColumn>();
+        // is a bench nobody trusts with a long afternoon. Keyed on the check, because a column
+        // reading a duct's system name means nothing on a board of set drift.
+        private static readonly Dictionary<string, List<PropColumn>> _added =
+            new Dictionary<string, List<PropColumn>>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
         /// The check over this document's own clash data, built once per document.
@@ -90,17 +100,50 @@ namespace CamelWorks.UI.Views
         /// </summary>
         internal static void Forget()
         {
-            _read = null;
+            _boards.Clear();
             _file = null;
             _source = FromModel;
             _byHost = null;
             _engine = null;
             _fileCheck = null;
+            _checkKey = FindingSource.Clash;
 
             ClashExchangeViews.CheckKey = FindingSource.Clash;
 
-            _columns.Clear();
+            _added.Clear();
         }
+
+        /// <summary>
+        /// What another tab asked this board to show: which check, and which of its runs.
+        ///
+        /// A pair rather than a list of run ids, because the runs mean nothing without the check
+        /// that owns them.
+        /// </summary>
+        internal sealed class Request
+        {
+            /// <summary>Ask for these runs of this check.</summary>
+            /// <param name="checkKey">The check, as <see cref="FindingSource"/> spells it.</param>
+            /// <param name="runIds">The runs to select, by the check's own id for each.</param>
+            internal Request(string checkKey, IReadOnlyList<string> runIds)
+            {
+                CheckKey = string.IsNullOrWhiteSpace(checkKey) ? FindingSource.Clash : checkKey;
+                RunIds = runIds ?? Array.Empty<string>();
+            }
+
+            /// <summary>Which check's results to show.</summary>
+            internal string CheckKey { get; }
+
+            /// <summary>Which of its runs, by id.</summary>
+            internal IReadOnlyList<string> RunIds { get; }
+        }
+
+        /// <summary>
+        /// What the Checks tab asked to show, applied to the next visit once.
+        ///
+        /// The hand-off from set-up: pressing Run there should arrive here with that check picked
+        /// and that run selected, rather than on a board still showing whatever was last read.
+        /// </summary>
+        internal static Request? Asked { get; set; }
 
         // -----------------------------------------------------------------------------------
 
@@ -1067,7 +1110,47 @@ namespace CamelWorks.UI.Views
             private readonly TextBox _railBox;
             private readonly TextBox _boardBox;
 
-            private bool OnFile => _source == FromFile;
+            /// <summary>
+            /// True when the board is marking up an exported file rather than reading the model.
+            ///
+            /// Clash only. Every other check reads what this project's own register holds, and
+            /// there is no file leg of it to be on.
+            /// </summary>
+            private bool OnFile => _source == FromFile && IsClash;
+
+            /// <summary>Whether the check being drawn is clash detection.</summary>
+            private static bool IsClash =>
+                string.Equals(_checkKey, FindingSource.Clash, StringComparison.OrdinalIgnoreCase);
+
+            /// <summary>
+            /// Every check the picker lists: this document's clash data first, then whatever else
+            /// the session registered.
+            /// </summary>
+            private IReadOnlyList<ICheck> Offered()
+            {
+                var found = new List<ICheck> { Engine };
+
+                foreach (var one in _session.Checks.All)
+                    if (!string.Equals(one.Key, FindingSource.Clash, StringComparison.OrdinalIgnoreCase))
+                        found.Add(one);
+
+                return found;
+            }
+
+            /// <summary>Draw another check's results, keeping this one's board as it was left.</summary>
+            /// <param name="check">The check picked.</param>
+            private void Pick(ICheck check)
+            {
+                if (check == null || string.Equals(check.Key, _checkKey, StringComparison.OrdinalIgnoreCase))
+                    return;
+
+                _checkKey = check.Key;
+
+                // Everything on the board is keyed on the check now, so the tab is rebuilt rather
+                // than patched: the rail, the columns, the bands and the row the filters were
+                // worked out for all belong to the check that was showing.
+                Ui.Told(Shell.AppWindow.Show("clash", "manage"));
+            }
 
             /// <summary>
             /// The check over this document's own clash data.
@@ -1089,7 +1172,10 @@ namespace CamelWorks.UI.Views
             /// to nest in, nothing to re-run and no elements to read properties off, and each of
             /// those is a capability that is simply not there.
             /// </summary>
-            private ICheck? Check => OnFile ? (ICheck?)_fileCheck : Engine;
+            private ICheck? Check =>
+                OnFile ? (ICheck?)_fileCheck
+                : IsClash ? Engine
+                : _session.Checks.Find(_checkKey);
 
             /// <summary>
             /// The tab: a test finder on the left, one board on the right, one footer under both.
@@ -1105,6 +1191,7 @@ namespace CamelWorks.UI.Views
             internal UIElement Build()
             {
                 Indexed();
+                Wanted();
 
                 // The Exchange tab exchanges whatever this tab has selected, and it holds that as
                 // a key rather than a check. Set on every draw, not only when Export is pressed:
@@ -1133,7 +1220,14 @@ namespace CamelWorks.UI.Views
                     : "Pulls every test and every result out of the document, with status, "
                       + "assignee, comments and grouping.";
 
-                if (Current() == null)
+                if (Current() == null && !IsClash)
+                {
+                    // A check with no host of its own has one way in and one empty state per
+                    // reason there is nothing to draw: the seat cannot offer it, nothing is saved,
+                    // or something is saved and has never been run.
+                    _headline.Children.Add(NothingYet());
+                }
+                else if (Current() == null)
                 {
                     _headline.Children.Add(Bench.Ready(
                         OnFile
@@ -1176,6 +1270,70 @@ namespace CamelWorks.UI.Views
             /// <summary>How wide the test finder starts.</summary>
             private const double RailWidth = 372;
 
+            /// <summary>
+            /// Take up whatever the Checks tab asked to show, once.
+            ///
+            /// The hand-off from set-up. Applied before anything is drawn, so pressing Run there
+            /// lands on that check's board with that run selected.
+            /// </summary>
+            private void Wanted()
+            {
+                var asked = Asked;
+
+                if (asked == null) return;
+
+                Asked = null;
+
+                _checkKey = asked.CheckKey;
+
+                if (asked.RunIds.Count > 0) _current = asked.RunIds[0];
+            }
+
+            /// <summary>
+            /// What a board with nothing on it says, which is one of three different things.
+            ///
+            /// A check this seat cannot offer, a check with nothing saved to run, and a run saved
+            /// and never run are three states and not one blank pane. The fourth — a run that ran
+            /// and found nothing — is an answer rather than an absence and belongs on the board
+            /// itself, where the rows would have been.
+            /// </summary>
+            private UIElement NothingYet()
+            {
+                var check = Check;
+
+                if (check == null)
+                    return Ui.Empty("That check is not registered in this session.",
+                                    "This is a fault in this build rather than anything you did.");
+
+                if (!check.IsAvailable)
+                    return Ui.Empty(check.Name + " is not available here.",
+                                    check.Unavailable ?? "This seat cannot offer it.");
+
+                var saved = check.Runs();
+
+                if (saved.Count == 0)
+                    return Ui.Empty("No " + check.Name.ToLowerInvariant() + " " + check.RunWord + "s yet.",
+                                    "A " + check.RunWord + " is set up on the Checks tab, and what it "
+                                    + "finds lands here.",
+                                    "Set one up", () => Ui.Told(Shell.AppWindow.Show("clash", "checks")));
+
+                var waiting = saved.Where(one => one.LastRunTicks == 0).ToList();
+
+                if (waiting.Count == saved.Count)
+                    return Ui.Empty(waiting[0].Name + " — saved, not yet run.",
+                                    Ui.Count(waiting.Count, check.RunWord)
+                                    + " saved and never run. Reading measures nothing on its own; "
+                                    + "the run is what fills this board.",
+                                    "Set up and run", () => Ui.Told(Shell.AppWindow.Show("clash", "checks")));
+
+                return Bench.Ready(
+                    "Reading pulls every " + check.ResultWord + " these " + check.RunWord
+                    + "s found into the board — the " + check.RunWord + "s down the rail on the "
+                    + "left, the picked one's results on the board.",
+                    "Every decision is kept in this project beside the model, so it survives a "
+                    + "re-run and closing Navisworks.");
+            }
+
             // -------------------------------------------------------------------------------
             // Region 1 — the test finder
             //
@@ -1189,6 +1347,55 @@ namespace CamelWorks.UI.Views
             private readonly Border _railFoot = new Border();
             private readonly StackPanel _railTools = new StackPanel { Orientation = Orientation.Horizontal };
             private readonly Border _railPanel = new Border();
+            private readonly StackPanel _railHead = Ui.Stack();
+
+            /// <summary>What the last read could not do, under the rail.</summary>
+            private readonly List<string> _notes = new List<string>();
+
+            private readonly Border _railNotes = new Border();
+
+            private bool _notesOpen;
+
+            /// <summary>
+            /// Which check the board is drawing, over the rail's search box.
+            /// </summary>
+            private UIElement Picker() =>
+                CheckPicker.Draw(Offered(), Check, _session.Findings.Findings, Pick);
+
+            /// <summary>
+            /// What the last read could not do, as one line under the rail.
+            ///
+            /// A count that opens rather than a stack of sentences: the fall-hazard cell cap, the
+            /// sweep convergence report, the refused-element counts and the walkable-surface
+            /// diagnostics all arrive here, and on a bad read there are more of them than the rail
+            /// has room for. Shown either way, because a note nobody shows is a failure nobody
+            /// reports.
+            /// </summary>
+            private void RedrawNotes()
+            {
+                if (_notes.Count == 0)
+                {
+                    _railNotes.Child = null;
+                    _railNotes.BorderThickness = new Thickness(0);
+                    return;
+                }
+
+                var stack = Ui.Stack();
+
+                var line = Ui.Quiet(Ui.Count(_notes.Count, "note") + " from this read",
+                                    () => { _notesOpen = !_notesOpen; Ui.Safely(RedrawNotes); });
+
+                line.HorizontalAlignment = HorizontalAlignment.Left;
+                stack.Children.Add(line);
+
+                if (_notesOpen)
+                    foreach (var note in _notes) stack.Children.Add(Ui.Small(note));
+
+                _railNotes.Padding = new Thickness(14, 8, 14, 8);
+                _railNotes.BorderThickness = new Thickness(0, 1, 0, 0);
+                _railNotes.Child = stack;
+                _railNotes.Tint(Border.BorderBrushProperty, "Bd");
+            }
 
             /// <summary>The rail, as one pane: head, rows, footer.</summary>
             private UIElement Rail()
@@ -1198,17 +1405,26 @@ namespace CamelWorks.UI.Views
                 grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
                 grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
+                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
                 var top = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 0) };
 
                 DockPanel.SetDock(_railTools, Dock.Right);
                 top.Children.Add(Ui.Loose(_railTools));
                 top.Children.Add(Ui.Loose(_railBox));
 
+                // The check picker sits over the search box rather than beside it: which check is
+                // being read is the wider question, and the box narrows whatever it answers.
+                _railHead.Children.Clear();
+                _railHead.Children.Add(Ui.Loose(Picker()));
+                _railHead.Children.Add(new Border { Height = 8 });
+                _railHead.Children.Add(top);
+
                 var head = new Border
                 {
                     Padding = new Thickness(14, 10, 14, 10),
                     BorderThickness = new Thickness(0, 0, 0, 1),
-                    Child = top,
+                    Child = _railHead,
                 };
 
                 head.Tint(Border.BorderBrushProperty, "Bd");
@@ -1236,8 +1452,13 @@ namespace CamelWorks.UI.Views
                 Panel.SetZIndex(_railPanel, 2);
                 grid.Children.Add(Ui.Loose(_railPanel));
 
-                Grid.SetRow(_railFoot, 2);
+                Grid.SetRow(_railNotes, 2);
+                grid.Children.Add(Ui.Loose(_railNotes));
+
+                Grid.SetRow(_railFoot, 3);
                 grid.Children.Add(Ui.Loose(_railFoot));
+
+                RedrawNotes();
 
                 var pane = new Border
                 {
@@ -2336,7 +2557,30 @@ namespace CamelWorks.UI.Views
                 _railFoot.Tint(Border.BorderBrushProperty, "Bd");
             }
 
-            private List<TestEntry>? Current() => OnFile ? _file?.Entries : _read;
+            private List<TestEntry>? Current() => OnFile ? _file?.Entries : Board();
+
+            /// <summary>What the current check's last read left on the board, or null.</summary>
+            private static List<TestEntry>? Board() =>
+                _boards.TryGetValue(_checkKey, out var held) ? held : null;
+
+            /// <summary>Put a read on the current check's board.</summary>
+            /// <param name="entries">The rail it built.</param>
+            private static void Board(List<TestEntry>? entries)
+            {
+                if (entries == null) _boards.Remove(_checkKey);
+                else _boards[_checkKey] = entries;
+            }
+
+            /// <summary>
+            /// The property columns somebody added to this check's board.
+            ///
+            /// Per check, so switching to clearance and back finds the same columns, and a column
+            /// added on one board is not carried onto another where its property means nothing.
+            /// </summary>
+            private static List<PropColumn> Added =>
+                _added.TryGetValue(_checkKey, out var held)
+                    ? held
+                    : _added[_checkKey] = new List<PropColumn>();
 
             // -------------------------------------------------------------------------------
             // Region 2 — the board
@@ -3135,7 +3379,7 @@ namespace CamelWorks.UI.Views
 
                 foreach (var narrowed in _byColumn)
                 {
-                    var column = _columns.FirstOrDefault(c => c.Id == narrowed.Key);
+                    var column = Added.FirstOrDefault(c => c.Id == narrowed.Key);
 
                     if (column == null) continue;
 
@@ -3348,7 +3592,7 @@ namespace CamelWorks.UI.Views
                         RedrawBoard();
                     }));
                 }
-                else if (_columns.Count == 0)
+                else if (Added.Count == 0)
                 {
                     items.Add(Parts.Entry.Barred("Add a property column to band by one", null,
                         "The board's own facets are here already. Banding by system, level or "
@@ -3540,7 +3784,7 @@ namespace CamelWorks.UI.Views
                 // scrolled off its own status and assignee columns, which are the two things this
                 // screen was rebuilt to put on the row. Horizontal scroll is meant to be the last
                 // resort here, not the resting state.
-                var tight = _columns.Count > 0;
+                var tight = Added.Count > 0;
 
                 // Walked in the order the columns are drawn in rather than written out in a fixed
                 // sequence, so a column that has been dragged somewhere else takes its width with
@@ -3688,7 +3932,7 @@ namespace CamelWorks.UI.Views
                 foreach (var column in Declared())
                     if (string.Equals(column.Title, title, StringComparison.Ordinal)) return column;
 
-                foreach (var column in _columns)
+                foreach (var column in Added)
                     if (string.Equals(column.Title, title, StringComparison.Ordinal)) return column;
 
                 return null;
@@ -3862,7 +4106,7 @@ namespace CamelWorks.UI.Views
 
                 if (HasLevels) natural.Add(Level);
 
-                natural.AddRange(_columns.Select(c => c.Title));
+                natural.AddRange(Added.Select(c => c.Title));
                 natural.Add(Status);
                 natural.Add(Assigned);
 
@@ -3899,7 +4143,7 @@ namespace CamelWorks.UI.Views
             {
                 var key = string.Join("\u001f", _arranged) + "\u001e"
                         + string.Join("\u001f", Declared().Select(c => c.Title)) + "\u001e"
-                        + string.Join("\u001f", _columns.Select(c => c.Title))
+                        + string.Join("\u001f", Added.Select(c => c.Title))
                         + "\u001e" + (HasLevels ? "L" : string.Empty);
 
                 if (_places != null && string.Equals(_placesKey, key, StringComparison.Ordinal))
@@ -4121,8 +4365,7 @@ namespace CamelWorks.UI.Views
                         Child = Filtering
                             ? Ui.Empty("Nothing on this board matches what you are showing.",
                                        "Remove a filter above to see every row.")
-                            : Ui.Empty("Nothing on this board matches what you are showing.",
-                                       "This test found nothing at " + Tolerance(entry) + "."),
+                            : NothingFound(entry),
                     };
 
                     Grid.SetRow(nothing, 1);
@@ -4222,7 +4465,7 @@ namespace CamelWorks.UI.Views
 
                 if (HasLevels) Put(grid, Head(Level, false), Where(Level));
 
-                foreach (var column in _columns)
+                foreach (var column in Added)
                     Put(grid, Head(column.Title, false), Where(column.Title));
 
                 Put(grid, Head(Status, false), Where(Status));
@@ -4659,7 +4902,7 @@ namespace CamelWorks.UI.Views
 
                 if (HasLevels) Put(grid, Storeyed(Storey(row)), Where(Level));
 
-                foreach (var column in _columns)
+                foreach (var column in Added)
                     Put(grid, GroupCell(row, column), Where(column.Title));
 
                 return Finish(grid, row, on, false);
@@ -4955,7 +5198,7 @@ namespace CamelWorks.UI.Views
 
                 if (HasLevels) Put(grid, Storeyed(Storey(result)), Where(Level));
 
-                foreach (var column in _columns)
+                foreach (var column in Added)
                     Put(grid, Cell(result, column), Where(column.Title));
 
                 var wrapper = new BoardRow(id, result.Name ?? "this clash", false,
@@ -5910,7 +6153,64 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
+                if (!IsClash)
+                {
+                    ReadCheck(job);
+                    return;
+                }
+
                 ReadModel(job);
+            }
+
+            /// <summary>
+            /// Read a check that is not clash.
+            ///
+            /// Shorter than the clash leg because there is nothing to reconcile: a check with no
+            /// host echo keeps its results in this project's own register, so a read hands back
+            /// the findings the register already holds and the board draws them. Nothing is
+            /// observed, nothing is adopted and nothing is marked absent — the run that produced
+            /// them did that when it ran.
+            /// </summary>
+            /// <param name="job">The job, for progress and a Stop.</param>
+            private void ReadCheck(Job job)
+            {
+                var check = Check;
+
+                if (check == null) return;
+
+                var carried = Harvest(Board());
+
+                var read = check.Read(null, seen => job.Step(seen, check.ResultWord + "s read"));
+                var entries = Entries(read, carried);
+
+                if (job.IsCancelled) return;
+
+                Board(entries);
+                Noted(read);
+
+                Laid(entries);
+                Redraw();
+
+                _log.Children.Add(Ui.Line(
+                    Ui.Count(entries.Count, check.RunWord) + ", "
+                    + Ui.Count(entries.Sum(e => e.Rows.Count), check.ResultWord) + " read.", 1, true));
+            }
+
+            /// <summary>
+            /// What a read could not do, under the rail.
+            ///
+            /// Shown rather than swallowed. The refused-element counts, the surface diagnostics and
+            /// the runs saved and never run all arrive here, and a note nobody shows is the same as
+            /// a failure nobody reports.
+            /// </summary>
+            /// <param name="read">What the check read.</param>
+            private void Noted(CheckRead read)
+            {
+                _notes.Clear();
+
+                foreach (var note in read?.Notes ?? Array.Empty<string>()) _notes.Add(note);
+
+                RedrawNotes();
             }
 
             /// <summary>
@@ -5928,16 +6228,16 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private void ReadModel(Job job)
             {
-                var carried = Harvest(_read);
+                var carried = Harvest(Board());
 
                 var read = Engine.Read(null, seen => job.Step(seen, "results read"));
                 var entries = Entries(read, carried);
 
                 if (job.IsCancelled) return;
 
-                _read = entries;
+                Board(entries);
 
-                foreach (var note in read.Notes) _log.Children.Add(Ui.Note(note));
+                Noted(read);
 
                 // This project's own names over the host's, before anything is drawn.
                 Renamed(entries);
@@ -5984,7 +6284,7 @@ namespace CamelWorks.UI.Views
                 var moved = FileCheck.Adopt(register, read.Findings, out var claimed);
 
                 var intake = register.Observe(
-                    FindingSource.Clash, read.Findings, DateTime.UtcNow.Ticks,
+                    Check?.Key ?? FindingSource.Clash, read.Findings, DateTime.UtcNow.Ticks,
                     origin: _session.Store.Path,
                     scope: read.Scope);
 
@@ -6341,9 +6641,16 @@ namespace CamelWorks.UI.Views
             // another pair by running into each other.
             private static string Where(string test, string result) => test + (char)31 + result;
 
-            /// <summary>Every clash finding the host has not taken everything from.</summary>
+            /// <summary>
+            /// Every finding of the check being drawn that the host has not taken everything from.
+            ///
+            /// Per check, because a check with no host echo can never have one waiting: counting
+            /// clash's here would have the clearance board offering to sync results the document
+            /// has no place for.
+            /// </summary>
             private IEnumerable<Finding> Waiting =>
-                _session.Findings.Findings.From(FindingSource.Clash).Where(f => f.IsHeld);
+                _session.Findings.Findings.From(Check?.Key ?? FindingSource.Clash)
+                        .Where(f => f.IsHeld);
 
             /// <summary>How many clashes are waiting for the document.</summary>
             private int WaitingCount => Waiting.Count();
@@ -7364,7 +7671,7 @@ namespace CamelWorks.UI.Views
                 foreach (var column in Declared())
                     if (string.Equals(column.Id, id, StringComparison.Ordinal)) return column;
 
-                foreach (var column in _columns)
+                foreach (var column in Added)
                     if (string.Equals(column.Id, id, StringComparison.Ordinal)) return column;
 
                 return null;
@@ -7382,7 +7689,7 @@ namespace CamelWorks.UI.Views
             {
                 var found = Declared().Where(c => c.Bucket != null).ToList();
 
-                found.AddRange(_columns);
+                found.AddRange(Added);
 
                 return found;
             }
@@ -7434,7 +7741,7 @@ namespace CamelWorks.UI.Views
                 if (!Plan.IsEmpty) held.Add(ByLevel);
 
                 held.AddRange(Tokened().Select(one => ByToken + one));
-                held.AddRange(_columns.Select(c => ByColumn + c.Id));
+                held.AddRange(Added.Select(c => ByColumn + c.Id));
 
                 return held;
             }
@@ -8287,7 +8594,7 @@ namespace CamelWorks.UI.Views
                 var head = new List<string> { "Result", "Clash group" };
 
                 foreach (var column in declared) head.Add(column.Title);
-                foreach (var column in _columns) head.Add(column.Title);
+                foreach (var column in Added) head.Add(column.Title);
 
                 head.Add("Status");
                 head.Add("Assigned");
@@ -8299,7 +8606,7 @@ namespace CamelWorks.UI.Views
                     var cells = new List<string> { row.Name ?? string.Empty, row.Group };
 
                     foreach (var column in declared) cells.Add(Shown(row, column));
-                    foreach (var column in _columns) cells.Add(Shown(row, column));
+                    foreach (var column in Added) cells.Add(Shown(row, column));
 
                     cells.Add(FindingStatusWords.Of(row.Status));
                     cells.Add(row.Assigned);
@@ -9826,7 +10133,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private void AddColumn()
             {
-                _columns.Add(new PropColumn(string.Empty, string.Empty, BothSides,
+                Added.Add(new PropColumn(string.Empty, string.Empty, BothSides,
                                             Titled(string.Empty, string.Empty, BothSides)));
 
                 Indexed();
@@ -9857,7 +10164,7 @@ namespace CamelWorks.UI.Views
 
                 _columnList.Children.Add(add);
 
-                foreach (var column in _columns)
+                foreach (var column in Added)
                 {
                     var here = column;
                     var card = new Border
@@ -9875,7 +10182,7 @@ namespace CamelWorks.UI.Views
 
                     var bin = Ui.Icon(Glyphs.Bin, "Remove the column", () =>
                     {
-                        _columns.Remove(here);
+                        Added.Remove(here);
                         Indexed();
                         RedrawColumnList();
                         RedrawBoard();
@@ -9903,7 +10210,7 @@ namespace CamelWorks.UI.Views
                     _columnList.Children.Add(card);
                 }
 
-                if (_columns.Count == 0)
+                if (Added.Count == 0)
                     _columnList.Children.Add(Ui.Small("No columns yet. One carries a property off "
                         + "the clashing elements themselves - the system name, the workset, the "
                         + "fire rating - beside the decision about them."));
@@ -9922,7 +10229,7 @@ namespace CamelWorks.UI.Views
             /// <param name="side">Its new side, or null to keep it.</param>
             private void Recut(PropColumn column, string? tab, string? name, string? side)
             {
-                var at = _columns.IndexOf(column);
+                var at = Added.IndexOf(column);
 
                 if (at < 0) return;
 
@@ -9935,7 +10242,7 @@ namespace CamelWorks.UI.Views
                     && string.Equals(wantedSide, column.Side, StringComparison.Ordinal))
                     return;
 
-                _columns[at] = new PropColumn(column.Id, wantedTab, wantedName, wantedSide,
+                Added[at] = new PropColumn(column.Id, wantedTab, wantedName, wantedSide,
                                               Titled(wantedTab, wantedName, wantedSide, column));
 
                 Indexed();
@@ -9952,7 +10259,7 @@ namespace CamelWorks.UI.Views
             {
                 var title = name.Length == 0 ? "(no property yet)" : name;
 
-                if (_columns.Any(c => !ReferenceEquals(c, itself)
+                if (Added.Any(c => !ReferenceEquals(c, itself)
                                       && string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase))
                     && tab.Length > 0)
                     title = tab + " / " + title;
@@ -9973,7 +10280,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private void FillNow()
             {
-                if (_columns.Count == 0 || Current() == null || Check?.Properties == null) return;
+                if (Added.Count == 0 || Current() == null || Check?.Properties == null) return;
 
                 Ui.Working("Reading values from the clashing elements…", FillColumns);
             }
@@ -9993,7 +10300,7 @@ namespace CamelWorks.UI.Views
             /// <param name="job">The runner's job, for progress and for stopping.</param>
             private void FillColumns(Job job)
             {
-                if (_columns.Count == 0)
+                if (Added.Count == 0)
                 {
                     _fill.Children.Add(Ui.Problem("Add a column first."));
                     return;
@@ -10015,7 +10322,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                var wanted = _columns
+                var wanted = Added
                     .Where(c => c.Name.Trim().Length > 0)
                     .Select(c => new ClashPropertyWanted(c.Id, c.Tab, c.Name, Sided(c.Side)))
                     .ToList();
@@ -10045,7 +10352,7 @@ namespace CamelWorks.UI.Views
                     {
                         if (!byId.TryGetValue(answer.ResultId, out var row)) continue;
 
-                        foreach (var column in _columns)
+                        foreach (var column in Added)
                         {
                             var value = answer.Values.TryGetValue(column.Id, out var got)
                                 ? got
@@ -10066,7 +10373,7 @@ namespace CamelWorks.UI.Views
                     ? Ui.Note("Stopped. " + Ui.Count(filled, "value") + " were read before you "
                               + "asked it to stop; the rest of the cells are still empty.")
                     : (UIElement)Ui.Done(Ui.Count(filled, "value") + " read into "
-                        + Ui.Count(_columns.Count, "column") + " across "
+                        + Ui.Count(Added.Count, "column") + " across "
                         + Ui.Count(read.Count, "test") + "."
                         + (blank > 0
                             ? " " + Ui.Count(blank, "cell") + " came back empty - elements that "
@@ -10415,7 +10722,7 @@ namespace CamelWorks.UI.Views
                 var headers = new List<string> { "Test", "Result", "Group", "Status" };
 
                 foreach (var column in declared) headers.Add(column.Title);
-                foreach (var column in _columns) headers.Add(column.Title);
+                foreach (var column in Added) headers.Add(column.Title);
 
                 headers.AddRange(new[] { "Assigned", "Comments", "Latest comment" });
 
@@ -10430,7 +10737,7 @@ namespace CamelWorks.UI.Views
                     };
 
                     foreach (var column in declared) cells.Add(Shown(row, column));
-                    foreach (var column in _columns) cells.Add(Shown(row, column));
+                    foreach (var column in Added) cells.Add(Shown(row, column));
 
                     cells.Add(row.Assigned);
                     cells.Add(row.Comments.ToString(CultureInfo.InvariantCulture));
@@ -10985,18 +11292,24 @@ namespace CamelWorks.UI.Views
             /// <param name="problems">Anything the host refused, or null.</param>
             private void Reread(string did, List<string>? problems)
             {
-                var carried = Harvest(_read);
+                var carried = Harvest(Board());
                 var entries = new List<TestEntry>();
+
+                var check = Check;
+
+                if (check == null) return;
 
                 Ui.Working("Refreshing the results", (onProgress, keepGoing) =>
                 {
-                    var read = Engine.Read(null,
-                                           seen => { onProgress(seen); return keepGoing(); });
+                    var read = check.Read(null,
+                                          seen => { onProgress(seen); return keepGoing(); });
 
                     entries = Entries(read, carried);
+
+                    Noted(read);
                 });
 
-                if (entries.Count > 0) _read = entries;
+                if (entries.Count > 0) Board(entries);
 
                 Laid(entries);
 
@@ -11019,7 +11332,7 @@ namespace CamelWorks.UI.Views
             private void RereadTests(IReadOnlyList<string> testIds, string did,
                                      List<string>? problems)
             {
-                var board = _read;
+                var board = Board();
 
                 if (board == null || testIds == null || testIds.Count == 0)
                 {
@@ -11027,10 +11340,16 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
+                var check = Check;
+
+                if (check == null) return;
+
                 var carried = Harvest(board);
                 var wanted = new HashSet<string>(testIds, StringComparer.OrdinalIgnoreCase);
 
-                var read = Engine.Read(testIds, null);
+                var read = check.Read(testIds, null);
+
+                Noted(read);
 
                 foreach (var entry in board)
                 {
@@ -11049,6 +11368,36 @@ namespace CamelWorks.UI.Views
                 Redraw();
                 Tell(did, problems);
             }
+
+            /// <summary>
+            /// What an empty board says about a run nothing was filtered out of.
+            ///
+            /// Two opposite facts, and the board has to tell them apart: a run saved and never run
+            /// has nothing to show and needs running, and a run that found nothing has an answer.
+            /// </summary>
+            /// <param name="entry">The run on the board.</param>
+            private UIElement NothingFound(TestEntry entry)
+            {
+                var check = Check;
+                var word = check?.ResultWord ?? "clash";
+
+                if (entry.Run.LastRunTicks == 0)
+                    return Ui.Empty(entry.Run.Name + " — saved, not yet run.",
+                                    "Nothing has been measured for it. Running it is what fills "
+                                    + "this board.",
+                                    "Run it", () => RunTests(new object[] { entry }, _log));
+
+                return Ui.Empty(entry.Run.Name + " — no " + Ui.Plural(2, word) + ", last run "
+                                + Ran(entry.Run.LastRunTicks) + ".",
+                                "A result rather than an absence: this " + (check?.RunWord ?? "test")
+                                + " ran and found nothing at " + Tolerance(entry) + ".");
+            }
+
+            /// <summary>When a run last ran, as the empty state words it.</summary>
+            /// <param name="ticks">When it ran, in UTC ticks.</param>
+            private static string Ran(long ticks) =>
+                new DateTime(ticks, DateTimeKind.Utc).ToLocalTime()
+                    .ToString("d MMMM", CultureInfo.CurrentCulture);
 
             /// <summary>
             /// The custom column values a read is about to replace, keyed by result — so a run,
@@ -11312,6 +11661,13 @@ namespace CamelWorks.UI.Views
                 if (OnFile)
                     return "A file is open for markup, not the model. Save the markup and run the "
                            + "sync from the seat that has the model open.";
+
+                // A check with no host echo has nowhere in the document to write to at all. Not a
+                // failure: no clash engine found these results, so the document holds no record of
+                // them and the register is the whole of it.
+                if (Check?.HostEcho == null)
+                    return "Nothing found these results in the document, so there is nothing in it "
+                           + "to write them into. They are kept in this project beside the model.";
 
                 // This says why the DOCUMENT cannot take the changes - never why they cannot be
                 // saved. They are saved either way; this is the second half that is unavailable.

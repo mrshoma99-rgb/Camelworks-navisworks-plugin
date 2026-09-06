@@ -11,6 +11,24 @@ exists. It is gone from every app.
 
 ## Manage — the finder and the board
 
+**One board, every check.** The board holds one check at a time, picked from a dropdown over the
+rail's search box. Every check the session registered is listed; the ones this seat cannot offer
+are listed too, greyed, with their reason, because hiding them makes "where did the clearance
+results go?" a support question on every Simulate seat. Each entry shows how much of that check is
+still open, read off the findings register. What survives a switch is everything that was keyed on
+the check — the read, the property columns, the selected run — so coming back to clash finds the
+board as it was left.
+
+**Four empty states, not one.** The check is unavailable, and it says why; the check is available
+and nothing is saved to run, and it links to the Checks tab; a run is saved and has never been run,
+and it offers Run; a run ran and found nothing, which is an answer and says so with the date. The
+last two are opposite facts and used to be one blank pane.
+
+**What a read could not do is shown.** `CheckRead.Notes` — the refused-element counts, the surface
+diagnostics, the runs saved and never run — appears as a line under the rail with a count, which
+opens. A note nobody shows is a failure nobody reports.
+
+
 The tab a coordinator lives in, measured against the clash managers they actually use — the full
 gap analysis is in [clash-manager-gap.md](clash-manager-gap.md). It has been rebuilt three times:
 for what it could do, then for how it read, and now for what it is actually used to do.
@@ -434,7 +452,40 @@ Manager's own **New issue**, working on any elements rather than only beside a c
   The matrix survives tab switches, and the legend's test type now actually reaches the host —
   it was silently Hard for every cell before.
 
-## Clearance Check — the test no clash engine runs
+## Checks — the set-up for the tests no clash engine runs
+
+The tab was "Clearance Check" and held both the set-up and its own copy of the board. It now holds
+the set-up only, for every check whose runs this project owns, under a picker of its own. Its
+results are on Manage.
+
+- *Was wrong:* the tab was a second Manage board. `ClearanceViews` carried its own row type, its
+  own banding, filtering, property columns, marker export, BCF export and issue attach — about
+  1,200 lines that answered the same questions the Manage board already answers, from a second
+  implementation that could drift from it. **The board is deleted.** Clearance results are drawn by
+  the Manage board through `ICheck`, so they get its grouping, sorting, filtering, exchange in and
+  out, renaming, renumbering and export rather than an imitation of them.
+- *Was wrong:* there was one unnamed clearance run, so a second run over another corridor
+  overwrote the first. **A run is now a saved, named `CheckRunSpec`** in the project file: a name, a
+  folder, a clear height, a tolerance band, two sides, a level and zone scope, an obstruction
+  ignore list, worst-per-surface, the stairs tick and the detected surfaces somebody dropped.
+  Re-running is pressing Run on a saved run.
+- *Held honestly:* two runs over different corridors meet at the same place. A breach's identity is
+  its run, its surface, what is over it and the cell it is in, so two runs stay two findings and two
+  decisions. The run's **name** is not in the identity, so renaming a run keeps its findings.
+- *Was thinner than a real job needs:* the set-up was two side pickers and a minimum, and the first
+  federation run with no scope returns every soffit in the building. Added: **a tolerance band**
+  distinct from the minimum (a 2.100 m corridor at 2.098 m is a survey difference; at 1.850 m it is
+  a coordination issue), **level and zone scope**, **an obstruction ignore list** by category, and
+  **worst-per-surface or every breach** as a setting rather than a fixed reduction.
+- *Changed:* the tab takes an `ISeat` rather than a `Session`, so it draws in the render harness
+  with no Navisworks assembly loaded — the state every layout fault on this screen was previously
+  found in on a licensed seat and described in words. The document itself is deliberately not on
+  `ISeat`: what the set-up asks a document for is its models, its sets and a traversal, and the
+  seat answers all three.
+- **The hand-off:** pressing Run goes to the Manage tab with that check picked and that run
+  selected, the same way the Exchange tab is handed its tests.
+
+## What the clearance tab was, and what stayed
 
 The tab was called "Clearance", asked "what counts as a floor", offered *Floors and slabs* as an
 answer, and printed a table nobody could do anything with.
@@ -449,16 +500,15 @@ answer, and printed a table nobody could do anything with.
   surfaces* now means exactly that — the elements the first input did not take — instead of a
   second silent category guess.
 - *Was wrong:* the findings were a dead table. Clicking a row selected it and that was the whole
-  vocabulary. **The findings now get the Manage tab's bench**: click-to-sort on every column, a
-  contains-filter over any column or one picked column, status ticks and only-with-comments,
-  an ordered grouping chain (status, assignee, group, either element, either category, how short
-  it is, commented or not, and any property column) with a summary band table that narrows the
-  grid, element-property columns read off the surface, off what is over it, or both, and bulk
-  Focus / Isolate / Mark / Assign / Comment / Group / Sphere / Copy on the picked rows.
-- *Held honestly:* the judgement lives on the rows, not in the model's clash data — no clash
-  engine found these, so there is nothing there to write into. It survives a re-run instead:
-  status, assignment, comments and groups carry over onto the same surface-and-obstruction pair,
-  so re-checking after a model update does not reopen everything somebody closed.
+  vocabulary. **The findings now get the Manage tab's bench** — the real one, not a copy: the tab's
+  own board was deleted and clearance results are drawn by Manage through `ICheck`, so the sorting,
+  filtering, grouping chain, property columns, exchange and bulk verbs are the same code the
+  clashes use.
+- *Held honestly:* the judgement lives in this project's findings register, not in the model's
+  clash data — no clash engine found these, so there is nothing there to write into, and the board
+  says so where the sync would otherwise be. It survives a re-run: status, assignment, comments and
+  groups carry over onto the same run, surface and obstruction, so re-checking after a model update
+  does not reopen everything somebody closed.
 - *Was wrong:* the floor side was still a question the model should answer. Naming a set works,
   and it is a set somebody has to build first. **The floor side now offers detected walkable
   surfaces**, found in the elements' triangles: every up-facing surface within 10 degrees of
@@ -478,9 +528,9 @@ answer, and printed a table nobody could do anything with.
 - *Held honestly:* a seat whose primitive reader refuses triangles falls back to element bounding
   box tops, which is the coarser answer the check gave before, and the window says that is what
   happened. The named-set and guess options are unchanged for those seats.
-- **Out of the tab:** the grid to a spreadsheet exactly as filtered, and every shown finding as a
-  clash file — which the Manage tab's "A file" source opens, so a clearance list runs the same
-  offline review round as a clash export.
+- **Out of the tab:** nothing, now. The spreadsheet, the clash file and BCF are the Manage tab's
+  and the Exchange tab's, and clearance results reach all three because they are findings on the
+  same board.
 - *Changed:* the row's status is `FindingStatus`, the same as Manage's. The tick-box filter, the
   "Mark as" choice, the group tally's five columns and the marker colour all key off it, and the
   three places that re-parsed a status out of the row's own text are gone. Nothing on screen
