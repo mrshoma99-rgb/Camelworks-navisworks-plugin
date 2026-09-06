@@ -479,7 +479,12 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="Button">
-          <TextBlock x:Name="t" Text="{TemplateBinding Content}" Background="Transparent"/>
+          <!-- Centred. A link's template is a bare TextBlock, which inherits Stretch from the
+               row it is on and then draws its text at the top of that height. Beside a button
+               with 6px of padding it therefore rode high - every "All None" above its verbs and
+               every "and one more..." above its chips. -->
+          <TextBlock x:Name="t" Text="{TemplateBinding Content}" Background="Transparent"
+                     VerticalAlignment="Center"/>
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
               <Setter TargetName="t" Property="TextDecorations" Value="Underline"/>
