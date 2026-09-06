@@ -2614,11 +2614,11 @@ namespace CamelWorks.UI.Views
                     // heading over all of them divides nothing.
                     if (shape.Groups.Count > 0)
                         lines.Add(BoardLine.Banner(() => Parts.ViewBand(
-                            Glyphs.Clash, "The rules left these",
+                            Glyphs.Clash, "In no group",
                             Ui.Count(shape.Loose.Count, "result"),
                             "of " + Skin.Num(shape.LooseTotal)
-                            + " — no grouping rule placed them. Tick two or more to group them by "
-                            + "hand",
+                            + " — tick two or more to group them, or run the rules on the "
+                            + "Coordinate tab",
                             () => PickAll(shape.Loose))));
 
                     foreach (var row in shape.Loose) Add(row);
@@ -2809,47 +2809,33 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// What the board did to get here, in one line under the title.
+            /// What the carry-over did, in one line under the title.
             ///
-            /// Two things the engines do on every build and the screen never said: the grouping
-            /// rules, and the carry-over. Four reviewers concluded from these screens that
-            /// grouping was manual and that nothing tracked a clash across runs — both are built,
-            /// and neither said so.
+            /// Built on every board build and never said, which is why reviewers read these
+            /// screens as a product with no memory across runs. Restricted to this test's rows
+            /// and to a delta from this document: the delta is board-wide and counts results the
+            /// rules suppressed, so printed raw it says a number the screen cannot account for.
+            ///
+            /// The grouping funnel is deliberately not here. It describes the pipeline's run over
+            /// every test on the Coordinate tab, and this board's groups are the host's own — a
+            /// sentence claiming the rules made them would be the kind of thing this phase exists
+            /// to stop.
             /// </summary>
             /// <param name="entry">The test on the board.</param>
             private UIElement Standing(TestEntry entry)
             {
-                // A wrap panel, not a row. Two sentences at a board's width do not fit on one
-                // line, and the second was clipped at the pane's right edge.
                 var row = new WrapPanel { Margin = new Thickness(0, 2, 0, 0) };
-
-                var board = CoordinateViews.LastBoard;
-                var shape = Shape(entry);
-
-                if (board != null)
-                {
-                    row.Children.Add(Ui.Small(board.Funnel.Grouped(shape.LooseTotal)));
-
-                    var edit = Ui.Link("Grouping rules", () => Ui.Configure(
-                        "Grouping rules", null,
-                        new Ui.Page("Grouping rules", CoordinateViews.Rules)));
-
-                    edit.Margin = new Thickness(6, 0, 0, 0);
-                    edit.VerticalAlignment = VerticalAlignment.Center;
-
-                    row.Children.Add(edit);
-                }
 
                 var delta = CoordinateViews.LastDelta;
 
-                if (delta != null)
-                {
-                    var carried = Ui.Small(delta.Carried());
+                if (delta == null) return row;
 
-                    carried.Margin = new Thickness(board == null ? 0 : 12, 0, 0, 0);
+                var mine = new HashSet<ClashKey>(entry.Rows.Select(one => one.Info.Key()));
 
-                    row.Children.Add(carried);
-                }
+                row.Children.Add(Ui.Small(
+                    delta.OnBoard(delta.New.Concat(delta.Persisting).Concat(delta.Regressed)
+                                       .Where(one => mine.Contains(one.Key)))
+                         .Carried()));
 
                 return row;
             }
@@ -3411,6 +3397,20 @@ namespace CamelWorks.UI.Views
                 return columns;
             }
 
+            /// <summary>
+            /// How narrow the table can be before it has to scroll: every column's floor, plus
+            /// the padding either side of a row.
+            /// </summary>
+            private double Floors()
+            {
+                var least = 26.0;
+
+                foreach (var column in Widths())
+                    least += column.Width.IsAbsolute ? column.Width.Value : column.Least;
+
+                return least;
+            }
+
             /// <summary>Put one cell in a row.</summary>
             /// <param name="grid">The row.</param>
             /// <param name="cell">What goes in it.</param>
@@ -3721,10 +3721,12 @@ namespace CamelWorks.UI.Views
 
                 var card = new Border
                 {
-                    // The columns' own floors, plus the 12 of padding either side of a row.
-                    // Left out, the card came up two dozen pixels narrower than its contents and
-                    // the last column lost a symbol off its right-hand end.
-                    MinWidth = (_columns.Count == 0 ? 744 : 686 + (_columns.Count * 60)) + 26,
+                    // The columns' own floors, plus the 12 of padding either side of a row. Left
+                    // out, the card came up narrower than its contents and the last column lost a
+                    // symbol off its right-hand end. Summed from Widths() rather than written
+                    // down twice: a figure copied from the column list goes stale the first time
+                    // a column's floor moves, and the card then clips instead of scrolling.
+                    MinWidth = Floors(),
                     BorderThickness = new Thickness(1),
                     CornerRadius = new CornerRadius(10),
                     Child = frame,
@@ -4167,10 +4169,8 @@ namespace CamelWorks.UI.Views
                 });
 
                 // The member count, at the right of the name's own cell. It had a column of its
-                // own, which meant every clash row carried an em-dash under a header called
-                // "Clashes" — a column's width spent saying nothing on nine rows in ten. Docked
-                // rather than trailing the name, so it survives a group name too long for the
-                // column.
+                // own, which carried an em-dash on every clash row. Docked rather than trailing
+                // the name, so it survives a group name too long for the column.
                 var many = new TextBlock
                 {
                     Text = Ui.Count(row.Rows.Count, "clash"),
@@ -4188,8 +4188,7 @@ namespace CamelWorks.UI.Views
                 Put(grid, named, Where(Named));
 
                 // Em-dashes, not the first member's items. A group aggregates many different item
-                // pairs and has no pair of its own; borrowing one member's would be a lie the eye
-                // reads as fact.
+                // pairs and has no pair of its own; borrowing one member's would read as fact.
                 Put(grid, Right(Hint("—")), Where(ItemA));
                 Put(grid, Right(Hint("—")), Where(ItemB));
                 Put(grid, Figure(Deepest(row), Bad(row)), Where(Worst));
@@ -4495,8 +4494,6 @@ namespace CamelWorks.UI.Views
                 Put(grid, Item(itemA), Where(ItemA));
                 Put(grid, Item(itemB), Where(ItemB));
 
-                // A loose clash is not a count of anything, so the column that counts is empty
-                // rather than showing one.
                 Put(grid, Figure(Millimetres(result), Bad(result)), Where(Worst));
 
                 for (var i = 0; i < _columns.Count; i++)

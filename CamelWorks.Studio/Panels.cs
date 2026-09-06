@@ -1185,32 +1185,18 @@ namespace CamelWorks.Studio
         }
 
         /// <summary>
-        /// What the board did to get here: the grouping rules, and the carry-over.
+        /// What the carry-over did, in one line under the title.
         ///
-        /// Both engines run on every build and neither said so, which is why four reviewers read
-        /// these screens as a product with manual grouping and no memory across runs.
+        /// It runs on every board build and never said so, which is why reviewers read these
+        /// screens as a product with no memory across runs.
         /// </summary>
         private static UIElement BoardStanding()
         {
-            // A wrap panel, not a row. Two sentences at a board's width do not fit on one
-            // line, and the second was clipped at the pane's right edge.
             var row = new WrapPanel { Margin = new Thickness(0, 2, 0, 0) };
 
             row.Children.Add(Ui.Small(
-                "The rules made 25 groups, and left 143 results in none. "
-                + "4 groups have no responsible party."));            // harness: data
-
-            var edit = Ui.Link("Grouping rules", () => { });
-            edit.Margin = new Thickness(6, 0, 0, 0);
-            edit.VerticalAlignment = VerticalAlignment.Center;
-            row.Children.Add(edit);
-
-            var carried = Ui.Small(
                 "150 results kept their statuses from the last run, 18 new, "
-                + "3 are back after being resolved, 9 gone from the model.");   // harness: data
-
-            carried.Margin = new Thickness(12, 0, 0, 0);
-            row.Children.Add(carried);
+                + "3 are back after being resolved, 9 gone from the model."));   // harness: data
 
             return row;
         }
@@ -1310,8 +1296,8 @@ namespace CamelWorks.Studio
                     MinWidth = least,
                 });
 
-            // No Clashes column. It said nothing on nine rows in ten; a group's member count is
-            // beside its name, and the width goes to the two items and the property column.
+            // No Clashes column. A group's member count is beside its name, and the width goes
+            // to the two items and the property column.
             Fixed(26);
             Flexible(2, 110);
             Flexible(1, 74);
@@ -1410,9 +1396,9 @@ namespace CamelWorks.Studio
                                        "CHW Supply", true, false));
             body.Children.Add(GroupRow("Riser 2 — pipework against slab edge", 5, "-22 mm", false, false));
 
-            body.Children.Add(Parts.ViewBand(Glyphs.Clash, "The rules left these", "143 results",
-                                             "of 143 — no grouping rule placed them. Tick two or "
-                                             + "more to group them by hand", () => { }));
+            body.Children.Add(Parts.ViewBand(Glyphs.Clash, "In no group", "143 results",
+                                             "of 143 — tick two or more to group them, or run "
+                                             + "the rules on the Coordinate tab", () => { }));
 
             body.Children.Add(ClashRow("Clash 208", "Pipe CHW-31", "Wall PC-200", "-52 mm",
                                        "New", Tone.Bad, string.Empty, "CHW Return", false, true));
@@ -1506,8 +1492,7 @@ namespace CamelWorks.Studio
 
             if (made) words.Children.Add(Parts.Note("grouped by you"));
 
-            // The member count, at the right of the name's own cell, so it survives a group name
-            // too long for the column.
+            // The member count, at the right of the name's own cell.
             var many = new TextBlock
             {
                 Text = Ui.Count(count, "clash"),                     // harness: data

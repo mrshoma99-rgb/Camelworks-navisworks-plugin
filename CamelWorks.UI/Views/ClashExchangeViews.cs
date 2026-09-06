@@ -426,7 +426,7 @@ namespace CamelWorks.UI.Views
                                               StringComparison.OrdinalIgnoreCase))))
                 {
                     Tone = Tone.Plain,
-                }.Ticking(Sending(one.Name), on => Included(new object[] { one }, null, on)))
+                }.Ticking(Sending(one.Name), on => Included(new object[] { one }, null, on, rebuild: false)))
                     .ToList();
 
                 var table = Ui.Table(rows,
@@ -443,6 +443,17 @@ namespace CamelWorks.UI.Views
                     new Ui.OnPicked("Exclude these {n}", (picked, said) =>
                         Included(picked, said, on: false))));
 
+                DrawTestsSaid();
+            }
+
+            /// <summary>
+            /// How much of the board is going, without rebuilding the table under it.
+            /// </summary>
+            private void DrawTestsSaid()
+            {
+                _testsSaid.Children.Clear();
+
+                var all = Tests();
                 var chosen = all.Count(one => Sending(one.Name));
 
                 _testsSaid.Children.Add(Ui.Small(
@@ -460,7 +471,14 @@ namespace CamelWorks.UI.Views
             /// <param name="said">Where the picking bar says what it did, or null for a tick box
             /// on a single row, which says it by moving.</param>
             /// <param name="on">True to include them.</param>
-            private void Included(IReadOnlyList<object> picked, Panel? said, bool on)
+            /// <param name="rebuild">
+            /// False for a tick box, which is inside the table this would tear down and rebuild:
+            /// the box is mid-click, and rebuilding from inside its own binding update throws
+            /// away the selection and the scroll position and re-flattens the whole board. The
+            /// box has already moved, so only what depends on it needs redrawing.
+            /// </param>
+            private void Included(IReadOnlyList<object> picked, Panel? said, bool on,
+                                  bool rebuild = true)
             {
                 var tests = picked.OfType<BoardTest>().ToList();
 
@@ -475,7 +493,8 @@ namespace CamelWorks.UI.Views
                 said?.Children.Add(Ui.Note(
                     Ui.Count(tests.Count, "test") + (on ? " included." : " excluded.")));
 
-                Redraw();
+                if (rebuild) Redraw();
+                else { DrawTestsSaid(); DrawResults(); }
             }
 
             // -------------------------------------------------------------------------------

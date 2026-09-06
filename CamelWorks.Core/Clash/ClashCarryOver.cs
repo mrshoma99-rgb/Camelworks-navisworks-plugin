@@ -236,10 +236,15 @@ namespace CamelWorks.Core.Clash
         /// </summary>
         public string Carried()
         {
-            if (Accounted == 0 && Resolved.Count == 0)
-                return "Nothing to compare against — this is the first run on this board.";
+            if (Accounted == 0 && Resolved.Count == 0) return "Nothing on this board to compare.";
 
             var kept = Persisting.Count + Regressed.Count;
+
+            // A first run has no previous record at all, and "no result kept its status" reads as
+            // a loss rather than as the ordinary state of a board nobody has run before.
+            if (kept == 0 && Resolved.Count == 0)
+                return "Nothing to compare against — this is the first run on this board, and all "
+                     + Measure.Count(New.Count) + " are new.";
 
             var parts = new List<string>();
 

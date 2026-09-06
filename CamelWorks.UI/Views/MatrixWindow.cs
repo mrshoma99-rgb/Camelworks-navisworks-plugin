@@ -400,6 +400,9 @@ namespace CamelWorks.UI.Views
 
             /// <summary>The count this one replaced, so a cell can say how it has moved.</summary>
             private MatrixCounts? _before;
+
+            /// <summary>Whether the baseline has already moved this session.</summary>
+            private bool _rotated;
             private MatrixSymbol? _pickedSymbol;
 
             /// <summary>
@@ -4085,9 +4088,19 @@ namespace CamelWorks.UI.Views
 
                 cell.Background = ground;
 
+                // How the pair has moved since the count this one replaced, in the same text block
+                // as the figure. A horizontal stack measures its children with unbounded width in
+                // the stacking direction, so neither part trimmed and a four-digit count spilled
+                // across the cells beside it.
+                var moved = _counts.Moved(_before, row, column);
+
                 var figure = new TextBlock
                 {
-                    Text = open.ToString(CultureInfo.InvariantCulture),
+                    Text = open.ToString(CultureInfo.InvariantCulture)
+                           + (moved == null || moved == 0
+                               ? string.Empty
+                               : "  " + (moved > 0 ? "+" : "\u2212")
+                                 + Math.Abs(moved.Value).ToString(CultureInfo.InvariantCulture)),
                     FontSize = Math.Max(10, Lettering - 1),
                     FontWeight = open == 0 ? FontWeights.Normal : FontWeights.SemiBold,
                     HorizontalAlignment = HorizontalAlignment.Center,
@@ -4097,40 +4110,7 @@ namespace CamelWorks.UI.Views
                     Foreground = Ui.InkOn(ground),
                 };
 
-                // How the pair has moved since the count this one replaced. Without it the grid
-                // says how many clashes are open and never whether that is the week's progress or
-                // the week's problem.
-                var moved = _counts.Moved(_before, row, column);
-
-                if (moved == null || moved == 0) cell.Child = figure;
-                else
-                {
-                    var since = new TextBlock
-                    {
-                        Text = (moved > 0 ? "+" : "\u2212")
-                               + Math.Abs(moved.Value).ToString(CultureInfo.InvariantCulture),
-                        FontSize = Math.Max(8, Lettering - 4),
-                        HorizontalAlignment = HorizontalAlignment.Center,
-                        VerticalAlignment = VerticalAlignment.Center,
-                        TextTrimming = TextTrimming.CharacterEllipsis,
-                        TextWrapping = TextWrapping.NoWrap,
-                        Margin = new Thickness(3, 1, 0, 0),
-                        Foreground = Ui.InkOn(ground),
-                        Opacity = 0.75,
-                    };
-
-                    var both = new StackPanel
-                    {
-                        Orientation = Orientation.Horizontal,
-                        HorizontalAlignment = HorizontalAlignment.Center,
-                        VerticalAlignment = VerticalAlignment.Center,
-                    };
-
-                    both.Children.Add(figure);
-                    both.Children.Add(since);
-
-                    cell.Child = both;
-                }
+                cell.Child = figure;
 
                 cell.ToolTip = at + " — " + row.Titled + " against " + column.Titled + ". "
                                + (open == 0
@@ -6382,15 +6362,14 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private void CountKeys()
             {
-                var worst = Math.Max(1, _counts.Worst);
+                var worst = _counts.Worst;
 
                 Keyed(Skin.Of("OkBg"), "0", "Nothing open",
                       "tested, and everything on it is decided");
 
-                // A ramp, not two samples off it. Two swatches labelled with the numbers they
-                // happen to sit at say what those two cells look like and nothing about the
-                // sixty between them; a scale says where it runs from and to.
-                Ramp(worst);
+                // A ramp rather than two samples off it, so the key states where the scale runs
+                // from and to.
+                if (worst > 0) Ramp(worst);
 
                 Keyed(System.Windows.Media.Brushes.Transparent, string.Empty, "No test covers it",
                       "a hole in the coordination, not a clean pair");
@@ -9843,14 +9822,27 @@ namespace CamelWorks.UI.Views
                 // Keep this count, and the one it replaces, so the grid can say how each pair has
                 // moved. Runs were already kept as week folders and MatrixDiff already compared
                 // two plans; nothing compared two counts.
+                //
+                // The baseline moves once per session. Counting twice in an afternoon must not
+                // make the second count its own baseline and throw last week's away, which is the
+                // only figure the delta is worth reading against.
                 var section = _session.Store.Section(ProjectStore.ClashSection);
 
-                _before = MatrixCounts.FromJson(section["matrixCounts"]);
+                if (!_rotated)
+                {
+                    if (MatrixCounts.FromJson(section["matrixCounts"]) != null)
+                        section.Set("matrixCountsBefore", section["matrixCounts"]);
 
-                if (_before != null) section.Set("matrixCountsBefore", section["matrixCounts"]);
+                    _rotated = true;
+                }
+
+                _before = MatrixCounts.FromJson(section["matrixCountsBefore"]);
 
                 section.Set("matrixCounts", counted.ToJson(DateTimeOffset.UtcNow));
-                _session.Store.Save();
+
+                if (!_session.Store.Save())
+                    Warned(Ui.Note("The count is on the grid but could not be written down, so "
+                                   + "the next one has nothing to compare against."));
 
                 _counts = counted;
                 _shown = Showing.Results;

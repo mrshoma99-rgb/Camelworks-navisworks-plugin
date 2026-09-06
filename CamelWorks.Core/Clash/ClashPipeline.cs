@@ -225,8 +225,11 @@ namespace CamelWorks.Core.Clash
             if (Groups == 0)
                 return loose == 0
                     ? "The rules had nothing to group."
-                    : "The rules made no groups from these "
-                      + loose.ToString("N0", CultureInfo.InvariantCulture) + " results.";
+                    : "The rules made no groups from "
+                      + (loose == 1
+                          ? "the one result there is."
+                          : "these " + loose.ToString("N0", CultureInfo.InvariantCulture)
+                            + " results.");
 
             var line = "The rules made "
                      + Groups.ToString("N0", CultureInfo.InvariantCulture)
