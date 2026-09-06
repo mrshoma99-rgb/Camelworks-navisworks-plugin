@@ -18,6 +18,15 @@ namespace CamelWorks.Core.Clash
 
         /// <summary>The pattern is bound and fits, but carries no such token.</summary>
         NoToken = 3,
+
+        /// <summary>
+        /// It has already gone out to somebody, so its name is a reference other people hold.
+        ///
+        /// Every pack written, every issue register row, every email and every RFI naming a test
+        /// points at the name it had when it went out. Renaming it afterwards leaves all of them
+        /// pointing at nothing, and nobody who wrote one finds out.
+        /// </summary>
+        Issued = 4,
     }
 
     /// <summary>What one test's name would become.</summary>
@@ -79,13 +88,21 @@ namespace CamelWorks.Core.Clash
         /// the list. What a field of the side wants: a discipline's number is the same wherever
         /// that discipline appears.
         /// </param>
+        /// <param name="issued">
+        /// Names that have already gone out to somebody. Those tests keep their place in the run
+        /// and are refused rather than skipped, so refusing the third of ten does not shift the
+        /// seven under it.
+        /// </param>
         public static IReadOnlyList<NamingStep> Plan(
             NamingBook? book, IEnumerable<(string Id, string Name)>? tests, string? token,
-            MatrixField? how, bool perSide = false)
+            MatrixField? how, bool perSide = false, IEnumerable<string>? issued = null)
         {
             var made = new List<NamingStep>();
 
             if (book == null || tests == null || how == null) return made;
+
+            var sent = new HashSet<string>(issued ?? Array.Empty<string>(),
+                                           StringComparer.OrdinalIgnoreCase);
 
             var named = (token ?? string.Empty).Trim().Trim('{', '}');
 
@@ -115,6 +132,16 @@ namespace CamelWorks.Core.Clash
                 // occupies its place in the run, so refusing the third of ten does not shift the
                 // seven under it.
                 var where = at++;
+
+                // Before anything else, because a test that has gone out is refused whatever its
+                // pattern says: the question is not whether the new name can be worked out, it is
+                // whether anybody outside this screen is holding the old one.
+                if (sent.Contains(name))
+                {
+                    made.Add(new NamingStep(id, name, null, how.At(where),
+                                            NamingRefusal.Issued));
+                    continue;
+                }
 
                 if (read == null)
                 {
@@ -278,6 +305,7 @@ namespace CamelWorks.Core.Clash
             NamingRefusal.Unbound => "No naming pattern",
             NamingRefusal.Unread => "Its pattern does not fit this name",
             NamingRefusal.NoToken => "Its pattern does not carry that field",
+            NamingRefusal.Issued => "It has already been issued under this name",
             _ => string.Empty,
         };
 

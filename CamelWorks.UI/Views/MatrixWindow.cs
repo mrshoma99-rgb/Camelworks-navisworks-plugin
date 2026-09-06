@@ -4847,13 +4847,32 @@ namespace CamelWorks.UI.Views
                 foreach (var line in _board.Rows) if (line.IsUnbacked) lost++;
                 foreach (var line in _board.Columns) if (line.IsUnbacked) lost++;
 
+                // A grid painted against a legend that does not define its symbols builds
+                // nothing at all, and the only trace of it was the word "skipped" in a count on
+                // the strip. Somebody can decide a hundred and sixty pairs, watch the progress
+                // bar fill, press the blue button and get no tests. The button refuses instead,
+                // and says which symbols are the reason.
+                var unknown = _legend.Unexplained(_board);
+
                 // Checks whether the document accepts writes at all, not merely whether a clash
                 // engine exists. On a document that refuses writes, the matrix was drawn, the
                 // build was pressed, and the refusal arrived afterwards as three lines out of two
                 // hundred.
                 var shut = _session.Clash.IsAvailable && !_session.Clash.CanEdit;
 
-                _build.ToolTip = shut
+                var barren = unknown.Count > 0
+                              && MatrixPlanner.Plan(_board, _legend, _pattern).Tests.Count == 0;
+
+                _build.IsEnabled = !barren;
+
+                _build.ToolTip = barren
+                    ? "This matrix builds no tests: "
+                      + Listed(unknown) + " in the grid " + (unknown.Count == 1 ? "is" : "are")
+                      + " not in the legend, so every cell using "
+                      + (unknown.Count == 1 ? "it" : "them") + " is skipped. "
+                      + "Press the notice on the strip to add "
+                      + (unknown.Count == 1 ? "it" : "them") + " as ordinary hard clashes."
+                    : shut
                     ? "This document will not take new tests — it is open read-only, or the seat "
                       + "has no licence to write them. The matrix saves and exports as it is."
                     : lost == 0
@@ -6198,6 +6217,44 @@ namespace CamelWorks.UI.Views
                     _palette.Children.Add(none);
                 }
 
+                // Every symbol the grid actually uses, whether or not anybody has said what it
+                // means. The palette said "No symbols yet" over a grid holding hundreds of them,
+                // which is the screen contradicting itself, and there was no way from a symbol in
+                // a cell to its definition.
+                var strangers = _legend.Unexplained(_board);
+
+                if (strangers.Count > 0)
+                {
+                    var heading = Ui.Small("In the grid, not in the legend");
+
+                    heading.Margin = new Thickness(4, 4, 4, 2);
+                    heading.Tint(TextBlock.ForegroundProperty, "RedTx");
+
+                    _palette.Children.Add(heading);
+
+                    foreach (var stranger in strangers.Take(12))
+                    {
+                        var here = stranger;
+
+                        _palette.Children.Add(Swatch(
+                            here,
+                            "Builds no test",
+                            "press to say what it means",
+                            string.Empty,
+                            armed: false,
+                            live: false,
+                            onPress: () => Ui.Safely(() => Define(here)),
+                            hue: -1));
+                    }
+
+                    var cover = Ui.Link("Add all " + strangers.Count + " as hard clashes",
+                                        () => Ui.Safely(CoverSymbols));
+
+                    cover.Margin = new Thickness(4, 2, 4, 8);
+
+                    _palette.Children.Add(cover);
+                }
+
                 for (var at = 0; at < _legend.Symbols.Count; at++)
                 {
                     var one = _legend.Symbols[at];
@@ -6680,6 +6737,62 @@ namespace CamelWorks.UI.Views
                         _hushed = true;
                         RedrawStrip();
                     });
+
+                    Say(told);
+                }
+
+                // The one state that makes the whole screen a waste of an afternoon, so it is on
+                // the strip in the danger colour and it is pressable: the press defines the
+                // missing symbols rather than merely explaining them.
+                var undefined = _legend.Unexplained(_board);
+
+                if (undefined.Count > 0)
+                {
+                    var makes = MatrixPlanner.Plan(_board, _legend, _pattern).Tests.Count;
+
+                    var told = new DockPanel
+                    {
+                        LastChildFill = true,
+                        Cursor = Cursors.Hand,
+                        Background = System.Windows.Media.Brushes.Transparent,
+                    };
+
+                    var mark = Ui.Glyph(Glyphs.Warn, 12, makes == 0 ? "RedTx" : "AmberTx",
+                                        new Thickness(0, 0, 5, 0));
+
+                    mark.VerticalAlignment = VerticalAlignment.Center;
+
+                    DockPanel.SetDock(mark, Dock.Left);
+                    told.Children.Add(mark);
+
+                    var words = new TextBlock
+                    {
+                        Text = Listed(undefined) + (undefined.Count == 1 ? " is" : " are")
+                               + " not in the legend",
+                        FontSize = StripSize,
+                        FontWeight = FontWeights.SemiBold,
+                        VerticalAlignment = VerticalAlignment.Center,
+                    };
+
+                    words.Tint(TextBlock.ForegroundProperty, makes == 0 ? "RedTx" : "AmberTx");
+                    told.Children.Add(words);
+
+                    var why = (makes == 0
+                                  ? "This matrix builds no tests at all. "
+                                  : "Cells using "
+                                    + (undefined.Count == 1 ? "it" : "them") + " build no tests. ")
+                              + "Press to add "
+                              + (undefined.Count == 1 ? "it" : "them")
+                              + " to the legend as ordinary hard clashes, then correct the ones "
+                              + "that are not.";
+
+                    told.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
+                    {
+                        e.Handled = true;
+                        CoverSymbols();
+                    });
+
+                    Reachable(told, why, CoverSymbols);
 
                     Say(told);
                 }
@@ -9014,6 +9127,45 @@ namespace CamelWorks.UI.Views
                 }
 
                 return string.Empty;
+            }
+
+            /// <summary>Symbols, listed the way a sentence lists them.</summary>
+            /// <param name="symbols">The symbols.</param>
+            private static string Listed(IReadOnlyList<string> symbols)
+            {
+                if (symbols == null || symbols.Count == 0) return "nothing";
+
+                var said = symbols.Take(4).Select(Quoted).ToList();
+
+                if (symbols.Count > 4)
+                    return string.Join(", ", said) + " and "
+                           + (symbols.Count - 4).ToString(CultureInfo.InvariantCulture) + " more";
+
+                return said.Count == 1
+                    ? said[0]
+                    : string.Join(", ", said.Take(said.Count - 1)) + " and " + said[said.Count - 1];
+            }
+
+            /// <summary>Say what one symbol the grid uses means, and repaint the cells using it.</summary>
+            /// <param name="symbol">The symbol found in the grid.</param>
+            private void Define(string symbol)
+            {
+                var made = MatrixKey.Ask("What " + Quoted(symbol) + " means", "Add",
+                    new MatrixKeyEdit { Symbol = symbol }, Clashing);
+
+                if (made == null) return;
+
+                Remember(what: "saying what " + Quoted(symbol) + " means");
+
+                _legend = new MatrixLegend(_legend.Symbols.Concat(new[]
+                {
+                    new MatrixSymbol(made.Symbol, made.Test, made.Tolerance, made.Enabled,
+                                     made.Colour),
+                }));
+
+                RedrawPalette();
+                RepaintAll();
+                Recount();
             }
 
             private void CoverSymbols()

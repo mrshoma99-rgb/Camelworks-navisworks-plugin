@@ -67,10 +67,12 @@ namespace CamelWorks.UI.Views
         /// <param name="tests">The tests, in the order the rail shows them.</param>
         /// <param name="rename">Renames one test, and says whether it landed.</param>
         /// <param name="start">Which pane to open on.</param>
+        /// <param name="issued">Test names that have already gone out to somebody.</param>
         /// <returns>True when something changed, so the caller can save and redraw.</returns>
         internal static bool Ask(NamingBook book, IReadOnlyList<(string Id, string Name)> tests,
                                  Func<string, string, bool> rename,
-                                 NamingPane start = NamingPane.Tests)
+                                 NamingPane start = NamingPane.Tests,
+                                 IReadOnlyList<string>? issued = null)
         {
             if (book == null) return false;
 
@@ -90,7 +92,7 @@ namespace CamelWorks.UI.Views
             var ground = new Border
             {
                 Child = Body(book, Held(tests), rename, start, window,
-                             () => touched = true, () => window.Close()),
+                             () => touched = true, () => window.Close(), issued),
             };
 
             ground.Tint(Border.BackgroundProperty, "Bg");
@@ -110,11 +112,13 @@ namespace CamelWorks.UI.Views
         /// <param name="book">The project's naming.</param>
         /// <param name="tests">The tests, in the order the rail shows them.</param>
         /// <param name="start">Which pane to draw.</param>
+        /// <param name="issued">Test names that have already gone out to somebody.</param>
         public static UIElement Drawn(NamingBook book,
                                       IReadOnlyList<(string Id, string Name)> tests,
-                                      NamingPane start = NamingPane.Tests) =>
+                                      NamingPane start = NamingPane.Tests,
+                                      IReadOnlyList<string>? issued = null) =>
             Body(book, Held(tests), (id, name) => { _ = id; _ = name; return true; },
-                 start, null, null, null);
+                 start, null, null, null, issued);
 
         /// <summary>The tests as lines this window can rename in place.</summary>
         private static List<Line> Held(IReadOnlyList<(string Id, string Name)>? tests) =>
@@ -126,7 +130,8 @@ namespace CamelWorks.UI.Views
         /// <summary>Build the surface.</summary>
         private static UIElement Body(NamingBook book, List<Line> tests,
                                       Func<string, string, bool> rename, NamingPane start,
-                                      FrameworkElement? near, Action? onTouched, Action? onDone)
+                                      FrameworkElement? near, Action? onTouched, Action? onDone,
+                                      IReadOnlyList<string>? issued = null)
         {
             var pane = start;
 
@@ -194,7 +199,7 @@ namespace CamelWorks.UI.Views
                         // a callback that redraws sent Redraw back into itself, and the copy it
                         // had already built stayed on the panel: every card drawn twice.
                         Writing(held, Acting, book, tests, rename, how, token,
-                                said => token = said, Redraw, Touch);
+                                said => token = said, Redraw, Touch, issued);
                         break;
 
                     default:
@@ -926,10 +931,12 @@ namespace CamelWorks.UI.Views
         /// rebuild back into itself and drew every card twice.
         /// </param>
         /// <param name="touch">Called when anything was actually renamed.</param>
+        /// <param name="issued">Test names that have already gone out to somebody.</param>
         private static void Writing(Panel into, Action<UIElement?> acts, NamingBook book,
                                     List<Line> tests, Func<string, string, bool> rename,
                                     MatrixField how, string? token, Action<string?> onToken,
-                                    Action onShape, Action touch)
+                                    Action onShape, Action touch,
+                                    IReadOnlyList<string>? issued = null)
         {
             var offered = Offered(book);
 
@@ -977,7 +984,7 @@ namespace CamelWorks.UI.Views
             {
                 var plan = NamingWrite.Plan(book, tests.Select(one => (one.Id, one.Name)),
                                             chosen, how,
-                                            perSide && how.Fill == MatrixFill.Series);
+                                            perSide && how.Fill == MatrixFill.Series, issued);
 
                 var changing = NamingWrite.Changing(plan).Count;
                 var refused = NamingWrite.Refused(plan).Count;
