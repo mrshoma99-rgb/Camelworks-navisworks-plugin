@@ -1654,7 +1654,10 @@ about ten test files**.
   is the default it is seeded with.
 - `IssueCascade` replaces `Cascade` and `IssueFindings.StatusFor`. Applied, not
   offered; merge, not assignment.
-- Set drift gains raise-an-issue and attach-to-an-issue, which it has neither of.
+- Set drift already has raise-an-issue: `ProjectViews.Reached` goes through the
+  shared judgement row, which carries it. Attach-to-an-existing-issue is the verb
+  it lacks, and it needs an issue picker on that screen, so it moves to Phase 10
+  with the other screen work.
 - The BCF guid convergence test: `ClashFindings.From` stamps
   `ClashBcf.TopicGuidFor(...)` and `FindingBcf.TopicGuidFor` prefers the stamped
   value. That one-line agreement is undocumented on both sides and is pinned here,
@@ -1919,6 +1922,8 @@ issue, the relation both ways and a viewpoint.
 - The check picker of 4.3: the control, the greyed unavailable entries with reasons,
   the counts, the per-check statics, `_current` as a `(checkKey, runId)` pair, and
   the set-up-to-results hand-off.
+- Attach-to-an-existing-issue on the set drift screen, deferred from Phase 1
+  because it needs an issue picker rather than a mechanical edit.
 - The tab set of 4.1: "Clearance Check" becomes "Checks" in `Apps.cs`, with its own
   check picker over the set-up screens; `Surfaces.cs` rewired.
 - `ClearanceCheck : ICheck` with `HostEcho` null, `Grouping` null, `Naming` through
