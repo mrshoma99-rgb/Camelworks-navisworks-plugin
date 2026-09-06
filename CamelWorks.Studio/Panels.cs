@@ -900,7 +900,9 @@ namespace CamelWorks.Studio
 
             dot.Tint(System.Windows.Shapes.Shape.FillProperty, "RedTx");
 
-            var held = Ui.Link("14 waiting", () => { });            // harness: data
+            // Names what is queued rather than a bare figure. "14 waiting" said nothing about
+            // what was waiting or on what, and the surface itself now says it in the export menu.
+            var held = Ui.Link("14 changes the document has not taken", () => { });  // harness: data
             held.Margin = new Thickness(0);
             held.VerticalAlignment = VerticalAlignment.Center;
 

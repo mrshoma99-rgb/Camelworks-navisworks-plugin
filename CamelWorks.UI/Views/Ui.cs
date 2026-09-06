@@ -121,6 +121,17 @@ namespace CamelWorks.UI.Views
         /// <summary>How many cells the row has.</summary>
         public int Count => _cells.Length;
 
+        /// <summary>
+        /// Whether this row's tick box is on, for a table with a ticked column.
+        ///
+        /// Null on a table that has none, which is what tells <c>Ticking</c> to leave the column
+        /// as text.
+        /// </summary>
+        public bool? Ticked { get; set; }
+
+        /// <summary>What to do when somebody ticks or unticks the row.</summary>
+        public Action<bool>? OnTicked { get; set; }
+
         /// <inheritdoc />
         public override string ToString() => string.Join(" | ", _cells);
     }
@@ -2363,12 +2374,17 @@ namespace CamelWorks.UI.Views
             Grid.SetColumn(text, 1);
             row.Children.Add(text);
 
+            // Centred in whatever it is dropped into, and never wider than a paragraph. Stretched
+            // across an empty pane the card read as a banner over content that was not there, and
+            // a sentence three feet wide is one nobody reads to the end of.
             var frame = new Border
             {
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(9),
                 Padding = new Thickness(14),
-                Margin = new Thickness(0, 4, 0, 4),
+                Margin = new Thickness(0, 16, 0, 4),
+                MaxWidth = 460,
+                HorizontalAlignment = HorizontalAlignment.Center,
                 Child = row,
             };
 
@@ -2968,6 +2984,46 @@ namespace CamelWorks.UI.Views
         /// instead of replacing it surprises people into selecting things they did not mean to.
         /// </summary>
         /// <param name="table">The table.</param>
+        /// <summary>
+        /// Draw one column as a tick box rather than as text.
+        ///
+        /// A column of ticks and blanks says the same thing as a column of boxes and reads as a
+        /// decoration rather than a control: on a board where every other list of things to
+        /// include has a box, one that draws a tick is one somebody tries to click and cannot.
+        /// Rows set <see cref="TableRow.Ticked"/> and <see cref="TableRow.OnTicked"/>.
+        /// </summary>
+        /// <param name="table">The table.</param>
+        /// <param name="column">Which column, from nought.</param>
+        public static ListView Ticking(this ListView table, int column)
+        {
+            if (!(table.View is GridView grid) || column < 0 || column >= grid.Columns.Count)
+                return table;
+
+            var box = new FrameworkElementFactory(typeof(CheckBox));
+
+            box.SetBinding(ToggleButton.IsCheckedProperty, new Binding("Ticked"));
+            box.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            box.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+
+            box.AddHandler(ToggleButton.CheckedEvent,
+                new RoutedEventHandler((s, e) => Toggled(s, true)));
+            box.AddHandler(ToggleButton.UncheckedEvent,
+                new RoutedEventHandler((s, e) => Toggled(s, false)));
+
+            grid.Columns[column].CellTemplate = new DataTemplate { VisualTree = box };
+
+            return table;
+        }
+
+        /// <summary>Tell a row's own handler that its box changed.</summary>
+        /// <param name="sender">The box.</param>
+        /// <param name="on">Where it landed.</param>
+        private static void Toggled(object sender, bool on) => Safely(() =>
+        {
+            if (sender is FrameworkElement box && box.DataContext is TableRow row)
+                row.OnTicked?.Invoke(on);
+        });
+
         public static ListView Multi(this ListView table)
         {
             table.SelectionMode = SelectionMode.Extended;

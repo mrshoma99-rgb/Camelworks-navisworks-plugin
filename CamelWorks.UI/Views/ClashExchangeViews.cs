@@ -126,6 +126,9 @@ namespace CamelWorks.UI.Views
 
             private ExchangeReading? _reading;
 
+            /// <summary>The primary of the import half, kept so reading a pack can turn it on.</summary>
+            private FrameworkElement? _apply;
+
             private UIElement? _out;
             private UIElement? _in;
 
@@ -247,8 +250,19 @@ namespace CamelWorks.UI.Views
 
                 var foot = new WrapPanel();
 
-                foot.Children.Add(Ui.Icon(Glyphs.Filter, "Export scope", () => Configure("in")));
-                foot.Children.Add(Ui.Icon(Glyphs.Save, "Export profile", () => Configure("profile")));
+                // Labelled. Two symbols beside a primary say nothing about what they open, and
+                // the funnel is the same picture the results filter uses a few inches away.
+                var scope = Ui.Quiet("Export scope\u2026", () => Configure("in"));
+                var saved = Ui.Quiet("Save as a profile\u2026", () => Configure("profile"));
+
+                scope.ToolTip = "Which statuses go out, and whether folders travel with them.";
+                saved.ToolTip = "Keep these settings under a name, so the next round is one press.";
+                scope.VerticalAlignment = VerticalAlignment.Center;
+                saved.VerticalAlignment = VerticalAlignment.Center;
+                saved.Margin = new Thickness(6, 0, 0, 0);
+
+                foot.Children.Add(scope);
+                foot.Children.Add(saved);
                 foot.Children.Add(new Border { Width = 12 });
 
                 foot.Children.Add(Ui.Commit("Preview the export", "Write", "pack",
@@ -395,7 +409,7 @@ namespace CamelWorks.UI.Views
                     : all.Where(one => Holds(one.Name) || Holds(one.Folder)).ToList();
 
                 var rows = showing.Select(one => new TableRow(one,
-                    Sending(one.Name) ? "✓" : string.Empty,
+                    string.Empty,
                     one.Name,
                     one.Folder ?? string.Empty,
                     one.Count.ToString("N0", CultureInfo.InvariantCulture),
@@ -404,11 +418,13 @@ namespace CamelWorks.UI.Views
                                               StringComparison.OrdinalIgnoreCase))))
                 {
                     Tone = Tone.Plain,
+                    Ticked = Sending(one.Name),
+                    OnTicked = on => Included(new object[] { one }, null, on),
                 }).ToList();
 
                 var table = Ui.Table(rows,
-                    ("In", 30), ("Test", 0), ("Folder", 100), ("Results", 62),
-                    ("Last sent", 76)).Multi();
+                    ("In", 34), ("Test", 0), ("Folder", 100), ("Results", 62),
+                    ("Last sent", 76)).Multi().Ticking(0);
 
                 Ui.SetFills(_tests, true);
 
@@ -432,19 +448,24 @@ namespace CamelWorks.UI.Views
             /// <param name="picked">The rows picked.</param>
             /// <param name="said">Where the bar says what it did.</param>
             /// <param name="on">Whether they go.</param>
-            private void Included(IReadOnlyList<object> picked, Panel said, bool on)
+            /// <summary>Put tests in the export, or take them out.</summary>
+            /// <param name="picked">The tests.</param>
+            /// <param name="said">Where the picking bar says what it did, or null for a tick box
+            /// on a single row, which says it by moving.</param>
+            /// <param name="on">True to include them.</param>
+            private void Included(IReadOnlyList<object> picked, Panel? said, bool on)
             {
                 var tests = picked.OfType<BoardTest>().ToList();
 
                 if (tests.Count == 0)
                 {
-                    said.Children.Add(Ui.Note("Select at least one test."));
+                    said?.Children.Add(Ui.Note("Select at least one test."));
                     return;
                 }
 
                 foreach (var test in tests) Send(test.Name, on);
 
-                said.Children.Add(Ui.Note(
+                said?.Children.Add(Ui.Note(
                     Ui.Count(tests.Count, "test") + (on ? " included." : " excluded.")));
 
                 Redraw();
@@ -590,6 +611,22 @@ namespace CamelWorks.UI.Views
 
                 bar.Children.Add(add);
 
+                // What the filters are keeping out. A bar of chips says what is let through and
+                // never how much of the board that leaves behind, which is the number a
+                // coordinator is actually deciding on.
+                var held = Results().Count;
+                var kept = _profile.Pick.Take(Results(), Storeys()).Count;
+
+                if (kept < held)
+                {
+                    var left = Ui.Small(Ui.Count(held - kept, "result") + " left out");
+
+                    left.VerticalAlignment = VerticalAlignment.Center;
+                    left.Margin = new Thickness(10, 2, 0, 2);
+
+                    bar.Children.Add(left);
+                }
+
                 return bar;
             }
 
@@ -614,10 +651,38 @@ namespace CamelWorks.UI.Views
 
                 // A set filter is tinted, so the bar reads at a glance as which parameters are
                 // narrowing the export and which are letting everything through.
-                if (clause != null) button.Tint(System.Windows.Controls.Control.ForegroundProperty,
-                                                "Accent");
+                if (clause == null)
+                {
+                    button.Margin = new Thickness(0, 2, 6, 2);
 
-                return button;
+                    return button;
+                }
+
+                button.Tint(System.Windows.Controls.Control.ForegroundProperty, "Accent");
+                button.Margin = new Thickness(0, 2, 0, 2);
+
+                // A filter in force is a chip you can take off. Every one of them was a link that
+                // reopened the value list, so clearing one meant opening it and unticking whatever
+                // was in there.
+                var off = Ui.Icon(Glyphs.Close, "Stop filtering on " + here.Title, () => Ui.Safely(() =>
+                {
+                    _profile.Pick.Clauses.Remove(clause);
+                    Rebuild();
+                }));
+
+                off.VerticalAlignment = VerticalAlignment.Center;
+                off.Margin = new Thickness(0, 2, 6, 2);
+
+                var chip = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+
+                chip.Children.Add(button);
+                chip.Children.Add(off);
+
+                return chip;
             }
 
             /// <summary>The values a clause names, short enough for a chip.</summary>
@@ -955,7 +1020,13 @@ namespace CamelWorks.UI.Views
 
                 var foot = new WrapPanel();
 
-                foot.Children.Add(Ui.Runner("Apply to the board", _applied, Apply));
+                // Off until there is something to apply. A primary that is always live on a
+                // screen whose left half is empty is a press that does nothing and says nothing.
+                _apply = Ui.Runner("Apply to the board", _applied, Apply);
+                _apply.IsEnabled = false;
+                _apply.ToolTip = "Read the returned packs first.";
+
+                foot.Children.Add(Ui.Loose(_apply));
 
                 DrawPacks();
                 DrawReading();
@@ -1142,6 +1213,18 @@ namespace CamelWorks.UI.Views
             {
                 _rows.Children.Clear();
                 _rowsSaid.Children.Clear();
+
+                if (_apply != null)
+                {
+                    var ready = _reading != null && _reading.Rows.Count > 0;
+
+                    _apply.IsEnabled = ready;
+                    _apply.ToolTip = ready
+                        ? null
+                        : _reading == null
+                            ? "Read the returned packs first."
+                            : "These packs answer no clash on this board.";
+                }
 
                 if (_reading == null)
                 {
