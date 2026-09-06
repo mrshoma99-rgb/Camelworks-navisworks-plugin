@@ -56,6 +56,50 @@ namespace CamelWorks.Core.Issues
             return added;
         }
 
+        /// <summary>
+        /// Move an issue's attachments from one finding id to another.
+        ///
+        /// An attachment is a finding id, so a finding that is replaced rather than edited takes
+        /// its attachments with it unless they are moved. That happens when a host read adopts a
+        /// finding a file board raised: the file-born finding is removed from the register and the
+        /// document's own finding carries the clash from then on, and an issue still naming the
+        /// old id would keep its count and lose its clash.
+        ///
+        /// An id that is not attached is skipped, and an id that moves onto one the issue already
+        /// carries is dropped rather than duplicated.
+        /// </summary>
+        /// <param name="issues">The issues to move.</param>
+        /// <param name="moved">The old id against the new one.</param>
+        /// <returns>How many attachments moved.</returns>
+        public static int Repoint(IEnumerable<Issue>? issues,
+                                  IReadOnlyDictionary<string, string>? moved)
+        {
+            if (issues == null || moved == null || moved.Count == 0) return 0;
+
+            var count = 0;
+
+            foreach (var issue in issues)
+            {
+                if (issue == null) continue;
+
+                for (var at = issue.Findings.Count - 1; at >= 0; at--)
+                {
+                    var id = issue.Findings[at];
+
+                    if (id == null || !moved.TryGetValue(id, out var now)) continue;
+
+                    if (issue.Findings.Contains(now, StringComparer.Ordinal))
+                        issue.Findings.RemoveAt(at);
+                    else
+                        issue.Findings[at] = now;
+
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
         /// <summary>Take findings off an issue. Detaching what is not attached is not an error.</summary>
         /// <param name="issue">The issue.</param>
         /// <param name="findingIds">The ids.</param>

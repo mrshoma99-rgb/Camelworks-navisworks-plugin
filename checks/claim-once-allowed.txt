@@ -1,0 +1,24 @@
+# Matches on a topic guid that are allowed to be made twice, one per line as
+# path::method, with the reason. validate-claim-once.py fails on any other one that
+# claims nothing.
+#
+# Nothing here consumes what it matched: none of these removes the record, takes its
+# decisions onto something else, or writes exclusively onto it. A second match therefore
+# reads the same record twice and changes nothing, which is not the defect this check is
+# for.
+
+# Builds the index the claims are then made from, and cannot claim while filling it.
+CamelWorks.Core/Checks/FileCheck.cs::Claims
+
+# Reads the sidecar record for each topic in one archive. A file with two topics under one
+# guid is malformed, and the record is read and not consumed.
+CamelWorks.Core/Clash/ClashBcf.cs::Read
+
+# Sorts the returned packs into rows. The match that decides which finding a row lands on is
+# ClashExchange.Apply, which claims through its own Matcher.
+CamelWorks.Core/Clash/ClashExchange.cs::Read
+
+# Answers each returned topic against the finding it names. Read-only per topic: a second
+# topic under one guid applies the same file's answer to the same finding twice, which is
+# the same answer.
+CamelWorks.Core/Findings/FindingBcf.cs::Merge

@@ -1,10 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Checks;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
+using CamelWorks.Core.Issues;
 using CamelWorks.Core.Testing;
 using Xunit;
 
@@ -23,6 +25,14 @@ namespace CamelWorks.Core.Tests
         private static ElementKey Key(string name) =>
             ElementKey.FromTreePath(ElementKey.ScopeOf(@"C:\p\ARCH.nwc"), @"C:\p\ARCH.nwc",
                                     "L03", name);
+
+        /// <summary>Two clash tests reporting one physical conflict, which is one topic guid.</summary>
+        private static FakeClashSource Twice() =>
+            new FakeClashSource()
+                .With("L03 MEP v STR", "Weekly", "t1")
+                .Finding(Key("Duct 1"), Key("Beam 1"), 1, 2, 3)
+                .With("L03 MEP v STR, rerun", "Weekly", "t2")
+                .Finding(Key("Duct 1"), Key("Beam 1"), 1, 2, 3);
 
         private static FakeClashSource Seat() =>
             new FakeClashSource()
@@ -77,8 +87,36 @@ namespace CamelWorks.Core.Tests
                 .ToList();
 
             Assert.Equal(theirs.Count, mine.Count);
-            Assert.Equal(theirs.Select(f => f.Id).OrderBy(id => id, StringComparer.Ordinal),
-                         mine.Select(f => f.Id).OrderBy(id => id, StringComparer.Ordinal));
+
+            var byId = mine.ToDictionary(one => one.Id, StringComparer.Ordinal);
+
+            foreach (var one in theirs)
+            {
+                // The same finding, and then the same finding in every field the board draws.
+                // The id set alone passes with mangled titles, lost statuses and no facts at all.
+                var same = byId[one.Id];
+
+                Assert.Equal(one.Title, same.Title);
+                Assert.Equal(one.Rule, same.Rule);
+                Assert.Equal(one.Status, same.Status);
+                Assert.Equal(one.AssignedTo, same.AssignedTo);
+                Assert.Equal(one.Group, same.Group);
+                Assert.Equal(one.Detail, same.Detail);
+                Assert.Equal(one.TopicGuid, same.TopicGuid);
+                Assert.Equal(one.X, same.X);
+                Assert.Equal(one.Y, same.Y);
+                Assert.Equal(one.Z, same.Z);
+                Assert.Equal(one.Elements, same.Elements);
+                Assert.Equal(one.HostHasIt, same.HostHasIt);
+                Assert.True(same.HostHasIt);
+
+                foreach (var fact in one.Facts)
+                    Assert.Equal(fact.Value, same.Facts[fact.Key]);
+
+                // And what the seam adds on top: the run the finding belongs to, which is the
+                // fact the rail, the scope and every tally are derived from.
+                Assert.Equal(new[] { one.Facts[ClashFindings.HostTest] }, CheckFacts.RunsOf(same));
+            }
         }
 
         [Fact]
@@ -158,6 +196,27 @@ namespace CamelWorks.Core.Tests
             register.Observe(FindingSource.Clash, one.Findings, 2, scope: one.Scope);
 
             Assert.All(register.From(FindingSource.Clash), finding => Assert.True(finding.IsPresent));
+
+            // The scope is not simply false: it covers the test that was read and nothing else.
+            // Hard-wired to false this assertion is what fails, and the one above is not.
+            Assert.All(all.Findings.Where(f => CheckFacts.IsIn(f, "t1")),
+                       finding => Assert.True(one.Scope(finding)));
+
+            Assert.All(all.Findings.Where(f => CheckFacts.IsIn(f, "t2")),
+                       finding => Assert.False(one.Scope(finding)));
+
+            // So a result the read did cover, and that has since gone, is marked absent by it.
+            var gone = all.Findings.First(f => CheckFacts.IsIn(f, "t1"));
+
+            Resolved(seat, "t1");
+
+            var again = check.Read(new[] { "t1" }, null);
+
+            register.Observe(FindingSource.Clash, again.Findings, 3, scope: again.Scope);
+
+            Assert.False(register.Find(gone.Id)!.IsPresent);
+            Assert.All(register.From(FindingSource.Clash).Where(f => ClashCheck.TestOf(f) == "t2"),
+                       finding => Assert.True(finding.IsPresent));
         }
 
         [Fact]
@@ -254,14 +313,31 @@ namespace CamelWorks.Core.Tests
             var check = new ClashCheck(seat);
             var read = check.Read(new[] { "t1" }, null);
 
-            var findings = read.Findings.ToList();
+            // In the board's order, which here is the reverse of the document's. Handed over in
+            // document order this cannot tell a renumber that follows the board from one that
+            // follows the host, and the two do not agree.
+            var findings = read.Findings.Reverse().ToList();
             var titles = new[] { "Corridor1", "Corridor2" };
 
             Assert.True(check.HostEcho!.SetTitle(findings, titles));
 
+            // One write per test, which is the point of recognising a numbering at all: the
+            // alternative is a host call per result, and a test of nine thousand results is nine
+            // thousand calls that each locate the test again.
             Assert.Single(seat.Log.Where(said => said.StartsWith("RenamePicked", StringComparison.Ordinal)));
+
+            // And the numbers count along the host's order, not the board's. The host verb takes
+            // a stem and numbers what it is given in its own order, so a board sorted by depth or
+            // by assignee gets a numbering that does not follow what is on screen. Pinned here
+            // rather than left to be discovered: docs/apps/clash.md says the same, and the fix,
+            // if the disagreement ever matters, is a rename per result and its cost.
             Assert.Equal(new[] { "Corridor1", "Corridor2" },
                          seat.Results("t1").Select(one => one.Name));
+
+            // Said the other way round: the result the board listed first is called Corridor2.
+            Assert.Equal("Corridor2",
+                         seat.Results("t1")
+                             .Single(one => one.Id == ClashCheck.ResultOf(findings[0])).Name);
         }
 
         [Fact]
@@ -284,29 +360,54 @@ namespace CamelWorks.Core.Tests
         // ---------------------------------------------------------------------------------
 
         [Fact]
-        public void The_host_check_offers_every_capability()
+        public void The_host_check_offers_every_capability_and_each_one_reaches_the_document()
         {
-            var check = new ClashCheck(Seat());
+            var seat = Seat();
+            var check = new ClashCheck(seat);
+            var read = check.Read(new[] { "t1" }, null);
+            var findings = read.Findings.ToList();
 
-            Assert.NotNull(check.HostEcho);
-            Assert.NotNull(check.Grouping);
-            Assert.NotNull(check.Runner);
-            Assert.NotNull(check.Naming);
-            Assert.NotNull(check.Properties);
-            Assert.NotNull(check.Geometry);
+            // Offered, and then asked: a capability that is not null and does nothing is the
+            // failure this pass exists to prevent, and no null check can see it.
+            Assert.True(check.HostEcho!.SetStatus(findings, FindingStatus.Approved));
+            Assert.All(seat.Results("t1"), one => Assert.Equal("Approved", one.HostStatus));
+
+            Assert.True(check.Grouping!.Regroup(new[]
+            {
+                new ClashGroupPath(new[] { "Level 3" },
+                                   findings.Select(one => ClashCheck.ResultOf(one)!).ToList()),
+            }).Took);
+
+            Assert.All(seat.Results("t1"), one => Assert.Equal("Level 3", one.GroupName));
+
+            Assert.True(check.Runner!.CanRun);
+            Assert.True(check.Runner.Run("t1", null));
+
+            Assert.True(check.Naming!.Rename("t1", "L03 renamed"));
+            Assert.Equal("L03 renamed", seat.Tests().Single(one => one.Id == "t1").Name);
+
+            Assert.NotNull(check.Properties!.ValuesFor(findings[0], 0, "Item", "Name"));
+
+            Assert.Equal(2, check.Geometry!.Select(findings.Take(1).ToList(), add: false));
         }
 
         [Fact]
         public void The_file_check_offers_geometry_and_nothing_else()
         {
             var check = File(Seat());
+            var findings = check.Read(null, null).Findings.ToList();
 
             Assert.Null(check.HostEcho);
             Assert.Null(check.Grouping);
             Assert.Null(check.Runner);
             Assert.Null(check.Naming);
             Assert.Null(check.Properties);
+
+            // And the one it does offer is the one that answers: a file carries the elements, so
+            // the board can point at them without an engine to ask.
             Assert.NotNull(check.Geometry);
+            Assert.Null(check.Geometry!.Select(findings, add: false));
+            Assert.NotEmpty(check.Geometry.Locate(findings));
         }
 
         [Fact]
@@ -318,7 +419,15 @@ namespace CamelWorks.Core.Tests
 
             var selected = check.Geometry!.Select(read.Findings.ToList(), add: false);
 
+            // What the engine was asked, rather than what it answered: a route that resolved the
+            // element keys itself would return the same number and index the federation to get it.
+            Assert.Equal(new[] { "SelectResults t1" },
+                         seat.Log.Where(said => !said.StartsWith("Tests", StringComparison.Ordinal)
+                                                && !said.StartsWith("Results", StringComparison.Ordinal)));
+            Assert.Equal(seat.Results("t1").Select(one => one.Id), seat.Selected);
             Assert.Equal(4, selected);
+
+            // And nothing to locate, which is what tells the caller to select rather than search.
             Assert.Empty(check.Geometry.Locate(read.Findings.ToList()));
         }
 
@@ -362,9 +471,17 @@ namespace CamelWorks.Core.Tests
             var file = new FileCheck(ClashFile.Read(ClashBcf.Write(one).Bytes));
             var read = file.Read(null, null);
 
-            register.Observe(FindingSource.Clash, read.Findings, 2, scope: read.Scope);
+            var held = register.Count;
+
+            // Through the fold, as the board reads a file: observing without it leaves the very
+            // duplicate the fold exists to prevent, so this would pass on a read that doubled
+            // every result the file carried.
+            var unheld = FileCheck.Fold(register, read.Findings, out _);
+
+            register.Observe(FindingSource.Clash, unheld, 2, scope: read.Scope);
 
             Assert.All(register.From(FindingSource.Clash), finding => Assert.True(finding.IsPresent));
+            Assert.Equal(held, register.Count);
         }
 
         [Fact]
@@ -442,16 +559,261 @@ namespace CamelWorks.Core.Tests
             var seat = Seat();
             var register = new FindingRegister();
 
-            var first = new ClashCheck(seat).Read(null, null);
+            var host = new ClashCheck(seat).Read(null, null);
 
-            register.Observe(FindingSource.Clash, first.Findings, 1, scope: first.Scope);
+            // A held finding for the same clash under another id, that the document reported: the
+            // shape the id guard alone does not see. Adopting it would remove a finding the board
+            // draws and copy its decisions onto a second one.
+            var raised = new FileCheck(
+                    ClashFile.Read(ClashBcf.Write(
+                        seat.Results("t1").Take(1).Select(r => Item(r, "L03 MEP v STR")).ToList()).Bytes))
+                .Read(null, null).Findings[0];
 
-            var second = new ClashCheck(seat).Read(null, null);
+            raised.AssignedTo = "Ana";
+            raised.HostHasIt = true;
 
-            FileCheck.Adopt(register, second.Findings, out var adopted);
+            register.Observe(FindingSource.Clash, new[] { raised }, 1, scope: f => false);
+
+            // The premise: one topic guid, two ids. Without this the test proves nothing.
+            Assert.Contains(host.Findings,
+                            one => one.TopicGuid == raised.TopicGuid
+                                   && !string.Equals(one.Id, raised.Id, StringComparison.Ordinal));
+
+            var moved = FileCheck.Adopt(register, host.Findings, out var adopted);
 
             Assert.Equal(0, adopted);
-            Assert.Equal(3, register.Count);
+            Assert.Empty(moved);
+            Assert.NotNull(register.Find(raised.Id));
+            Assert.Equal("Ana", register.Find(raised.Id)!.AssignedTo);
+        }
+
+        // ---------------------------------------------------------------------------------
+        // Two findings, one topic guid
+        // ---------------------------------------------------------------------------------
+
+        /// <summary>
+        /// One physical conflict reported by two runs.
+        ///
+        /// The topic guid is derived from the element pair and the cell they meet in and not from
+        /// the run, so these two findings have different ids and the same topic. It is the shape
+        /// both directions of the fold have to claim once.
+        /// </summary>
+        /// <param name="results">The result both runs report.</param>
+        private static (Finding First, Finding Second) Both(IReadOnlyList<ClashResultInfo> results)
+        {
+            var first = ClashFindings.ForTest("L03 MEP v STR", "L03 MEP v STR", results)[0];
+            var second = ClashFindings.ForTest("L03 MEP v STR again", "L03 MEP v STR again",
+                                               results)[0];
+
+            CheckFacts.SetRuns(first, new[] { "L03 MEP v STR" });
+            CheckFacts.SetRuns(second, new[] { "L03 MEP v STR again" });
+
+            first.HostHasIt = false;
+            second.HostHasIt = false;
+
+            return (first, second);
+        }
+
+        [Fact]
+        public void A_fold_lands_two_findings_sharing_a_topic_on_one_held_finding_at_most()
+        {
+            var seat = Seat();
+            var register = new FindingRegister();
+
+            var host = new ClashCheck(seat).Read(new[] { "t1" }, null);
+
+            register.Observe(FindingSource.Clash, host.Findings, 1, scope: host.Scope);
+
+            var held = register.Count;
+
+            // A file carrying the same clash under two test names: two findings, two ids, one
+            // topic guid.
+            var (first, second) = Both(seat.Results("t1").Take(1).ToList());
+
+            Assert.Equal(first.TopicGuid, second.TopicGuid);
+            Assert.NotEqual(first.Id, second.Id);
+
+            var left = FileCheck.Fold(register, new[] { first, second }, out var folded);
+
+            register.Observe(FindingSource.Clash, left, 2, scope: _ => false);
+
+            // One folded, and the other returned rather than dropped: it is neither drawn as
+            // folded nor observed if the fold takes the same held finding twice.
+            Assert.Equal(1, folded);
+            Assert.Single(left);
+            Assert.Equal(held + 1, register.Count);
+        }
+
+        [Fact]
+        public void An_adopt_claims_a_file_born_finding_once_and_leaves_the_second_alone()
+        {
+            var seat = Twice();
+            var register = new FindingRegister();
+
+            // One clash, marked up on a file board.
+            var marked = seat.Results("t1").Take(1)
+                .Select(result => Item(result, "L03 MEP v STR")).ToList();
+
+            marked[0].Status = FindingStatus.Reviewed;
+            marked[0].AssignedTo = "Ana";
+
+            var file = new FileCheck(ClashFile.Read(ClashBcf.Write(marked).Bytes));
+
+            register.Observe(FindingSource.Clash, file.Read(null, null).Findings, 1,
+                             scope: _ => false);
+
+            Assert.Equal(1, register.Count);
+
+            // Two clash tests reporting it, so two host findings with one topic guid between them.
+            var host = new ClashCheck(seat).Read(null, null);
+
+            Assert.Equal(2, host.Findings.Count);
+            Assert.Equal(host.Findings[0].TopicGuid, host.Findings[1].TopicGuid);
+
+            var moved = FileCheck.Adopt(register, host.Findings, out var adopted);
+
+            register.Observe(FindingSource.Clash, host.Findings, 2, scope: host.Scope);
+
+            // One approval is one approval: without a claim both take it, the file-born finding
+            // is removed twice and the count reports two.
+            Assert.Equal(1, adopted);
+            Assert.Single(moved);
+            Assert.Equal(2, register.Count);
+
+            Assert.Single(register.From(FindingSource.Clash)
+                                  .Where(one => one.Status == FindingStatus.Reviewed));
+
+            Assert.Single(register.From(FindingSource.Clash)
+                                  .Where(one => one.AssignedTo == "Ana"));
+        }
+
+        [Fact]
+        public void Which_finding_an_adopt_claims_does_not_depend_on_the_registers_order()
+        {
+            var seat = Seat();
+            var host = new ClashCheck(seat).Read(new[] { "t1" }, null);
+
+            string Claimed(bool reversed)
+            {
+                var (first, second) = Both(seat.Results("t1").Take(1).ToList());
+
+                var register = new FindingRegister();
+                var held = reversed ? new[] { second, first } : new[] { first, second };
+
+                register.Observe(FindingSource.Clash, held, 1, scope: _ => false);
+
+                var moved = FileCheck.Adopt(register, host.Findings, out var adopted);
+
+                Assert.Equal(1, adopted);
+
+                return moved.Keys.Single();
+            }
+
+            // The candidates are ordered, so the same two findings answer the same way whichever
+            // order the register enumerates them in.
+            Assert.Equal(Claimed(false), Claimed(true));
+        }
+
+        [Fact]
+        public void A_finding_a_file_raised_that_no_host_read_claims_stays_present()
+        {
+            var seat = Seat();
+            var register = new FindingRegister();
+
+            // A clash the file carries and this document does not report at all: different
+            // elements, and a test name that is no host test id.
+            var stray = ClashFindings.ForTest("L09 lifts", "L09 lifts", new[]
+            {
+                new ClashResultInfo("f1", Key("Duct 9"), Key("Beam 9"), 9, 9, 9, "New", null)
+                {
+                    Name = "Clash1",
+                },
+            })[0];
+
+            CheckFacts.SetRuns(stray, new[] { "L09 lifts" });
+            stray.HostHasIt = false;
+
+            register.Observe(FindingSource.Clash, new[] { stray }, 1, scope: _ => false);
+
+            var host = new ClashCheck(seat).Read(null, null);
+
+            FileCheck.Adopt(register, host.Findings, out var adopted);
+
+            register.Observe(FindingSource.Clash, host.Findings, 2, scope: host.Scope);
+
+            // Nothing claims it and nothing closes it. That is the decision and not an oversight:
+            // no host read speaks for a run this document has not got, so marking it absent would
+            // close, on no evidence, every finding of every test a file carried and the document
+            // does not run. A person deletes it, or a host read that does report the clash adopts
+            // it. FileCheck's own remarks say so.
+            Assert.Equal(0, adopted);
+            Assert.True(register.Find(stray.Id)!.IsPresent);
+            Assert.False(host.Scope(register.Find(stray.Id)!));
+        }
+
+        [Fact]
+        public void An_issue_attached_to_a_finding_a_host_read_adopts_follows_it()
+        {
+            var seat = Seat();
+            var register = new FindingRegister();
+
+            var marked = seat.Results("t1").Take(1)
+                .Select(result => Item(result, "L03 MEP v STR")).ToList();
+
+            var file = new FileCheck(ClashFile.Read(ClashBcf.Write(marked).Bytes));
+            var raised = file.Read(null, null).Findings[0];
+
+            register.Observe(FindingSource.Clash, new[] { raised }, 1, scope: _ => false);
+
+            // Raised on the file board, against the finding the file board holds.
+            var issue = new Issue("I1", "Duct through transfer beam", FindingSource.Clash);
+
+            IssueFindings.Attach(issue, new[] { raised });
+
+            var host = new ClashCheck(seat).Read(null, null);
+            var moved = FileCheck.Adopt(register, host.Findings, out var adopted);
+
+            register.Observe(FindingSource.Clash, host.Findings, 2, scope: host.Scope);
+
+            Assert.Equal(1, adopted);
+            Assert.Equal(1, IssueFindings.Repoint(new[] { issue }, moved));
+
+            // The issue still names one finding, and the register still holds it. Without the
+            // re-point it names an id nothing holds: the count says one clash and the attachment
+            // reaches none.
+            var named = Assert.Single(issue.Findings);
+
+            Assert.NotEqual(raised.Id, named);
+            Assert.NotNull(register.Find(named));
+            Assert.Single(IssueFindings.Attached(issue, register));
+        }
+
+        [Fact]
+        public void The_host_comment_facts_are_written_every_read_so_a_deletion_clears_them()
+        {
+            var seat = Seat();
+            var check = new ClashCheck(seat);
+
+            var first = seat.Results("t1")[0].Id;
+
+            seat.Comment("t1", new[] { first }, "Duct drops here", "Ana");
+
+            var said = check.Read(new[] { "t1" }, null).Findings
+                .First(one => ClashCheck.ResultOf(one) == first);
+
+            Assert.Equal(1, ClashCheck.CommentsOn(said));
+
+            // The remark is taken off in the document, and the run read again. Facts merge and
+            // none is ever removed, so a fact written only when there was something to say leaves
+            // the deleted wording on the finding and in every pack it is exported to.
+            foreach (var one in seat.CommentsOn("t1", first))
+                Assert.True(seat.DeleteComment("t1", first, one.WhenTicks));
+
+            var now = check.Read(new[] { "t1" }, null).Findings
+                .First(one => ClashCheck.ResultOf(one) == first);
+
+            Assert.Equal(0, ClashCheck.CommentsOn(now));
+            Assert.Null(ClashCheck.LastCommentOn(now));
         }
 
         // ---------------------------------------------------------------------------------

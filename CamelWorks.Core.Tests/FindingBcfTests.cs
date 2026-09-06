@@ -1,6 +1,8 @@
 using System;
 using System.IO;
 using System.Linq;
+using CamelWorks.Core.Checks;
+using CamelWorks.Core.Clash;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Issues;
@@ -286,6 +288,57 @@ namespace CamelWorks.Core.Tests
 
             Assert.Contains("The latest run no longer reports this.",
                             FindingBcf.ToTopic(finding).Description);
+        }
+
+        [Fact]
+        public void ATopicCarriesWhatTheFindingSaysAndNotTheSeamsOwnHandles()
+        {
+            var finding = Made();
+
+            finding.Facts[ClashFindings.HostId] = "r7";
+            finding.Facts[ClashFindings.HostTest] = "t1";
+            finding.Facts[ClashCheck.HostComments] = "3";
+            finding.Facts[ClashCheck.HostLastComment] = "Ask the contractor";
+            finding.Facts[CheckFacts.Runs] = "t1";
+
+            var said = FindingBcf.ToTopic(finding).Description;
+
+            // The decision: a topic is read in somebody else's tool by somebody with no board.
+            // The host's own ids, the runs and the host's remark count and last remark are
+            // handles this product keeps to find its way back to a result, and the two comment
+            // facts would put a stale copy of a remark beside the remarks the topic carries.
+            Assert.DoesNotContain("Host id", said, StringComparison.Ordinal);
+            Assert.DoesNotContain("Host test", said, StringComparison.Ordinal);
+            Assert.DoesNotContain("Host comments", said, StringComparison.Ordinal);
+            Assert.DoesNotContain("Ask the contractor", said, StringComparison.Ordinal);
+            Assert.DoesNotContain("Runs", said, StringComparison.Ordinal);
+
+            // What the check measured still goes, because that is what the topic is about.
+            Assert.Contains("Distance: -0.045", said, StringComparison.Ordinal);
+            Assert.Contains("Found by MEP vs Structure", said, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void TheExcludedFactsAreTheOnesTheProducersActuallyWrite()
+        {
+            // The writer names them as literals because it sits below both producers. A rename
+            // there and not here would quietly put a handle back into every exported topic.
+            var finding = Made();
+
+            foreach (var name in new[]
+                     {
+                         ClashFindings.HostId, ClashFindings.HostTest, ClashCheck.HostComments,
+                         ClashCheck.HostLastComment, CheckFacts.Runs,
+                     })
+            {
+                finding.Facts[name] = "something";
+
+                Assert.DoesNotContain(name + ": something",
+                                      FindingBcf.ToTopic(finding).Description,
+                                      StringComparison.Ordinal);
+
+                finding.Facts.Remove(name);
+            }
         }
 
         [Fact]

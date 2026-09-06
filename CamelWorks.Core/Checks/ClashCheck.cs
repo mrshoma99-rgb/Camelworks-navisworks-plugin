@@ -329,15 +329,17 @@ namespace CamelWorks.Core.Checks
                 {
                     var count = Math.Max(info.CommentCount, info.Comments.Count);
 
-                    if (count > 0)
-                        finding.Facts[HostComments] = count.ToString(CultureInfo.InvariantCulture);
-
                     var last = info.LastComment
                                ?? (info.Comments.Count > 0
                                        ? info.Comments[info.Comments.Count - 1].Body
                                        : null);
 
-                    if (!string.IsNullOrWhiteSpace(last)) finding.Facts[HostLastComment] = last;
+                    // Both written every read, including empty. Facts merge additively and none
+                    // is ever removed, so a fact written only when there was something to say
+                    // would leave the count and the text of remarks somebody has since deleted
+                    // on the finding for the life of the project.
+                    finding.Facts[HostComments] = count.ToString(CultureInfo.InvariantCulture);
+                    finding.Facts[HostLastComment] = last ?? string.Empty;
                 }
             }
 
@@ -359,10 +361,32 @@ namespace CamelWorks.Core.Checks
                 ? count
                 : 0;
 
+        /// <summary>
+        /// Say what the host holds on this result now, after an edit the host has taken.
+        ///
+        /// The two facts are written by the read and re-read by nothing until the run is read
+        /// again, so a board that amends or deletes a remark has to restate them itself. Both are
+        /// written whatever the values are: an empty last remark and a count of nought are the
+        /// answer after the only remark was deleted, and a fact left off would leave the deleted
+        /// wording on the finding.
+        /// </summary>
+        /// <param name="finding">The finding.</param>
+        /// <param name="count">How many remarks the host holds now.</param>
+        /// <param name="last">The newest remark the host holds now, or null for none.</param>
+        public static void SetHostComments(Finding? finding, int count, string? last)
+        {
+            if (finding == null) return;
+
+            finding.Facts[HostComments] = Math.Max(0, count)
+                                              .ToString(CultureInfo.InvariantCulture);
+            finding.Facts[HostLastComment] = last ?? string.Empty;
+        }
+
         /// <summary>The newest remark the host holds on this result, or null.</summary>
         /// <param name="finding">The finding.</param>
         public static string? LastCommentOn(Finding? finding) =>
             finding != null && finding.Facts.TryGetValue(HostLastComment, out var said)
+            && !string.IsNullOrEmpty(said)
                 ? said
                 : null;
 

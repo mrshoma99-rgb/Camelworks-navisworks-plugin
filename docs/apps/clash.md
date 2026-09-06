@@ -170,6 +170,48 @@ Nothing on screen changed: the rail, the board, the verbs, the counts and the wo
 they were. Nothing in this repository can prove that, which is why the check itself is asserted in
 `Core.Tests` against a fake clash seat and the board is checked by the compiler and the validators.
 
+**Corrections to the above, found in review.**
+
+- **A renumber's numbers can disagree with the board.** The register takes the names counted down
+  the board; the host verb takes a stem and numbers the results in the document's own order, one
+  call per test. The two agree while the board is in the order the document reports and disagree
+  when it is not — sorted by depth or by assignee, or filtered. The register is the record, so the
+  board and every later read of it are consistent and the document is the copy that is out of step
+  until the names are pushed to it. This was recorded as harmless when the check went in; it is
+  not, and `A_renumber_reaches_the_host_as_one_write_per_test` now pins it. Making the two agree
+  costs a host call per result, which is what the numbering call exists to avoid.
+- **Every edit on a file board reaches the register.** It did not. A row is a view of a finding,
+  and the way back from a row to that finding was an index keyed on the host's test and result
+  ids. A file row carries the file's test name, so on a file board the lookup found nothing and
+  every status, assignee, group, comment and rename was applied to the screen and recorded
+  nowhere, while the toast reported the count. The row's own finding is the handle now, and the
+  index is the fallback.
+- **One clash marked up twice is one decision.** A topic guid is derived from the element pair and
+  the cell they meet in, not from the run, so two clash tests reporting one physical conflict
+  produce two findings with one topic guid between them. Both the fold and the adopt claim a
+  matched finding once and order their candidates, so one approval is one approved row and which
+  finding wins does not depend on how the register enumerated. `checks/validate-claim-once.py`
+  holds the line for the next match written on a key like this one.
+- **An issue keeps its clash when the document takes a file's finding over.** Adopting removes the
+  file-born finding, and an issue names its findings by id. The ids that move are returned and the
+  attachments are re-pointed through the same door that writes issues and findings together.
+- **A file board draws what the register holds.** The read re-pointed each row at the held finding
+  and then drew the file's own status and trail over it, so a clash held as Approved in a file
+  that still says New drew as New — and the first edit wrote the register from that stale row.
+- **A comment edit is recorded before it is echoed.** Amending or deleting a remark wrote the
+  document first and the register second, and did nothing at all on a check with no host echo. It
+  now goes the way every other edit goes: the register first, the echo after, a refusal marked
+  pending. The host's remark count and last remark are facts on the finding, restated by the same
+  edit, so a deleted remark stops being counted and stops being exported.
+- **A finding a file raised is closed by an adopt or by a person, and by nothing else.** Its run is
+  the file's own test name, which is no host test id, so no host read speaks for it and none marks
+  it absent. That is deliberate: a seat cannot close a clash it was sent on the strength of a
+  document that does not run that test.
+- **A BCF topic carries what the check measured and not the seam's own handles.** `Host id`,
+  `Host test`, `Host comments`, `Host last comment` and `Runs` are left out of the topic
+  description. They mean nothing in a viewer, and the two comment facts would put a stale copy of
+  a remark beside the remarks the topic already carries.
+
 **The columns are declared by the check, and lengths are metres.** The board used to hold Item 1,
 Item 2 and Worst itself, at about twenty-five sites, and tone Worst against a tolerance field it
 kept for whichever run was open. Those three are now `ResultColumn`s the check declares, and the

@@ -62,12 +62,16 @@ namespace CamelWorks.UI.Views
         private static FileCheck? _fileCheck;
 
         /// <summary>
-        /// The finding behind each row read from the model, keyed by test and result id.
+        /// The finding behind each result read from the model, keyed by test and result id.
         ///
-        /// An index, not a store. The findings live beside the project and hold what was decided:
-        /// a status a published NWD refused, a priority the host has no field for, the comment
-        /// trail. This maps a row on screen back to its finding, and is rebuilt on every read
-        /// because the host reissues result ids.
+        /// An index, not a store, and the document leg's: a file row carries the file's test name
+        /// against a host result id, which is a pair this never holds. The way back from a row to
+        /// its finding is <c>Recorded</c>, which reads the row's own finding first and falls back
+        /// to this. What this is still for is the sync and the echo, which know a result by the
+        /// host's two ids and have no row in hand.
+        ///
+        /// Rebuilt on every read and on every re-read, because the host reissues result ids on a
+        /// run, a renumber and a compact.
         /// </summary>
         private static Dictionary<string, Finding>? _byHost;
 
@@ -4780,7 +4784,7 @@ namespace CamelWorks.UI.Views
 
                     foreach (var row in read.SelectMany(e => e.Rows))
                     {
-                        var finding = Found(row);
+                        var finding = Recorded(row);
 
                         if (finding != null && attached.Contains(finding.Id))
                             found.Add(Where(row.TestId, row.Id));
@@ -5972,7 +5976,7 @@ namespace CamelWorks.UI.Views
                 // test name rather than the host's id for that test. This claims them before the
                 // document's own findings are observed, so one clash is one finding and the
                 // decisions somebody made on the file board are not left on a second copy.
-                FileCheck.Adopt(register, read.Findings, out var claimed);
+                var moved = FileCheck.Adopt(register, read.Findings, out var claimed);
 
                 var intake = register.Observe(
                     FindingSource.Clash, read.Findings, DateTime.UtcNow.Ticks,
@@ -5993,9 +5997,13 @@ namespace CamelWorks.UI.Views
                         // carries what was decided.
                         row.Fact = register.Find(row.Fact.Id) ?? row.Fact;
 
-                        Apply(Found(row), row);
+                        Apply(row.Fact, row);
                     }
 
+                // An adopted finding is a new id, and an issue names its findings by id. Done
+                // before the findings are written so that an issue never names a finding the
+                // sidecar has already lost.
+                Repointed(moved);
 
                 if (!_session.Findings.Save())
                     return "These results are on the board but could not be kept: "
@@ -6013,6 +6021,41 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
+            /// Move an issue's attachments onto the findings a host read has just adopted.
+            ///
+            /// An attachment is a finding id. Adopting removes the file-born finding and puts the
+            /// document's own finding in its place, so an issue somebody raised or attached on a
+            /// file board would keep its count and lose its clash the moment a Manage seat read
+            /// the model.
+            ///
+            /// Through <see cref="IssueViews.Write"/>, which is the one door that writes the
+            /// findings and the issues together.
+            /// </summary>
+            /// <param name="moved">The id each adopted finding had, against the id it has now.</param>
+            private void Repointed(IReadOnlyDictionary<string, string> moved)
+            {
+                if (moved.Count == 0) return;
+
+                try
+                {
+                    var issues = IssueViews.Read(_session);
+
+                    if (IssueFindings.Repoint(issues.Issues, moved) == 0) return;
+
+                    var problem = IssueViews.Write(_session, issues);
+
+                    if (problem != null) _log.Children.Add(Ui.Problem(problem));
+                }
+                catch (Exception e)
+                {
+                    // A register that will not open is a read that still landed. Said rather than
+                    // swallowed: the attachments are the part of it that did not.
+                    _log.Children.Add(Ui.Problem("The issues could not be moved onto this "
+                        + "document's own results: " + Ui.Describe(e)));
+                }
+            }
+
+            /// <summary>
             /// Lay what is recorded back over rows a re-read has just replaced.
             ///
             /// A re-read after a run, a renumber or a compact does not observe into the register —
@@ -6025,12 +6068,22 @@ namespace CamelWorks.UI.Views
             {
                 var register = _session.Findings.Findings;
 
+                // The callers are a run, a renumber and a compact, which are exactly the
+                // operations that renumber the host's result ids, and neither re-read path
+                // rebuilds the index. Left alone it either answers nothing — leaving every row
+                // back at what the producer read — or, where the engine reused an id, hands the
+                // row another clash's decision.
+                Index(register);
+
                 foreach (var entry in entries)
                     foreach (var row in entry.Rows)
                     {
+                        // The row's own finding, re-pointed at what the register holds. It is the
+                        // finding this row is a view of whatever the host has done to its
+                        // numbering since.
                         row.Fact = register.Find(row.Fact.Id) ?? row.Fact;
 
-                        Apply(Found(row), row);
+                        Apply(row.Fact, row);
                     }
             }
 
@@ -6197,7 +6250,14 @@ namespace CamelWorks.UI.Views
                                         register.From(FindingSource.Clash).Where(f => f.IsPresent));
             }
 
-            /// <summary>The finding a row is a view of, or null when this read kept none.</summary>
+            /// <summary>
+            /// The finding behind a row's host result, or null when the index holds none.
+            ///
+            /// The fallback inside <c>Recorded</c> and not a way back in its own right: it
+            /// answers for a row whose own finding the register has lost, and answers nothing on
+            /// a file board.
+            /// </summary>
+            /// <param name="row">The row.</param>
             private static Finding? Found(Row row) => Found(row.TestId, row.Id);
 
             /// <summary>
@@ -6215,8 +6275,8 @@ namespace CamelWorks.UI.Views
             /// rather than making a second one.
             /// </summary>
             /// <param name="row">The row being edited.</param>
-            /// <returns>The finding, or null when the register would not take one.</returns>
-            private Finding? Raised(Row row)
+            /// <returns>The finding the register now holds for this row.</returns>
+            private Finding Raised(Row row)
             {
                 var made = row.Fact;
 
@@ -6226,13 +6286,44 @@ namespace CamelWorks.UI.Views
                                  origin: _session.Store.Path,
                                  scope: f => false);
 
+                var kept = register.Find(made.Id) ?? made;
+
                 // One entry rather than a rebuild: grouping five hundred rows raises a finding for
                 // each one that has none yet, and rebuilding the index behind every one of them
                 // walked the whole register five hundred times.
-                Index(register, register.Find(made.Id) ?? made);
+                Index(register, kept);
 
-                return Found(row);
+                // The register's own object, not the one that was handed to it: a merge keeps the
+                // held finding and the row must be a view of the thing that holds the decisions.
+                row.Fact = kept;
+
+                return kept;
             }
+
+            /// <summary>
+            /// The finding a row is a view of, or null when nothing is recorded for it yet.
+            ///
+            /// The row's own finding first, and the index only as a fallback. A read re-points
+            /// <see cref="Row.Fact"/> at the held finding, which makes it the one handle that is
+            /// right on both legs: the index is keyed on the host's test and result ids, and a
+            /// file row carries the file's test name against a re-pointed row's host result id —
+            /// a pair the index never holds. Every edit on a file board looked up nothing, so the
+            /// board reported the change and the register kept none of it.
+            /// </summary>
+            /// <param name="row">The row.</param>
+            private Finding? Recorded(Row row) =>
+                _session.Findings.Findings.Find(row.Fact.Id) ?? Found(row);
+
+            /// <summary>
+            /// The finding a row is a view of, raising one when nothing is recorded for it yet.
+            ///
+            /// What every edit goes through. A row with no finding is the awkward case — a result
+            /// the engine renumbered since the read, a board whose read could not save — and
+            /// giving it one here is what stops the edit being applied to the screen and kept
+            /// nowhere.
+            /// </summary>
+            /// <param name="row">The row being edited.</param>
+            private Finding Behind(Row row) => Recorded(row) ?? Raised(row);
 
             /// <summary>The finding behind one of the host's results, or null.</summary>
             private static Finding? Found(string? testId, string? resultId) =>
@@ -6330,9 +6421,17 @@ namespace CamelWorks.UI.Views
                 var byTopic = Topics(_session.Findings.Findings);
 
                 foreach (var row in round.Entries.SelectMany(entry => entry.Rows))
+                {
                     row.Fact = _session.Findings.Findings.Find(row.Fact.Id)
                                ?? Same(byTopic, row.Fact)
                                ?? row.Fact;
+
+                    // And drawn from it. Re-pointing the row without laying the finding over it
+                    // left the row showing what the file said — a clash the register holds as
+                    // Approved drawn as New because the file it arrived in still says New — and
+                    // the next edit wrote the register from that stale row.
+                    Relaid(row.Fact, row);
+                }
 
                 Redraw();
 
@@ -7833,7 +7932,7 @@ namespace CamelWorks.UI.Views
                     {
                         // The database is the record and the document a projection of it, so the
                         // finding takes the name whatever the document did with it.
-                        var finding = Found(row) ?? Raised(row);
+                        var finding = Behind(row);
 
                         if (finding != null)
                         {
@@ -8004,8 +8103,16 @@ namespace CamelWorks.UI.Views
             /// fields the register holds and one of the five the sync pushes.
             ///
             /// The host has no rename for a single result: it takes a prefix and numbers the
-            /// selection from it, so renaming one row yields "Corridor1". The board handles one
-            /// test at a time, so mirroring that numbering locally is exact.
+            /// selection from it, so renaming one row yields "Corridor1".
+            ///
+            /// The numbering the register takes counts down the board, and the host's counts down
+            /// the host's own order for the test. They agree while the board is in the order the
+            /// document reports and disagree when it is not — sorted by depth, by assignee, or
+            /// filtered. The record is the register's, so the board and the next read of it are
+            /// consistent and the document is the copy that is out of step until the names are
+            /// pushed to it. Making them agree means one host call per result instead of one per
+            /// test, which on a test of several thousand results is what the numbering call
+            /// exists to avoid.
             /// </summary>
             /// <param name="rows">The results to rename.</param>
             /// <param name="prefix">What to number them from.</param>
@@ -8676,15 +8783,15 @@ namespace CamelWorks.UI.Views
                 var rows = Rows(picked);
                 if (rows.Count == 0) return;
 
-                var findings = rows.Select(Found).Where(f => f != null).Select(f => f!).ToList();
+                // Raised where the register has none yet, exactly as an edit does. A file board
+                // keeps findings like any other, and refusing it here was the one place that
+                // still said otherwise.
+                var findings = rows.Select(Behind).Where(f => f != null).Select(f => f!).ToList();
 
                 if (findings.Count == 0)
                 {
-                    say.Children.Add(Ui.Problem(OnFile
-                        ? "A file's results are not kept as findings, so there is nothing to "
-                          + "attach. Open the model and read its results first."
-                        : "This read kept no findings, so there is nothing to attach. Press "
-                          + "\"Read the results\" and try again."));
+                    say.Children.Add(Ui.Problem("These results are not kept as findings, so there "
+                        + "is nothing to attach. Read the results again and try once more."));
 
                     return;
                 }
@@ -8813,10 +8920,11 @@ namespace CamelWorks.UI.Views
 
                     foreach (var row in from)
                     {
-                        // The finding, when this read kept one. An issue may only be attached to
-                        // findings that already exist; a row this read kept none for contributes
-                        // its elements and nothing else.
-                        var finding = Found(row);
+                        // The finding behind the row, raised where the register has none yet: an
+                        // issue attached to nothing is an issue that loses its clash, and a row
+                        // whose read could not save is exactly the row somebody raises an issue
+                        // about.
+                        var finding = Behind(row);
 
                         if (finding != null) IssueFindings.Attach(issue, new[] { finding });
 
@@ -9150,7 +9258,7 @@ namespace CamelWorks.UI.Views
                 // What the document would not take is held on the finding, and belongs in the
                 // conversation as much as what it did take - it is the same remark, waiting for a
                 // seat that can write it.
-                var held = Found(row);
+                var held = Recorded(row);
 
                 if (held != null)
                     foreach (var comment in held.Comments)
@@ -9163,7 +9271,15 @@ namespace CamelWorks.UI.Views
                 return said.OrderBy(c => c.WhenTicks).ToList();
             }
 
-            /// <summary>Change what one comment says, in the document and in the record.</summary>
+            /// <summary>
+            /// Change what one comment says, in the record and then in the document.
+            ///
+            /// The record first, as every other edit on this board is written: the database is the
+            /// record and the document is a projection of it. Echoing first meant a document that
+            /// took the edit and a register that did not — the row and the pack said one thing and
+            /// the trail another — and, on a check with no host echo at all, a file board that
+            /// refused to edit its own remarks.
+            /// </summary>
             /// <param name="row">The clash.</param>
             /// <param name="comment">The remark being changed.</param>
             /// <param name="said">What it should say now.</param>
@@ -9174,38 +9290,56 @@ namespace CamelWorks.UI.Views
 
                 if (said.Length == 0 || said == comment.Body) return;
 
+                Swap(row, comment.Body, said);
+
                 var echo = Check?.HostEcho;
 
-                if (echo == null || !echo.EditComment(row.Fact, comment.HostId, said))
-                {
-                    Warned(Ui.Problem("That comment was not changed. "
-                        + (echo?.LastProblem ?? string.Empty)));
-                    return;
-                }
+                if (echo != null && !echo.EditComment(row.Fact, comment.HostId, said))
+                    Refused(row, "That comment was changed here but not in the document. "
+                                 + (echo.LastProblem ?? string.Empty));
 
-                Swap(row, comment.Body, said);
                 Kept(row);
                 redraw();
             }
 
-            /// <summary>Take one comment off, in the document and in the record.</summary>
+            /// <summary>Take one comment off, in the record and then in the document.</summary>
             /// <param name="row">The clash.</param>
             /// <param name="comment">The remark being taken off.</param>
             /// <param name="redraw">What to call once it has gone.</param>
             private void Erase(Row row, ClashComment comment, Action redraw)
             {
+                Swap(row, comment.Body, null);
+
                 var echo = Check?.HostEcho;
 
-                if (echo == null || !echo.DeleteComment(row.Fact, comment.HostId))
-                {
-                    Warned(Ui.Problem("That comment was not taken off. "
-                        + (echo?.LastProblem ?? string.Empty)));
-                    return;
-                }
+                if (echo != null && !echo.DeleteComment(row.Fact, comment.HostId))
+                    Refused(row, "That comment was taken off here but not in the document. "
+                                 + (echo.LastProblem ?? string.Empty));
 
-                Swap(row, comment.Body, null);
                 Kept(row);
                 redraw();
+            }
+
+            /// <summary>
+            /// Say what the document would not take, and mark the trail as still waiting for it.
+            ///
+            /// The same answer the picked-row writes give a refusal: the edit stands in the
+            /// record, the field says it has not landed, and the sync knows there is something to
+            /// offer the next document that will take it.
+            /// </summary>
+            /// <param name="row">The clash.</param>
+            /// <param name="problem">What the document said.</param>
+            private void Refused(Row row, string problem)
+            {
+                var finding = Recorded(row);
+
+                if (finding != null)
+                {
+                    finding.Hold(FindingField.Comments);
+                    finding.HostProblem = problem;
+                }
+
+                Warned(Ui.Problem(problem));
             }
 
             /// <summary>
@@ -9216,7 +9350,7 @@ namespace CamelWorks.UI.Views
             /// <param name="now">What it says now, or null when it has gone.</param>
             private void Swap(Row row, string was, string? now)
             {
-                var finding = Found(row);
+                var finding = Behind(row);
 
                 if (finding != null)
                 {
@@ -9249,6 +9383,25 @@ namespace CamelWorks.UI.Views
 
                 row.Comments = row.Trail.Count > 0 ? row.Trail.Count : Math.Max(0, row.Comments - 1);
                 row.LastComment = now ?? (row.Trail.Count > 0 ? row.Trail[row.Trail.Count - 1].Body : string.Empty);
+
+                // The two facts the check reads off the host, restated for the edit just made.
+                // They are what the row and the next pack print, and nothing re-reads them until
+                // the test is read again, so an amended remark otherwise kept showing its old
+                // wording and a deleted one kept being counted.
+                if (finding != null && Check?.HostEcho != null)
+                {
+                    var count = ClashCheck.CommentsOn(finding);
+                    var last = ClashCheck.LastCommentOn(finding);
+
+                    if (now == null) count = Math.Max(0, count - 1);
+
+                    if (string.Equals(last, was, StringComparison.Ordinal))
+                        last = now ?? (row.Trail.Count > 0
+                                           ? row.Trail[row.Trail.Count - 1].Body
+                                           : null);
+
+                    ClashCheck.SetHostComments(finding, count, last);
+                }
             }
 
             /// <summary>Keep what just changed, and put the board back in step with it.</summary>
@@ -9362,7 +9515,7 @@ namespace CamelWorks.UI.Views
 
                         if (record != null)
                         {
-                            var finding = Found(row) ?? Raised(row);
+                            var finding = Behind(row);
 
                             if (finding != null)
                             {
@@ -9390,7 +9543,7 @@ namespace CamelWorks.UI.Views
 
                         foreach (var row in byTest)
                         {
-                            var made = Found(row) ?? Raised(row);
+                            var made = Behind(row);
 
                             if (made != null) behind[row] = made;
                         }
@@ -10928,6 +11081,41 @@ namespace CamelWorks.UI.Views
 
                 // What the host has no field for at all — priority, due date, stage, a reviewer's
                 // own tags — so the board can show a column the document cannot.
+                row.Review = ClashAside.Of(finding);
+            }
+
+            /// <summary>
+            /// Draw a row entirely from the finding behind it.
+            ///
+            /// <see cref="Apply"/> adds what the document does not hold to a row read out of the
+            /// document. This replaces the row's whole conversation instead, which is what a leg
+            /// with no host echo needs: its rows carry the trail in full, and adding to it would
+            /// draw the file's own remarks twice once the fold has merged them into the finding.
+            /// </summary>
+            /// <param name="finding">The finding the row is a view of.</param>
+            /// <param name="row">The row.</param>
+            private static void Relaid(Finding? finding, Row row)
+            {
+                if (finding == null) return;
+
+                row.Status = finding.Status;
+
+                if (finding.AssignedTo != null) row.Assigned = finding.AssignedTo;
+                if (finding.Group != null) row.Group = finding.Group;
+
+                row.Trail.Clear();
+
+                foreach (var comment in finding.Comments)
+                    row.Trail.Add(new ClashComment(comment.Author, comment.WhenTicks, comment.Body)
+                    {
+                        HostId = comment.HostId,
+                    });
+
+                row.Comments = row.Trail.Count;
+                row.LastComment = row.Trail.Count > 0
+                    ? row.Trail[row.Trail.Count - 1].Body
+                    : string.Empty;
+
                 row.Review = ClashAside.Of(finding);
             }
 

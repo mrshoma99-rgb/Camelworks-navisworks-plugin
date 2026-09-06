@@ -180,11 +180,12 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// A length as the fact carries it: metres, to the micrometre.
         ///
-        /// Six decimal places rather than the three this used to write. Three was a millimetre of
-        /// a model unit, which is the resolution the board prints at, so two clashes a quarter of
-        /// a millimetre apart wrote the same string and sorted as equals. Six is below anything a
-        /// clash test is run at and still writes a round number as a round number, which matters
-        /// because this string is what a BCF description and a spreadsheet cell carry.
+        /// Six decimal places rather than the three this used to write. Three decimals of a metre
+        /// is a millimetre, which is the resolution the board prints at, so two clashes a quarter
+        /// of a millimetre apart wrote the same string and sorted as equals. Six decimals is a
+        /// micrometre, which is finer than any tolerance a clash test is run at, and it still
+        /// writes a round number as a round number — this string is what a BCF description and a
+        /// spreadsheet cell carry.
         /// </summary>
         /// <param name="metres">The length.</param>
         public static string Written(double metres) =>

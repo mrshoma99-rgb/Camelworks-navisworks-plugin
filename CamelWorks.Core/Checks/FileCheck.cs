@@ -22,6 +22,15 @@ namespace CamelWorks.Core.Checks
     /// found without searching for them.
     ///
     /// A file is a partial view of a run and never a run: its read marks nothing absent.
+    ///
+    /// What closes a finding a file raised: a host read that adopts it, or a person. Nothing else
+    /// can. Its run fact names the file's own test name, which is no host test id, so no host
+    /// read's scope ever covers it and no read can mark it absent. That is the intended answer
+    /// rather than a gap — a seat with no clash engine cannot know that a clash it was sent has
+    /// been resolved, and marking one absent because the document that is open does not report it
+    /// would close, on no evidence, the findings of every test the file did not carry. A file-born
+    /// finding the document does report is claimed by <see cref="Adopt"/> on the first host read
+    /// and is the document's finding from then on.
     /// </summary>
     public sealed class FileCheck : ICheck
     {
@@ -343,6 +352,14 @@ namespace CamelWorks.Core.Checks
         /// The held finding keeps its own identity and takes the file's status, assignee, group and
         /// remarks. Only findings with no held match are returned, for the caller to observe as
         /// new.
+        ///
+        /// A held finding is claimed once. A topic guid is derived from the element pair and the
+        /// cell, not from the run, so two clash tests reporting one physical conflict produce two
+        /// findings with different ids and the same topic guid. Without a claim both would fold
+        /// onto the one held finding, and the second would be neither drawn as folded nor returned
+        /// as unheld — dropped from the read altogether. The second is returned as unheld instead
+        /// and observed as its own finding: collapsing duplicates is a separate decision and not
+        /// one a fold may take by accident.
         /// </summary>
         /// <param name="register">The register.</param>
         /// <param name="found">What the file read produced.</param>
@@ -357,33 +374,25 @@ namespace CamelWorks.Core.Checks
 
             if (register == null) return fresh;
 
-            var byTopic = new Dictionary<string, Finding>(StringComparer.OrdinalIgnoreCase);
+            var claims = new Claims(register.From(FindingSource.Clash), null);
 
-            foreach (var held in register.From(FindingSource.Clash))
+            var landed = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var one in Ordered(fresh))
             {
-                var topic = held.TopicGuid;
+                var held = claims.Claim(one.TopicGuid);
 
-                if (!string.IsNullOrEmpty(topic) && !byTopic.ContainsKey(topic!))
-                    byTopic[topic!] = held;
-            }
-
-            var unheld = new List<Finding>();
-
-            foreach (var one in fresh)
-            {
-                if (one.TopicGuid == null
-                    || !byTopic.TryGetValue(one.TopicGuid, out var held)
-                    || string.Equals(held.Id, one.Id, StringComparison.Ordinal))
-                {
-                    unheld.Add(one);
+                if (held == null || string.Equals(held.Id, one.Id, StringComparison.Ordinal))
                     continue;
-                }
 
                 Onto(held, one);
+                landed.Add(one.Id);
                 folded++;
             }
 
-            return unheld;
+            // In the order the read produced them, not the order the claims were made in: the
+            // caller observes these and the board draws that read.
+            return fresh.Where(one => !landed.Contains(one.Id)).ToList();
         }
 
         /// <summary>
@@ -401,40 +410,42 @@ namespace CamelWorks.Core.Checks
         ///
         /// A held finding the document reported is marked as being in the host and is left alone:
         /// this only ever claims findings a file raised.
+        ///
+        /// A file-born finding is claimed once, for the reason <see cref="Fold"/> states. A second
+        /// fresh finding whose topic another has already claimed is left alone and observed as its
+        /// own finding, so one decision is never copied onto two rows.
+        ///
+        /// Removing the file-born finding orphans anything that named it by id, which is what an
+        /// issue's attachment is. The ids that moved are returned so the caller can re-point them
+        /// under the save door that writes issues and findings together.
         /// </summary>
         /// <param name="register">The register.</param>
         /// <param name="found">What the host read produced.</param>
         /// <param name="adopted">How many file-born findings were taken over.</param>
-        public static void Adopt(FindingRegister? register, IReadOnlyList<Finding>? found,
-                                 out int adopted)
+        /// <returns>The id each adopted finding had, against the id it has now.</returns>
+        public static IReadOnlyDictionary<string, string> Adopt(FindingRegister? register,
+                                                                IReadOnlyList<Finding>? found,
+                                                                out int adopted)
         {
             adopted = 0;
 
-            if (register == null || found == null) return;
+            var moved = new Dictionary<string, string>(StringComparer.Ordinal);
 
-            var byTopic = new Dictionary<string, Finding>(StringComparer.OrdinalIgnoreCase);
+            if (register == null || found == null) return moved;
 
-            foreach (var held in register.From(FindingSource.Clash))
+            // Raised by a file read and by nothing since. A finding the document reported is
+            // marked by its producer as being in the host, and this must never claim one of
+            // those: what it claims it removes, and the document's findings are what the board
+            // draws and what the echo can write.
+            var claims = new Claims(register.From(FindingSource.Clash), held => !held.HostHasIt);
+
+            if (claims.IsEmpty) return moved;
+
+            foreach (var fresh in Ordered(found))
             {
-                // Raised by a file read and by nothing since. A finding the document reported is
-                // marked by its producer as being in the host, and this must never claim one of
-                // those: what it claims it removes, and the document's findings are what the
-                // board draws and what the echo can write.
-                if (held.HostHasIt) continue;
+                var held = claims.Claim(fresh.TopicGuid);
 
-                var topic = held.TopicGuid;
-
-                if (!string.IsNullOrEmpty(topic) && !byTopic.ContainsKey(topic!))
-                    byTopic[topic!] = held;
-            }
-
-            if (byTopic.Count == 0) return;
-
-            foreach (var fresh in found)
-            {
-                if (fresh.TopicGuid == null
-                    || !byTopic.TryGetValue(fresh.TopicGuid, out var held)
-                    || string.Equals(held.Id, fresh.Id, StringComparison.Ordinal))
+                if (held == null || string.Equals(held.Id, fresh.Id, StringComparison.Ordinal))
                     continue;
 
                 Onto(fresh, held);
@@ -448,7 +459,81 @@ namespace CamelWorks.Core.Checks
                         fresh.Labels.Add(label);
 
                 register.Remove(held.Id);
+                moved[held.Id] = fresh.Id;
                 adopted++;
+            }
+
+            return moved;
+        }
+
+        /// <summary>
+        /// The findings to match, in one order.
+        ///
+        /// By id, ordinal. Which of two findings sharing a topic guid claims the held one decides
+        /// where a status and a comment trail land, and dictionary order would make that answer
+        /// depend on how the register happened to enumerate.
+        /// </summary>
+        /// <param name="findings">The findings a read produced.</param>
+        private static IEnumerable<Finding> Ordered(IEnumerable<Finding> findings) =>
+            findings.OrderBy(one => one.Id, StringComparer.Ordinal);
+
+        /// <summary>
+        /// Held findings by topic guid, each claimable once.
+        ///
+        /// The topic guid is the one id a file and a document agree on for one clash, and it is
+        /// not unique: it is derived from the element pair and the cell, so two runs reporting one
+        /// physical conflict share it. Both directions of the fold match through this, so the
+        /// claim is written once rather than twice.
+        /// </summary>
+        private sealed class Claims
+        {
+            private readonly Dictionary<string, List<Finding>> _byTopic =
+                new Dictionary<string, List<Finding>>(StringComparer.OrdinalIgnoreCase);
+
+            private readonly HashSet<string> _claimed = new HashSet<string>(StringComparer.Ordinal);
+
+            /// <summary>Index the held findings this fold may claim.</summary>
+            /// <param name="held">The findings the register holds.</param>
+            /// <param name="keep">Which of them may be claimed, or null for all of them.</param>
+            internal Claims(IEnumerable<Finding> held, Func<Finding, bool>? keep)
+            {
+                foreach (var one in held)
+                {
+                    if (keep != null && !keep(one)) continue;
+
+                    var topic = one.TopicGuid;
+
+                    if (string.IsNullOrEmpty(topic)) continue;
+
+                    if (!_byTopic.TryGetValue(topic!, out var under))
+                    {
+                        under = new List<Finding>();
+                        _byTopic[topic!] = under;
+                    }
+
+                    under.Add(one);
+                }
+
+                foreach (var under in _byTopic.Values)
+                    under.Sort((a, b) => StringComparer.Ordinal.Compare(a.Id, b.Id));
+            }
+
+            /// <summary>True when there is nothing to claim.</summary>
+            internal bool IsEmpty => _byTopic.Count == 0;
+
+            /// <summary>
+            /// The first unclaimed held finding under this topic, or null when there is none left.
+            /// </summary>
+            /// <param name="topic">The topic guid a fresh finding carries.</param>
+            internal Finding? Claim(string? topic)
+            {
+                if (string.IsNullOrEmpty(topic)
+                    || !_byTopic.TryGetValue(topic!, out var under)) return null;
+
+                foreach (var one in under)
+                    if (_claimed.Add(one.Id)) return one;
+
+                return null;
             }
         }
 

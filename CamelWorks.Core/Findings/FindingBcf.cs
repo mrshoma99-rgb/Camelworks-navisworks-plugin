@@ -301,6 +301,27 @@ namespace CamelWorks.Core.Findings
             return all;
         }
 
+        /// <summary>
+        /// The facts a topic does not carry: what the seam writes for itself.
+        ///
+        /// A topic is read by a trade contractor in somebody else's tool. The host's id for a
+        /// result, the runs a finding belongs to, and the host's own remark count and last remark
+        /// are handles this product keeps so a read can find its way back to a result; none of
+        /// them means anything in a viewer, and the two comment facts would put a stale copy of a
+        /// remark beside the remarks the topic already carries.
+        ///
+        /// Named here rather than flagged on the fact, because the exclusion is about what a BCF
+        /// topic is for and not about the producer that wrote the fact.
+        /// The names are literals rather than the producers' constants, because this file sits
+        /// below both producers. A test pins them against those constants, so a rename cannot let
+        /// one back in unnoticed.
+        /// </summary>
+        private static readonly HashSet<string> Bookkeeping =
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                "Host id", "Host test", "Host comments", "Host last comment", "Runs",
+            };
+
         /// <summary>What the topic says about the finding, for a reader with no board.</summary>
         /// <param name="finding">The finding.</param>
         public static string Describe(Finding finding)
@@ -314,7 +335,7 @@ namespace CamelWorks.Core.Findings
             said.Add("Found by " + finding.Rule + " (" + finding.Source + ").");
 
             foreach (var fact in finding.Facts.OrderBy(f => f.Key, StringComparer.Ordinal))
-                if (!string.IsNullOrWhiteSpace(fact.Value))
+                if (!string.IsNullOrWhiteSpace(fact.Value) && !Bookkeeping.Contains(fact.Key))
                     said.Add(fact.Key + ": " + fact.Value);
 
             if (finding.HasLocations)
