@@ -760,13 +760,6 @@ namespace CamelWorks.UI.Views
                     ? value
                     : null;
 
-            private static IReadOnlyList<string> Statuses(Issue issue)
-            {
-                var list = Marks.ToList();
-
-                return list;
-            }
-
             private static IReadOnlyList<string> Types(Issue issue)
             {
                 var list = Issue.Types.ToList();

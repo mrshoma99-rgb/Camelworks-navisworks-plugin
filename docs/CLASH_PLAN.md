@@ -404,10 +404,15 @@ This is a quarter of work, not a week. Phases 1 to 5 do not depend on it, and
 
 ### 6.2 One BCF writer
 
-`ClashBcf` and `FindingBcf` are two round trips over one format, with different
-topic GUIDs for the same clash and label namespaces neither recognises — so a
-file written by one and read by the other takes the writer's labels for the
-reviewer's tags.
+`ClashBcf` and `FindingBcf` are two round trips over one format with label
+namespaces neither recognises, so a file written by one and read by the other
+takes the writer's labels for the reviewer's tags.
+
+They do agree on the topic GUID for a clash, and the agreement is one line deep
+on each side: `ClashFindings.From` stamps `ClashBcf.TopicGuidFor(key)` onto the
+finding, and `FindingBcf.TopicGuidFor` prefers a stamped value over one derived
+from the finding id. It was undocumented on both sides; it is now stated in both
+and pinned by a test in `Core.Tests`.
 
 - One writer over `Finding`, clash facts in `Finding.Facts`, one label
   namespace.
