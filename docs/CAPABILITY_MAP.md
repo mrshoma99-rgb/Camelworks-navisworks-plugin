@@ -62,7 +62,8 @@ surfaces work, not things a coordinator opens.
 |---|---|
 | `ClashPipeline`, `ClashPipelineOptions`, `ClashFunnel`, `ClashPredicates`, `GroupingRules`, `AssignRule`, `ClashRuleSet`, `FilterSpec`, `GroupingSpec`, `PredicateSpec`, `SpecInput` | Clash Rules |
 | `ClashPipelineResult` — *results no grouping rule could place* | Clash Board — a standing **Ungrouped (N)** row at the foot of the group list. Never hidden: a result nothing grouped is the one most likely to be somebody's problem. |
-| `ClashItem`, `ClashSnapshot`, `ClashSnapshotJson`, `ClashDelta`, `ClashCarryOver`, `ClashHydration`, `GroupDecision`, `DuplicateCollapse` | Clash Board |
+| `ClashItem`, `ClashSnapshot`, `ClashSnapshotJson`, `GroupDecision`, `DuplicateCollapse` | Clash Board |
+| `ClashProjection` | **Clash Manager ▸ Board** — a held finding as the item the rules run over. The board reads the check once, the register takes the findings, and the items are projected back out of it, so a status, an assignee or a hand-made group survives to the next run. It is also how a Simulate seat rebuilds a board with no clash engine present: the register carries the elements, the exact point, the comments and the group, where the snapshot it replaced carried a status and a quantised cell. |
 | `ClashTestSides` | Clash Matrix — "The model's tests" mode reads each test's sides back into categories |
 | `ClashResultInfo` | Clash Results (Manage tab) — every row of the results grid, and the Board's read behind it |
 | `Issue`, `IssueRegister` | **Issue Manager ▸ Issues** — the register and its detail panel; raised by hand, from clash results, from clearance findings, or read out of BCF. A finding-set somebody raised: the status is the finding lattice, the comment is `FindingComment`, and the priority comes from the project's own list. |

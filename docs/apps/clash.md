@@ -246,6 +246,46 @@ board's one column type covers them and the element-property columns somebody ad
   the first read after this change overwrites it. The clearance producer's length facts changed
   the same way, at the same resolution.
 
+**One read, and the board is projected out of the register.** The Coordinate tab read the host a
+second time — its own walk of every test and every result into `ClashItem`s — and then carried
+those items over against a clash snapshot in the project file. So the items the rules ran over and
+the findings that held the decisions were two descriptions of one document, made by two reads, and
+only one of them carried what anybody had recorded.
+
+- **The tab reads `ClashCheck` and projects the items from the findings register.** A row's status,
+  assignee, comments, group, priority and stage come off the finding; its distance, name, host id
+  and host test off the facts the producer wrote; its level, disciplines and model names are
+  re-derived by the seat, which is what the projection takes its three lookups for. Nothing in the
+  projection resolves an element key: a participant's model scope is in the key itself and its
+  category was read while the adapter held the element, so a board of eighteen thousand results
+  costs no walk of the federation.
+- **The point is metres on the finding and model units in the key.** The scale is undone once, at
+  the projection, which is the only place the two spines differ.
+- **What changed since the last run is a `CheckDelta` over a `RunJournal`.** A journal is written
+  after every read, one per check and run, two kept. Matching is through the ids the check says a
+  finding may also be recognised under — for clash, the 26 neighbouring position cells — so a model
+  re-exported 40 mm out reports drift rather than every clash gone and an equal number new. A run
+  with no journal reads as a first run and the board says "no previous run recorded" rather than
+  reporting the whole model as new.
+- **Regression is read from the intake, not from two statuses.** The lattice promotes only, so
+  "was closed in the journal and is open now" is false for every machine-produced finding. The
+  register records a closed finding this run reported present again at the moment it merges it, and
+  that is the board's "back again" count and the report's.
+- **A Simulate seat rebuilds its board from the register.** It used to rebuild from the clash
+  snapshot, which holds a status and a quantised cell per result, so every result came back
+  positioned to within half a cell and with nothing on it but its status and its hand-made group.
+  The register holds the elements, the exact point, the status, the assignee, the comments, the
+  group, the priority, the stage and the topic guid. Two things the snapshot carried that the
+  register now carries as facts: the board group and whether somebody made it by hand, which is
+  what restores a carried group, and the rule that suppressed a result, without which every
+  suppressed result arrives as new the moment somebody turns the rule off.
+- **The snapshot is still written.** The per-party comparison reads it. The journal and the
+  register are what the board's own figures come from.
+
+**What went with it.** `ClashCarryOver`, `ClashDelta` and `ClashHydration` are deleted rather than
+left beside their replacements. Nothing read them once the tab moved, and an engine in Core that
+nothing reaches is how a redesign loses a feature quietly.
+
 ## Tests — removed
 
 The tab listed the engine's tests and carried a matrix builder. The Matrix tab has been the place

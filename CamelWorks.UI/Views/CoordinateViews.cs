@@ -6,6 +6,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using CamelWorks.Core.Abstractions;
+using CamelWorks.Core.Checks;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Data;
 using CamelWorks.Core.Findings;
@@ -44,19 +45,18 @@ namespace CamelWorks.UI.Views
         private const int IssueElementCap = 200;
 
         /// <summary>
-        /// The results the last run found back again, by identity.
+        /// The findings the last read reported present again after somebody had closed them.
         ///
-        /// A regression is not a status. Carry-over sets a returning result to Active, since it has
-        /// a history and New would be a lie, and records it in the delta instead — so the only way
-        /// to know a result came back is to hold the delta's list. The board's items and the
-        /// delta's are the same objects, which is what makes identity the right test.
+        /// Finding ids rather than items. A regression is recorded by the register at the moment
+        /// the read merged a closed finding that this run still reports, and the status lattice
+        /// never demotes it, so there is nothing on the item that says a result came back.
         /// </summary>
-        internal static HashSet<ClashItem> Regressed()
+        internal static HashSet<string> Regressed()
         {
-            var regressed = new HashSet<ClashItem>();
+            var regressed = new HashSet<string>(StringComparer.Ordinal);
             var delta = LastDelta;
 
-            if (delta != null) foreach (var item in delta.Regressed) regressed.Add(item);
+            if (delta != null) foreach (var id in delta.Regressed) regressed.Add(id);
 
             return regressed;
         }
@@ -70,16 +70,18 @@ namespace CamelWorks.UI.Views
         /// </summary>
         /// <param name="group">The group.</param>
         /// <param name="regressed">What came back, from <see cref="Regressed"/>.</param>
-        internal static bool Changed(ClashGroup group, ICollection<ClashItem> regressed) =>
-            group.Items.Any(i => i.Status == FindingStatus.New || regressed.Contains(i));
+        internal static bool Changed(ClashGroup group, ICollection<string> regressed) =>
+            group.Items.Any(i => i.Status == FindingStatus.New
+                                 || (i.FindingId != null && regressed.Contains(i.FindingId)));
 
         /// <summary>
-        /// What changed between the last board and the one before it.
+        /// What changed between the last read and the run before it.
         ///
-        /// Held beside the board rather than recomputed, because carry-over runs against the
-        /// snapshot the run then overwrites — ask again afterwards and every answer is "unchanged".
+        /// Held beside the board rather than recomputed, because the journal the comparison is
+        /// against is rewritten by the read that produced it — ask again afterwards and every
+        /// answer is "unchanged".
         /// </summary>
-        internal static ClashDelta? LastDelta { get; private set; }
+        internal static CheckDelta? LastDelta { get; private set; }
 
         // ===================================================================================
         // Building the board
@@ -125,12 +127,19 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// Read the clash engine and run the rules over it.
+        /// Read the clash check and run the rules over what it recorded.
         ///
-        /// Every coordinate is scaled to metres here, once, because every threshold above this line
-        /// — a grouping distance, a tolerance, a proximity band — is stated in metres, and a
-        /// millimetre model would otherwise group everything within five millimetres and report one
-        /// group per clash.
+        /// One read, not two. The board used to read the host itself and the register alongside
+        /// it, so the items the rules ran over and the findings that held the decisions were two
+        /// descriptions of one document that disagreed the moment anything was decided between
+        /// them. The check reads the host into findings, the register takes them, and the items
+        /// are projected back out of the register — which is what makes a status, an assignee or a
+        /// hand-made group survive to the next run.
+        ///
+        /// Every coordinate is in metres, because every threshold above this line — a grouping
+        /// distance, a tolerance, a proximity band — is stated in metres, and a millimetre model
+        /// would otherwise group everything within five millimetres and report one group per
+        /// clash.
         /// </summary>
         /// <param name="session">The open document.</param>
         /// <param name="job">The run this is part of, for progress and for stopping.</param>
@@ -145,60 +154,39 @@ namespace CamelWorks.UI.Views
         {
             if (!session.Clash.IsAvailable) return Hydrate(session, job, notes, trying);
 
-            var scale = session.MetresPerUnit;
-            var items = new List<ClashItem>();
-            var levels = Levels(session, job, scale);
+            var check = new ClashCheck(session.Clash, session.MetresPerUnit, session.ClashProblem);
+            var register = session.Findings.Findings;
 
-            // Model display names once, not once per result: eighteen thousand results times a
-            // linear scan over the model list is a pause somebody can feel.
-            var modelNames = new Dictionary<string, string>(StringComparer.Ordinal);
+            job.Say("Reading the clash engine...");
 
-            foreach (var model in session.Model.Models)
-                if (!modelNames.ContainsKey(model.Scope)) modelNames[model.Scope] = model.DisplayName;
+            var read = check.Read(null, seen => job.Step(seen, "results read"));
 
-            foreach (var test in session.Clash.Tests())
-            {
-                foreach (var result in session.Clash.Results(test.Id))
-                {
-                    // Pumped per result, not per test: one test can hold four thousand results,
-                    // and a window that cannot repaint for the length of a test reads as hung.
-                    if (!job.Step(items.Count, "results read")) return null;
+            foreach (var note in read.Notes) notes.Add(note);
 
-                    var item = new ClashItem(result.Key(), test.Name)
-                    {
-                        Name = result.Name,
-                        TestFolder = test.Folder,
-                        X = result.PointX * scale,
-                        Y = result.PointY * scale,
-                        Z = result.PointZ * scale,
-                        ModelA = modelNames.TryGetValue(result.A.ModelScope, out var nameA) ? nameA : null,
-                        ModelB = modelNames.TryGetValue(result.B.ModelScope, out var nameB) ? nameB : null,
-                        DisciplineA = session.Profile.DisciplineOf(result.A.ModelScope),
-                        DisciplineB = session.Profile.DisciplineOf(result.B.ModelScope),
+            // Read before the journals are written, because writing moves the current journal into
+            // the previous slot: what is current now is what the last run stood at, and it is what
+            // this run is compared against. After the write below, the same journal is the one
+            // RunJournal.Previous returns.
+            var before = RunJournal.Together(
+                check.Key, read.Runs.Select(run => RunJournal.Current(session.Store, check.Key, run.Id)));
 
-                        // Carried on the result by the adapter, which read them while it was
-                        // holding the elements. Resolving the key back through the document
-                        // index here cost a full unpumped federation walk on the first result —
-                        // the freeze a real project hit at 18,844 results.
-                        CategoryA = result.CategoryA,
-                        CategoryB = result.CategoryB,
-                        Level = levels.LevelAt(result.PointZ * scale),
-                    };
+            var now = DateTime.UtcNow.Ticks;
 
-                    if (result.HostAssignedTo != null)
-                    {
-                        item.Properties["Host/AssignedTo"] = result.HostAssignedTo;
+            var intake = register.Observe(FindingSource.Clash, read.Findings, now,
+                                          origin: session.Store.Path, scope: read.Scope);
 
-                        // Onto the item itself too, so a baseline written for the review round
-                        // travels with its assignments.
-                        item.AssignedTo = result.HostAssignedTo;
-                    }
+            var delta = CheckDelta.Between(before, intake, register, read.Scope, check.Aliases);
 
-                    if (result.HostStatus != null) item.Properties["Host/Status"] = result.HostStatus;
+            // The held findings, not the ones the read produced: the register merges a fresh
+            // finding into the one it holds, and the held object is what carries the decisions and
+            // what the board draws.
+            var held = register.Present.Where(read.Scope).ToList();
 
-                    items.Add(item);
-                }
-            }
+            foreach (var run in read.Runs) RunJournal.Of(check.Key, run.Id, now, held).Write(session.Store);
+
+            job.Say("Describing " + Ui.Count(held.Count, "result") + "...");
+
+            var items = Project(session, job, read.Runs).Items(held);
 
             if (items.Count == 0)
             {
@@ -206,36 +194,32 @@ namespace CamelWorks.UI.Views
                 return null;
             }
 
-            // Cross-test duplicates go first, before anything counts or carries over. Two tests
-            // that both report one pipe through one wall are one problem; leaving both on the board
-            // means the same conflict is assigned twice, reported twice, and closed once.
+            // Cross-test duplicates go first, before anything counts. Two tests that both report
+            // one pipe through one wall are one problem; leaving both on the board means the same
+            // conflict is assigned twice, reported twice, and closed once.
             job.Say("Collapsing duplicates...");
 
             var collapse = DuplicateCollapse.Across(items, session.Profile.DuplicateBand);
             var survivors = collapse.Kept;
 
-            job.Say("Carrying over the last run...");
+            job.Say("Applying rules...");
 
             var rules = trying
                         ?? ClashRuleSet.FromJson(session.Store.Section(ProjectStore.ClashSection)[ClashKeys.Rules]);
-            var snapshot = Snapshot(session);
-            var delta = ClashCarryOver.Apply(survivors, snapshot);
-
-            job.Say("Applying rules...");
 
             var options = rules.ToOptions(session.Profile.ClashProximity);
             options.CollapsedDuplicates = collapse.Count;
 
-            // Read from the file rather than from the snapshot. A hand assignment is a decision
+            // Read from the file rather than from the last run. A hand assignment is a decision
             // about a group, not about a run — reading it off the previous run would mean losing
             // every assignment the first time somebody opens the board on a machine that has not
             // run it before.
             options.Decisions = Decisions(session);
             options.PinnedGroups = Pinned(session);
 
-            // After carry-over, never before. A raised issue is not something the clash engine
-            // reported, so comparing it against the previous run would find it missing from the
-            // engine's results and call it resolved every single week.
+            // A raised issue is not something the clash engine reported, so it is added after the
+            // comparison rather than before it: compared against the engine's results it would be
+            // missing from every run and called resolved every week.
             var everything = new List<ClashItem>(survivors);
             var issues = Issues(session);
             var raised = IssueItems.Open(issues);
@@ -251,7 +235,7 @@ namespace CamelWorks.UI.Views
                           + "results. They group, assign, report and export like anything else; the "
                           + "test column says where they came from.");
 
-            notes.Add(delta.ToString());
+            notes.Add(delta.Explain());
 
             if (collapse.Count > 0)
                 notes.Add(Ui.Count(collapse.Count, "result")
@@ -268,87 +252,50 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// Rebuild the board from the project file when there is no clash engine to read.
+        /// Rebuild the board out of the record when there is no clash engine to read.
         ///
         /// This is the promise that makes CamelWorks worth installing on a Simulate seat, which is
         /// most of the seats on most jobs. Simulate has no Clash Detective, so tests cannot be read
         /// and cannot be run — but triaging a board, assigning it, reporting on it and issuing BCF
-        /// are not clash detection, and the project file already carries enough to reconstruct what
-        /// a Manage seat last ran.
+        /// are not clash detection, and the findings a Manage seat recorded are enough to rebuild
+        /// what it last ran.
+        ///
+        /// The register and not the clash snapshot. The snapshot keeps a status and a quantised
+        /// cell per result; the register keeps the elements, the exact point, the status, the
+        /// assignee, the comments, the group, the priority, the stage and the topic guid. So a
+        /// hydrated board is now positioned exactly rather than to within half a cell, and it
+        /// carries what the snapshot never held.
         ///
         /// The result is labelled as a record rather than a reading, every time, because the one
         /// way this feature could do harm is by looking like a live board. It is not saved back
-        /// either: writing a lower-fidelity copy over the record it came from would lose the
-        /// coordinates the next Manage run needs to carry status across.
+        /// either: this seat has read no host, and writing its board over the record would take the
+        /// host's own facts off every finding on it.
         /// </summary>
+        /// <param name="session">The open document.</param>
+        /// <param name="job">The run this is part of, for progress and for stopping.</param>
+        /// <param name="notes">Anything the reader has to know, added as it is found.</param>
+        /// <param name="trying">A rule set to use instead of the saved one, or null for the saved one.</param>
         private static ClashPipelineResult? Hydrate(Session session, Job job, ICollection<string> notes,
                                                     ClashRuleSet? trying = null)
         {
-            job.Say("Reading the last recorded run...");
+            job.Say("Reading what this project has recorded...");
 
-            var snapshot = Snapshot(session);
-            var hydrated = ClashHydration.From(snapshot, session.MetresPerUnit);
+            var held = session.Findings.Findings.From(FindingSource.Clash)
+                              .Where(finding => finding.IsPresent).ToList();
 
-            if (hydrated.IsEmpty)
+            job.Say("Describing " + Ui.Count(held.Count, "result") + "...");
+
+            // No folder lookup: naming a test's folder needs the host's test list, and this seat
+            // has no clash engine to ask.
+            var items = Project(session, job, Array.Empty<CheckRun>()).Items(held);
+
+            if (items.Count == 0)
             {
                 notes.Add(session.ClashProblem ?? "There is no clash engine in this Navisworks edition.");
                 notes.Add("There is no recorded run in this project either, so there is nothing to open. "
                           + "A board comes from a Navisworks Manage seat running the tests once; after "
                           + "that this seat can triage, assign, report and issue it.");
                 return null;
-            }
-
-            var scale = session.MetresPerUnit;
-            var levels = Levels(session, job, scale);
-
-            job.Say("Describing " + Ui.Count(hydrated.Items.Count, "result") + "...");
-
-            var read = 0;
-
-            // Two answers per element, kept. A model name is a scan of the loaded models and a
-            // category is a resolve through the document index, and both were asked twice per
-            // result — for a board where the same beam appears in forty clashes, eighty times.
-            var models = new Dictionary<string, string?>(StringComparer.Ordinal);
-            var categories = new Dictionary<string, string?>(StringComparer.Ordinal);
-
-            string? ModelFor(ElementKey key)
-            {
-                if (models.TryGetValue(key.ModelScope, out var known)) return known;
-
-                var found = ModelOf(session, key);
-
-                models[key.ModelScope] = found;
-
-                return found;
-            }
-
-            string? CategoryFor(ElementKey key)
-            {
-                var id = key.ToString();
-
-                if (categories.TryGetValue(id, out var known)) return known;
-
-                var found = CategoryOf(session, key);
-
-                categories[id] = found;
-
-                return found;
-            }
-
-            foreach (var item in hydrated.Items)
-            {
-                read++;
-                if (!job.Step(read, "results described")) return null;
-
-                // Everything except the coordinates is re-derived from the elements themselves,
-                // which Simulate reads perfectly well. Only the clash engine is missing.
-                item.ModelA = ModelFor(item.Key.A);
-                item.ModelB = ModelFor(item.Key.B);
-                item.DisciplineA = session.Profile.DisciplineOf(item.Key.A.ModelScope);
-                item.DisciplineB = session.Profile.DisciplineOf(item.Key.B.ModelScope);
-                item.CategoryA = CategoryFor(item.Key.A);
-                item.CategoryB = CategoryFor(item.Key.B);
-                item.Level = levels.LevelAt(item.Z);
             }
 
             job.Say("Applying rules...");
@@ -361,32 +308,65 @@ namespace CamelWorks.UI.Views
 
             var raised = Issues(session);
 
-            var everything = new List<ClashItem>(hydrated.Items);
+            var everything = new List<ClashItem>(items);
             everything.AddRange(IssueItems.Open(raised));
 
             var board = ClashPipeline.Run(everything, options);
 
             Instruct(board, raised);
 
-            notes.Add(hydrated.Explain());
-            notes.Add("This board was rebuilt from what the project file recorded, because this "
-                      + "Navisworks edition has no clash engine. Everything on it can be triaged, "
-                      + "assigned, reported and issued as BCF. Two things it cannot do: run a test, "
-                      + "and notice a conflict that has appeared since the run it came from.");
-
-            if (hydrated.Unusable > 0)
-                notes.Add(Ui.Count(hydrated.Unusable, "record")
-                          + " in the project file could not be read back and are missing from this board.");
+            notes.Add(Ui.Count(items.Count, "result") + " from what this project recorded of the last run.");
+            notes.Add("This board was rebuilt from the record, because this Navisworks edition has "
+                      + "no clash engine. Everything on it can be triaged, assigned, reported and "
+                      + "issued as BCF. Two things it cannot do: run a test, and notice a conflict "
+                      + "that has appeared since the run it came from.");
 
             LastBoard = board;
-            LastBoardLabel = hydrated.Label ?? session.Profile.ProjectName;
+            LastBoardLabel = session.Profile.ProjectName;
 
-            // No delta and no save. There was no run to compare against, and writing this board
-            // back over the record it came from would replace real clash points with cell centres.
+            // No comparison and no save. There was no read to compare against, and this seat holds
+            // nothing the record does not already have.
             LastDelta = null;
 
             return board;
         }
+
+        /// <summary>
+        /// How a held finding becomes the item the rules run over.
+        ///
+        /// The three lookups an item needs and a finding does not carry: the level a height falls
+        /// on, the discipline a model is, and what a model is called. None of them resolves an
+        /// element key — the model scope is in the key itself and the level is derived from the
+        /// height — so a board of eighteen thousand results costs no walk of the federation.
+        /// </summary>
+        /// <param name="session">The open document.</param>
+        /// <param name="job">The run this is part of, for the levels pass.</param>
+        /// <param name="runs">The runs that were read, for the folder each test sits in.</param>
+        private static ClashProjection Project(Session session, Job job, IReadOnlyList<CheckRun> runs)
+        {
+            var scale = session.MetresPerUnit;
+            var levels = Levels(session, job, scale);
+
+            // Model display names once, not once per result: eighteen thousand results times a
+            // linear scan over the model list is a pause somebody can feel.
+            var modelNames = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            foreach (var model in session.Model.Models)
+                if (!modelNames.ContainsKey(model.Scope)) modelNames[model.Scope] = model.DisplayName;
+
+            var folders = new Dictionary<string, string?>(StringComparer.Ordinal);
+
+            foreach (var run in runs) folders[run.Id] = run.Folder;
+
+            return new ClashProjection(scale)
+            {
+                ModelName = key => modelNames.TryGetValue(key.ModelScope, out var name) ? name : null,
+                Discipline = key => session.Profile.DisciplineOf(key.ModelScope),
+                Level = height => levels.LevelAt(height),
+                Folder = id => id != null && folders.TryGetValue(id, out var folder) ? folder : null,
+            };
+        }
+
 
         private static LevelSet? _levels;
         private static string? _levelsShape;
@@ -422,22 +402,6 @@ namespace CamelWorks.UI.Views
             _levelsShape = shape;
 
             return derived;
-        }
-
-        private static string? ModelOf(Session session, ElementKey key) =>
-            session.Model.Models.FirstOrDefault(
-                m => string.Equals(m.Scope, key.ModelScope, StringComparison.Ordinal))?.DisplayName;
-
-        private static string? CategoryOf(Session session, ElementKey key) =>
-            session.Model.Resolve(key)?.Category;
-
-        private static ClashSnapshot? Snapshot(Session session)
-        {
-            var section = session.Store.Section(ProjectStore.ClashSection);
-
-            return ClashSnapshotJson.FromJson(
-                ClashSnapshotJson.Migrated(section[ClashKeys.Snapshot], section["parties"], section["taken"]),
-                Decisions(session));
         }
 
         /// <summary>
@@ -679,11 +643,23 @@ namespace CamelWorks.UI.Views
             var snapshot = ClashSnapshot.Of(board, takenUtc: DateTimeOffset.UtcNow);
 
             // Raised issues are kept in their own list and left out of the snapshot. The snapshot
-            // is what the next run's carry-over compares the ENGINE's results against, and a record
-            // the engine can never produce would read as resolved on every single run.
+            // is what the per-party comparison reads, and a record the engine can never produce
+            // would read as resolved on every single run.
             section.Set(ClashKeys.Snapshot, ClashSnapshotJson.ToJson(snapshot,
                 r => !string.Equals(r.TestName, IssueItems.RaisedByHand, StringComparison.Ordinal)));
-            session.Record(ActivityKind.Regroup, summary ?? "ran the rules: " + board.Funnel);
+
+            // What the board did with each result, back onto the finding behind it: the group and
+            // whether it was made by hand, and the rule that took a result off the board. Without
+            // them a seat with no clash engine rebuilds a board with no hand grouping, and every
+            // suppressed result arrives as new the moment somebody turns the rule off.
+            ClashFindings.Recorded(board, session.Findings.Findings);
+
+            var kept = session.Findings.Save();
+
+            session.Record(ActivityKind.Regroup, summary ?? "ran the rules: " + board.Funnel,
+                           kept ? null
+                                : "The board's own facts were not recorded: "
+                                  + (session.Findings.LastSaveProblem ?? "there was nowhere to write."));
         }
 
         /// <summary>
@@ -1623,7 +1599,7 @@ namespace CamelWorks.UI.Views
             /// somebody a report that says nothing is how a report stops being read.
             /// </summary>
             private void WriteEach(Session session, ClashPipelineResult board,
-                                   ICollection<ClashItem> regressed, Job job)
+                                   ICollection<string> regressed, Job job)
             {
                 var parties = board.Groups
                     .Select(g => g.AssignedTo)
@@ -1688,7 +1664,7 @@ namespace CamelWorks.UI.Views
 
             /// <summary>Which groups belong in a report for this audience.</summary>
             private IReadOnlyList<ClashGroup> Chosen(ClashPipelineResult board, string audience,
-                                                     ICollection<ClashItem> regressed)
+                                                     ICollection<string> regressed)
             {
                 var groups = board.Groups.Where(g =>
                     audience == Everyone
@@ -1895,7 +1871,7 @@ namespace CamelWorks.UI.Views
             /// <summary>The document, in whichever of the three shapes was asked for.</summary>
             private ReportDocument Shape(Session session, ClashPipelineResult board,
                                          IReadOnlyList<ClashGroup> groups, string audience,
-                                         ICollection<ClashItem> regressed,
+                                         ICollection<string> regressed,
                                          IReadOnlyDictionary<string, byte[]> images,
                                          string revision, ReportIssue? was, Job job)
             {
@@ -1933,7 +1909,7 @@ namespace CamelWorks.UI.Views
         /// </summary>
         private static ReportDocument Document(Session session, ClashPipelineResult board,
                                                IReadOnlyList<ClashGroup> groups, string audience,
-                                               ICollection<ClashItem> regressed,
+                                               ICollection<string> regressed,
                                                IReadOnlyDictionary<string, byte[]> images,
                                                string? revision = null, ReportIssue? supersedes = null,
                                                ImageBlock? plan = null, BoundingBox framed = default,
@@ -2399,19 +2375,28 @@ namespace CamelWorks.UI.Views
         /// and the one a reader should not have to derive by comparing two PDFs.
         /// </summary>
         private static void Since(ReportDocument document, IReadOnlyList<ClashGroup> groups,
-                                  ICollection<ClashItem> regressed)
+                                  ICollection<string> regressed)
         {
             var delta = LastDelta;
             if (delta == null) return;
 
             var fresh = groups.Sum(g => g.Items.Count(i => i.Status == FindingStatus.New));
-            var back = groups.Sum(g => g.Items.Count(i => regressed.Contains(i)));
+
+            var back = groups.Sum(g => g.Items.Count(
+                i => i.FindingId != null && regressed.Contains(i.FindingId)));
 
             document.Heading("Since the last run");
 
+            if (delta.NoPreviousRun)
+            {
+                document.Paragraph("No previous run recorded, so there is nothing to compare this "
+                    + "board against. The next run will report what changed.");
+                return;
+            }
+
             document.Paragraph(fresh.ToString("N0", CultureInfo.InvariantCulture) + " new, "
                 + back.ToString("N0", CultureInfo.InvariantCulture) + " back again, "
-                + delta.Resolved.Count.ToString("N0", CultureInfo.InvariantCulture)
+                + delta.Gone.Count.ToString("N0", CultureInfo.InvariantCulture)
                 + " gone from the model since the previous run.");
 
             if (back > 0)
@@ -2420,10 +2405,11 @@ namespace CamelWorks.UI.Views
                     + "model went backwards, and it is the first thing to look at — native clash detection "
                     + "cannot tell you this at all, because the result simply reappears looking new.");
 
-            if (delta.WeakMatches > 0)
-                document.Paragraph(delta.WeakMatches.ToString("N0", CultureInfo.InvariantCulture)
-                    + " of these matched the previous run only on a geometry-derived key, because the "
-                    + "elements involved carry no stable identity. Their history is a best guess.");
+            if (delta.MatchedOnAlias > 0)
+                document.Paragraph(delta.MatchedOnAlias.ToString("N0", CultureInfo.InvariantCulture)
+                    + " of these matched the previous run on a neighbouring position rather than "
+                    + "exactly, which means the model has moved under them. Their history is "
+                    + "carried on that tolerance rather than on an exact match.");
         }
 
         /// <summary>

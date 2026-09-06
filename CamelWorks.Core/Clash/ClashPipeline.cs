@@ -322,7 +322,10 @@ namespace CamelWorks.Core.Clash
 
             foreach (var item in all)
             {
-                var removed = false;
+                // Cleared before the rules run. The item carries the last run's answer, read back
+                // off its finding, and a result the rules no longer suppress would otherwise keep
+                // naming the rule that used to.
+                item.SuppressedBy = null;
 
                 foreach (var rule in options.Filters)
                 {
@@ -330,11 +333,11 @@ namespace CamelWorks.Core.Clash
 
                     if (applied.Add(rule.Name)) rulesApplied.Add(rule.Name);
 
-                    if (rule.Suppress) { removed = true; break; }
+                    if (rule.Suppress) { item.SuppressedBy = rule.Name; break; }
                     if (isFlagged.Add(item)) flagged.Add(item);
                 }
 
-                if (removed) suppressed.Add(item); else kept.Add(item);
+                if (item.SuppressedBy != null) suppressed.Add(item); else kept.Add(item);
             }
 
             // --- 2. Group -----------------------------------------------------------------

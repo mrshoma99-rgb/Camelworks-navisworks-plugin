@@ -85,7 +85,8 @@ namespace CamelWorks.Core.Clash
         /// The cell the key quantises to moves when the model is re-exported and the intersection
         /// point crosses a boundary, so an exact lookup answers "never sent" for a clash that went
         /// out last week. The neighbouring cells are searched for the same element pair, which is
-        /// what <c>ClashCarryOver</c> does to keep a decision attached across the same drift.
+        /// what <c>ICheck.Aliases</c> offers so a run comparison keeps a decision attached across
+        /// the same drift.
         /// </summary>
         /// <param name="key">The clash.</param>
         public ClashIssued? Sent(ClashKey key)

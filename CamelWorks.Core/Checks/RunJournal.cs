@@ -141,6 +141,58 @@ namespace CamelWorks.Core.Checks
             return new RunJournal(checkKey, runId, whenTicks, statuses, parties);
         }
 
+        /// <summary>
+        /// What a board drawing every run of a check at once compares against: the runs' journals
+        /// as one reference.
+        ///
+        /// A journal is per run, because that is the unit a run comparison is written and kept
+        /// for. A board that draws twelve tests at once still needs one reference to compare
+        /// against, and reading twelve deltas to print one line would mean twelve "gone" lists
+        /// that overlap wherever a result belongs to two runs.
+        ///
+        /// Not written back. This exists to be handed to <see cref="CheckDelta.Between"/>, and
+        /// writing it would put a thirteenth journal in the project file under a run id no check
+        /// has.
+        ///
+        /// Null when every journal is null, so a board none of whose runs has ever run still reads
+        /// as a first run rather than as an empty comparison.
+        /// </summary>
+        /// <param name="checkKey">Which check.</param>
+        /// <param name="journals">The runs' journals. Nulls are runs that have never run.</param>
+        public static RunJournal? Together(string checkKey, IEnumerable<RunJournal?>? journals)
+        {
+            var statuses = new Dictionary<string, FindingStatus>(StringComparer.Ordinal);
+            var parties = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var when = 0L;
+            var any = false;
+
+            foreach (var journal in journals ?? Array.Empty<RunJournal?>())
+            {
+                if (journal == null) continue;
+
+                any = true;
+                when = Math.Max(when, journal.WhenTicks);
+
+                foreach (var pair in journal.Statuses) statuses[pair.Key] = pair.Value;
+
+                // Summed, which is how the rail tallies too: a finding in two runs is counted
+                // under both and drawn once.
+                foreach (var pair in journal.OpenByParty)
+                    parties[pair.Key] = (parties.TryGetValue(pair.Key, out var held) ? held : 0)
+                                        + pair.Value;
+            }
+
+            return any ? new RunJournal(checkKey, EveryRun, when, statuses, parties) : null;
+        }
+
+        /// <summary>
+        /// What the run is called on a journal that is several runs read as one.
+        ///
+        /// Not a run id any check offers, and deliberately not one: a merged journal is a
+        /// comparison reference and must never be written to a slot.
+        /// </summary>
+        public const string EveryRun = "*";
+
         /// <summary>Serialise.</summary>
         public JsonValue ToJson()
         {

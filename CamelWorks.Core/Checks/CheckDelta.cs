@@ -71,6 +71,33 @@ namespace CamelWorks.Core.Checks
         /// </summary>
         public int MatchedOnAlias { get; }
 
+        /// <summary>
+        /// The same delta, restricted to the findings that reached the board.
+        ///
+        /// A read observes every result into the register, and the board then collapses
+        /// duplicates and lets the rules take results out. "Twelve new" over a board holding four
+        /// is two populations printed as one row, and the eight are nowhere the reader can find
+        /// them, so a screen restricts the delta to what it is drawing.
+        ///
+        /// <see cref="Gone"/> is carried across untouched. A finding the rules suppressed is not
+        /// gone from the model; it never entered that list, because the run reported it and it was
+        /// claimed. <see cref="MatchedOnAlias"/> is carried across for the same reason: it is a
+        /// diagnostic about the whole read, not a count of rows.
+        /// </summary>
+        /// <param name="shown">The finding ids on the board. Null restricts nothing.</param>
+        public CheckDelta OnBoard(IEnumerable<string>? shown)
+        {
+            if (shown == null) return this;
+
+            var kept = new HashSet<string>(shown.Where(id => id != null), StringComparer.Ordinal);
+
+            return new CheckDelta(NoPreviousRun,
+                                  New.Where(kept.Contains).ToList(),
+                                  Persisting.Where(kept.Contains).ToList(),
+                                  Regressed.Where(kept.Contains).ToList(),
+                                  Gone, MatchedOnAlias);
+        }
+
         /// <summary>True when nothing came, went or came back.</summary>
         public bool IsQuiet => New.Count == 0 && Gone.Count == 0 && Regressed.Count == 0;
 

@@ -122,10 +122,19 @@ namespace CamelWorks.Core.Clash
             // it. Not part of identity: the engine reissues these on a re-run.
             finding.Facts[HostId] = result.Id;
 
-            Fact(finding, "Item 1", result.NameA);
-            Fact(finding, "Item 2", result.NameB);
-            Fact(finding, "Category 1", result.CategoryA);
-            Fact(finding, "Category 2", result.CategoryB);
+            Fact(finding, NameA, result.NameA);
+            Fact(finding, NameB, result.NameB);
+            Fact(finding, CategoryA, result.CategoryA);
+            Fact(finding, CategoryB, result.CategoryB);
+
+            // What the host says about the result, kept as an observation rather than folded into
+            // the finding's own status and assignee. The board draws both columns, and the
+            // projection has no other way to fill them: a seat reading the register is not reading
+            // the host. Written on every read, empty included, because facts merge additively and
+            // a fact written only when the host had something to say would leave last month's
+            // answer on the finding for good.
+            finding.Facts[HostStatus] = result.HostStatus ?? string.Empty;
+            finding.Facts[HostAssignee] = result.HostAssignedTo ?? string.Empty;
 
             if (result.Distance != null)
                 finding.Facts[Distance] = Written(result.Distance.Value * scale);
@@ -148,6 +157,92 @@ namespace CamelWorks.Core.Clash
 
         /// <summary>Where the host's own result id is kept, for the projection to find it by.</summary>
         public const string HostId = "Host id";
+
+        /// <summary>Where the first participant's name is kept.</summary>
+        public const string NameA = "Item 1";
+
+        /// <summary>Where the second participant's name is kept.</summary>
+        public const string NameB = "Item 2";
+
+        /// <summary>Where the first participant's category is kept.</summary>
+        public const string CategoryA = "Category 1";
+
+        /// <summary>Where the second participant's category is kept.</summary>
+        public const string CategoryB = "Category 2";
+
+        /// <summary>Where the status the host last reported is kept, as an observation.</summary>
+        public const string HostStatus = "Host status";
+
+        /// <summary>Where the assignee the host last reported is kept, as an observation.</summary>
+        public const string HostAssignee = "Host assignee";
+
+        /// <summary>Where the board group a result was in is kept.</summary>
+        public const string BoardGroup = "Board group";
+
+        /// <summary>Where "that group was made by hand" is kept.</summary>
+        public const string BoardGroupPinned = "Board group pinned";
+
+        /// <summary>Where the rule that took a result off the board is kept.</summary>
+        public const string SuppressedBy = "Suppressed by";
+
+        /// <summary>What a yes-or-no fact says when it is yes.</summary>
+        private const string Yes = "yes";
+
+        /// <summary>
+        /// Write what the board did with each result back onto the finding behind it.
+        ///
+        /// Three things the register would otherwise not hold, and each one is the difference
+        /// between a rebuilt board and a wrong one:
+        ///
+        ///   * The group and whether somebody made it by hand, which is what restores
+        ///     <see cref="ClashItem.CarriedGroup"/>. A derived group is re-derived by the rules,
+        ///     so only a hand-made one is worth carrying, but the name is recorded either way for
+        ///     a screen that wants to say where a result sat.
+        ///   * The rule that suppressed a result. Without it every suppressed result arrives as
+        ///     new the moment somebody turns the rule off.
+        ///
+        /// Every fact is written or removed on every board, never left alone. Facts merge
+        /// additively and none is ever dropped by the register, so a fact written only when there
+        /// was something to say would leave a stale group name and a stale rule on findings the
+        /// board has since moved.
+        /// </summary>
+        /// <param name="board">The board, as the rules left it.</param>
+        /// <param name="register">The findings the board's items were projected from.</param>
+        public static void Recorded(ClashPipelineResult? board, FindingRegister? register)
+        {
+            if (board == null || register == null) return;
+
+            foreach (var group in board.Groups)
+                foreach (var item in group.Items)
+                    Recorded(register.Find(item.FindingId), item, group.Name, group.IsPinned);
+
+            foreach (var item in board.Suppressed)
+                Recorded(register.Find(item.FindingId), item, null, false);
+        }
+
+        /// <summary>One result's board facts.</summary>
+        /// <param name="finding">The held finding, or null when the item has none.</param>
+        /// <param name="item">The item on the board.</param>
+        /// <param name="group">The group it is in, or null when the rules took it off the board.</param>
+        /// <param name="pinned">Whether that group was made by hand.</param>
+        private static void Recorded(Finding? finding, ClashItem item, string? group, bool pinned)
+        {
+            if (finding == null) return;
+
+            Set(finding, BoardGroup, group);
+            Set(finding, BoardGroupPinned, pinned ? Yes : null);
+            Set(finding, SuppressedBy, item.SuppressedBy);
+        }
+
+        /// <summary>Write a fact, or remove it when there is nothing to say.</summary>
+        /// <param name="finding">The finding.</param>
+        /// <param name="name">The fact.</param>
+        /// <param name="value">What it says, or null to remove it.</param>
+        private static void Set(Finding finding, string name, string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) finding.Facts.Remove(name);
+            else finding.Facts[name] = value!;
+        }
 
         /// <summary>
         /// Where how deep the clash is is kept, in metres, negative for a penetration.
