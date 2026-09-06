@@ -2368,6 +2368,7 @@ namespace CamelWorks.UI.Views
                 _toleranceMm = ToleranceMm(entry);
 
                 _title.Children.Add(Title(entry));
+                _title.Children.Add(Standing(entry));
 
                 _strip.Content = Strip(entry);
 
@@ -2591,9 +2592,11 @@ namespace CamelWorks.UI.Views
                     // heading over all of them divides nothing.
                     if (shape.Groups.Count > 0)
                         lines.Add(BoardLine.Banner(() => Parts.ViewBand(
-                            Glyphs.Clash, "Not grouped",
-                            Ui.Count(shape.Loose.Count, "loose result"),
-                            "of " + Skin.Num(shape.LooseTotal) + " — tick two or more and press Group",
+                            Glyphs.Clash, "The rules left these",
+                            Ui.Count(shape.Loose.Count, "result"),
+                            "of " + Skin.Num(shape.LooseTotal)
+                            + " — no grouping rule placed them. Tick two or more to group them by "
+                            + "hand",
                             () => PickAll(shape.Loose))));
 
                     foreach (var row in shape.Loose) Add(row);
@@ -2779,6 +2782,54 @@ namespace CamelWorks.UI.Views
                 words.Children.Add(head.Wearing("Head"));
 
                 row.Children.Add(words);
+
+                return row;
+            }
+
+            /// <summary>
+            /// What the board did to get here, in one line under the title.
+            ///
+            /// Two things the engines do on every build and the screen never said: the grouping
+            /// rules, and the carry-over. Four reviewers concluded from these screens that
+            /// grouping was manual and that nothing tracked a clash across runs — both are built,
+            /// and neither said so.
+            /// </summary>
+            /// <param name="entry">The test on the board.</param>
+            private UIElement Standing(TestEntry entry)
+            {
+                var row = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Margin = new Thickness(0, 2, 0, 0),
+                };
+
+                var board = CoordinateViews.LastBoard;
+                var shape = Shape(entry);
+
+                if (board != null)
+                {
+                    row.Children.Add(Ui.Small(board.Funnel.Grouped(shape.LooseTotal)));
+
+                    var edit = Ui.Link("Grouping rules", () => Ui.Configure(
+                        "Grouping rules", null,
+                        new Ui.Page("Grouping rules", CoordinateViews.Rules)));
+
+                    edit.Margin = new Thickness(6, 0, 0, 0);
+                    edit.VerticalAlignment = VerticalAlignment.Center;
+
+                    row.Children.Add(edit);
+                }
+
+                var delta = CoordinateViews.LastDelta;
+
+                if (delta != null)
+                {
+                    var carried = Ui.Small(delta.Carried());
+
+                    carried.Margin = new Thickness(board == null ? 0 : 12, 0, 0, 0);
+
+                    row.Children.Add(carried);
+                }
 
                 return row;
             }

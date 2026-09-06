@@ -211,6 +211,38 @@ namespace CamelWorks.Core.Clash
         /// <summary>Names of the rules that removed or marked anything.</summary>
         public IReadOnlyList<string> RulesApplied { get; }
 
+        /// <summary>
+        /// What the grouping did, for the line the board leads with.
+        ///
+        /// The board's loudest grouping message was "tick two or more and press Group", which
+        /// reads as though hand-grouping is the only mechanism. The rules group by level, grid,
+        /// zone, model pair, discipline, test, system, property, same item and proximity, and the
+        /// screen never said so.
+        /// </summary>
+        /// <param name="loose">How many results the rules left in no group.</param>
+        public string Grouped(int loose)
+        {
+            if (Groups == 0)
+                return loose == 0
+                    ? "The rules had nothing to group."
+                    : "The rules made no groups from these "
+                      + loose.ToString("N0", CultureInfo.InvariantCulture) + " results.";
+
+            var line = "The rules made "
+                     + Groups.ToString("N0", CultureInfo.InvariantCulture)
+                     + (Groups == 1 ? " group" : " groups");
+
+            if (loose > 0)
+                line += ", and left " + loose.ToString("N0", CultureInfo.InvariantCulture)
+                      + (loose == 1 ? " result" : " results") + " in none";
+
+            if (Unassigned > 0)
+                line += ". " + Unassigned.ToString("N0", CultureInfo.InvariantCulture)
+                      + (Unassigned == 1 ? " group has" : " groups have") + " no responsible party";
+
+            return line + ".";
+        }
+
         /// <summary>The one-line readout.</summary>
         public override string ToString()
         {

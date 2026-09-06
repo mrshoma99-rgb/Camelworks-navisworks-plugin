@@ -526,6 +526,13 @@ namespace CamelWorks.UI.Views
                     + Ui.Count(Results().Count, "result") + " · "
                     + Ui.Count(rounds.Count, "pack")));
 
+                // What the pack carries beyond the list. The writer puts a camera and a snapshot
+                // on every topic and never said so, which is why the export read as a file of
+                // titles a reviewer would have to find in the model themselves.
+                _resultsSaid.Children.Add(Ui.Small(
+                    "Each clash goes out as a topic with a viewpoint: a camera on the clash "
+                    + "point, both elements highlighted, and a snapshot."));
+
                 if (_dropped.Count > 0)
                     _results.Children.Add(Ui.Across(
                         Ui.Small(Ui.Count(_dropped.Count, "clash") + " left out by hand."),

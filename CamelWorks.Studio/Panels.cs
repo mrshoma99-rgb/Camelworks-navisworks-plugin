@@ -924,22 +924,33 @@ namespace CamelWorks.Studio
         /// <summary>The rail's filter panel, which is where a filter is made and taken off.</summary>
         private static UIElement Narrowing()
         {
-            var body = Ui.Stack(Ui.Eyebrow("Discipline"));
+            // Every facet the product offers, at the width a real job produces. Reviewers read
+            // four chips off this panel and reported that multi-select filtering did not exist.
+            var body = Ui.Stack();
 
-            var parties = new WrapPanel();
+            void Facet(string named, string[] values, string? chosen)
+            {
+                body.Children.Add(Ui.Eyebrow(named));
 
-            foreach (var party in new[] { "Mechanical", "Structures", "Electrical", "Architecture" })
-                parties.Children.Add(Parts.Pick(party, party == "Mechanical", () => { }));
+                var wrap = new WrapPanel();
 
-            body.Children.Add(parties);
-            body.Children.Add(Ui.Eyebrow("Folder"));
+                foreach (var value in values)
+                    wrap.Children.Add(Parts.Pick(
+                        value, string.Equals(value, chosen, StringComparison.Ordinal), () => { }));
 
-            var folders = new WrapPanel();
+                body.Children.Add(wrap);
+            }
 
-            foreach (var folder in new[] { "Week 33", "Week 32" })
-                folders.Children.Add(Parts.Pick(folder, false, () => { }));
+            Facet("Assigned to", new[] { "J. Okonkwo", "R. Patel", "S. Aziz", "M. Lindqvist",
+                                         "Unassigned" }, "J. Okonkwo");
+            Facet("Discipline", new[] { "Mechanical", "Structures", "Electrical", "Architecture",
+                                        "Fire", "Public health" }, "Mechanical");
+            Facet("Level", new[] { "B1", "L01", "L02", "L03", "L04", "Roof" }, null);
+            Facet("Folder", new[] { "Week 33", "Week 32", "Handover" }, null);
+            Facet("Zone", new[] { "Core A", "Core B", "Podium" }, null);
+            Facet("System", new[] { "CHW Supply", "CHW Return", "Small Power", "Wet Riser" }, null);
+            Facet("Since last run", new[] { "New", "Regressed", "Unchanged" }, null);
 
-            body.Children.Add(folders);
             body.Children.Add(Ui.Check("Only tests with something open", false, null));
             body.Children.Add(Ui.Link("Clear all", () => { }));
 
@@ -1056,7 +1067,7 @@ namespace CamelWorks.Studio
             var head = new Border
             {
                 Padding = new Thickness(16, 10, 16, 0),
-                Child = Ui.Stack(BoardTitle(), BoardStrip()),
+                Child = Ui.Stack(BoardTitle(), BoardStanding(), BoardStrip()),
             };
 
             grid.Children.Add(head);
@@ -1141,6 +1152,39 @@ namespace CamelWorks.Studio
             words.Children.Add(said.Wearing("Hint"));
 
             row.Children.Add(words);
+
+            return row;
+        }
+
+        /// <summary>
+        /// What the board did to get here: the grouping rules, and the carry-over.
+        ///
+        /// Both engines run on every build and neither said so, which is why four reviewers read
+        /// these screens as a product with manual grouping and no memory across runs.
+        /// </summary>
+        private static UIElement BoardStanding()
+        {
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, 2, 0, 0),
+            };
+
+            row.Children.Add(Ui.Small(
+                "The rules made 25 groups, and left 143 results in none. "
+                + "4 groups have no responsible party."));            // harness: data
+
+            var edit = Ui.Link("Grouping rules", () => { });
+            edit.Margin = new Thickness(6, 0, 0, 0);
+            edit.VerticalAlignment = VerticalAlignment.Center;
+            row.Children.Add(edit);
+
+            var carried = Ui.Small(
+                "150 results kept their statuses from the last run, 18 new, "
+                + "3 are back after being resolved, 9 gone from the model.");   // harness: data
+
+            carried.Margin = new Thickness(12, 0, 0, 0);
+            row.Children.Add(carried);
 
             return row;
         }
@@ -1324,22 +1368,33 @@ namespace CamelWorks.Studio
         {
             var body = Ui.Stack(TableHead());
 
+            // Assigned to people, not to disciplines. TeamRoster holds people, roles, companies
+            // and teams, and a fixture that wrote "Mechanical" in the assignee column had three
+            // reviewers report that assignment to a person was missing.
             body.Children.Add(GroupRow("Corridor C — duct against beams", 7, "-48 mm", true, true));
             body.Children.Add(ClashRow("Clash 121", "Duct 400×250", "Beam 610UB", "-48 mm",
-                                       "New", Tone.Bad, "Structures", "CHW Supply", true, false));
+                                       "New", Tone.Bad, "R. Patel · Structures", "CHW Supply",
+                                       true, false));
             body.Children.Add(ClashRow("Clash 122", "Duct 600×300", "Beam 460UB", "-31 mm",
-                                       "Active", Tone.Plain, "Mechanical", "CHW Supply", true, false));
+                                       "Active", Tone.Plain, "J. Okonkwo · Mechanical",
+                                       "CHW Supply", true, false));
+            body.Children.Add(ClashRow("Clash 123", "Duct 600×300", "Beam 460UB", "-18 mm",
+                                       "Approved", Tone.Good, "J. Okonkwo · Mechanical",
+                                       "CHW Supply", true, false));
             body.Children.Add(GroupRow("Riser 2 — pipework against slab edge", 5, "-22 mm", false, false));
 
-            body.Children.Add(Parts.ViewBand(Glyphs.Clash, "Not grouped", "143 loose results",
-                                             "of 143 — tick two or more and press Group", () => { }));
+            body.Children.Add(Parts.ViewBand(Glyphs.Clash, "The rules left these", "143 results",
+                                             "of 143 — no grouping rule placed them. Tick two or "
+                                             + "more to group them by hand", () => { }));
 
             body.Children.Add(ClashRow("Clash 208", "Pipe CHW-31", "Wall PC-200", "-52 mm",
                                        "New", Tone.Bad, string.Empty, "CHW Return", false, true));
             body.Children.Add(ClashRow("Clash 209", "Tray CT-9", "Bracing BR-3", "-14 mm",
-                                       "Reviewed", Tone.Warn, "Electrical", "Small Power", false, true));
+                                       "Reviewed", Tone.Warn, "S. Aziz · Electrical",
+                                       "Small Power", false, true));
             body.Children.Add(ClashRow("Clash 210", "Sprinkler SP-88", "Slab L03", "-9 mm",
-                                       "Resolved", Tone.Good, "Fire", "Wet Riser", false, false));
+                                       "Resolved", Tone.Good, "M. Lindqvist · Fire", "Wet Riser",
+                                       false, false));
 
             var card = new Border
             {
