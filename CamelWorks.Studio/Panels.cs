@@ -8,6 +8,8 @@ using System.Windows.Media;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Data;
+using CamelWorks.Core.Findings;
+using CamelWorks.Core.Identity;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Store;
 using CamelWorks.UI.Shell;
@@ -95,6 +97,13 @@ namespace CamelWorks.Studio
             // The levels a project declares, and what each covers. Drawn with a building in it:
             // an empty plan draws the one line saying there are none, which is the state that
             // proves nothing about the editor.
+            // The Exchange tab, in the state it is used in: a board of a few hundred clashes,
+            // a filter narrowing them and a split that writes a pack per trade. Drawn from the
+            // project file rather than a document, so the table and the filter chips can be
+            // looked at rather than described from a licensed seat.
+            Page("app-clash-exchange", "Clash Manager · Exchange", 760,
+                 () => ClashExchangeViews.Drawn(Filed(), "Riverside", Sent())),
+
             Page("app-clash-levels", "Clash Manager · Levels", 620,
                  () => Ui.Loose(Bench.Group("Levels", ClashLevels.Drawn(Storeyed())))),
 
@@ -141,6 +150,69 @@ namespace CamelWorks.Studio
         /// Empty on purpose. This is the state a screen is in before a document is open, and the one
         /// least often checked, so the harness draws it.
         /// </summary>
+
+        /// <summary>A project file in the temp folder, for the screens that keep settings in one.</summary>
+        private static ProjectStore Filed() =>
+            ProjectStore.Open(PhysicalFileSystem.Instance,
+                              System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+                                                     "camelworks-shots", "shots.nwf"),
+                              System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+                                                     "camelworks-shots"));
+
+        /// <summary>
+        /// A board of the size and shape a real issue goes out from.
+        ///
+        /// Four trades, four statuses and three storeys, because that is what the Exchange tab's
+        /// filter, split and table are all about: a screen drawn from six clashes on one level
+        /// shows none of them doing anything.
+        /// </summary>
+        private static IReadOnlyList<ClashGroup> Sent()
+        {
+            var parties = new[] { "Mechanical", "Structure", "Electrical", "Architecture" };
+            var tests = new[] { "L02 MEP v STR", "L03 MEP v STR", "L04 MEP v ARC" };
+            var levels = new[] { "L02", "L03", "L04" };
+
+            var made = new List<ClashItem>();
+
+            for (var at = 0; at < 96; at++)
+            {
+                var item = ClashFixture(at, tests[at % tests.Length], levels[at % levels.Length]);
+
+                item.AssignedTo = parties[at % parties.Length];
+                item.Status = (FindingStatus)(at % 5);
+
+                made.Add(item);
+            }
+
+            return ClashPipeline.Run(made).Groups;
+        }
+
+        /// <summary>One clash, far enough from the last that the grouping keeps them apart.</summary>
+        /// <param name="at">Which one, for its name and its position.</param>
+        /// <param name="test">Which test it came from.</param>
+        /// <param name="level">Which level it stands on.</param>
+        private static ClashItem ClashFixture(int at, string test, string level)
+        {
+            var scope = ElementKey.ScopeOf(@"C:\p\ARCH.nwc");
+            var other = ElementKey.ScopeOf(@"C:\p\MEP.nwc");
+
+            var said = at.ToString("000", CultureInfo.InvariantCulture);
+
+            var a = ElementKey.FromTreePath(scope, @"C:\p\ARCH.nwc", level, "Wall " + said);
+            var b = ElementKey.FromTreePath(other, @"C:\p\MEP.nwc", level, "Duct " + said);
+
+            return new ClashItem(ClashKey.Create(a, b, at * 3.0, at * 2.0, at % 3 * 4.0), test)
+            {
+                Name = "Clash " + said,
+                Level = level,
+                ModelA = "ARCH",
+                ModelB = "MEP",
+                X = at * 3.0,
+                Y = at * 2.0,
+                Z = at % 3 * 4.0,
+            };
+        }
+
         private static ISeat Seated() => new EmptySeat(
             ProjectStore.Open(PhysicalFileSystem.Instance,
                               System.IO.Path.Combine(System.IO.Path.GetTempPath(),

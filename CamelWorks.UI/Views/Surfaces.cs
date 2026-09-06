@@ -45,10 +45,8 @@ namespace CamelWorks.UI.Views
                 case "headroom": return OnModel(ClearanceViews.Check);
                 case "rules": return CoordinateViews.Rules();
                 case "clashreport": return CoordinateViews.Report();
-                case "bcf": return CoordinateViews.Bcf();
-                case "clashxml": return OnModel(ClashExportWindow.Surface);
+                case "exchange": return OnModel(ClashExchangeViews.Surface);
                 case "penetrations": return OnModel(_ => CoordinateViews.PenetrationsReport());
-                case "merge": return CoordinateViews.Merge();
                 case "freeze": return OnModel(_ => FreezeViews.FreezeScreen());
 
                 // ---- Data ----

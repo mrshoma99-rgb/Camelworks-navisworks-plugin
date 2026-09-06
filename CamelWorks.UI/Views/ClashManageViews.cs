@@ -5894,10 +5894,10 @@ namespace CamelWorks.UI.Views
                                  + "thousands is worth starting before a break."),
                         Ui.Actions(Ui.Quiet("Export...", () =>
                         {
-                            ClashExportWindow.Preferred = Entry() == null
+                            ClashExchangeViews.Preferred = Entry() == null
                                 ? new List<string>()
                                 : new List<string> { Entry()!.Test.Id };
-                            Ui.Told(Shell.AppWindow.Show("issues", "clashxml"));
+                            Ui.Told(Shell.AppWindow.Show("clash", "exchange"));
                         }))),
                     Bench.Group("Restore",
                         Ui.PathField("Markups", _markups, PathKind.Open,

@@ -180,19 +180,11 @@ namespace CamelWorks.UI.Shell
                "Exports the board as a document readable without Navisworks.",
                "Write the report"),
 
-            Of("bcf", "BCF", ToolShape.Window, Glyph.Onward,
-               "Exchange issues with every other tool that speaks BCF, in 2.1 or 3.0.",
-               "Send the board"),
-
-            Of("merge", "Merge Markups", ToolShape.Window, Glyph.Compare,
-               "Fold several reviewers' responses back into one board, showing where two of them "
-               + "disagree rather than letting the last one win.",
-               "Bring them together"),
-
-            Of("clashxml", "Clash file", ToolShape.Window, Glyph.Clash,
-               "Read a board out of the format other coordination tools speak, or write one back "
-               + "into it, against a saved profile.",
-               "Show me what would go in"),
+            Of("exchange", "Exchange", ToolShape.Window, Glyph.Onward,
+               "Send each party the clashes that are theirs as BCF, and take their answers back "
+               + "onto the board, showing where two of them disagree rather than letting the last "
+               + "one win.",
+               "Show me what would go out"),
 
             // ---- Compare ----------------------------------------------------------------------
 

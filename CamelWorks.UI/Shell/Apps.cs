@@ -84,9 +84,7 @@ namespace CamelWorks.UI.Shell
                 new AppTab("Clearance Check", "headroom"),
                 new AppTab("Filter Clashes", "rules"),
                 new AppTab("Report", "clashreport"),
-                new AppTab("BCF", "bcf"),
-                new AppTab("Clash file", "clashxml"),
-                new AppTab("Merge", "merge")),
+                new AppTab("Exchange", "exchange")),
 
             new App("issuemgr", "Issue Manager",
                 "Everything raised on this job, in one register.", "Coordinate",

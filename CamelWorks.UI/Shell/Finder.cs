@@ -75,15 +75,12 @@ namespace CamelWorks.UI.Shell
             ["clashreport"] = (new[] { "export report", "issue list", "pdf", "spreadsheet" },
                 new[] { "the client wants a report", "I need this in a spreadsheet" }),
 
-            ["bcf"] = (new[] { "bcf", "openbim", "issue exchange", "solibri", "bimcollab", "revizto" },
+            ["exchange"] = (new[] { "bcf", "bcfzip", "openbim", "issue exchange", "solibri",
+                                    "bimcollab", "revizto", "combine", "reconcile", "incoming",
+                                    "conflicts", "export profile" },
                 new[] { "send these to the architect", "they use a different tool",
-                        "they sent a bcfzip back" }),
-
-            ["merge"] = (new[] { "combine", "reconcile", "incoming", "conflicts" },
-                new[] { "two people reviewed the same clashes", "whose version wins" }),
-
-            ["clashxml"] = (new[] { "xml", "interchange", "import results", "iconstruct" },
-                new[] { "they sent an xml of their tests", "get these results into their tool" }),
+                        "they sent a bcfzip back", "two people reviewed the same clashes",
+                        "whose version wins", "a file per trade" }),
 
             ["penetrations"] = (new[] { "sleeves", "holes", "openings", "builderswork", "penetration schedule" },
                 new[] { "structures want a list of holes", "the engineer asked for the sleeves" }),

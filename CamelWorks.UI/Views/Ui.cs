@@ -1196,6 +1196,23 @@ namespace CamelWorks.UI.Views
             return Asked(dialog) ? dialog.FileName : null;
         }
 
+        /// <summary>Ask for several paths to read, empty when the person changed their mind.</summary>
+        /// <param name="title">What the dialog is called.</param>
+        /// <param name="filter">The file-type filter.</param>
+        public static IReadOnlyList<string> AskToOpenMany(string title, string filter)
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = title,
+                Filter = filter,
+                Multiselect = true,
+                CheckFileExists = true,
+                CheckPathExists = true,
+            };
+
+            return Asked(dialog) ? dialog.FileNames : Array.Empty<string>();
+        }
+
         /// <summary>
         /// Show a file dialog owned by the window it was asked for from.
         ///

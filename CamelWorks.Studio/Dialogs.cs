@@ -19,7 +19,6 @@ namespace CamelWorks.Studio
         /// <summary>The windows, in the order the product offers them.</summary>
         public static IReadOnlyList<Sheet> All { get; } = new[]
         {
-            Sheet("dlg-clashxml", "Bench · Clash XML", 760, 1180, ClashXml),
             Sheet("dlg-ids", "Bench · IDS authoring", 1000, 1180, Ids),
             Sheet("dlg-wizard", "Wizard · The spine", 640, 1000, Wizard),
             Sheet("dlg-laststep", "Wizard · The last step", 640, 1000, LastStep),
@@ -27,51 +26,6 @@ namespace CamelWorks.Studio
 
         private static Sheet Sheet(string id, string title, int height, int width, Func<UIElement> build) =>
             new Sheet { Id = id, Title = title, Height = height, Builder = _ => build(), Widths = new[] { width } };
-
-        // -----------------------------------------------------------------------------------
-        // Clash XML — the two-leg editor on the bench
-        // -----------------------------------------------------------------------------------
-
-        private static UIElement ClashXml()
-        {
-            var setup = Ui.Stack(
-                Bench.Group(string.Empty,
-                    Ui.Segmented(new[] { "Write one", "Read one back" }, "Write one", null)),
-                Bench.Group("This profile",
-                    Ui.Field("Called", Ui.Text("Weekly issue to the contractor", null, 200)),
-                    Ui.Across(
-                        Ui.Quiet("Keep", () => { }),
-                        Ui.Danger("Forget", () => { })),
-                    Ui.Across(
-                        Ui.Quiet("Save...", () => { }),
-                        Ui.Quiet("Load...", () => { }))),
-                Bench.Group("How it is written",
-                    Ui.Check("Keep the folders as folders", true, null),
-                    Ui.Check("Write each result's two elements", true, null)),
-                Bench.Group("The file",
-                    Ui.PathField("File", Ui.Text(@"D:\Projects\Riverside\Clash\week-31.xml",
-                                                 null, 200), PathKind.Save)));
-
-            var stage = Ui.Stack(
-                Ui.Eyebrow("The tests"),
-                Ui.Line("Six tests on this board, 764 results between them.", 1, true),
-                Ui.Table(Tests(), ("Test", 0), ("Clashes", 90), ("In", 60)),
-                Ui.Across(
-                    Ui.Quiet("Tick every test", () => { }),
-                    Ui.Quiet("Untick every test", () => { })),
-                Ui.Commit("Show me what would go in", "Write", "result",
-                          (job, into) => 0, job => { }));
-
-            return Bench.Surface(setup, null, stage);
-        }
-
-        private static IEnumerable<TableRow> Tests()
-        {
-            yield return new TableRow(null, "Structure vs Mechanical", "412", "yes");
-            yield return new TableRow(null, "Structure vs Electrical", "88", "yes");
-            yield return new TableRow(null, "Mechanical vs Electrical", "203", "yes");
-            yield return new TableRow(null, "Architecture vs Mechanical", "61", "no");
-        }
 
         // -----------------------------------------------------------------------------------
         // The wizard spine — a step behind, the step itself, three ahead

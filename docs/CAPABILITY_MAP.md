@@ -108,16 +108,18 @@ surfaces work, not things a coordinator opens.
 | `Penetrations`, `PenetrationSchedule` | **Penetrations** (new) |
 | `PartyLedger` | Clash Report — per-party split |
 | `ClashAside` | **Clash Manager ▸ Manage** — the clash properties Navisworks has no field for (priority, due date, stage, a retitle, the reviewer's tags), as one markup said them. Laid onto the finding, shown as the **Reviewer set** column with overdue rows toned, searchable, and read back off the finding onto the topic on the next export. |
-| `IfcIdentity`, `IfcGuid` | **Clash Manager ▸ Clash file / baseline** and **Clearance Check ▸ out** — reads each element's IFC GlobalId on the way out so the receiving tool can select the two clashing elements; the export says how many carry none. |
-| `ClashBcf`, `ClashBcfDocument`, `ClashBcfOptions`, `ClashFile` | **Clash Manager ▸ Clash file** — clash results as BCF, which every reviewing tool opens. What BCF has no field for (tolerances, distances, element keys) rides in a sidecar inside the same archive, so nothing the clash XML carried is lost. `ClashFile` still reads the older XML so earlier baselines keep opening. |
-| `ClashXml`, `ClashXmlTest`, `ClashXmlRead`, `ExportProfile` | Clash file — the reader for baselines written before BCF, and the topics a returned BCF carries: the ones no clash answers to go to the **Issue Manager**, and what the model has no field for (priority, due date, stage, a retitle, the reviewer's tags) becomes a comment on the clash. |
+| `IfcIdentity`, `IfcGuid` | **Clash Manager ▸ Exchange / baseline** and **Clearance Check ▸ out** — reads each element's IFC GlobalId on the way out so the receiving tool can select the two clashing elements; the export says how many carry none. |
+| `ClashBcf`, `ClashBcfDocument`, `ClashBcfOptions`, `ClashFile` | **Clash Manager ▸ Exchange** — clash results as BCF, which every reviewing tool opens. What BCF has no field for (tolerances, distances, element keys) rides in a sidecar inside the same archive, so nothing is lost on the round trip. BCF is the only clash file the product reads or writes. |
+| `ClashPackTest`, `ClashPackResult`, `ClashPackRead` | **Clash Manager ▸ Exchange** — a pack, read: its tests, its results, and the topics no clash answers to, which go to the **Issue Manager**. What the model has no field for (priority, due date, stage, a retitle, the reviewer's tags) becomes a comment on the clash. |
+| `ClashPick`, `ClashClause`, `ClashFacet`, `ClashFacets`, `ExportProfile`, `ExportRound` | **Clash Manager ▸ Exchange ▸ Send out** — which clashes go in a pack and in what order, by any parameter a clash carries: status, assignee, folder, storey, elevation, model, or a property the models themselves carry. Saved as an export profile, and split so one press writes a pack per recipient. |
+| `ClashExchange`, `ExchangePack`, `ExchangeRow`, `ExchangeReading`, `ExchangeApplied` | **Clash Manager ▸ Exchange ▸ Take back** — several parties' returned packs read together and applied once. Where two parties answered the same clash differently the row is marked and applied to nothing until one side is chosen; every party's comments come back, not only the winning side's. |
 
 ### Issues out
 | Engine | Surface |
 |---|---|
 | `ReportDocument` + blocks, `PdfReportWriter`, `XlsxWriter`, `HtmlReportWriter`, `KeyPlan`, `Deliverable` | Clash Report |
-| `BcfWriter`, `BcfReader`, `BcfViewpoint`, `BcfCamera`, `BcfComponent`, `BcfColouring`, `BcfComment`, `BcfProject`, `BcfGuid`, `BcfFraming`, `ViewFraming` | BCF — send / receive |
-| `BcfMerge`, `MergeConflict`, `BcfResponse`, `BcfResponseReport`, `IssueSheet` | Merge Markups |
+| `BcfWriter`, `BcfReader`, `BcfViewpoint`, `BcfCamera`, `BcfComponent`, `BcfColouring`, `BcfComment`, `BcfProject`, `BcfGuid`, `BcfFraming`, `ViewFraming` | **Clash Manager ▸ Exchange** and **Issue Manager ▸ Import / Export** |
+| `BcfResponse`, `BcfResponseReport`, `IssueSheet` | **Clash Manager ▸ Exchange ▸ Take back** — where a returned status leaves a clash: an explicit re-open is honoured downwards, everything else is promote-only so a stale answer cannot undo a decision made since the pack went out. |
 
 ### Revisions
 | Engine | Surface |
