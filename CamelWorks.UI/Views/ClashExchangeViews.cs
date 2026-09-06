@@ -41,12 +41,46 @@ namespace CamelWorks.UI.Views
         public const string Extension = ".cwexport";
 
         /// <summary>
-        /// Test ids the clash manager asked to send, applied to the next desk once.
+        /// What the Manage tab asked to send: which check, and which of its runs.
+        ///
+        /// A pair rather than a list of run ids, because the runs mean nothing without the check
+        /// that owns them: two checks can name a run the same thing, and a request that carried
+        /// only the ids would tick whichever check's runs the tab happened to be showing.
+        /// </summary>
+        internal sealed class ExchangeRequest
+        {
+            /// <summary>Ask for these runs of this check.</summary>
+            /// <param name="checkKey">The check, as <see cref="FindingSource"/> spells it.</param>
+            /// <param name="runIds">The runs to tick, by the check's own id for each.</param>
+            internal ExchangeRequest(string checkKey, IReadOnlyList<string> runIds)
+            {
+                CheckKey = string.IsNullOrWhiteSpace(checkKey) ? FindingSource.Clash : checkKey;
+                RunIds = runIds ?? Array.Empty<string>();
+            }
+
+            /// <summary>Which check's results are being sent.</summary>
+            internal string CheckKey { get; }
+
+            /// <summary>Which of its runs, by id.</summary>
+            internal IReadOnlyList<string> RunIds { get; }
+        }
+
+        /// <summary>
+        /// What the clash manager asked to send, applied to the next desk once.
         ///
         /// The hand-off from the Manage tab: "export these three tests" should arrive with those
         /// three ticked, not with a memory test about which three they were.
         /// </summary>
-        internal static IReadOnlyList<string>? Preferred { get; set; }
+        internal static ExchangeRequest? Preferred { get; set; }
+
+        /// <summary>
+        /// Which check this tab exchanges. The Manage tab owns the choice.
+        ///
+        /// Not a second picker. Two pickers that can disagree is a coordinator exporting one
+        /// check's findings while reading another check's board, so this tab says which check is
+        /// selected and links back to Manage to change it.
+        /// </summary>
+        internal static string CheckKey { get; set; } = FindingSource.Clash;
 
         /// <summary>The surface, for a desk to bench.</summary>
         /// <param name="session">The open document.</param>
@@ -253,6 +287,7 @@ namespace CamelWorks.UI.Views
             {
                 var strip = Ui.Across(
                     Ui.Field("Half", Switch(SendOut)),
+                    Ui.Field("Check", Selected()),
                     Ui.Field("Export profile", Saved()),
                     Ui.Field("Find a test", _find),
                     Ui.Field("One file per", Splitting()),
@@ -303,6 +338,24 @@ namespace CamelWorks.UI.Views
                                               scrolls: false),
                                    Ui.Stack(foot, _sending),
                                    leftWidth: 460);
+            }
+
+            /// <summary>
+            /// Which check is being exchanged, and the way to change it.
+            ///
+            /// Read-only here on purpose: see <see cref="CheckKey"/>.
+            /// </summary>
+            private UIElement Selected()
+            {
+                var named = CheckKey == FindingSource.Clash ? "Clash detection" : CheckKey;
+
+                var link = Ui.Quiet(named + " \u2014 change on Manage",
+                                    () => Ui.Told(Shell.AppWindow.Show("clash", "manage")));
+
+                link.ToolTip = "The Manage tab holds the check. This tab exchanges whatever it "
+                             + "has selected, so the two cannot disagree.";
+
+                return link;
             }
 
             /// <summary>The saved profiles, as a chooser for the strip.</summary>
@@ -943,15 +996,113 @@ namespace CamelWorks.UI.Views
                 into.Children.Add(Ui.Table(rows,
                     ("Recipient", 0), ("File", 240), ("Clashes", 100)));
 
+                // Which split was used, when it is not the one that was asked for. A profile that
+                // splits by discipline over a check with no trade sides would otherwise produce
+                // one unexplained pack.
+                var fell = rounds.FirstOrDefault(one => one.Asked != null);
+
+                if (fell != null)
+                    into.Children.Add(Ui.Note(
+                        "Nothing here carries " + fell.Asked + ", which is what this profile "
+                        + "splits on, so the split fell back to " + fell.SplitBy + "."));
+
+                into.Children.Add(Ui.Small(Framing(going.Count)));
+
                 _ = job;
 
                 return rounds.Count;
+            }
+
+            /// <summary>
+            /// How the viewpoints will be drawn, and what that will cost.
+            ///
+            /// There is no viewpoint parity between the checks and saying so is the honest
+            /// answer. The clash engine frames a result the way the native clash window does,
+            /// using the host's own result geometry; nothing else can, so every other check's
+            /// topics are framed by backing a camera off the finding's elements — slower, and a
+            /// worse picture. Said before the press rather than discovered as a tab that appears
+            /// to hang.
+            /// </summary>
+            /// <param name="results">How many results are going out.</param>
+            private static string Framing(int results)
+            {
+                if (CheckKey == FindingSource.Clash)
+                    return "Viewpoints are framed by the clash engine, the way the native clash "
+                         + "window frames a result.";
+
+                // A camera move and a capture each, which measures at about a fifth of a second
+                // on a federation of any size. Rounded up to the minute, because a number to the
+                // second reads as a promise.
+                var minutes = Math.Max(1, (int)Math.Ceiling(results * 0.2 / 60.0));
+
+                return "This check has no result geometry of its own, so each viewpoint is framed "
+                     + "by backing a camera off the finding's elements. That is slower and frames "
+                     + "worse than a clash: allow about "
+                     + Ui.Count(minutes, "minute") + " for the pictures.";
             }
 
             /// <summary>The packs this profile would write, from the rows going out.</summary>
             /// <param name="going">The rows going out.</param>
             private IReadOnlyList<ExportRound> Rounds(IReadOnlyList<ClashItem> going) =>
                 _profile.Rounds(going, Board(), Storeys(), Issued());
+
+            /// <summary>
+            /// One round's findings, and the pack's own folders and place words.
+            ///
+            /// The board is a projection of the register, so what goes in the file is the finding
+            /// behind each row rather than the row: a pack written from the projection carries no
+            /// facts, no locations and no identity the return leg can match on.
+            ///
+            /// Three things the board derives per document rather than the producer writing them —
+            /// the level a height falls on, the grid it is nearest and the zone it is in — are
+            /// written onto the finding as facts, which is the declared route by which a fact
+            /// travels as a label. The pack's folder is not: a board folder is made by the
+            /// grouping rules and is not the group the host filed the result under, so it is
+            /// handed to the writer for this pack alone.
+            /// </summary>
+            /// <param name="round">The round.</param>
+            /// <param name="how">The writer's settings, which this fills the folder map into.</param>
+            private IReadOnlyList<Finding> Pack(ExportRound round, FindingBcfOptions how)
+            {
+                var register = _findings?.Findings;
+                var folders = new Dictionary<string, string>(StringComparer.Ordinal);
+
+                foreach (var group in round.Selection.Groups)
+                    foreach (var member in group.Items)
+                        if (member?.FindingId != null) folders[member.FindingId] = group.Name;
+
+                var pack = new List<Finding>();
+
+                foreach (var item in round.Selection.Items)
+                {
+                    var finding = item?.FindingId == null || register == null
+                        ? null
+                        : register.Find(item.FindingId);
+
+                    if (finding == null) continue;
+
+                    Place(finding, "Level", item!.Level);
+                    Place(finding, "Grid", item.Grid);
+                    Place(finding, "Zone", item.Zone);
+
+                    pack.Add(finding);
+                }
+
+                how.GroupOf = finding =>
+                    folders.TryGetValue(finding.Id, out var named) ? named : null;
+
+                return pack;
+            }
+
+            /// <summary>Write a place word as a fact, or take a stale one off.</summary>
+            /// <param name="finding">The finding going out.</param>
+            /// <param name="fact">Which fact.</param>
+            /// <param name="said">What the board derived, or null when it derived nothing.</param>
+            private static void Place(Finding finding, string fact, string? said)
+            {
+                if (string.IsNullOrWhiteSpace(said)) finding.Facts.Remove(fact);
+                else finding.Facts[fact] = said!;
+            }
 
             /// <summary>Write the packs.</summary>
             /// <param name="job">The run.</param>
@@ -988,8 +1139,19 @@ namespace CamelWorks.UI.Views
                         ? path
                         : Path.Combine(folder, round.FileStem() + ClashFile.Extension);
 
-                    var written = ClashBcf.Write(round.Selection.Items, round.Selection.Groups,
-                                                 _profile.BcfOptions(_projectName, when));
+                    var how = _profile.BcfOptions(_projectName, when);
+                    var pack = Pack(round, how);
+
+                    if (pack.Count == 0)
+                    {
+                        _sending.Children.Add(Ui.Problem(
+                            round.Recipient + "'s pack holds no result the register knows, so "
+                            + "nothing was written for them."));
+
+                        continue;
+                    }
+
+                    var written = FindingBcf.Write(pack, null, how);
 
                     try
                     {
@@ -1873,12 +2035,21 @@ namespace CamelWorks.UI.Views
 
                 // Whatever the Manage tab asked to send, ticked on arrival rather than left as a
                 // memory test about which three tests they were.
-                if (Preferred != null && Preferred.Count > 0)
+                if (Preferred != null)
                 {
-                    var wanted = new HashSet<string>(Preferred, StringComparer.OrdinalIgnoreCase);
+                    CheckKey = Preferred.CheckKey;
 
-                    foreach (var test in _profile.Tests)
-                        test.Chosen = wanted.Contains(test.Name);
+                    if (Preferred.RunIds.Count > 0)
+                    {
+                        var wanted = new HashSet<string>(Preferred.RunIds,
+                                                         StringComparer.OrdinalIgnoreCase);
+
+                        // By the run's id first. The hand-off has always sent ids and this
+                        // matched them against the test names, so a host that ids its tests by
+                        // anything but their name arrived with nothing ticked.
+                        foreach (var test in _profile.Tests)
+                            test.Chosen = wanted.Contains(test.Id ?? test.Name);
+                    }
 
                     Preferred = null;
                 }

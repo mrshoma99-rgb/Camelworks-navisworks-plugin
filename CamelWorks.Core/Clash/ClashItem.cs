@@ -271,6 +271,15 @@ namespace CamelWorks.Core.Clash
         public bool IsSameModel =>
             ModelA != null && string.Equals(ModelA, ModelB, StringComparison.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// What a pair facet reads when neither side is named.
+        ///
+        /// Named so the export split can tell a pack for both trades from a pack for nobody: a
+        /// check with no trade sides answers this for every result, and one pack called "? v ?" is
+        /// not a split.
+        /// </summary>
+        public const string UnknownPair = "? v ?";
+
         /// <summary>The two model names in a stable order, for pair grouping.</summary>
         public string ModelPair
         {

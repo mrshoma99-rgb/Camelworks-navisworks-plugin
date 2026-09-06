@@ -49,7 +49,7 @@ namespace CamelWorks.Core.Tests
         {
             var (finding, issue) = Pair();
 
-            var topics = FindingBcf.Together(new[] { finding }, new[] { IssueBcf.ToTopic(issue) },
+            var topics = FindingBcf.Together(new[] { finding }, new[] { FindingBcf.ToTopic(issue) },
                                              _ => issue.Findings, "CamelWorks",
                                              _ => "11111111-1111-1111-1111-111111111111");
 

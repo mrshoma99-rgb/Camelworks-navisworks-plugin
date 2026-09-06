@@ -31,8 +31,30 @@ namespace CamelWorks.Core.Tests
                 new[] { item.Key.A, item.Key.B }, ClashFindings.CellOf(item.Key));
 
             finding.TopicGuid = ClashBcf.TopicGuidFor(item.Key);
+            finding.X = item.X;
+            finding.Y = item.Y;
+            finding.Z = item.Z;
 
             return finding;
+        }
+
+        /// <summary>That finding, written and read back as any other tool would leave it.</summary>
+        private static BcfTopic Sent(Finding finding)
+        {
+            using var stream = new MemoryStream(FindingBcf.Write(new[] { finding }).Bytes);
+
+            return BcfReader.Read(stream).Topics.Single();
+        }
+
+        /// <summary>A pack re-authored by somebody else's tool.</summary>
+        private static ClashPackRead Returned(BcfTopic topic)
+        {
+            using var theirs = new MemoryStream();
+
+            BcfWriter.Write(theirs, new[] { topic }, BcfVersion.V21);
+            theirs.Position = 0;
+
+            return ClashBcf.Read(theirs);
         }
 
         private static ClashItem Item()
@@ -150,21 +172,13 @@ namespace CamelWorks.Core.Tests
         public void WhatAReviewerSetComesBackAsARecord()
         {
             var item = Item();
-
-            using var mine = new MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
-
-            var topic = BcfReader.Read(mine).Topics.Single();
+            var topic = Sent(Made(item));
 
             topic.Priority = "High";
             topic.DueDate = new DateTimeOffset(2026, 4, 15, 0, 0, 0, TimeSpan.Zero);
             topic.Labels.Add("Site query");
 
-            using var theirs = new MemoryStream();
-
-            BcfWriter.Write(theirs, new[] { topic }, BcfVersion.V21);
-            theirs.Position = 0;
-
-            var result = ClashBcf.Read(theirs).Results.Single();
+            var result = Returned(topic).Results.Single();
             var review = ClashBcf.Review(result, result.Name, "ada.bcfzip");
 
             Assert.NotNull(review);
@@ -179,7 +193,7 @@ namespace CamelWorks.Core.Tests
         public void AResultNobodyTouchedMakesNoRecord()
         {
             // Otherwise the register grows by the size of the board every sync, holding nothing.
-            using var stream = new MemoryStream(ClashBcf.Write(new[] { Item() }).Bytes);
+            using var stream = new MemoryStream(FindingBcf.Write(new[] { Made(Item()) }).Bytes);
 
             var result = ClashBcf.Read(stream).Results.Single();
 
@@ -190,19 +204,17 @@ namespace CamelWorks.Core.Tests
         public void ItGoesBackOutOnTheNextExport()
         {
             // The half that stops a reviewer's priority being reset every time the file is resent.
-            var item = Item();
+            var finding = Made(Item());
 
-            item.Review = new ClashAside(ClashBcf.TopicGuidFor(item.Key))
+            new ClashAside(finding.TopicGuid!)
             {
                 Priority = "High",
                 Stage = "Construction",
                 DueTicks = new DateTime(2026, 4, 15, 0, 0, 0, DateTimeKind.Utc).Ticks,
-            };
-            item.Review.Labels.Add("Site query");
+                Labels = { "Site query" },
+            }.ApplyTo(finding);
 
-            using var stream = new MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
-
-            var topic = BcfReader.Read(stream).Topics.Single();
+            var topic = Sent(finding);
 
             Assert.Equal("High", topic.Priority);
             Assert.Equal("Construction", topic.Stage);
@@ -215,30 +227,22 @@ namespace CamelWorks.Core.Tests
         {
             // Out, answered, home, out again. The reviewer sets a priority once and it is still
             // there two exports later - which is the whole point.
-            var item = Item();
+            var topic = Sent(Made(Item()));
 
-            using var first = new MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
-
-            var topic = BcfReader.Read(first).Topics.Single();
             topic.Priority = "High";
             topic.DueDate = new DateTimeOffset(2026, 4, 15, 0, 0, 0, TimeSpan.Zero);
 
-            using var answered = new MemoryStream();
-            BcfWriter.Write(answered, new[] { topic }, BcfVersion.V21);
-            answered.Position = 0;
-
-            var home = ClashBcf.Read(answered).Results.Single();
+            var home = Returned(topic).Results.Single();
 
             var finding = Made(Item());
             ClashBcf.Review(home, home.Name, "ada.bcfzip")!.ApplyTo(finding);
 
             // Next week's export, built from the model plus what the finding kept.
-            var again = Item();
-            again.Review = ClashAside.Of(finding);
+            var again = Made(Item());
 
-            using var second = new MemoryStream(ClashBcf.Write(new[] { again }).Bytes);
+            ClashAside.Of(finding)!.ApplyTo(again);
 
-            var sentAgain = BcfReader.Read(second).Topics.Single();
+            var sentAgain = Sent(again);
 
             Assert.Equal("High", sentAgain.Priority);
             Assert.Equal(new DateTimeOffset(2026, 4, 15, 0, 0, 0, TimeSpan.Zero), sentAgain.DueDate);

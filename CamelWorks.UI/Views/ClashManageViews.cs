@@ -6718,9 +6718,11 @@ namespace CamelWorks.UI.Views
                                  + "thousands is worth starting before a break."),
                         Ui.Actions(Ui.Quiet("Export...", () =>
                         {
-                            ClashExchangeViews.Preferred = Entry() == null
-                                ? new List<string>()
-                                : new List<string> { Entry()!.Run.Id };
+                            ClashExchangeViews.Preferred = new ClashExchangeViews.ExchangeRequest(
+                                Check?.Key ?? FindingSource.Clash,
+                                Entry() == null
+                                    ? Array.Empty<string>()
+                                    : new[] { Entry()!.Run.Id });
                             Ui.Told(Shell.AppWindow.Show("clash", "exchange"));
                         }))),
                     Bench.Group("Restore",
@@ -10264,88 +10266,52 @@ namespace CamelWorks.UI.Views
 
                 // The whole read, not the test on the board: a baseline that carried one test
                 // is a review round the other seventeen tests are missing from.
-                var from = read;
+                var going = new List<Finding>();
 
-                var items = new List<ClashItem>();
+                foreach (var row in read.SelectMany(e => e.Rows))
+                    if (!row.A.IsEmpty && !row.B.IsEmpty)
+                        going.Add(row.Fact);
 
-                // Which item each result became, so the trails and the ids can find it again.
-                var carrying = new Dictionary<string, ClashItem>(StringComparer.Ordinal);
-
-                foreach (var row in from.SelectMany(e => e.Rows))
-                {
-                    if (row.A.IsEmpty || row.B.IsEmpty) continue;
-
-                    var item = new ClashItem(row.Key(), row.TestName)
-                    {
-                        X = row.PointX,
-                        Y = row.PointY,
-                        Z = row.PointZ,
-                        Status = row.Status,
-                        AssignedTo = row.Assigned.Length == 0 ? null : row.Assigned,
-                        CarriedGroup = row.Group.Length == 0 ? null : row.Group,
-                        CategoryA = row.CategoryA,
-                        CategoryB = row.CategoryB,
-                        // Metres, which is what a file's own distance is read back as. It used
-                        // to be written in the document's units, so a baseline off a foot-unit
-                        // model came back three times as deep as it went out.
-                        Distance = ClashFindings.DistanceMetres(row.Fact),
-
-                        // Back out as it came in, so a reviewer's priority is not reset by the
-                        // act of sending them the file again.
-                        Review = row.Review,
-                    };
-
-                    foreach (var comment in row.Trail) item.Comments.Add(comment);
-
-                    items.Add(item);
-                }
-
-                if (items.Count == 0)
+                if (going.Count == 0)
                 {
                     Warned(Ui.Problem("Nothing here can be written: no result names elements by key."));
                     return;
                 }
 
-                // The GlobalIds are what let the receiving tool select the two clashing
-                // elements. Read before writing, under the wait cursor: on a first export of a
-                // large board this is the slow part, and it is not a press that looks slow.
-                var named = default(ClashIdentity.IdStamp);
+                // The GlobalIds are what let the receiving tool select the elements, and the
+                // routes are what let a reviewing seat isolate them without keying the whole
+                // federation. Read before writing, under a watched job with a Stop: on a board of
+                // a few hundred results the first export after a model change pays for the
+                // federation index and then a lookup each, which is a press that looks like a
+                // host that has hung.
+                var ids = new ClashIdentity.Ids(null, going, null);
 
-                // Watched, with a Stop. This is a key resolution per element of the whole board -
-                // on a board of a few hundred results, the first export after a model change pays
-                // for the federation index and then a lookup each. It used to run under nothing
-                // but a wait cursor with the job passed as null, which is a press that looks like
-                // a host that has hung.
                 if (!OnFile)
                     Ui.Working("Reading IFC ids for the export...",
-                               job => named = ClashIdentity.Stamp(_session, items, job));
+                               job => ids = new ClashIdentity.Ids(_session, going, job));
 
-                // Which test and result each item came from, so the clash engine can draw it
+                // Which test and result each finding came from, so the clash engine can draw it
                 // rather than the camera having to be moved.
-                var drawnFrom = new Dictionary<ClashKey, (string Test, string Result)>();
+                var drawnFrom = new Dictionary<string, (string Test, string Result)>(
+                    StringComparer.Ordinal);
 
-                foreach (var row in from.SelectMany(e => e.Rows))
+                foreach (var row in read.SelectMany(e => e.Rows))
                     if (!row.A.IsEmpty && !row.B.IsEmpty)
-                        drawnFrom[row.Key()] = (row.TestId, row.Id);
+                        drawnFrom[row.Fact.Id] = (row.TestId, row.Id);
 
-                var written = ClashBcf.Write(items, null, new ClashBcfOptions
+                var written = FindingBcf.Write(going, null, new FindingBcfOptions
                 {
                     Snapshot = _pictures && !OnFile
                         ? ClashIdentity.Pictures(_session, 1280, 720,
-                              item => drawnFrom.TryGetValue(item.Key, out var at)
+                              finding => drawnFrom.TryGetValue(finding.Id, out var at)
                                   ? at
                                   : ((string Test, string Result)?)null)
                         : null,
+                    IfcGuidOf = ids.Of,
+                    LocatorOf = ids.At,
                     SourceFile = _session.Store.Path,
                     ProjectName = _session.Profile.ProjectName,
                     Author = Environment.UserName ?? "CamelWorks",
-
-                    // The items above are metres already, and the viewpoint writer scales what it
-                    // is given by this. Leaving it at the document's units scaled the cameras a
-                    // second time, so a foot-unit model's topics opened three metres from the
-                    // clash they are about.
-                    MetresPerUnit = 1.0,
-
                     WhenTicks = DateTime.UtcNow.Ticks,
                 });
 
@@ -10389,9 +10355,9 @@ namespace CamelWorks.UI.Views
                     // Only the good news. The bad news is the warning above, which counts the
                     // topics actually written rather than the ids read, and saying both is the
                     // same fact twice in two different numbers.
-                    var about = ClashIdentity.Explain(items.Count, named);
+                    var about = ClashIdentity.Explain(going.Count, ids.Stamp);
 
-                    if (about != null) Said(named.Derived > 0 ? Ui.Note(about) : Ui.Line(about, 0.8));
+                    if (about != null) Said(ids.Derived > 0 ? Ui.Note(about) : Ui.Line(about, 0.8));
 
                     if (_pictures)
                         Said(written.Snapshots == 0
@@ -10494,14 +10460,12 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                var items = new List<ClashItem>();
                 var skipped = 0;
+                var going = new List<Finding>();
 
                 foreach (var row in round.Entries.SelectMany(e => e.Rows))
                 {
-                    var item = row.FileItem;
-
-                    if (item == null)
+                    if (row.FileItem == null)
                     {
                         // A result with no CamelWorks key cannot land back on the model, so a
                         // markup of it would be a record of nothing. Counted, not hidden.
@@ -10509,24 +10473,17 @@ namespace CamelWorks.UI.Views
                         continue;
                     }
 
-                    item.Status = row.Status;
-                    item.AssignedTo = row.Assigned.Length == 0 ? null : row.Assigned;
-                    item.CarriedGroup = row.Group.Length == 0 ? null : row.Group;
-
-                    item.Comments.Clear();
-                    foreach (var comment in row.Trail) item.Comments.Add(comment);
-
-                    items.Add(item);
+                    going.Add(row.Fact);
                 }
 
-                if (items.Count == 0)
+                if (going.Count == 0)
                 {
                     Warned(Ui.Problem("Nothing in that file carries a CamelWorks key, so a markup "
                         + "of it could never land back on the model."));
                     return;
                 }
 
-                var written = ClashBcf.Write(items, null, new ClashBcfOptions
+                var written = FindingBcf.Write(going, null, new FindingBcfOptions
                 {
                     SourceFile = round.Path,
                     ProjectName = _session.Profile.ProjectName,
@@ -11488,7 +11445,7 @@ namespace CamelWorks.UI.Views
                 try
                 {
                     var register = IssueViews.Read(_session);
-                    var merged = IssueBcf.Merge(register, strangers, source);
+                    var merged = FindingBcf.MergeIssues(register, strangers, source);
 
                     var problem = IssueViews.Write(_session, register);
 

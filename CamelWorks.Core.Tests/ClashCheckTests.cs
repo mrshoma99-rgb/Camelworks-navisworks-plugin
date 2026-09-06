@@ -468,7 +468,7 @@ namespace CamelWorks.Core.Tests
             var one = seat.Results("t1").Take(1)
                 .Select(result => Item(result, "L03 MEP v STR")).ToList();
 
-            var file = new FileCheck(ClashFile.Read(ClashBcf.Write(one).Bytes));
+            var file = new FileCheck(ClashFile.Read(ClashFixture.Written(one.ToArray()).Bytes));
             var read = file.Read(null, null);
 
             var held = register.Count;
@@ -501,7 +501,7 @@ namespace CamelWorks.Core.Tests
 
             marked[0].Status = FindingStatus.Approved;
 
-            var file = new FileCheck(ClashFile.Read(ClashBcf.Write(marked).Bytes));
+            var file = new FileCheck(ClashFile.Read(ClashFixture.Written(marked.ToArray()).Bytes));
             var read = file.Read(null, null);
 
             var left = FileCheck.Fold(register, read.Findings, out var folded);
@@ -528,7 +528,7 @@ namespace CamelWorks.Core.Tests
             marked[0].Status = FindingStatus.Reviewed;
             marked[0].AssignedTo = "Ana";
 
-            var file = new FileCheck(ClashFile.Read(ClashBcf.Write(marked).Bytes));
+            var file = new FileCheck(ClashFile.Read(ClashFixture.Written(marked.ToArray()).Bytes));
             var fromFile = file.Read(null, null);
 
             register.Observe(FindingSource.Clash, fromFile.Findings, 1, scope: fromFile.Scope);
@@ -565,8 +565,8 @@ namespace CamelWorks.Core.Tests
             // shape the id guard alone does not see. Adopting it would remove a finding the board
             // draws and copy its decisions onto a second one.
             var raised = new FileCheck(
-                    ClashFile.Read(ClashBcf.Write(
-                        seat.Results("t1").Take(1).Select(r => Item(r, "L03 MEP v STR")).ToList()).Bytes))
+                    ClashFile.Read(ClashFixture.Written(
+                        seat.Results("t1").Take(1).Select(r => Item(r, "L03 MEP v STR")).ToArray()).Bytes))
                 .Read(null, null).Findings[0];
 
             raised.AssignedTo = "Ana";
@@ -657,7 +657,7 @@ namespace CamelWorks.Core.Tests
             marked[0].Status = FindingStatus.Reviewed;
             marked[0].AssignedTo = "Ana";
 
-            var file = new FileCheck(ClashFile.Read(ClashBcf.Write(marked).Bytes));
+            var file = new FileCheck(ClashFile.Read(ClashFixture.Written(marked.ToArray()).Bytes));
 
             register.Observe(FindingSource.Clash, file.Read(null, null).Findings, 1,
                              scope: _ => false);
@@ -760,7 +760,7 @@ namespace CamelWorks.Core.Tests
             var marked = seat.Results("t1").Take(1)
                 .Select(result => Item(result, "L03 MEP v STR")).ToList();
 
-            var file = new FileCheck(ClashFile.Read(ClashBcf.Write(marked).Bytes));
+            var file = new FileCheck(ClashFile.Read(ClashFixture.Written(marked.ToArray()).Bytes));
             var raised = file.Read(null, null).Findings[0];
 
             register.Observe(FindingSource.Clash, new[] { raised }, 1, scope: _ => false);
@@ -995,7 +995,7 @@ namespace CamelWorks.Core.Tests
                 .SelectMany(test => seat.Results(test.Id).Select(result => Item(result, test.Name)))
                 .ToList();
 
-            return new FileCheck(ClashFile.Read(ClashBcf.Write(items).Bytes), @"C:\p\round.bcfzip");
+            return new FileCheck(ClashFile.Read(ClashFixture.Written(items.ToArray()).Bytes), @"C:\p\round.bcfzip");
         }
 
         /// <summary>One host result as the item a BCF is written from.</summary>

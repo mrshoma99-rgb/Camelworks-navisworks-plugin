@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using CamelWorks.Core.Identity;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Store;
@@ -530,11 +531,20 @@ namespace CamelWorks.Core.Tests
             var picked = profile.Choose(new[] { mine, stale, elsewhere },
                                         new[] { Group("Ducts", "Mechanical", mine, stale) });
 
-            var written = ClashBcf.Write(picked.Items, picked.Groups,
-                                         profile.BcfOptions("Federation.nwf"));
+            var how = profile.BcfOptions("Federation.nwf");
+            var folders = picked.Groups.SelectMany(g => g.Items.Select(i => (i.Key, g.Name)))
+                                       .ToDictionary(one => one.Key, one => one.Name);
 
-            Assert.Equal(1, written.Results);
-            Assert.Equal("Hard", Assert.Single(written.Tests).Name);
+            var going = picked.Items.Select(ClashFixture.Found).ToList();
+
+            how.GroupOf = finding => folders.TryGetValue(
+                ClashKey.Create(finding.Elements[0], finding.Elements[1],
+                                finding.X ?? 0, finding.Y ?? 0, finding.Z ?? 0),
+                out var named) ? named : null;
+
+            var written = FindingBcf.Write(going, null, how);
+
+            Assert.Equal(1, written.Findings);
 
             var read = ClashFile.Read(written.Bytes);
 

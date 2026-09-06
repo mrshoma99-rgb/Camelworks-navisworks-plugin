@@ -23,7 +23,7 @@ namespace CamelWorks.Core.Tests
         /// <summary>One party's return: the same clashes, answered their way, through a real file.</summary>
         private static ExchangePack Pack(string party, params ClashItem[] answered)
         {
-            var written = ClashBcf.Write(answered);
+            var written = ClashFixture.Written(answered);
 
             return new ExchangePack(party, ClashFile.Read(written.Bytes), party + ".bcfzip");
         }

@@ -226,9 +226,10 @@ namespace CamelWorks.Core.Clash
     /// <summary>One recipient's pack: who it is for, and what goes in it.</summary>
     public sealed class ExportRound
     {
-        internal ExportRound(string recipient, ExportSelection selection)
+        internal ExportRound(string recipient, ExportSelection selection,
+                             string? splitBy = null, string? asked = null)
         {
-            Recipient = recipient; Selection = selection;
+            Recipient = recipient; Selection = selection; SplitBy = splitBy; Asked = asked;
         }
 
         /// <summary>Who the pack is for, as the facet named them.</summary>
@@ -236,6 +237,25 @@ namespace CamelWorks.Core.Clash
 
         /// <summary>What goes in it.</summary>
         public ExportSelection Selection { get; }
+
+        /// <summary>
+        /// What the rounds were split on, as the facet titles it, or null for one pack.
+        ///
+        /// Said out loud because it is not always the split that was asked for: see
+        /// <see cref="Asked"/>.
+        /// </summary>
+        public string? SplitBy { get; }
+
+        /// <summary>
+        /// The split that was asked for and answered nothing, or null when the asked-for split is
+        /// the one that was used.
+        ///
+        /// A clash has two trades and clearance has an obstruction and a surface, so a profile
+        /// that splits by discipline produces one pack called "? v ?" on every check but clash.
+        /// The split falls back to the assignee, and the tab says which split it used rather than
+        /// presenting one unexplained pack.
+        /// </summary>
+        public string? Asked { get; }
 
         /// <summary>A filename stem for this round, with nothing a file system will refuse.</summary>
         public string FileStem()
@@ -497,6 +517,25 @@ namespace CamelWorks.Core.Clash
 
             if (facet == null) return new[] { new ExportRound(Name, chosen) };
 
+            // The facet a check has no sides for. Splitting by discipline sends every clearance
+            // breach and every fall hazard to one pack named after nobody, because those checks
+            // have an obstruction and a surface rather than two trades. The assignee is the one
+            // recipient every check has, so it is what the split falls back to; where nothing is
+            // assigned either, there is one pack and the tab says so.
+            string? asked = null;
+
+            if (!string.Equals(facet.Key, Assignee, StringComparison.OrdinalIgnoreCase)
+                && !Answers(facet, chosen.Items))
+            {
+                var assignee = ClashFacets.Of(Assignee, chosen.Items, plan, issued);
+
+                if (assignee == null || !Answers(assignee, chosen.Items))
+                    return new[] { new ExportRound(Name, chosen, null, facet.Title) };
+
+                asked = facet.Title;
+                facet = assignee;
+            }
+
             var folders = (groups ?? Array.Empty<ClashGroup>()).Where(g => g != null).ToList();
 
             var order = new List<string>();
@@ -580,13 +619,28 @@ namespace CamelWorks.Core.Clash
                     trimmed.TryGetValue(who, out var groupsFor)
                         ? groupsFor
                         : (IReadOnlyList<ClashGroup>)Array.Empty<ClashGroup>(),
-                    0, 0, 0, 0)));
+                    0, 0, 0, 0), facet.Title, asked));
 
             return rounds;
         }
 
         /// <summary>What a round is called when the facet says nothing about who it is for.</summary>
         public const string Nobody = "Unassigned";
+
+        /// <summary>The facet the split falls back to, which is the one every check has.</summary>
+        private const string Assignee = "assignee";
+
+        /// <summary>Whether a facet names a recipient for any of these results.</summary>
+        /// <param name="facet">The facet.</param>
+        /// <param name="items">The results going out.</param>
+        private static bool Answers(ClashFacet facet, IReadOnlyList<ClashItem> items) =>
+            items.Any(item =>
+            {
+                var said = facet.Read(item);
+
+                return !string.IsNullOrWhiteSpace(said)
+                       && !string.Equals(said, ClashItem.UnknownPair, StringComparison.Ordinal);
+            });
 
         /// <summary>
         /// The profile, as the writer's settings.
@@ -597,15 +651,12 @@ namespace CamelWorks.Core.Clash
         /// </summary>
         /// <param name="sourceFile">The document this came from.</param>
         /// <param name="whenTicks">When the file is being written.</param>
-        /// <param name="metresPerUnit">Model units to metres, for the viewpoint cameras.</param>
-        public ClashBcfOptions BcfOptions(string? sourceFile = null, long whenTicks = 0,
-                                          double metresPerUnit = 1.0) =>
-            new ClashBcfOptions
+        public Findings.FindingBcfOptions BcfOptions(string? sourceFile = null, long whenTicks = 0) =>
+            new Findings.FindingBcfOptions
             {
                 KeepGroups = KeepGroups,
                 SourceFile = sourceFile,
                 WhenTicks = whenTicks,
-                MetresPerUnit = metresPerUnit <= 0 ? 1.0 : metresPerUnit,
                 View = View,
                 Highlight = Highlight,
                 Section = Section,

@@ -2071,50 +2071,36 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                var items = new List<ClashItem>();
+                var going = new List<Finding>();
 
                 foreach (var row in _shown)
+                    if (row.Found != null) going.Add(row.Found);
+
+                if (going.Count == 0)
                 {
-                    var z = row.Floor.Box.MaxZ + row.Clear / 2;
-
-                    var item = new ClashItem(
-                        ClashKey.Create(row.Floor.Key, row.Over.Key, row.Span.X, row.Span.Y, z),
-                        "Clearance")
-                    {
-                        X = row.Span.X,
-                        Y = row.Span.Y,
-                        Z = z,
-                        Status = row.Status,
-                        AssignedTo = row.Assigned.Length == 0 ? null : row.Assigned,
-                        CarriedGroup = row.Group.Length == 0 ? null : row.Group,
-                        ModelA = row.Floor.Name,
-                        ModelB = row.Over.Name,
-                        CategoryA = row.Floor.Category,
-                        CategoryB = row.Over.Category,
-
-                        // The gap, not an overlap: negative, the way a clearance test states it.
-                        Distance = -row.Clear,
-                    };
-
-                    foreach (var comment in row.Trail) item.Comments.Add(comment);
-
-                    items.Add(item);
+                    Said(Ui.Problem("No row on the grid carries a finding, so there is nothing "
+                                    + "a reviewer could answer."));
+                    return;
                 }
 
-                var named = default(ClashIdentity.IdStamp);
+                // The GlobalIds and the routes to the elements, so the receiving tool can select
+                // them and a reviewing seat can isolate them without keying the federation.
+                var ids = new ClashIdentity.Ids(null, going, null);
 
-                Ui.Busy(() => named = ClashIdentity.Stamp(_session, items, null));
+                Ui.Busy(() => ids = new ClashIdentity.Ids(_session, going, null));
 
-                var written = ClashBcf.Write(items, null, new ClashBcfOptions
-                {
-                    SourceFile = _session.Model.Models.Count > 0
-                        ? _session.Model.Models[0].DisplayName
-                        : null,
-                    ProjectName = _session.Profile.ProjectName,
-                    Author = Environment.UserName ?? "CamelWorks",
-                    MetresPerUnit = _session.MetresPerUnit,
-                    WhenTicks = DateTime.UtcNow.Ticks,
-                });
+                var how = FindingBcfOptions.For(FindingSource.Headroom);
+
+                how.SourceFile = _session.Model.Models.Count > 0
+                    ? _session.Model.Models[0].DisplayName
+                    : null;
+                how.ProjectName = _session.Profile.ProjectName;
+                how.Author = Environment.UserName ?? "CamelWorks";
+                how.WhenTicks = DateTime.UtcNow.Ticks;
+                how.IfcGuidOf = ids.Of;
+                how.LocatorOf = ids.At;
+
+                var written = FindingBcf.Write(going, null, how);
 
                 var dialog = new Microsoft.Win32.SaveFileDialog
                 {
@@ -2142,9 +2128,9 @@ namespace CamelWorks.UI.Views
 
                 foreach (var warning in written.Warnings) _log.Children.Add(Ui.Note(warning));
 
-                var about = ClashIdentity.Explain(items.Count, named);
+                var about = ClashIdentity.Explain(going.Count, ids.Stamp);
 
-                if (about != null) _log.Children.Add(named.Read == 0 ? Ui.Note(about) : Ui.Line(about, 0.8));
+                if (about != null) _log.Children.Add(ids.Derived > 0 ? Ui.Note(about) : Ui.Line(about, 0.8));
 
                 Said(Ui.Info(written.Explain() + " Open it on Manage, under \"A file\", to mark it "
                              + "up the same way as a clash export.",

@@ -1241,7 +1241,7 @@ namespace CamelWorks.UI.Views
                     FindingBcf.Merge(_session.Findings.Findings, read.Topics, named);
 
                 var register = IssueViews.Read(_session);
-                var result = IssueBcf.Merge(register, strangers, named);
+                var result = FindingBcf.MergeIssues(register, strangers, named);
 
                 // One write for both halves of the file. The answers went onto findings and the
                 // strangers became issues that may name them, so saving the register without the
@@ -1356,7 +1356,7 @@ namespace CamelWorks.UI.Views
 
                 job.Say("Building topics...");
 
-                var topics = going.Select(IssueBcf.ToTopic).ToList();
+                var topics = going.Select(FindingBcf.ToTopic).ToList();
                 var findings = 0;
 
                 if (_withFindings)
@@ -1373,7 +1373,7 @@ namespace CamelWorks.UI.Views
 
                     var byGuid = topics.ToDictionary(t => t.Guid, t => t, StringComparer.Ordinal);
 
-                    var whose = going.ToDictionary(i => IssueBcf.ToTopic(i).Guid,
+                    var whose = going.ToDictionary(i => FindingBcf.ToTopic(i).Guid,
                                                    i => (IEnumerable<string>)i.Findings,
                                                    StringComparer.Ordinal);
 

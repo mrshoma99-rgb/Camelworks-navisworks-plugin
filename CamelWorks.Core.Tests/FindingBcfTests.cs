@@ -68,8 +68,8 @@ namespace CamelWorks.Core.Tests
             Assert.Equal("New", topic.TopicStatus);
             Assert.Contains("Found by MEP vs Structure (Clash).", topic.Description);
             Assert.Contains("Distance: -0.045", topic.Description);
-            Assert.Contains(FindingBcf.SourceLabel + "Clash", topic.Labels);
-            Assert.Contains(FindingBcf.RuleLabel + "MEP vs Structure", topic.Labels);
+            Assert.Contains(FindingLabels.Check + "Clash", topic.Labels);
+            Assert.Contains(FindingLabels.Rule + "MEP vs Structure", topic.Labels);
         }
 
         [Fact]
@@ -204,22 +204,40 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void AnElementWithNoGlobalIdIsLeftOutRatherThanNamedWrongly()
+        public void AnElementWithNoGlobalIdIsStillNamedSoTheFileCanComeHome()
         {
-            // A key made from a Navisworks instance GUID is not an IFC GlobalId, and writing one
-            // as though it were would name a different element in the receiving model.
-            Assert.Empty(FindingBcf.ToTopic(Made()).Viewpoints);
+            // A key made from a Navisworks instance GUID is not an IFC GlobalId, so no IfcGuid is
+            // written and the receiving tool will not select the element. The component is written
+            // anyway, because BCF's own field for a tool's native id is where the key rides, and
+            // that is what lands the reviewer's answer back on the right element. What the
+            // receiving tool cannot do is counted and said out loud instead.
+            var written = FindingBcf.Write(new[] { Made() });
+            var selection = FindingBcf.ToTopic(Made()).Viewpoints.Single().Selection;
+
+            Assert.Equal(2, selection.Count);
+            Assert.All(selection, one => Assert.False(one.IsResolvable));
+            Assert.All(selection, one => Assert.NotNull(one.AuthoringToolId));
+
+            Assert.Equal(1, written.Blind);
+            Assert.Contains(written.Warnings, w => w.Contains("GlobalId", StringComparison.Ordinal));
         }
 
         [Fact]
-        public void NoResolvableElementMeansNoViewpointRatherThanADeadOne()
+        public void NoElementAndNoPointMeansNoViewpointRatherThanADeadOne()
         {
-            // A viewpoint listing components nothing can find is a button that does nothing in
-            // somebody else's tool, which is worse than no button.
+            // A viewpoint with nothing selected and a camera on the origin is a button that does
+            // nothing in somebody else's tool, which is worse than no button.
             var finding = Finding.Create(FindingSource.Health, "Every element has a level",
                                          "No level", Array.Empty<ElementKey>());
 
             Assert.Empty(FindingBcf.ToTopic(finding).Viewpoints);
+
+            // A point with no elements is still worth a camera: it is where to stand and look.
+            finding.X = 1;
+            finding.Y = 2;
+            finding.Z = 3;
+
+            Assert.NotNull(FindingBcf.ToTopic(finding).Viewpoints.Single().Camera);
         }
 
         [Fact]
@@ -231,7 +249,7 @@ namespace CamelWorks.Core.Tests
             IssueFindings.Attach(issue, new[] { finding });
 
             var topics = FindingBcf.Together(new[] { finding },
-                                             new[] { IssueBcf.ToTopic(issue) },
+                                             new[] { FindingBcf.ToTopic(issue) },
                                              t => issue.Findings);
 
             Assert.Equal(2, topics.Count);
@@ -252,7 +270,7 @@ namespace CamelWorks.Core.Tests
             IssueFindings.Attach(issue, new[] { finding });
 
             var topics = FindingBcf.Together(new[] { finding },
-                                             new[] { IssueBcf.ToTopic(issue) },
+                                             new[] { FindingBcf.ToTopic(issue) },
                                              t => issue.Findings);
 
             using var stream = new MemoryStream();

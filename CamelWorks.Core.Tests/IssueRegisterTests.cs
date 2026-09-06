@@ -134,7 +134,7 @@ namespace CamelWorks.Core.Tests
         }
     }
 
-    public class IssueBcfTests
+    public class IssueExchangeTests
     {
         private static BcfTopic Topic(string guid, string title, string status = "Open")
         {
@@ -158,7 +158,7 @@ namespace CamelWorks.Core.Tests
         {
             var register = new IssueRegister();
 
-            var result = IssueBcf.Merge(register, new[] { Topic(BcfGuid.For("t1"), "Duct through beam") },
+            var result = FindingBcf.MergeIssues(register, new[] { Topic(BcfGuid.For("t1"), "Duct through beam") },
                                         "client.bcf");
 
             var issue = Assert.Single(register.Issues);
@@ -178,13 +178,13 @@ namespace CamelWorks.Core.Tests
             var register = new IssueRegister();
             var topic = Topic(BcfGuid.For("t1"), "Duct through beam");
 
-            IssueBcf.Merge(register, new[] { topic }, "first.bcf");
+            FindingBcf.MergeIssues(register, new[] { topic }, "first.bcf");
 
             topic.TopicStatus = "Closed";
             topic.Comments.Add(new BcfComment(BcfGuid.For("t1/2"),
                 new DateTimeOffset(2026, 3, 8, 9, 0, 0, TimeSpan.Zero), "reviewer", "Moved it."));
 
-            var second = IssueBcf.Merge(register, new[] { topic }, "second.bcf");
+            var second = FindingBcf.MergeIssues(register, new[] { topic }, "second.bcf");
 
             var issue = Assert.Single(register.Issues);
 
@@ -200,7 +200,7 @@ namespace CamelWorks.Core.Tests
         {
             var register = new IssueRegister();
 
-            IssueBcf.Merge(register, new[] { Topic(BcfGuid.For("t2"), "Answered elsewhere", "Done") });
+            FindingBcf.MergeIssues(register, new[] { Topic(BcfGuid.For("t2"), "Answered elsewhere", "Done") });
 
             Assert.Equal(FindingStatus.Resolved, register.Issues[0].Status);
         }
@@ -213,7 +213,7 @@ namespace CamelWorks.Core.Tests
             // spelling nobody agreed.
             var register = new IssueRegister();
 
-            IssueBcf.Merge(register, new[] { Topic(BcfGuid.For("t3"), "Odd one", "Awaiting client") });
+            FindingBcf.MergeIssues(register, new[] { Topic(BcfGuid.For("t3"), "Odd one", "Awaiting client") });
 
             Assert.Equal(FindingStatus.Active, register.Issues[0].Status);
             Assert.True(register.Issues[0].IsOpen);
@@ -234,9 +234,12 @@ namespace CamelWorks.Core.Tests
             issue.Comments.Add(new FindingComment("coordinator", 638_000_000_000_000_001L,
                                                   "Needs a builder's work opening."));
 
-            var topic = IssueBcf.ToTopic(issue);
+            var topic = FindingBcf.ToTopic(issue);
 
-            Assert.Contains("CW-7", topic.Labels);
+            // Under the vocabulary's prefix, so the reply's reader takes it off again instead of
+            // keeping it as a tag somebody set.
+            Assert.Contains(FindingLabels.Issue + "CW-7", topic.Labels);
+            Assert.Empty(FindingBcf.ToIssue(topic, "CW-8").Labels);
             Assert.Equal("Riser has no opening", topic.Title);
             Assert.Equal("Active", topic.TopicStatus);
             Assert.NotNull(topic.DueDate);
@@ -251,11 +254,11 @@ namespace CamelWorks.Core.Tests
             // would be the importer choosing a word the project does not use.
             var topic = Topic(BcfGuid.For("t9"), "No priority given");
 
-            Assert.Null(IssueBcf.FromTopic(topic, "CW-1").Priority);
+            Assert.Null(FindingBcf.ToIssue(topic, "CW-1").Priority);
 
             topic.Priority = "High";
 
-            Assert.Equal("High", IssueBcf.FromTopic(topic, "CW-2").Priority);
+            Assert.Equal("High", FindingBcf.ToIssue(topic, "CW-2").Priority);
         }
 
         [Fact]
@@ -289,11 +292,11 @@ namespace CamelWorks.Core.Tests
                 CreatedTicks = 638_000_000_000_000_000L,
             };
 
-            var topic = IssueBcf.ToTopic(issue);
+            var topic = FindingBcf.ToTopic(issue);
             issue.BcfGuid = topic.Guid;
             register.Put(issue);
 
-            var back = IssueBcf.Merge(register, new[] { topic }, "returned.bcf");
+            var back = FindingBcf.MergeIssues(register, new[] { topic }, "returned.bcf");
 
             Assert.Equal(0, back.Added);
             Assert.Single(register.Issues);

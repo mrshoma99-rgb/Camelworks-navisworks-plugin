@@ -286,6 +286,56 @@ only one of them carried what anybody had recorded.
 left beside their replacements. Nothing read them once the tab moved, and an engine in Core that
 nothing reaches is how a redesign loses a feature quietly.
 
+## Exchange — one file out, several files back
+
+The tab is one coordination round: on Monday a pack per trade goes out, on Thursday the packs
+come back and the answers land on the board without anybody retyping them. Both halves are on
+one tab because they are one round; they were three tabs, so setting up an issue and taking one
+back were in different places and neither said what the other had done.
+
+**One writer, so exchange is offered on every check.** There were three BCF writers over one
+format — a clash writer, a finding writer and an issue writer — with two label vocabularies, two
+sidecars and two readings of a status word. A pack written by one and read by another lost its
+group, adopted six of the writer's own labels as the reviewer's tags and re-exported them next
+cycle, and could disagree with itself about whether a topic was approved. There is now one
+writer, `FindingBcf`, and what goes in a pack is a finding:
+
+- **One label vocabulary.** Every label the product writes carries a declared prefix — the
+  check, the rule, the folder, the group, the level, the grid, the zone, the issue number — and
+  one predicate says whether a label is ours. A prefixed label is taken off on the way back in; a
+  bare one is the reviewer's tag and is kept.
+- **One sidecar, per check.** The finding's identity, its point in metres, where the writing
+  document had each element, and every fact the check measured. A clearance breach travels with
+  its clear height, its minimum and its shortfall, and comes home with them.
+- **One status reading.** Whatever word the sending tool used, the same answer whether the file
+  is applied to a finding, merged into the findings register or read as an issue. A word outside
+  the conventional vocabulary is reported by name before anything is applied rather than mapped
+  in silence.
+
+**Pack per trade, and what happens to a check with no trades.** Clash packs split on the two
+disciplines. Clearance has an obstruction and a surface, not two trades, and fall hazard has one
+element set, so a discipline split on those produces one pack addressed to nobody. The split
+falls back to the **assignee**, which is the one recipient every check has, and where nothing is
+assigned there is one pack. The tab says which split it used.
+
+**The tab follows the Manage tab's check.** It shows which check is selected and links back to
+Manage to change it. A second picker here is a coordinator exporting one check's findings while
+reading another check's board.
+
+**No viewpoint parity claim.** The clash engine can frame a result the way the native clash
+window does, using the host's own result geometry (`ResultSnapshot`). Nothing else can: every
+other check's viewpoints are rendered through the slow camera route — the finding's elements, a
+bounding box, a camera backed off it — which is slower and frames worse. The camera direction,
+the element colouring, the section box and the rendered picture are all still per pack, with
+per-check defaults: clearance goes out boxed, because a breach is a space somebody walks under
+and a camera on it otherwise shows the wall in front of it.
+
+**What a returned answer lands on.** A clash finding's topic guid is derived from its two
+elements and the cell they meet in, so it survives a re-run and a pack that has been through
+somebody else's tool. A clearance finding is re-derived every run, so a breach whose obstruction
+moved between the export and the return comes home under a topic the register no longer holds.
+That answer is never dropped: it is reported as unmatched, by name, for a coordinator to place.
+
 ## Tests — removed
 
 The tab listed the engine's tests and carried a matrix builder. The Matrix tab has been the place
