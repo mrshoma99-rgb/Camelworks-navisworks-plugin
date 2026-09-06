@@ -434,9 +434,9 @@ public interface ICheckNaming
     bool Rename(string runId, string name);
     bool Refile(string runId, string? folder);
 
-    /// The naming window this check offers, or null. Only the clash matrix has
-    /// one. Typed, because Action<object> is a hole with a cast at the far end.
-    Func<ISeat, System.Windows.FrameworkElement>? Book { get; }
+    /// True when this check offers a naming window of its own. Only the clash
+    /// matrix has one.
+    bool HasBook { get; }
 }
 
 /// Focus, Isolate, viewpoints and snapshots.
@@ -464,8 +464,15 @@ implementation reads its own `Facts["Host id"]` and `Facts["Host test"]`. The ho
 handle is private to the check, which is what "per-check data rides Facts" means in
 practice.
 
-`Rename` and `RenamePicked` are **not** on this interface. They are edits to the
+`Rename` and `RenamePicked` are **not** on `ICheckHostEcho`. They are edits to the
 record and belong on the register path; see 4.2.
+
+`ICheckNaming.Book` was typed `Action<object>?` in the first draft, which is an
+untyped hole with a cast at the far end. It cannot be typed properly either:
+`CamelWorks.Core` is `netstandard2.0` with a test asserting it references only the
+framework, so a Core interface cannot name a WPF element or `ISeat`. So the seam
+carries the fact (`HasBook`) and the board looks the window up on the UI side,
+keyed on `ICheck.Key`, in the one place that already knows about windows.
 
 ### 1.8 Run comparison
 
