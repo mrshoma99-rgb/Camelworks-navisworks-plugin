@@ -197,10 +197,10 @@ namespace CamelWorks.UI.Views
             private UIElement SendingOut()
             {
                 var strip = Ui.Across(
-                    Ui.Field("Profile", Saved()),
-                    Ui.Field("Find", _find),
-                    Splitting(),
-                    Ui.Field("Order", Sorting()));
+                    Ui.Field("Export profile", Saved()),
+                    Ui.Field("Find a test", _find),
+                    Ui.Field("One file per", Splitting()),
+                    Ui.Field("Order inside each file", Sorting()));
 
                 var foot = new WrapPanel();
 
@@ -499,6 +499,13 @@ namespace CamelWorks.UI.Views
             {
                 var bar = new WrapPanel { Margin = new Thickness(0, 6, 0, 2) };
 
+                var says = Ui.Small("Only results where");
+
+                says.VerticalAlignment = VerticalAlignment.Center;
+                says.Margin = new Thickness(0, 0, 8, 4);
+
+                bar.Children.Add(says);
+
                 var facets = new List<ClashFacet>();
 
                 foreach (var key in new[] { "status", "assignee", "storey", "level" })
@@ -523,7 +530,7 @@ namespace CamelWorks.UI.Views
 
                 foreach (var facet in facets) bar.Children.Add(Chip(facet));
 
-                var add = Ui.Link("Another parameter…", () => { });
+                var add = Ui.Link("and…", () => { });
 
                 add.Click += (s, e) => Ui.Safely(() => Parts.PopMenu(add, Facets()));
                 add.Margin = new Thickness(4, 0, 0, 4);
@@ -665,91 +672,80 @@ namespace CamelWorks.UI.Views
                 }, page);
             }
 
-            /// <summary>Which parameter the results are ordered by inside each pack.</summary>
-            private UIElement Sorting()
-            {
-                var by = Ui.Link(_profile.Pick.Sort == null
-                    ? "As they came"
-                    : Titled(_profile.Pick.Sort)
-                      + (_profile.Pick.Descending ? " ↓" : " ↑"), () => { });
-
-                by.ToolTip = "The order the clashes are written in, which is not the order the "
-                             + "table happens to be sorted in.";
-
-                by.Click += (s, e) => Ui.Safely(() =>
-                {
-                    var items = new List<Parts.Entry> { Parts.Entry.Heading("Order in the pack") };
-
-                    items.Add(Parts.Entry.Act("As they came", null, () =>
-                    {
-                        _profile.Pick.Sort = null;
-                        Rebuild();
-                    }));
-
-                    foreach (var facet in ClashFacets.Every(Results(), Storeys()))
-                    {
-                        var here = facet;
-
-                        items.Add(Parts.Entry.Act(here.Title, null, () =>
-                        {
-                            _profile.Pick.Sort = here.Key;
-                            Rebuild();
-                        }));
-                    }
-
-                    if (_profile.Pick.Sort != null)
-                    {
-                        items.Add(Parts.Entry.Rule());
-                        items.Add(Parts.Entry.Act(
-                            _profile.Pick.Descending ? "Ascending" : "Descending", null,
-                            () =>
-                            {
-                                _profile.Pick.Descending = !_profile.Pick.Descending;
-                                Rebuild();
-                            }));
-                    }
-
-                    Parts.PopMenu(by, items);
-                });
-
-                return by;
-            }
-
-            /// <summary>Which parameter the run is split by, so one press writes a pack each.</summary>
+            /// <summary>
+            /// Which parameter the run is split by, so one press writes a pack each.
+            ///
+            /// A chooser rather than a link, and named for what it does to the output: "one file
+            /// per assigned to" writes the mechanical contractor's clashes into one pack and the
+            /// structural engineer's into another. "Nothing" writes them all into one.
+            /// </summary>
             private UIElement Splitting()
             {
-                var by = Ui.Link(_profile.SplitBy == null
-                    ? "One file"
-                    : "A file per " + Titled(_profile.SplitBy).ToLowerInvariant(), () => { });
+                var offered = new List<string> { Whole };
 
-                by.ToolTip = "Writes one pack per value, each holding only that party's clashes.";
+                offered.AddRange(ClashFacets.Every(Results(), Storeys()).Select(one => one.Title));
 
-                by.Click += (s, e) => Ui.Safely(() =>
+                var here = _profile.SplitBy == null ? Whole : Titled(_profile.SplitBy);
+
+                if (!offered.Contains(here)) offered.Add(here);
+
+                var box = Ui.Choice(offered, here, said =>
                 {
-                    var items = new List<Parts.Entry> { Parts.Entry.Heading("A file per") };
+                    _profile.SplitBy = said == Whole ? null : Keyed(said);
+                    Rebuild();
+                }, 170);
 
-                    items.Add(Parts.Entry.Act("One file for everything", null, () =>
-                    {
-                        _profile.SplitBy = null;
-                        Rebuild();
-                    }));
+                box.ToolTip = "Writes one pack per value, each holding only that party's clashes. "
+                              + "Nothing writes a single pack.";
 
-                    foreach (var facet in ClashFacets.Every(Results(), Storeys()))
-                    {
-                        var here = facet;
-
-                        items.Add(Parts.Entry.Act(here.Title, null, () =>
-                        {
-                            _profile.SplitBy = here.Key;
-                            Rebuild();
-                        }));
-                    }
-
-                    Parts.PopMenu(by, items);
-                });
-
-                return Ui.Field("Files", by);
+                return box;
             }
+
+            /// <summary>Which parameter the results are written in the order of.</summary>
+            private UIElement Sorting()
+            {
+                var offered = new List<string> { AsFound };
+
+                offered.AddRange(ClashFacets.Every(Results(), Storeys()).Select(one => one.Title));
+
+                var here = _profile.Pick.Sort == null ? AsFound : Titled(_profile.Pick.Sort);
+
+                if (!offered.Contains(here)) offered.Add(here);
+
+                var box = Ui.Choice(offered, here, said =>
+                {
+                    _profile.Pick.Sort = said == AsFound ? null : Keyed(said);
+                    Rebuild();
+                }, 150);
+
+                box.ToolTip = "The order the clashes are written in, which is not the order the "
+                              + "table happens to be sorted in.";
+
+                var way = Ui.Icon(_profile.Pick.Descending ? Glyphs.Down : Glyphs.Up,
+                                  _profile.Pick.Descending ? "Largest first" : "Smallest first",
+                                  () => Ui.Safely(() =>
+                                  {
+                                      _profile.Pick.Descending = !_profile.Pick.Descending;
+                                      Rebuild();
+                                  }));
+
+                way.IsEnabled = _profile.Pick.Sort != null;
+
+                return Ui.Across(box, way);
+            }
+
+            /// <summary>What the split chooser calls writing everything into one pack.</summary>
+            private const string Whole = "Nothing - one file";
+
+            /// <summary>What the order chooser calls leaving the results as they came.</summary>
+            private const string AsFound = "As they came";
+
+            /// <summary>The saved key behind a parameter's on-screen title.</summary>
+            /// <param name="title">What it is called on screen.</param>
+            private string? Keyed(string? title) =>
+                ClashFacets.Every(Results(), Storeys())
+                    .FirstOrDefault(one => string.Equals(one.Title, title,
+                                                         StringComparison.OrdinalIgnoreCase))?.Key;
 
             /// <summary>Draw the whole half again, for the controls captioned by their own value.</summary>
             private void Rebuild()
