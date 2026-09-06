@@ -331,9 +331,7 @@ namespace CamelWorks.Core.Tests
             var profile = new ExportProfile
             {
                 Name = "Weekly to Mechanical",
-                Units = "mm",
                 KeepGroups = false,
-                IncludeObjects = false,
             };
 
             profile.Add("Hard", "test-1").Chosen = false;
@@ -346,9 +344,7 @@ namespace CamelWorks.Core.Tests
             var read = ExportProfile.FromJson(JsonReader.Parse(profile.ToJson().ToString()));
 
             Assert.Equal("Weekly to Mechanical", read.Name);
-            Assert.Equal("mm", read.Units);
             Assert.False(read.KeepGroups);
-            Assert.False(read.IncludeObjects);
 
             Assert.Equal(2, read.Tests.Count);
             Assert.False(read.Tests[0].Chosen);
@@ -369,7 +365,6 @@ namespace CamelWorks.Core.Tests
                 + "\"statuses\":[\"Reviewed\",\"Nonsense\"]}"));
 
             Assert.Equal("Everything", read.Name);
-            Assert.Equal("m", read.Units);
             Assert.True(read.KeepGroups);
 
             // A test with no name is not a test; a status nobody recognises is dropped rather than
@@ -407,14 +402,13 @@ namespace CamelWorks.Core.Tests
             var picked = profile.Choose(new[] { mine, stale, elsewhere },
                                         new[] { Group("Ducts", "Mechanical", mine, stale) });
 
-            var written = ClashXml.Write(picked.Items, picked.Groups,
-                                         profile.Options("Federation.nwf"));
+            var written = ClashBcf.Write(picked.Items, picked.Groups,
+                                         profile.BcfOptions("Federation.nwf"));
 
             Assert.Equal(1, written.Results);
             Assert.Equal("Hard", Assert.Single(written.Tests).Name);
-            Assert.Contains("filename=\"Federation.nwf\"", written.Text, StringComparison.Ordinal);
 
-            var read = ClashXml.Read(written.Text);
+            var read = ClashFile.Read(written.Bytes);
 
             Assert.Equal(mine.Key, Assert.Single(read.Items).Key);
             Assert.Equal("Ducts", read.Items[0].CarriedGroup);

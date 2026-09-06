@@ -67,7 +67,7 @@ namespace CamelWorks.Core.Clash
     /// <summary>A written clash BCF, in memory.</summary>
     public sealed class ClashBcfDocument
     {
-        internal ClashBcfDocument(byte[] bytes, IReadOnlyList<ClashXmlTest> tests, int results,
+        internal ClashBcfDocument(byte[] bytes, IReadOnlyList<ClashPackTest> tests, int results,
                                   IReadOnlyList<string> warnings, int snapshots,
                                   int blind, int partial)
         {
@@ -99,7 +99,7 @@ namespace CamelWorks.Core.Clash
         public byte[] Bytes { get; }
 
         /// <summary>The tests it holds.</summary>
-        public IReadOnlyList<ClashXmlTest> Tests { get; }
+        public IReadOnlyList<ClashPackTest> Tests { get; }
 
         /// <summary>How many results went into it, one topic each.</summary>
         public int Results { get; }
@@ -249,7 +249,7 @@ namespace CamelWorks.Core.Clash
 
             var topics = new List<BcfTopic>();
             var records = new List<JsonValue>();
-            var tests = new List<ClashXmlTest>();
+            var tests = new List<ClashPackTest>();
             var unkeyed = 0;
 
             // How many topics the receiving tool will be able to point at something with. See
@@ -268,7 +268,7 @@ namespace CamelWorks.Core.Clash
                 var folder = members.Select(m => m.TestFolder)
                                     .FirstOrDefault(f => !string.IsNullOrWhiteSpace(f));
 
-                tests.Add(new ClashXmlTest(test.Key, folder, Kind(test.Key, members, how),
+                tests.Add(new ClashPackTest(test.Key, folder, Kind(test.Key, members, how),
                                            Tolerance(members), Counts(members),
                                            members.Select(m => Group(m, groupOf))
                                                   .Where(g => g != null)
@@ -365,7 +365,7 @@ namespace CamelWorks.Core.Clash
         /// Read a clash BCF back, whoever wrote it.
         /// </summary>
         /// <param name="input">The archive. Left open.</param>
-        public static ClashXmlRead Read(Stream? input)
+        public static ClashPackRead Read(Stream? input)
         {
             if (input == null) return Refuse("There is nothing to read.");
 
@@ -387,9 +387,9 @@ namespace CamelWorks.Core.Clash
 
             var sheet = Sidecars(read, warnings);
 
-            var results = new List<ClashXmlResult>();
-            var tests = new List<ClashXmlTest>();
-            var byTest = new Dictionary<string, List<ClashXmlResult>>(StringComparer.OrdinalIgnoreCase);
+            var results = new List<ClashPackResult>();
+            var tests = new List<ClashPackTest>();
+            var byTest = new Dictionary<string, List<ClashPackResult>>(StringComparer.OrdinalIgnoreCase);
             var strangers = 0;
 
             foreach (var topic in read.Topics)
@@ -404,7 +404,7 @@ namespace CamelWorks.Core.Clash
 
                 if (!byTest.TryGetValue(result.Test, out var list))
                 {
-                    list = new List<ClashXmlResult>();
+                    list = new List<ClashPackResult>();
                     byTest[result.Test] = list;
                 }
 
@@ -415,7 +415,7 @@ namespace CamelWorks.Core.Clash
             {
                 var known = sheet.Tests.TryGetValue(pair.Key, out var declared) ? declared : null;
 
-                tests.Add(new ClashXmlTest(pair.Key,
+                tests.Add(new ClashPackTest(pair.Key,
                                            known?.Folder,
                                            known?.Kind ?? MatrixTest.Hard,
                                            known?.Tolerance ?? 0,
@@ -439,7 +439,7 @@ namespace CamelWorks.Core.Clash
                     + (strangers == 1 ? "It is" : "They are") + " read as far as BCF describes "
                     + (strangers == 1 ? "it." : "them."));
 
-            return new ClashXmlRead(tests, results, warnings, null) { Topics = read.Topics };
+            return new ClashPackRead(tests, results, warnings, null) { Topics = read.Topics };
         }
 
         // -------------------------------------------------------------------------------------
@@ -675,7 +675,7 @@ namespace CamelWorks.Core.Clash
 
         /// <summary>The whole sidecar.</summary>
         private static JsonValue Sheet(IReadOnlyList<JsonValue> records,
-                                       IReadOnlyList<ClashXmlTest> tests,
+                                       IReadOnlyList<ClashPackTest> tests,
                                        ClashBcfOptions how, DateTimeOffset when)
         {
             var json = JsonValue.Object()
@@ -780,7 +780,7 @@ namespace CamelWorks.Core.Clash
         /// file that has been through one - the model facts are recovered as far as BCF describes
         /// them: the element keys off the viewpoint's components, and the point off the camera.
         /// </summary>
-        private static ClashXmlResult Result(BcfTopic topic, JsonValue? record)
+        private static ClashPackResult Result(BcfTopic topic, JsonValue? record)
         {
             var name = record?["name"].AsString() ?? topic.Title;
 
@@ -794,7 +794,7 @@ namespace CamelWorks.Core.Clash
 
             var item = Item(topic, record, test, point);
 
-            var result = new ClashXmlResult(name, test, group, Status(topic),
+            var result = new ClashPackResult(name, test, group, Status(topic),
                                             point.X, point.Y, point.Z, item)
             {
                 FileGuid = topic.Guid,
@@ -988,7 +988,7 @@ namespace CamelWorks.Core.Clash
         /// be told from the generated name coming back unchanged.</param>
         /// <param name="source">Which file it arrived in.</param>
         /// <param name="whenTicks">When it arrived, as UTC ticks. Zero for now.</param>
-        public static ClashAside? Review(ClashXmlResult? result, string? expectedName = null,
+        public static ClashAside? Review(ClashPackResult? result, string? expectedName = null,
                                          string? source = null, long whenTicks = 0)
         {
             if (result?.FileGuid == null) return null;
@@ -1036,7 +1036,7 @@ namespace CamelWorks.Core.Clash
         /// <param name="result">The returned result.</param>
         /// <param name="expectedName">What this export would have called it, so a real retitle can
         /// be told from the generated name coming back unchanged.</param>
-        public static string? Aside(ClashXmlResult? result, string? expectedName = null)
+        public static string? Aside(ClashPackResult? result, string? expectedName = null)
         {
             if (result == null) return null;
 
@@ -1082,8 +1082,8 @@ namespace CamelWorks.Core.Clash
         // Shared
         // -------------------------------------------------------------------------------------
 
-        private static ClashXmlRead Refuse(string why) =>
-            new ClashXmlRead(Array.Empty<ClashXmlTest>(), Array.Empty<ClashXmlResult>(),
+        private static ClashPackRead Refuse(string why) =>
+            new ClashPackRead(Array.Empty<ClashPackTest>(), Array.Empty<ClashPackResult>(),
                              Array.Empty<string>(), why);
 
         private static string? Group(ClashItem item, IReadOnlyDictionary<ClashKey, string> groupOf) =>
@@ -1129,7 +1129,7 @@ namespace CamelWorks.Core.Clash
             return counts;
         }
 
-        private static IReadOnlyDictionary<FindingStatus, int> Counts(IEnumerable<ClashXmlResult> results)
+        private static IReadOnlyDictionary<FindingStatus, int> Counts(IEnumerable<ClashPackResult> results)
         {
             var counts = new Dictionary<FindingStatus, int>();
 

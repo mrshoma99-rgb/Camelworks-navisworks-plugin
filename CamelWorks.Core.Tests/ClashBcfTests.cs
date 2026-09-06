@@ -32,10 +32,10 @@ namespace CamelWorks.Core.Tests
             };
         }
 
-        private static ClashXmlRead RoundTrip(params ClashItem[] items) =>
+        private static ClashPackRead RoundTrip(params ClashItem[] items) =>
             RoundTrip(ClashBcf.Write(items));
 
-        private static ClashXmlRead RoundTrip(ClashBcfDocument written)
+        private static ClashPackRead RoundTrip(ClashBcfDocument written)
         {
             using var stream = new MemoryStream(written.Bytes);
 
@@ -707,11 +707,11 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void ClashXmlCarriesNoTopicsAndThatIsNotAFault()
+        public void AFileThatIsNotAnArchiveCarriesNoTopicsAndThatIsNotAFault()
         {
-            // The older format has no topics. A caller asking for them gets an empty list rather
-            // than a null to guard.
-            var read = ClashXml.Read("<exchange><batchtest><clashtests></clashtests></batchtest></exchange>");
+            // A caller asking for the topics of something that could not be read gets an empty
+            // list rather than a null to guard.
+            var read = ClashFile.Read(System.Text.Encoding.UTF8.GetBytes("<exchange />"));
 
             Assert.NotNull(read.Topics);
             Assert.Empty(read.Topics);

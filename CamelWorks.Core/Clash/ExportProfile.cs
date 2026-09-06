@@ -256,12 +256,6 @@ namespace CamelWorks.Core.Clash
         /// <summary>Whether the folders survive into the file.</summary>
         public bool KeepGroups { get; set; } = true;
 
-        /// <summary>Whether each result carries its two elements.</summary>
-        public bool IncludeObjects { get; set; } = true;
-
-        /// <summary>Model units, as the file's header declares them.</summary>
-        public string Units { get; set; } = "m";
-
         /// <summary>The tests that would go in.</summary>
         public IReadOnlyList<ProfileTest> Chosen => _tests.Where(t => t.Chosen).ToList();
 
@@ -395,27 +389,12 @@ namespace CamelWorks.Core.Clash
             return new ExportSelection(keeping, trimmed, byTest, byStatus, byParty);
         }
 
-        /// <summary>The writer's settings, from the profile's.</summary>
-        /// <param name="sourceFile">Which document this came from.</param>
-        /// <param name="whenTicks">When the file is being written.</param>
-        public ClashXmlOptions Options(string? sourceFile = null, long whenTicks = 0) =>
-            new ClashXmlOptions
-            {
-                Units = Units,
-                KeepGroups = KeepGroups,
-                IncludeObjects = IncludeObjects,
-                SourceFile = sourceFile,
-                WhenTicks = whenTicks,
-            };
-
         /// <summary>
-        /// The same profile, for the BCF writer.
+        /// The profile, as the writer's settings.
         ///
-        /// Two option types rather than one because the formats differ in what they can be told:
-        /// BCF has no units declaration (its cameras are metres by definition) and no flag for
-        /// whether each result carries its elements' properties (its components carry ids, not
-        /// properties). What both share - which groups travel, where the file came from, when -
-        /// is what a profile is actually about, and it is carried across unchanged.
+        /// A profile is about which clashes go in the file and how the folders travel. Where the
+        /// file came from and when it was written are the caller's, since the same profile is
+        /// written into a file per recipient in one run.
         /// </summary>
         /// <param name="sourceFile">The document this came from.</param>
         /// <param name="whenTicks">When the file is being written.</param>
@@ -473,9 +452,7 @@ namespace CamelWorks.Core.Clash
         public JsonValue ToJson() =>
             JsonValue.Object()
                 .Set("name", Name)
-                .Set("units", Units)
                 .Set("keepGroups", KeepGroups)
-                .Set("includeObjects", IncludeObjects)
                 .Set("tests", JsonValue.Array(_tests.Select(t => t.ToJson())))
                 .Set("statuses", JsonValue.Array(
                     Statuses.OrderBy(s => (int)s).Select(s => JsonValue.String(s.ToString()))))
@@ -490,9 +467,7 @@ namespace CamelWorks.Core.Clash
             if (json == null) return profile;
 
             profile.Name = json["name"].AsString("Everything") ?? "Everything";
-            profile.Units = json["units"].AsString("m") ?? "m";
             profile.KeepGroups = json["keepGroups"].AsBool(true);
-            profile.IncludeObjects = json["includeObjects"].AsBool(true);
 
             foreach (var item in json["tests"].Items)
             {

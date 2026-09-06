@@ -634,7 +634,7 @@ namespace CamelWorks.UI.Views
                     () => Ui.Told(AppWindow.Show("clash", "manage")))));
             }
 
-            private static string Counted(ClashXmlTest test, FindingStatus status) =>
+            private static string Counted(ClashPackTest test, FindingStatus status) =>
                 test.Counts.TryGetValue(status, out var many)
                     ? many.ToString("N0", CultureInfo.InvariantCulture)
                     : "0";
