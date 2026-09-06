@@ -4190,10 +4190,23 @@ namespace CamelWorks.UI.Views
 
                 Put(grid, named, Where(Named));
 
-                // Em-dashes, not the first member's items. A group aggregates many different item
-                // pairs and has no pair of its own; borrowing one member's would read as fact.
-                Put(grid, Right(Hint("—")), Where(ItemA));
-                Put(grid, Right(Hint("—")), Where(ItemB));
+                // A group has no item pair of its own, so the two item columns hold nothing on
+                // this row. When they sit directly after the name, the name takes all three
+                // rather than ellipsising at 110 pixels next to 180 pixels of em-dash. The
+                // columns can be reordered, so the span is only taken when they are adjacent.
+                var spans = Where(ItemA) == Where(Named) + 1 && Where(ItemB) == Where(Named) + 2;
+
+                if (spans)
+                {
+                    Grid.SetColumnSpan(named, 3);
+                }
+                else
+                {
+                    // Em-dashes, not the first member's items. Borrowing one member's pair would
+                    // read as fact.
+                    Put(grid, Right(Hint("—")), Where(ItemA));
+                    Put(grid, Right(Hint("—")), Where(ItemB));
+                }
                 Put(grid, Figure(Deepest(row), Bad(row)), Where(Worst));
 
                 for (var i = 0; i < _columns.Count; i++)
