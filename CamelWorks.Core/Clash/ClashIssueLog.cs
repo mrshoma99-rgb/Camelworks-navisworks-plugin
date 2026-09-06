@@ -51,8 +51,13 @@ namespace CamelWorks.Core.Clash
     /// </summary>
     public sealed class ClashIssueLog
     {
-        /// <summary>Where the project file keeps it.</summary>
-        public const string Key = "issued";
+        /// <summary>
+        /// Where the project file keeps it.
+        ///
+        /// Not "issued": the report writer already keeps its revision log under that name, and two
+        /// things in one key is one of them being overwritten by the other.
+        /// </summary>
+        public const string Key = "issuedClashes";
 
         private readonly Dictionary<ClashKey, ClashIssued> _sent =
             new Dictionary<ClashKey, ClashIssued>();

@@ -9833,15 +9833,15 @@ namespace CamelWorks.UI.Views
 
                 if (!_rotated)
                 {
-                    if (MatrixCounts.FromJson(section["matrixCounts"]) != null)
-                        section.Set("matrixCountsBefore", section["matrixCounts"]);
+                    if (MatrixCounts.FromJson(section[ClashKeys.MatrixCounts]) != null)
+                        section.Set(ClashKeys.MatrixCountsBefore, section[ClashKeys.MatrixCounts]);
 
                     _rotated = true;
                 }
 
-                _before = MatrixCounts.FromJson(section["matrixCountsBefore"]);
+                _before = MatrixCounts.FromJson(section[ClashKeys.MatrixCountsBefore]);
 
-                section.Set("matrixCounts", counted.ToJson(DateTimeOffset.UtcNow));
+                section.Set(ClashKeys.MatrixCounts, counted.ToJson(DateTimeOffset.UtcNow));
 
                 if (!_session.Store.Save())
                     Warned(Ui.Note("The count is on the grid but could not be written down, so "

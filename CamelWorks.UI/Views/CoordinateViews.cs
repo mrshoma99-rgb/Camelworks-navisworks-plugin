@@ -217,7 +217,7 @@ namespace CamelWorks.UI.Views
             job.Say("Carrying over the last run...");
 
             var rules = trying
-                        ?? ClashRuleSet.FromJson(session.Store.Section(ProjectStore.ClashSection)["rules"]);
+                        ?? ClashRuleSet.FromJson(session.Store.Section(ProjectStore.ClashSection)[ClashKeys.Rules]);
             var snapshot = Snapshot(session);
             var delta = ClashCarryOver.Apply(survivors, snapshot);
 
@@ -354,7 +354,7 @@ namespace CamelWorks.UI.Views
             job.Say("Applying rules...");
 
             var rules = trying
-                        ?? ClashRuleSet.FromJson(session.Store.Section(ProjectStore.ClashSection)["rules"]);
+                        ?? ClashRuleSet.FromJson(session.Store.Section(ProjectStore.ClashSection)[ClashKeys.Rules]);
             var options = rules.ToOptions(session.Profile.ClashProximity);
             options.Decisions = Decisions(session);
             options.PinnedGroups = Pinned(session);
@@ -436,7 +436,7 @@ namespace CamelWorks.UI.Views
             var section = session.Store.Section(ProjectStore.ClashSection);
 
             return ClashSnapshotJson.FromJson(
-                ClashSnapshotJson.Migrated(section["snapshot"], section["parties"], section["taken"]),
+                ClashSnapshotJson.Migrated(section[ClashKeys.Snapshot], section["parties"], section["taken"]),
                 Decisions(session));
         }
 
@@ -451,7 +451,7 @@ namespace CamelWorks.UI.Views
             var section = session.Store.Section(ProjectStore.ClashSection);
 
             var read = ClashSnapshotJson.FromJson(ClashSnapshotJson.Migrated(
-                section["previous"], section["previousParties"], section["previousTaken"]));
+                section[ClashKeys.Previous], section["previousParties"], section["previousTaken"]));
 
             return read != null && read.OpenByParty.Count > 0 ? read : null;
         }
@@ -467,7 +467,7 @@ namespace CamelWorks.UI.Views
         private static IReadOnlyDictionary<string, IReadOnlyList<string>> Pinned(Session session)
         {
             var pinned = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
-            var saved = session.Store.Section(ProjectStore.ClashSection)["pinned"];
+            var saved = session.Store.Section(ProjectStore.ClashSection)[ClashKeys.Pinned];
 
             foreach (var name in saved.Keys)
             {
@@ -487,12 +487,12 @@ namespace CamelWorks.UI.Views
         private static void Pin(Session session, string name, IEnumerable<ClashItem> items)
         {
             var section = session.Store.Section(ProjectStore.ClashSection);
-            var saved = section["pinned"];
+            var saved = section[ClashKeys.Pinned];
 
             if (saved.Kind != JsonKind.Object)
             {
                 saved = JsonValue.Object();
-                section.Set("pinned", saved);
+                section.Set(ClashKeys.Pinned, saved);
             }
 
             var keys = new List<string>();
@@ -534,7 +534,7 @@ namespace CamelWorks.UI.Views
         /// <summary>Stop treating a group as hand-made, so the rules decide it again.</summary>
         private static void Unpin(Session session, string name)
         {
-            var saved = session.Store.Section(ProjectStore.ClashSection)["pinned"];
+            var saved = session.Store.Section(ProjectStore.ClashSection)[ClashKeys.Pinned];
             if (saved.Kind == JsonKind.Object) saved.Remove(name);
         }
 
@@ -561,17 +561,17 @@ namespace CamelWorks.UI.Views
 
         /// <summary>Every issue somebody raised on this project, from the project file.</summary>
         internal static ManualIssueList Issues(Session session) =>
-            ManualIssueList.FromJson(session.Store.Section(ProjectStore.ClashSection)["issues"]);
+            ManualIssueList.FromJson(session.Store.Section(ProjectStore.ClashSection)[ClashKeys.Issues]);
 
         /// <summary>Write the issue list back.</summary>
         private static void SaveIssues(Session session, ManualIssueList issues) =>
-            session.Store.Section(ProjectStore.ClashSection).Set("issues", issues.ToJson());
+            session.Store.Section(ProjectStore.ClashSection).Set(ClashKeys.Issues, issues.ToJson());
 
         /// <summary>The decisions made by hand, which outrank the rules and survive a re-run.</summary>
         private static IReadOnlyDictionary<string, GroupDecision> Decisions(Session session)
         {
             var decisions = new Dictionary<string, GroupDecision>(StringComparer.Ordinal);
-            var saved = session.Store.Section(ProjectStore.ClashSection)["decisions"];
+            var saved = session.Store.Section(ProjectStore.ClashSection)[ClashKeys.Decisions];
 
             foreach (var name in saved.Keys)
                 decisions[name] = new GroupDecision(saved[name]["party"].AsString(),
@@ -587,7 +587,7 @@ namespace CamelWorks.UI.Views
 
         /// <summary>Who is on which group.</summary>
         internal static AssignmentBook Assignments(Session session) =>
-            AssignmentBook.FromJson(session.Store.Section(ProjectStore.ClashSection)["assignments"]);
+            AssignmentBook.FromJson(session.Store.Section(ProjectStore.ClashSection)[ClashKeys.Assignments]);
 
         /// <summary>
         /// Write one decision about a group into the project file, merging with what is there.
@@ -605,12 +605,12 @@ namespace CamelWorks.UI.Views
                                      string? priority = null, Resolution? instruction = null)
         {
             var section = session.Store.Section(ProjectStore.ClashSection);
-            var decisions = section["decisions"];
+            var decisions = section[ClashKeys.Decisions];
 
             if (decisions.Kind != JsonKind.Object)
             {
                 decisions = JsonValue.Object();
-                section.Set("decisions", decisions);
+                section.Set(ClashKeys.Decisions, decisions);
             }
 
             var decision = decisions[group];
@@ -656,7 +656,7 @@ namespace CamelWorks.UI.Views
             BoardEdits++;
 
             var section = session.Store.Section(ProjectStore.ClashSection);
-            var previous = section["snapshot"];
+            var previous = section[ClashKeys.Snapshot];
 
             if (ClashSnapshotJson.IsSnapshot(previous))
             {
@@ -665,7 +665,7 @@ namespace CamelWorks.UI.Views
                 // does not disappear on the first save after an upgrade.
                 var carried = ClashSnapshotJson.Migrated(previous, section["parties"], section["taken"]);
 
-                if (carried != null) section.Set("previous", carried);
+                if (carried != null) section.Set(ClashKeys.Previous, carried);
             }
 
             // The four keys the two shapes were spread across. Removed once the value that
@@ -680,7 +680,7 @@ namespace CamelWorks.UI.Views
             // Raised issues are kept in their own list and left out of the snapshot. The snapshot
             // is what the next run's carry-over compares the ENGINE's results against, and a record
             // the engine can never produce would read as resolved on every single run.
-            section.Set("snapshot", ClashSnapshotJson.ToJson(snapshot,
+            section.Set(ClashKeys.Snapshot, ClashSnapshotJson.ToJson(snapshot,
                 r => !string.Equals(r.TestName, ManualIssue.RaisedByHand, StringComparison.Ordinal)));
             session.Record(ActivityKind.Regroup, summary ?? "ran the rules: " + board.Funnel);
         }
@@ -695,15 +695,15 @@ namespace CamelWorks.UI.Views
         private static bool Rewind(Session session)
         {
             var section = session.Store.Section(ProjectStore.ClashSection);
-            var previous = section["previous"];
+            var previous = section[ClashKeys.Previous];
 
             if (!ClashSnapshotJson.IsSnapshot(previous)) return false;
 
-            var current = section["snapshot"];
+            var current = section[ClashKeys.Snapshot];
 
-            section.Set("snapshot", previous);
-            if (ClashSnapshotJson.IsSnapshot(current)) section.Set("previous", current);
-            else section.Remove("previous");
+            section.Set(ClashKeys.Snapshot, previous);
+            if (ClashSnapshotJson.IsSnapshot(current)) section.Set(ClashKeys.Previous, current);
+            else section.Remove(ClashKeys.Previous);
 
             return session.Store.Save();
         }
@@ -794,7 +794,7 @@ namespace CamelWorks.UI.Views
                 if (session == null)
                     return Bench.Surface(null, null, Ui.Stack(Ui.Empty("No model is open.", Host.NoModel)));
 
-                _rules = ClashRuleSet.FromJson(session.Store.Section(ProjectStore.ClashSection)["rules"]);
+                _rules = ClashRuleSet.FromJson(session.Store.Section(ProjectStore.ClashSection)[ClashKeys.Rules]);
 
                 Redraw(session);
 
@@ -802,7 +802,7 @@ namespace CamelWorks.UI.Views
                 {
                     _status.Children.Clear();
 
-                    session.Store.Section(ProjectStore.ClashSection).Set("rules", _rules.ToJson());
+                    session.Store.Section(ProjectStore.ClashSection).Set(ClashKeys.Rules, _rules.ToJson());
 
                     _status.Children.Add(session.Store.Save()
                         ? Ui.Done("Saved. The board uses these the next time it loads.")
@@ -1741,7 +1741,7 @@ namespace CamelWorks.UI.Views
             /// says on its cover which one it supersedes.
             /// </summary>
             private static ReportIssue? LastIssue(Session session, string audience) =>
-                Deliverable.Read(session.Store.Section(ProjectStore.ClashSection)["issued"])
+                Deliverable.Read(session.Store.Section(ProjectStore.ClashSection)[ClashKeys.Issued])
                     .TryGetValue(audience, out var issue) ? issue : null;
 
             /// <summary>Record what just went out, so the next one knows what it supersedes.</summary>
@@ -1757,7 +1757,7 @@ namespace CamelWorks.UI.Views
 
                 register[audience] = issue;
 
-                section.Set("issued", Deliverable.Write(register));
+                section.Set(ClashKeys.Issued, Deliverable.Write(register));
             }
 
             /// <summary>
@@ -2654,7 +2654,7 @@ namespace CamelWorks.UI.Views
 
         private static HashSet<string> Known(Session session)
         {
-            var saved = session.Store.Section(ProjectStore.ClashSection)["bcfTopics"];
+            var saved = session.Store.Section(ProjectStore.ClashSection)[ClashKeys.BcfTopics];
 
             return new HashSet<string>(
                 saved.Items.Select(i => i.AsString() ?? string.Empty).Where(s => s.Length > 0),
@@ -2667,7 +2667,7 @@ namespace CamelWorks.UI.Views
             foreach (var guid in guids) known.Add(guid);
 
             session.Store.Section(ProjectStore.ClashSection)
-                   .Set("bcfTopics", JsonValue.Array(known.OrderBy(g => g, StringComparer.Ordinal)
+                   .Set(ClashKeys.BcfTopics, JsonValue.Array(known.OrderBy(g => g, StringComparer.Ordinal)
                                                           .Select(JsonValue.String)));
 
             session.Store.Save();
@@ -2684,7 +2684,7 @@ namespace CamelWorks.UI.Views
         private static Dictionary<string, string> Sent(Session session)
         {
             var map = new Dictionary<string, string>(StringComparer.Ordinal);
-            var saved = session.Store.Section(ProjectStore.ClashSection)["bcfGroups"];
+            var saved = session.Store.Section(ProjectStore.ClashSection)[ClashKeys.BcfGroups];
 
             foreach (var guid in saved.Keys)
             {
@@ -2699,12 +2699,12 @@ namespace CamelWorks.UI.Views
         private static void RememberSent(Session session, ClashPipelineResult board)
         {
             var section = session.Store.Section(ProjectStore.ClashSection);
-            var saved = section["bcfGroups"];
+            var saved = section[ClashKeys.BcfGroups];
 
             if (saved.Kind != JsonKind.Object)
             {
                 saved = JsonValue.Object();
-                section.Set("bcfGroups", saved);
+                section.Set(ClashKeys.BcfGroups, saved);
             }
 
             foreach (var group in board.Groups)
