@@ -185,6 +185,14 @@ namespace CamelWorks.UI.Views
             private IReadOnlyList<ClashItem>? _flattened;
             private IReadOnlyList<ClashGroup>? _resultsFrom;
 
+            /// <summary>
+            /// What has already gone out, read once and kept for the life of the desk.
+            /// </summary>
+            private ClashIssueLog Issued() => _issued ??= ClashIssueLog.FromJson(
+                _store.Section(ProjectStore.ClashSection)[ClashIssueLog.Key]);
+
+            private ClashIssueLog? _issued;
+
             /// <summary>The project's storeys, so a filter can name one.</summary>
             private LevelPlan Storeys() => LevelPlan.FromJson(
                 _store.Section(ProjectStore.ProfileSection)[LevelPlan.Key]);
@@ -477,7 +485,7 @@ namespace CamelWorks.UI.Views
             /// <summary>What the tests and the filter between them let through.</summary>
             private IReadOnlyList<ClashItem> Scope()
             {
-                var kept = _profile.Choose(Results(), Board(), Storeys()).Items;
+                var kept = _profile.Choose(Results(), Board(), Storeys(), Issued()).Items;
 
                 return _dropped.Count == 0
                     ? kept
@@ -582,7 +590,7 @@ namespace CamelWorks.UI.Views
 
                 foreach (var key in new[] { "status", "assignee", "storey", "level" })
                 {
-                    var found = ClashFacets.Of(key, Results(), Storeys());
+                    var found = ClashFacets.Of(key, Results(), Storeys(), Issued());
 
                     if (found != null) facets.Add(found);
                 }
@@ -595,7 +603,7 @@ namespace CamelWorks.UI.Views
                                                         StringComparison.OrdinalIgnoreCase)))
                         continue;
 
-                    var found = ClashFacets.Of(clause.Facet, Results(), Storeys());
+                    var found = ClashFacets.Of(clause.Facet, Results(), Storeys(), Issued());
 
                     if (found != null) facets.Add(found);
                 }
@@ -614,7 +622,7 @@ namespace CamelWorks.UI.Views
                 // never how much of the board that leaves behind, which is the number a
                 // coordinator is actually deciding on.
                 var held = Results().Count;
-                var kept = _profile.Pick.Take(Results(), Storeys()).Count;
+                var kept = _profile.Pick.Take(Results(), Storeys(), Issued()).Count;
 
                 if (kept < held)
                 {
@@ -727,7 +735,7 @@ namespace CamelWorks.UI.Views
             {
                 var items = new List<Parts.Entry> { Parts.Entry.Heading("Filter by") };
 
-                foreach (var facet in ClashFacets.Every(Results(), Storeys()))
+                foreach (var facet in ClashFacets.Every(Results(), Storeys(), Issued()))
                 {
                     var here = facet;
 
@@ -801,7 +809,7 @@ namespace CamelWorks.UI.Views
             {
                 var offered = new List<string> { Whole };
 
-                offered.AddRange(ClashFacets.Every(Results(), Storeys()).Select(one => one.Title));
+                offered.AddRange(ClashFacets.Every(Results(), Storeys(), Issued()).Select(one => one.Title));
 
                 var here = _profile.SplitBy == null ? Whole : Titled(_profile.SplitBy);
 
@@ -824,7 +832,7 @@ namespace CamelWorks.UI.Views
             {
                 var offered = new List<string> { AsFound };
 
-                offered.AddRange(ClashFacets.Every(Results(), Storeys()).Select(one => one.Title));
+                offered.AddRange(ClashFacets.Every(Results(), Storeys(), Issued()).Select(one => one.Title));
 
                 var here = _profile.Pick.Sort == null ? AsFound : Titled(_profile.Pick.Sort);
 
@@ -861,7 +869,7 @@ namespace CamelWorks.UI.Views
             /// <summary>The saved key behind a parameter's on-screen title.</summary>
             /// <param name="title">What it is called on screen.</param>
             private string? Keyed(string? title) =>
-                ClashFacets.Every(Results(), Storeys())
+                ClashFacets.Every(Results(), Storeys(), Issued())
                     .FirstOrDefault(one => string.Equals(one.Title, title,
                                                          StringComparison.OrdinalIgnoreCase))?.Key;
 
@@ -878,7 +886,7 @@ namespace CamelWorks.UI.Views
             }
 
             private string Titled(string? key) =>
-                ClashFacets.Of(key, Results(), Storeys())?.Title ?? key ?? "nothing";
+                ClashFacets.Of(key, Results(), Storeys(), Issued())?.Title ?? key ?? "nothing";
 
             // -------------------------------------------------------------------------------
             // Writing the packs
@@ -922,7 +930,7 @@ namespace CamelWorks.UI.Views
             /// <summary>The packs this profile would write, from the rows going out.</summary>
             /// <param name="going">The rows going out.</param>
             private IReadOnlyList<ExportRound> Rounds(IReadOnlyList<ClashItem> going) =>
-                _profile.Rounds(going, Board(), Storeys());
+                _profile.Rounds(going, Board(), Storeys(), Issued());
 
             /// <summary>Write the packs.</summary>
             /// <param name="job">The run.</param>
@@ -976,6 +984,13 @@ namespace CamelWorks.UI.Views
 
                     wrote++;
 
+                    // Which clashes went out, to whom, and where each stood when it went. The
+                    // per-test stamp below answers "have I sent this test" and nothing else; a
+                    // weekly issue is a delta on the results, and without this a pack either
+                    // repeated four hundred clashes the trade already had or left out the ones
+                    // that moved.
+                    Issued().Stamp(round.Selection.Items, round.Recipient, when);
+
                     _sending.Children.Add(Ui.Note(
                         Path.GetFileName(file) + " - " + round.Selection.Explain()));
                 }
@@ -984,6 +999,8 @@ namespace CamelWorks.UI.Views
                 // gone at all.
                 _profile.Stamp(going.Select(one => one.TestName).Distinct(StringComparer.OrdinalIgnoreCase),
                                when);
+
+                _store.Section(ProjectStore.ClashSection).Set(ClashIssueLog.Key, Issued().ToJson());
 
                 Keep(quiet: true);
 
@@ -1081,6 +1098,19 @@ namespace CamelWorks.UI.Views
                 DrawReading();
             }
 
+            /// <summary>
+            /// Who a pack is from: what somebody typed, or the file's own name.
+            /// </summary>
+            /// <param name="file">The pack's path.</param>
+            private string Party(string file) =>
+                _parties.TryGetValue(file, out var said) && said.Trim().Length > 0
+                    ? said.Trim()
+                    : Path.GetFileNameWithoutExtension(file);
+
+            /// <summary>Parties named by hand, by the pack's path.</summary>
+            private readonly Dictionary<string, string> _parties =
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
             /// <summary>The packs chosen, with what each one turned out to hold.</summary>
             private void DrawPacks()
             {
@@ -1104,11 +1134,11 @@ namespace CamelWorks.UI.Views
 
                     var answered = _reading?.Rows.Count(
                         row => row.Answers.Any(say => string.Equals(
-                            say.Party, Path.GetFileNameWithoutExtension(one),
+                            say.Party, Party(one),
                             StringComparison.OrdinalIgnoreCase))) ?? 0;
 
                     return new TableRow(one,
-                        Path.GetFileNameWithoutExtension(one),
+                        Party(one),
                         Path.GetFileName(one),
                         read == null ? string.Empty
                             : read.Results.ToString("N0", CultureInfo.InvariantCulture),
@@ -1128,6 +1158,29 @@ namespace CamelWorks.UI.Views
                 _files.Children.Add(Ui.Loose(table));
 
                 _files.Children.Add(Ui.Picking(table,
+                    new Ui.OnPicked("Say who these {n} are from", (picked, said) =>
+                    {
+                        var held = picked.OfType<string>().ToList();
+
+                        if (held.Count == 0)
+                        {
+                            said.Children.Add(Ui.Note("Select at least one pack."));
+                            return;
+                        }
+
+                        Parts.Ask(_files, "Who is this from", Party(held[0]), "Use this name",
+                                  named => Ui.Safely(() =>
+                        {
+                            foreach (var one in held) _parties[one] = named;
+
+                            // The reading carries the old names on every answer, so it is read
+                            // again rather than relabelled in place.
+                            _reading = null;
+
+                            DrawPacks();
+                            DrawReading();
+                        }));
+                    }, primary: true),
                     new Ui.OnPicked("Take out these {n}", (picked, said) =>
                     {
                         var held = picked.OfType<string>().ToList();
@@ -1185,9 +1238,12 @@ namespace CamelWorks.UI.Views
                         return;
                     }
 
-                    // The party is the file's own name. Asking somebody to type "Mechanical"
-                    // beside a file called Mechanical.bcfzip is asking them to do the tool's job.
-                    packs.Add(new ExchangePack(Path.GetFileNameWithoutExtension(file),
+                    // The party is the file's own name unless somebody has said otherwise. Asking
+                    // for "Mechanical" beside a file called Mechanical.bcfzip is asking them to do
+                    // the tool's job; what actually arrives is "RE_ L3 clashes - responses FINAL
+                    // v2 (3).bcfzip", and one from the sprinkler subcontractor called
+                    // Mechanical.bcfzip.
+                    packs.Add(new ExchangePack(Party(file),
                                                ClashFile.Read(bytes), Path.GetFileName(file)));
                 }
 

@@ -378,9 +378,11 @@ namespace CamelWorks.Core.Clash
         /// <param name="items">Everything on the board.</param>
         /// <param name="groups">The board's folders, or null when it has none.</param>
         /// <param name="plan">The project's storeys, for a filter that names one.</param>
+        /// <param name="issued">What has already gone out, for a filter that names it.</param>
         public ExportSelection Choose(IEnumerable<ClashItem>? items,
                                       IEnumerable<ClashGroup>? groups = null,
-                                      Data.LevelPlan? plan = null)
+                                      Data.LevelPlan? plan = null,
+                                      ClashIssueLog? issued = null)
         {
             var board = (items ?? Array.Empty<ClashItem>()).Where(i => i != null).ToList();
 
@@ -429,7 +431,7 @@ namespace CamelWorks.Core.Clash
 
             if (!Pick.IsEverything)
             {
-                var narrowed = Pick.Take(keeping, plan);
+                var narrowed = Pick.Take(keeping, plan, issued);
 
                 byFilter = keeping.Count - narrowed.Count;
                 keeping = narrowed.ToList();
@@ -480,11 +482,13 @@ namespace CamelWorks.Core.Clash
         /// <param name="items">Everything on the board.</param>
         /// <param name="groups">The board's folders.</param>
         /// <param name="plan">The project's storeys.</param>
+        /// <param name="issued">What has already gone out, for a filter that names it.</param>
         public IReadOnlyList<ExportRound> Rounds(IEnumerable<ClashItem>? items,
                                                  IEnumerable<ClashGroup>? groups = null,
-                                                 Data.LevelPlan? plan = null)
+                                                 Data.LevelPlan? plan = null,
+                                                 ClashIssueLog? issued = null)
         {
-            var chosen = Choose(items, groups, plan);
+            var chosen = Choose(items, groups, plan, issued);
 
             if (string.IsNullOrWhiteSpace(SplitBy))
                 return new[] { new ExportRound(Name, chosen) };
