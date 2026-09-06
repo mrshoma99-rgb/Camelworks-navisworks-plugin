@@ -153,9 +153,11 @@ namespace CamelWorks.UI.Views
             Checks = new CheckCatalogue();
 
             // Registered on the empty seat too, so the picker on a seat with no document lists the
-            // check and says why it is unavailable rather than leaving it out.
-            Checks.Add(new ClearanceCheck(Findings.Findings, CheckRunStore.Read(store), _document,
-                                         project: store));
+            // checks and says why each is unavailable rather than leaving them out.
+            var runs = CheckRunStore.Read(store);
+
+            Checks.Add(new ClearanceCheck(Findings.Findings, runs, _document, project: store));
+            Checks.Add(new FallCheck(Findings.Findings, runs, _document, _document, project: store));
         }
 
         /// <inheritdoc />

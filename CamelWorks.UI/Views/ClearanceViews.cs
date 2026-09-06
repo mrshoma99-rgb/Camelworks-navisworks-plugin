@@ -35,11 +35,64 @@ namespace CamelWorks.UI.Views
         // Which check is being set up and which of its runs, held between visits: a federation
         // sweep is a minute of traversal and glancing at another tab must not cost it.
         private static string _checkKey = FindingSource.Headroom;
-        private static string? _runId;
 
-        /// <summary>The surface, for a desk to bench.</summary>
+        /// <summary>
+        /// Which run is being set up, across every check's set-up screen.
+        ///
+        /// Shared rather than one per screen because the tab holds one run at a time: the picker
+        /// swaps which check is showing, and a run id belongs to whichever check is.
+        /// </summary>
+        internal static string? Picked { get; set; }
+
+        /// <summary>
+        /// The surface, for a desk to bench.
+        ///
+        /// A frame rather than a screen, because the tab holds one check's set-up at a time and
+        /// the picker swaps it. The tab's surface is built once and kept by the app window, so a
+        /// screen swap has to happen inside it.
+        /// </summary>
         /// <param name="seat">The seat this is running in.</param>
-        public static UIElement Check(ISeat seat) => new Screen(seat).Build();
+        public static UIElement Check(ISeat seat)
+        {
+            var frame = new ContentControl();
+
+            Draw(frame, seat);
+
+            return frame;
+        }
+
+        /// <summary>
+        /// Put the set-up of whichever check is showing into the tab's frame.
+        ///
+        /// The one place that knows which screen belongs to which check. A check with no set-up
+        /// screen of its own falls back to the clearance screen's run list, which states that it
+        /// has none rather than drawing an empty tab.
+        /// </summary>
+        /// <param name="frame">The tab's frame, or null when there is nothing to draw into.</param>
+        /// <param name="seat">The seat this is running in.</param>
+        internal static void Draw(ContentControl? frame, ISeat seat)
+        {
+            if (frame == null) return;
+
+            frame.Content = seat.Checks.Find(_checkKey) is FallCheck
+                ? FallHazardViews.Setup(seat, frame)
+                : (UIElement)new Screen(seat, frame).Build();
+        }
+
+        /// <summary>
+        /// Set up another check's runs. Nothing on one of these screens belongs to two checks, so
+        /// the whole set-up is swapped rather than redrawn.
+        /// </summary>
+        /// <param name="frame">The tab's frame.</param>
+        /// <param name="seat">The seat this is running in.</param>
+        /// <param name="check">The check picked.</param>
+        internal static void Pick(ContentControl? frame, ISeat seat, ICheck check)
+        {
+            _checkKey = check.Key;
+            Picked = null;
+
+            Draw(frame, seat);
+        }
 
         static ClearanceViews() => Host.WhenDocumentChanges(Forget);
 
@@ -52,7 +105,7 @@ namespace CamelWorks.UI.Views
         {
             ClearanceSurfaces.Forget();
 
-            _runId = null;
+            Picked = null;
         }
 
         /// <summary>
@@ -70,12 +123,17 @@ namespace CamelWorks.UI.Views
         private sealed class Screen
         {
             private readonly ISeat _seat;
+            private readonly ContentControl? _frame;
 
             private readonly StackPanel _log = Ui.Stack();
             private readonly StackPanel _runs = Ui.Stack();
             private readonly StackPanel _picker = Ui.Stack();
 
-            internal Screen(ISeat seat) => _seat = seat;
+            internal Screen(ISeat seat, ContentControl? frame)
+            {
+                _seat = seat;
+                _frame = frame;
+            }
 
             private Measure Units => _seat.Profile.Units;
 
@@ -90,7 +148,7 @@ namespace CamelWorks.UI.Views
             private ClearanceCheck? Clearance => Current as ClearanceCheck;
 
             /// <summary>The run being set up, or null when none is picked.</summary>
-            private CheckRunSpec? Run() => Clearance?.Spec(_runId);
+            private CheckRunSpec? Run() => Clearance?.Spec(Picked);
 
             /// <summary>The run's settings, or the defaults when there is no run.</summary>
             private ClearanceSettings Settings() => ClearanceSettings.From(Run());
@@ -137,15 +195,10 @@ namespace CamelWorks.UI.Views
                 _picker.Children.Add(Ui.Loose(row));
             }
 
-            /// <summary>Set up another check's runs. Nothing here belongs to two checks.</summary>
+            /// <summary>Set up another check's runs, which is another screen in the same frame.</summary>
             /// <param name="check">The check picked.</param>
-            private void Pick(ICheck check)
-            {
-                _checkKey = check.Key;
-                _runId = null;
-
-                Ui.Safely(() => { RedrawPicker(); RedrawRuns(); });
-            }
+            private void Pick(ICheck check) =>
+                Ui.Safely(() => ClearanceViews.Pick(_frame, _seat, check));
 
             /// <summary>
             /// The runs this check has saved, with what each covers and when it last ran. A run
@@ -199,7 +252,7 @@ namespace CamelWorks.UI.Views
                     Ui.Count(one.ResultCount, check.ResultWord),
                     When(one))
                 {
-                    Tone = string.Equals(one.Id, _runId, StringComparison.Ordinal)
+                    Tone = string.Equals(one.Id, Picked, StringComparison.Ordinal)
                         ? Tone.Good
                         : Tone.Plain,
                 }).ToList();
@@ -212,7 +265,7 @@ namespace CamelWorks.UI.Views
                 {
                     if (!(table.SelectedItem is TableRow row) || !(row.Source is CheckRun one)) return;
 
-                    _runId = one.Id;
+                    Picked = one.Id;
                 };
 
                 _runs.Children.Add(table);
@@ -252,7 +305,7 @@ namespace CamelWorks.UI.Views
 
                 var problem = check.Put(made);
 
-                _runId = made.Id;
+                Picked = made.Id;
 
                 RedrawRuns();
 
@@ -263,7 +316,7 @@ namespace CamelWorks.UI.Views
 
             /// <summary>The runs a picking bar handed over.</summary>
             /// <param name="picked">What was picked.</param>
-            private static List<CheckRun> Picked(IReadOnlyList<object> picked) =>
+            private static List<CheckRun> Chosen(IReadOnlyList<object> picked) =>
                 picked.OfType<CheckRun>().ToList();
 
             /// <summary>
@@ -309,9 +362,9 @@ namespace CamelWorks.UI.Views
             /// <param name="said">Where the bar says what it did.</param>
             private void RunPicked(IReadOnlyList<object> picked, Panel said)
             {
-                var runs = Picked(picked);
+                var runs = Chosen(picked);
 
-                if (runs.Count > 0) _runId = runs[0].Id;
+                if (runs.Count > 0) Picked = runs[0].Id;
 
                 Ran(runs.Select(one => one.Id).ToList(), null, said);
             }
@@ -337,7 +390,7 @@ namespace CamelWorks.UI.Views
             /// <param name="said">Where the bar says what it did.</param>
             private void Rename(IReadOnlyList<object> picked, Panel said)
             {
-                var runs = Picked(picked);
+                var runs = Chosen(picked);
 
                 if (runs.Count != 1)
                 {
@@ -363,7 +416,7 @@ namespace CamelWorks.UI.Views
             /// <param name="said">Where the bar says what it did.</param>
             private void Delete(IReadOnlyList<object> picked, Panel said)
             {
-                var runs = Picked(picked);
+                var runs = Chosen(picked);
 
                 if (runs.Count == 0) return;
 
@@ -374,8 +427,8 @@ namespace CamelWorks.UI.Views
                 {
                     Current?.Runner?.Delete(runs.Select(one => one.Id).ToList());
 
-                    if (runs.Any(one => string.Equals(one.Id, _runId, StringComparison.Ordinal)))
-                        _runId = null;
+                    if (runs.Any(one => string.Equals(one.Id, Picked, StringComparison.Ordinal)))
+                        Picked = null;
 
                     RedrawRuns();
 
@@ -386,7 +439,7 @@ namespace CamelWorks.UI.Views
             /// <summary>Run the picked run from the action row.</summary>
             /// <param name="job">The job, for progress and a Stop.</param>
             private void RunNow(Job job) =>
-                Ran(_runId == null ? Array.Empty<string>() : new[] { _runId },
+                Ran(Picked == null ? Array.Empty<string>() : new[] { Picked },
                     read => job.Step(read, "elements read"), _log);
 
             /// <summary>What one symbol on the action row is for, in a window of its own.</summary>

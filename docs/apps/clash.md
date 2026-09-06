@@ -485,6 +485,64 @@ results are on Manage.
 - **The hand-off:** pressing Run goes to the Manage tab with that check picked and that run
   selected, the same way the Exchange tab is handed its tests.
 
+## Checks ▸ Fall hazard — the second check on the tab
+
+A hole in a slab clashes with nothing, and the clearance check has no surface over it to measure
+down from, so neither reports one. Fall hazard draws a plan of one level from the floor triangles
+and reports two things: every opening enclosed by floor that is wide enough to fall through, and
+every floor edge facing such an opening with no handrail along it.
+
+- *Ported rather than written.* The engine is the fall-hazard rasteriser from the owner's own
+  graph product, whose pure half was already host-free, and its own test file came with it: the
+  cell-size-independent clearance, the slot judged by its width and not its length, the corners of
+  a wide opening, and the break too short to fall through. Every one of those pins a defect found
+  on a real model.
+- *Fixed in the port:* every length is metres, and `Measure` is the only unit authority as it is
+  everywhere else. The source worked in document units and printed the same opening's gap two
+  different ways in two of its own outputs.
+- *Fixed in the port:* **the raster records which element covered each cell.** The source lost
+  element identity the moment triangles arrived as one undifferentiated list, so a hazard could
+  carry a coordinate and nothing else — nothing to focus, isolate, attach an issue to or send in a
+  pack. An opening now names the slabs it is cut in and a dangerous run names the floor it runs
+  along.
+- *Fixed in the port:* the per-opening and per-run records survive. The source computed both and
+  kept three aggregate lengths, so an edge that needed a handrail could be reported as a number of
+  metres and never as a place. A dangerous run is the per-edge finding.
+- *Fixed in the port:* a run's length is measured along the void it faces rather than counted in
+  cells. A 45-degree rim is a staircase two cells wide, so counting cells reported about √2 more
+  than the truth — and the smallest-break setting is judged on the same quantity.
+- *Fixed in the port:* the distance through a void is swept to convergence and **says so when it
+  hits the cap**. The source stopped at sixteen sweeps and left stale distances that read as safe,
+  silently. Hitting the cap now appears in the read's notes on the board.
+- *Held honestly:* what this check cannot see is written down on `FloorGaps` itself, in the order
+  it matters. The largest is the plan silhouette: an element whose box reaches the band contributes
+  its whole outline, so a column, a riser or a stair through the level reads as solid floor. That
+  was a deliberate trade — reading a thin Z band instead left equipment cap faces out, and
+  equipment then read as open floor rather than as a plug — and undoing it is a change to the
+  algorithm rather than a port of it. Also recorded: bounding-box spanning selects far too
+  coarsely, cells are sampled at their centres so anything thinner than a cell is a coin flip, an
+  opening is only found when it is fully enclosed, the chamfer's two hand-tuned constants, that
+  handrails are matched by proximity alone and are neither height- nor band-filtered, and the flat
+  six-million-cell cap.
+- *The set-up:* nine settings — the floor, handrail and obstruction sides, the level, the band,
+  the cell size, the gap that needs a handrail, the handrail reach and the smallest break worth
+  reporting. Nine is why they are in two windows off the action row rather than laid beside the run
+  list, and why this screen has no fold. A run is a `CheckRunSpec` in the project file, like a
+  clearance run, and re-running is pressing Run on it.
+- *The results are on Manage*, like every other check's, with three declared columns: the opening's
+  area, the widest gap and the length of edge with no handrail. An opening fills two of them and a
+  dangerous run the other two.
+- **What adding this check touched.** One class implementing `ICheck`, one `CheckCatalogue.Add`
+  call per seat, a set-up screen and a harness page. The board, the register, the columns, the
+  journal, the delta and the pack writer took no edit at all. What it did cost is the Checks tab's
+  own frame: the tab holds one check's set-up at a time and the picker has to swap it, so
+  `ClearanceViews.Check` now draws into a frame and names which screen belongs to which check.
+  That dispatch is one method, and it is the only place in the product that knows a check has a
+  set-up screen of its own.
+- *Not verifiable here:* nothing in this check has been run against real geometry. The raster, the
+  findings and the settings are covered by unit tests on synthetic meshes, and what a real
+  federation's floors rasterise to at a real level is a licensed-seat check before release.
+
 ## What the clearance tab was, and what stayed
 
 The tab was called "Clearance", asked "what counts as a floor", offered *Floors and slabs* as an

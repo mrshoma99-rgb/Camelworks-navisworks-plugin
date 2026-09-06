@@ -181,7 +181,46 @@ namespace CamelWorks.Studio
             // a screen to open on, so the greyed entry and its reason — the state this control
             // exists for — had never been drawn.
             Page("app-clash-picker", "Clash Manager · The check picker", 420, Picker),
+
+            // The fall-hazard set-up, which is nine settings in two windows off the action row.
+            // The windows are what the page is for: the tab's own frame is the same shape as
+            // app-clash-checks, and a window needs a screen to open on that this harness has not.
+            // Not in the render's default list; named on dispatch.
+            Page("app-clash-fall", "Clash Manager · Fall hazard set-up", 900, Falling),
         };
+
+        /// <summary>
+        /// Fall hazard ▸ what to read and how to judge it, over a saved run.
+        ///
+        /// A run is saved into the scratch project first, because the settings belong to a run and
+        /// the pages say so rather than drawing controls over nothing.
+        /// </summary>
+        private static UIElement Falling()
+        {
+            var seat = Seated();
+            var check = seat.Checks.All.OfType<FallCheck>().First();
+
+            var spec = new CheckRunSpec(check.Key, "level3-openings", "Level 3 openings");
+
+            new FallSettings
+            {
+                Floors = "Level 03 Floors",
+                Handrails = "Level 03 Handrails",
+                Obstructions = FallSettings.Nothing,
+                LevelMetres = 10.5,
+                BandMetres = 1.0,
+                CellMetres = 0.1,
+                LimitMetres = 0.2,
+                HandrailToleranceMetres = 0.3,
+                MinPassageMetres = 0.5,
+            }.Write(spec);
+
+            check.Put(spec);
+
+            return Deck("clash", "checks",
+                        Bench.Surface(null, Ui.Runner("Run", Ui.Stack(), _ => { }),
+                                      FallHazardViews.Drawn(seat, spec)));
+        }
 
         /// <summary>
         /// The check picker's own menu, with an unavailable check in it.

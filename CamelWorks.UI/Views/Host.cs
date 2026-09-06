@@ -42,11 +42,16 @@ namespace CamelWorks.UI.Views
             Checks = new CheckCatalogue();
             Baselines = SetBaselineStore.Open(PhysicalFileSystem.Instance, store);
 
-            Checks.Add(new ClearanceCheck(Findings.Findings, CheckRunStore.Read(store), model,
+            var runs = CheckRunStore.Read(store);
+
+            Checks.Add(new ClearanceCheck(Findings.Findings, runs, model,
                                           Triangles, MetresPerUnit,
                                           () => SaveWork(out var problem) ? null : problem,
                                           LevelPlan.FromJson(store.Section(ProjectStore.ProfileSection)[LevelPlan.Key]),
                                           store));
+
+            Checks.Add(new FallCheck(Findings.Findings, runs, model, Triangles, MetresPerUnit,
+                                     () => SaveWork(out var problem) ? null : problem, store));
         }
 
         /// <summary>
