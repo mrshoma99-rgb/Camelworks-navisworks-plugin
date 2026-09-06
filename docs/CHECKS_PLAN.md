@@ -1313,13 +1313,30 @@ Recorded and deferred:
 
 Automatic floor finding is the first thing the owner asked for, and the honest
 statement about it is in 3.3: at 0.05 m² a desk top, a worktop and a duct top all
-pass the minimum-area filter. A user given one option labelled "Detected walkable
-surfaces" will believe the software found the floors. So the honesty is on the
-screen, not only in this document:
+pass the minimum-area filter.
 
-- The option's own sentence carries the caveat: **"Detected walkable surfaces —
-  every up-facing surface over 0.05 m², which includes desk tops and duct tops."**
-  Not a tooltip, not a footnote.
+**Detection refines a source; it does not replace one.** The owner's correction:
+the user already says what to measure up from — the current selection, a search
+set, a selection set — and they pick the floors there. Detection then finds the
+up-facing patches *within that source*. A user who scopes to a floors set has no
+desk-top problem, because no desk was ever in scope.
+
+The first implementation got this wrong in two ways, and both are Phase 10's to
+correct if they are not corrected sooner: `Detect` passed
+`TraversalScope.WholeDocument` regardless of the source, and the detected option
+sat in the "Measure up from" list as a peer of the sets, so choosing it discarded
+the source rather than refining it. The shape is: source first, then a tick that
+finds the walkable surfaces in it.
+
+That makes the caveat proportional rather than constant. Over a named set it is
+noise; over everything loaded it is the whole story. So:
+
+- **The caveat is carried when the scope earns it.** Scoped to everything loaded
+  or to the current selection, the option's own sentence reads "every up-facing
+  surface over 0.05 m², which includes desk tops and duct tops". Scoped to a named
+  set, it states what it did — the surfaces found in that set — without the
+  warning, because the user chose what went in. Not a tooltip, not a footnote,
+  and not a constant.
 - **A count and a total area are reported before the run**, from
   `WalkableDiagnostics`: "412 surfaces, 8,940 m², 31 elements refused". A user who
   sees 412 surfaces on a two-storey office knows what has happened.
