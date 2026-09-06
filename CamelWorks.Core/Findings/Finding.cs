@@ -38,6 +38,16 @@ namespace CamelWorks.Core.Findings
         /// </summary>
         public bool InHost { get; set; }
 
+        /// <summary>
+        /// What the host calls this remark, or zero when it did not come from one.
+        ///
+        /// Not recorded in the project file: it is a handle into the document that is open, and
+        /// the host reissues it. Navisworks makes every field of a comment read-only and gives
+        /// each one an id, so changing or removing a remark means rebuilding the trail around that
+        /// id — which is the only thing this is for.
+        /// </summary>
+        public long HostId { get; set; }
+
         /// <summary>Whether this is the same remark as another - same author, same words, same day.</summary>
         /// <param name="other">The other remark.</param>
         public bool Repeats(FindingComment? other) =>

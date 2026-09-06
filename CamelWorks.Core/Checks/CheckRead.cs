@@ -12,6 +12,10 @@ namespace CamelWorks.Core.Checks
     /// Everything a check produces is a <see cref="Finding"/>, so a read is the runs it covered,
     /// the findings it produced, the predicate those findings are observed under, and whatever the
     /// read could not do.
+    ///
+    /// One obligation on the producer: a read that covers run R reports every result of run R,
+    /// including a result R shares with another run that was not read. A read that leaves one out
+    /// is telling the register the result is gone.
     /// </summary>
     public sealed class CheckRead
     {
@@ -46,6 +50,10 @@ namespace CamelWorks.Core.Checks
         /// Not optional and not a convenience. A read observed with no scope marks every finding of
         /// that source the read did not report absent, which is correct only while a check has
         /// exactly one run and silently wrong the moment it has two.
+        ///
+        /// The derived scope also leaves out a finding naming a run this read did not cover, for
+        /// the reason on <see cref="CheckFacts.ScopeOf"/>: a finding in two runs read through one
+        /// of them is not something this read can report gone.
         /// </summary>
         public Func<Finding, bool> Scope { get; }
 

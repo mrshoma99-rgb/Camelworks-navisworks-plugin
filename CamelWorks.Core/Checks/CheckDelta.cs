@@ -57,7 +57,8 @@ namespace CamelWorks.Core.Checks
 
         /// <summary>
         /// Findings held closed that this run reported present again, as
-        /// <see cref="FindingIntake.Reopened"/> recorded them.
+        /// <see cref="FindingIntake.Reopened"/> recorded them, narrowed to the ones this run speaks
+        /// for and the register still holds present.
         /// </summary>
         public IReadOnlyList<string> Regressed { get; }
 
@@ -114,7 +115,18 @@ namespace CamelWorks.Core.Checks
             if (now == null) throw new ArgumentNullException(nameof(now));
             if (scope == null) throw new ArgumentNullException(nameof(scope));
 
-            var regressed = intake?.Reopened ?? (IReadOnlyList<string>)Array.Empty<string>();
+            // Scoped like the other three. The intake covers whatever the read covered, which can
+            // be several runs, so a delta for one run would otherwise report the reopenings of
+            // every run the read touched. A reopening whose finding the register no longer holds
+            // as present is left out for the same reason.
+            var regressed = (IReadOnlyList<string>)(intake?.Reopened ?? Array.Empty<string>())
+                .Where(id =>
+                {
+                    var finding = now.Find(id);
+
+                    return finding != null && finding.IsPresent && scope(finding);
+                })
+                .ToList();
 
             if (before == null)
                 return new CheckDelta(true, Array.Empty<string>(), Array.Empty<string>(),
@@ -129,15 +141,25 @@ namespace CamelWorks.Core.Checks
             // returning, or a model that moved would report fewer gone than it has.
             var claimed = new HashSet<string>(StringComparer.Ordinal);
 
-            foreach (var finding in now.Present.Where(scope)
-                                       .OrderBy(finding => finding.Id, StringComparer.Ordinal))
-            {
-                if (before.Holds(finding.Id) && claimed.Add(finding.Id))
-                {
-                    persisting.Add(finding.Id);
-                    continue;
-                }
+            var present = now.Present.Where(scope)
+                             .OrderBy(finding => finding.Id, StringComparer.Ordinal).ToList();
 
+            var unmatched = new List<Finding>(present.Count);
+
+            // Pass one: every exact match, before any alias is spent. Done per finding instead, a
+            // finding sorting earlier could take through an alias the very id another finding owns
+            // exactly, and that finding would then read as new while the alias match reported the
+            // model as having moved. The winner would also depend on the order the register
+            // enumerates, so the same model would report differently from one run to the next.
+            foreach (var finding in present)
+            {
+                if (before.Holds(finding.Id) && claimed.Add(finding.Id)) persisting.Add(finding.Id);
+                else unmatched.Add(finding);
+            }
+
+            // Pass two: the aliases, over what is left and against what pass one did not claim.
+            foreach (var finding in unmatched)
+            {
                 var matched = false;
 
                 foreach (var alias in aliases?.Invoke(finding) ?? Array.Empty<string>())
@@ -152,6 +174,9 @@ namespace CamelWorks.Core.Checks
 
                 if (!matched) added.Add(finding.Id);
             }
+
+            persisting.Sort(StringComparer.Ordinal);
+            added.Sort(StringComparer.Ordinal);
 
             var gone = before.Statuses.Keys.Where(id => !claimed.Contains(id))
                              .OrderBy(id => id, StringComparer.Ordinal).ToList();

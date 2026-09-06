@@ -24,6 +24,8 @@ namespace CamelWorks.Core.Testing
             new Dictionary<string, List<ElementKey>>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<ElementKey, TriangleMesh?> _meshes =
             new Dictionary<ElementKey, TriangleMesh?>();
+        private int _refusalsInARow;
+        private bool _somethingRead;
         private List<ElementKey> _selection = new List<ElementKey>();
 
         /// <inheritdoc />
@@ -227,6 +229,16 @@ namespace CamelWorks.Core.Testing
             Record("mesh.refuse " + key);
         }
 
+        /// <summary>
+        /// How many refusals in a row, with nothing ever read, before this seat calls itself
+        /// unable — as a host source does when its primitive reader is missing.
+        ///
+        /// Zero never does, which is the ordinary seat. Settable so the caller's whole-seat path is
+        /// reached from a seat that starts out saying it can read, which is how the real one
+        /// behaves: nothing can know the reader is missing until something has been refused.
+        /// </summary>
+        public int RefusalsBeforeTheSeatIsUnable { get; set; }
+
         /// <inheritdoc />
         public bool TryRead(ElementKey key, out TriangleMesh? mesh)
         {
@@ -236,12 +248,41 @@ namespace CamelWorks.Core.Testing
 
             // An element nobody gave triangles to was read and has none, which is not a refusal:
             // a grouping node and an annotation both read that way.
-            if (!_meshes.TryGetValue(key, out var held)) { mesh = TriangleMesh.Empty; return true; }
+            if (!_meshes.TryGetValue(key, out var held)) { mesh = TriangleMesh.Empty; Kept(); return true; }
 
-            if (held == null) return false;
+            if (held == null)
+            {
+                Refused();
+
+                return false;
+            }
 
             mesh = WeldsOnRead ? held.Weld() : held;
+            Kept();
+
             return true;
+        }
+
+        /// <summary>An element that read, which clears any run of refusals.</summary>
+        private void Kept()
+        {
+            _somethingRead = true;
+            _refusalsInARow = 0;
+        }
+
+        /// <summary>An element the seat refused, which can be the seat itself refusing.</summary>
+        private void Refused()
+        {
+            _refusalsInARow++;
+
+            if (_somethingRead || RefusalsBeforeTheSeatIsUnable <= 0
+                || _refusalsInARow < RefusalsBeforeTheSeatIsUnable)
+                return;
+
+            CanReadTriangles = false;
+            Unavailable = "the primitive reader on this seat refused the first "
+                + _refusalsInARow.ToString(CultureInfo.InvariantCulture)
+                + " elements it was asked for and has read none.";
         }
 
         /// <inheritdoc />

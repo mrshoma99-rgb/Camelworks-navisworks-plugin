@@ -14,6 +14,12 @@ namespace CamelWorks.Core.Abstractions
     ///
     /// Positions are three doubles per vertex; indices are three per triangle and address
     /// vertices, not doubles.
+    ///
+    /// Doubles the whole way, with no float door in. These are world coordinates: at site
+    /// coordinates a float ulp is about 31 mm, which is coarser than the 0.1 mm weld tolerance and
+    /// the 50 mm elevation bucket that surface detection works to, so a mesh that has been through
+    /// float cannot be welded or banded reliably on the models the site-coordinate rules exist for.
+    /// A host that marshals floats widens each coordinate as it collects it.
     /// </summary>
     public sealed class TriangleMesh
     {
@@ -61,9 +67,11 @@ namespace CamelWorks.Core.Abstractions
         ///
         /// Never a default box grown by containment: that starts at the world origin, and on a
         /// site-coordinate model the box then reaches back to it and covers the whole quadrant.
-        /// An empty mesh reports a zero box at the origin, which is the one case where there is
-        /// no first vertex to seed from.
+        /// For the same reason an empty mesh has no box rather than a zero box at the origin —
+        /// a zero box at the origin is a place, and every containment test against it answers
+        /// about that place. Ask <see cref="Vertices"/> first.
         /// </summary>
+        /// <exception cref="InvalidOperationException">The mesh has no vertices to seed a box from.</exception>
         public BoundingBox Bounds
         {
             get
@@ -71,10 +79,8 @@ namespace CamelWorks.Core.Abstractions
                 if (_bounds.HasValue) return _bounds.Value;
 
                 if (Vertices == 0)
-                {
-                    _bounds = new BoundingBox(0, 0, 0, 0, 0, 0);
-                    return _bounds.Value;
-                }
+                    throw new InvalidOperationException("an empty mesh has no box: it is not a zero "
+                        + "box at the world origin, which is a place a containment test answers about");
 
                 var box = new BoxFit(Positions[0], Positions[1], Positions[2]);
 
@@ -153,26 +159,6 @@ namespace CamelWorks.Core.Abstractions
             return new TriangleMesh(positions, indices);
         }
 
-        /// <summary>
-        /// A mesh from single-precision positions, as a host that marshals floats hands them over.
-        ///
-        /// Here rather than at the seam's far side so that the widening, like the weld and the
-        /// scale, is on the side of the seam that has tests.
-        /// </summary>
-        /// <param name="positions">Vertex positions, three floats each, in metres.</param>
-        /// <param name="indices">Triangle indices, three per triangle.</param>
-        public static TriangleMesh FromSingles(IReadOnlyList<float> positions, IReadOnlyList<int> indices)
-        {
-            if (positions == null) throw new ArgumentNullException(nameof(positions));
-            if (indices == null) throw new ArgumentNullException(nameof(indices));
-
-            var widened = new double[positions.Count];
-
-            for (var i = 0; i < positions.Count; i++) widened[i] = positions[i];
-
-            return new TriangleMesh(widened, indices);
-        }
-
         /// <inheritdoc />
         public override string ToString() => Vertices + " vertices, " + Triangles + " triangles";
     }
@@ -188,15 +174,35 @@ namespace CamelWorks.Core.Abstractions
     /// </summary>
     public interface ITriangleSource
     {
-        /// <summary>False when this seat cannot produce triangles at all.</summary>
+        /// <summary>
+        /// False when this seat cannot produce triangles at all, as against one element the host
+        /// refused.
+        ///
+        /// Whole-seat, and it is the answer a caller changes its behaviour on: a caller that finds
+        /// this false takes bounding boxes for every element and says on screen that it did. An
+        /// implementation that answers true on a seat where every element refuses reports "n
+        /// elements refused" instead, which reads as a model problem rather than a seat problem.
+        /// </summary>
         bool CanReadTriangles { get; }
 
         /// <summary>Why triangles are unavailable, or null when they are available.</summary>
         string? Unavailable { get; }
 
         /// <summary>
-        /// One element's triangles. False when the host refused it, which is ordinary: the caller
-        /// degrades to the element's box rather than stopping the run.
+        /// One element's triangles.
+        ///
+        /// Two obligations on an implementation:
+        ///
+        ///   * False means the host refused the element, and only that. An element that carries no
+        ///     triangles — a grouping node, a line, an annotation — was read and answers true with
+        ///     <see cref="TriangleMesh.Empty"/>. A source that answers false for both makes the
+        ///     caller degrade every such element to its bounding box, so every duct, ceiling and
+        ///     grouped node over the minimum area becomes a detected walkable surface.
+        ///   * A mesh handed over is welded (<see cref="TriangleMesh.Weld"/>). Everything
+        ///     downstream clusters by shared vertex index and a host emits a fresh vertex per
+        ///     triangle corner, so an unwelded mesh detects as nothing at all. Detection welds
+        ///     again defensively; that does not make this optional, because a source is read by
+        ///     more than the detector.
         /// </summary>
         /// <param name="key">Which element.</param>
         /// <param name="mesh">The triangles, or null when the host refused.</param>
@@ -205,9 +211,15 @@ namespace CamelWorks.Core.Abstractions
         /// <summary>
         /// A scope, streamed rather than materialised, so a federation sweep reports progress and
         /// can be stopped.
+        ///
+        /// Same two obligations as <see cref="TryRead"/>: what is yielded is welded, and an element
+        /// the host refused is left out rather than yielded empty.
         /// </summary>
         /// <param name="scope">What to walk.</param>
-        /// <param name="onProgress">Called with the running count; false stops the walk.</param>
+        /// <param name="onProgress">
+        /// Called with the running count of elements walked; false stops the walk. The count is a
+        /// liveness figure and not a total.
+        /// </param>
         IEnumerable<KeyValuePair<ElementKey, TriangleMesh>> Read(TraversalScope scope, Func<int, bool>? onProgress);
     }
 }

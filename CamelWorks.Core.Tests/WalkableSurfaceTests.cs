@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using CamelWorks.Core.Abstractions;
@@ -136,11 +137,14 @@ namespace CamelWorks.Core.Tests
 
             Assert.Empty(WalkableSurfaces.Detect(new[] { Mesh("Roof", pitched) }, new WalkableOptions()));
 
-            // And is walked on when somebody says a ramp that steep counts.
+            // And is walked on when somebody says a ramp that steep counts. More than one patch,
+            // because the elevation bands have hard edges and a pitched plane crosses them: a
+            // known limit, and not what this test is about.
             var steeper = WalkableSurfaces.Detect(new[] { Mesh("Roof", pitched) },
                                                   new WalkableOptions { MaxSlopeDegrees = 35 });
 
-            Assert.Single(steeper);
+            Assert.NotEmpty(steeper);
+            Assert.Equal(18.48, steeper.Sum(patch => patch.AreaSquareMetres), 2);
         }
 
         [Fact]
@@ -176,27 +180,41 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void The_same_surface_gets_the_same_id_in_two_runs()
         {
+            // Derived from where the surface is, not from the order it was found in. An id taken
+            // from a loop index survives a repeat of the same run and nothing else: the second run
+            // has another element in it, found first, and every id after it shifts by one.
             var plate = Plates.Flat(0, 0, 6, 5, 3.0);
+            var elsewhere = Plates.Flat(40, 40, 46, 45, 6.6);
 
-            var first = WalkableSurfaces.Detect(new[] { Mesh("Slab", plate) }, new WalkableOptions());
-            var second = WalkableSurfaces.Detect(new[] { Mesh("Slab", plate) }, new WalkableOptions());
+            var alone = WalkableSurfaces.Detect(new[] { Mesh("Slab", plate) }, new WalkableOptions());
 
-            Assert.Equal(first[0].Id, second[0].Id);
+            var beside = WalkableSurfaces.Detect(
+                new[] { Mesh("Other", elsewhere), Mesh("Slab", plate) }, new WalkableOptions());
+
+            var again = Assert.Single(beside.Where(patch => patch.Source == Key("Slab")));
+
+            Assert.Equal(alone[0].Id, again.Id);
+            Assert.NotEqual(alone[0].Id, beside[0].Id);
+
+            // And a surface somewhere else is a different id, so the equality above is not two
+            // patches agreeing on one constant.
+            Assert.Equal(2, beside.Select(patch => patch.Id).Distinct(StringComparer.Ordinal).Count());
         }
 
         [Fact]
         public void Two_surfaces_that_derive_the_same_id_are_told_apart()
         {
-            // Same rectangle, same elevation, two elements: the derived id collides, and an id
-            // that names two surfaces detaches a decision from the surface it was made about.
+            // Same rectangle, same elevation, two elements: the derived part of the id collides,
+            // and an id that names two surfaces detaches a decision from the surface it was made
+            // about.
             var plate = Plates.Flat(0, 0, 6, 5, 3.0);
 
             var patches = WalkableSurfaces.Detect(
                 new[] { Mesh("Slab A", plate), Mesh("Slab B", plate) },
                 new WalkableOptions { ElevationBucketMetres = 0.050 });
 
-            // The dedupe keeps one of an identical stacked pair, so this asks the namer directly
-            // with the pair kept apart by level.
+            // The dedupe keeps one of an identical stacked pair, so the collision is reached with
+            // the pair kept apart by level.
             var options = new WalkableOptions();
             options.Levels[Key("Slab A")] = "Level 01";
             options.Levels[Key("Slab B")] = "Level 02";
@@ -207,6 +225,60 @@ namespace CamelWorks.Core.Tests
             Assert.Single(patches);
             Assert.Equal(2, levelled.Count);
             Assert.NotEqual(levelled[0].Id, levelled[1].Id);
+        }
+
+        [Fact]
+        public void An_id_does_not_change_when_another_surface_collides_with_it()
+        {
+            // What tells two colliding surfaces apart is on every id, not only on the ones that
+            // collided in this run. Appended on collision alone, an id depends on what else the run
+            // found: the same surface read alone and read beside a new element gets two different
+            // ids, and a dropped patch, a status or a comment keyed on the first stops matching.
+            var plate = Plates.Flat(0, 0, 6, 5, 3.0);
+
+            var one = new WalkableOptions();
+            one.Levels[Key("Slab A")] = "Level 01";
+
+            var alone = WalkableSurfaces.Detect(new[] { Mesh("Slab A", plate) }, one);
+
+            var two = new WalkableOptions();
+            two.Levels[Key("Slab A")] = "Level 01";
+            two.Levels[Key("Slab B")] = "Level 01";
+
+            // Slab B is the same rectangle at the same height on the same level: it derives the
+            // same id as Slab A and is not stacked over it, so both are kept.
+            var together = WalkableSurfaces.Detect(
+                new[] { Mesh("Slab A", plate), Mesh("Slab B", Plates.Flat(0, 0, 6, 5, 3.0)) }, two);
+
+            var stillThere = together.Where(patch => patch.Source == Key("Slab A")).ToList();
+
+            Assert.Single(alone);
+            Assert.Equal(alone[0].Id, Assert.Single(stillThere).Id);
+        }
+
+        [Fact]
+        public void A_patch_in_the_missing_corner_of_an_L_is_not_absorbed_by_it()
+        {
+            // The dedupe absorbs a surface the one above it is over. Compared as rectangles, an L
+            // is over its own missing corner, so a landing in that corner 40 mm below the L
+            // disappears from the set and nothing says it did.
+            var elled = Plates.Shaped(0, 0, 10, 10, 3.040, 1.0, (x, y) => y < 4 || x < 4);
+            var landing = Plates.Flat(6, 6, 9, 9, 3.000);
+
+            var diagnostics = new WalkableDiagnostics();
+
+            var patches = WalkableSurfaces.Detect(
+                new[] { Mesh("L", elled), Mesh("Landing", landing) }, new WalkableOptions(), diagnostics);
+
+            Assert.Equal(2, patches.Count);
+            Assert.Equal(0, diagnostics.PatchesMerged);
+
+            // And the L really does cover the landing in plan, which is why the outline has to be
+            // asked rather than the rectangle.
+            var above = patches.Single(patch => patch.Source == Key("L"));
+
+            Assert.True(above.Footprint.MinX <= 6 && above.Footprint.MaxX >= 9);
+            Assert.True(above.Footprint.MinY <= 6 && above.Footprint.MaxY >= 9);
         }
 
         [Fact]
@@ -299,15 +371,16 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void The_worst_point_is_on_the_surface_it_is_over()
+        public void The_worst_point_is_on_the_surface_and_under_the_obstruction()
         {
-            // An obstruction that straddles the missing corner and one leg of the L. The centre of
-            // the two rectangles' overlap is off the floor; a place nobody can stand is a place
-            // nobody can go and look at.
+            // An obstruction that straddles the missing corner and one leg of the L. Both halves
+            // have to hold at once: a point on the surface but not under the duct carries a clear
+            // height that is not the clear height there, and a point under the duct but off the
+            // surface is a place nobody can stand and nobody can go and look at.
             var patches = WalkableSurfaces.Detect(new[] { Mesh("Slab", Elled()) }, new WalkableOptions());
 
-            var found = Headroom.Check(patches, new[] { Over("duct", 3, 3, 4.4, sizeX: 4, sizeY: 4) },
-                                       2.100);
+            var duct = Over("duct", 3, 3, 4.4, sizeX: 4, sizeY: 4);
+            var found = Headroom.Check(patches, new[] { duct }, 2.100);
 
             Assert.Single(found.Spans);
 
@@ -315,6 +388,32 @@ namespace CamelWorks.Core.Tests
             var outline = patches[0].Outline;
 
             Assert.Contains(outline, triangle => triangle.Holds(span.X, span.Y));
+
+            Assert.InRange(span.X, duct.MinX, duct.MaxX);
+            Assert.InRange(span.Y, duct.MinY, duct.MaxY);
+        }
+
+        [Fact]
+        public void A_worst_point_over_a_duct_that_spans_one_leg_is_under_that_duct()
+        {
+            // A duct across the plate from y 3.5 to y 9, which the L is under only in a strip along
+            // the bottom and up the left leg. Taking the first overlapping outline triangle's own
+            // centroid put the point outside the duct entirely, carrying a clear height that was
+            // not the clear height there, and the viewpoint built from it looked at open floor.
+            var patches = WalkableSurfaces.Detect(new[] { Mesh("Slab", Elled()) }, new WalkableOptions());
+
+            var duct = new HeadroomElement("duct")
+            {
+                MinX = 0, MaxX = 10,
+                MinY = 3.5, MaxY = 9,
+                MinZ = 4.4, MaxZ = 4.8,
+            };
+
+            var span = Assert.Single(Headroom.Check(patches, new[] { duct }, 2.100).Spans);
+
+            Assert.InRange(span.X, duct.MinX, duct.MaxX);
+            Assert.InRange(span.Y, duct.MinY, duct.MaxY);
+            Assert.Contains(patches[0].Outline, triangle => triangle.Holds(span.X, span.Y));
         }
 
         [Fact]
@@ -341,12 +440,45 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void An_element_that_never_reaches_into_the_prism_is_not_a_finding()
         {
+            // The volume a surface is entitled to is bounded at both ends, and the gap between the
+            // floor's top and the element's underside is the whole test: an element above the
+            // clear height cannot lower it, and one that starts below the floor's top is through
+            // the floor, which is a clash and not a headroom problem.
             var patches = WalkableSurfaces.Detect(new[] { Mesh("Slab", Plates.Flat(0, 0, 10, 8, 3.0)) },
                                                   new WalkableOptions());
 
-            var high = Headroom.Check(patches, new[] { Over("duct", 4, 3, 5.6) }, 2.100);
+            Assert.Empty(Headroom.Check(patches, new[] { Over("high", 4, 3, 5.6) }, 2.100).Spans);
+            Assert.Empty(Headroom.Check(patches, new[] { Over("exactly at", 4, 3, 5.0) }, 2.000).Spans);
+            Assert.Empty(Headroom.Check(patches, new[] { Over("through it", 4, 3, 2.8) }, 2.100).Spans);
 
-            Assert.Empty(high.Spans);
+            // And one whose underside is inside that volume is, so the three above are refused for
+            // where they are and not because nothing is ever reported.
+            var inside = Assert.Single(
+                Headroom.Check(patches, new[] { Over("just under", 4, 3, 5.0) }, 2.100).Spans);
+
+            Assert.Equal(2.0, inside.Clear, 6);
+        }
+
+        [Fact]
+        public void A_patch_that_is_not_Z_up_is_refused_rather_than_measured()
+        {
+            // UpAxis exists because a federation mixes up-axes. This overload maps the footprint to
+            // plan and the top to Z, so a Y-up deck put through it detects normally and then
+            // reports no spans at all, with nothing on screen to say why.
+            // Wound to face +Y, because the walkable test is signed: a deck's underside is not a
+            // surface, whichever axis is up.
+            var yUp = new TriangleMesh(
+                new double[] { 0, 3, 0, 10, 3, 0, 10, 3, 8, 0, 3, 8 },
+                new[] { 0, 2, 1, 0, 3, 2 });
+
+            var patches = WalkableSurfaces.Detect(new[] { Mesh("Deck", yUp) }, new WalkableOptions());
+
+            Assert.Equal(1, Assert.Single(patches).UpAxis);
+
+            var refused = Assert.Throws<ArgumentException>(
+                () => Headroom.Check(patches, new[] { Over("duct", 4, 3, 4.8) }, 2.100));
+
+            Assert.Contains("up axis", refused.Message, StringComparison.Ordinal);
         }
 
         [Fact]

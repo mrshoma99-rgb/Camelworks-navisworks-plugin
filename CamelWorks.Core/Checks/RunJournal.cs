@@ -89,10 +89,23 @@ namespace CamelWorks.Core.Checks
         /// <param name="findingId">The finding id.</param>
         public bool Holds(string? findingId) => findingId != null && Statuses.ContainsKey(findingId);
 
-        /// <summary>The slot key one check's run is journalled under.</summary>
+        /// <summary>
+        /// The slot key one check's run is journalled under.
+        ///
+        /// Both halves are escaped before they are joined. Neither a check key nor a run id is
+        /// validated for the separator, and a host names its tests whatever the user typed, so
+        /// check "a" with run "b/c" and check "a/b" with run "c" would otherwise write to one slot
+        /// and each read the other's journal.
+        /// </summary>
         /// <param name="checkKey">The check's key.</param>
         /// <param name="runId">The run id.</param>
-        public static string Slot(string checkKey, string runId) => checkKey + "/" + runId;
+        public static string Slot(string checkKey, string runId) =>
+            Escaped(checkKey) + "/" + Escaped(runId);
+
+        /// <summary>One half of a slot key, with the separator made unambiguous.</summary>
+        /// <param name="part">The check key or the run id.</param>
+        private static string Escaped(string? part) =>
+            (part ?? string.Empty).Replace("~", "~~").Replace("/", "~s");
 
         /// <summary>
         /// Take a journal of what a run stands at now.

@@ -84,10 +84,19 @@ namespace CamelWorks.Core.Checks
         /// <summary>
         /// The predicate a read of these runs is scoped by.
         ///
-        /// A finding naming none of them is out of scope, so a read of three of twelve runs never
-        /// marks the other nine absent. A finding naming no run at all is out of scope of every
-        /// restricted read, which errs towards keeping a finding present rather than marking it
-        /// absent on the strength of a fact its producer did not write.
+        /// A finding is in scope when it names at least one of the runs read and every run it names
+        /// was read. Both halves are needed:
+        ///
+        ///   * A finding naming none of them is out of scope, so a read of three of twelve runs
+        ///     never marks the other nine absent.
+        ///   * A finding naming a run this read did not cover is out of scope too. A read only
+        ///     answers for the runs it covered, so a finding in runs A and B read through B alone
+        ///     is a finding this read cannot speak for: counting it in scope and not reporting it
+        ///     marks it absent on the strength of a run nobody read.
+        ///
+        /// A finding naming no run at all is out of scope of every restricted read. Both rules err
+        /// towards keeping a finding present rather than marking it absent on the strength of a
+        /// fact its producer did not write.
         /// </summary>
         /// <param name="runIds">The runs being read. Null or empty scopes to nothing.</param>
         public static Func<Finding, bool> ScopeOf(IEnumerable<string>? runIds)
@@ -97,7 +106,12 @@ namespace CamelWorks.Core.Checks
             foreach (var id in runIds ?? Array.Empty<string>())
                 if (!string.IsNullOrWhiteSpace(id)) wanted.Add(id.Trim());
 
-            return finding => RunsOf(finding).Any(wanted.Contains);
+            return finding =>
+            {
+                var runs = RunsOf(finding);
+
+                return runs.Count > 0 && runs.All(wanted.Contains);
+            };
         }
     }
 }

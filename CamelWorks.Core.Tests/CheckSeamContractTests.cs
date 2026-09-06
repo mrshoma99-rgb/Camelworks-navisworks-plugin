@@ -77,13 +77,25 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void A_read_that_is_cancelled_stops_where_it_was_asked_to()
         {
-            var read = Seat().Read(null, seen => seen < 2);
+            var check = Seat();
+            var everything = check.Read(null, null);
+            var read = check.Read(null, seen => seen < 2);
 
-            Assert.Single(read.Runs);
+            Assert.Equal("run-a", Assert.Single(read.Runs).Id);
+            Assert.Equal(2, read.Findings.Count);
 
             // The scope has to shrink with it. A cancelled read that still claimed every run would
-            // mark the runs it never reached absent.
+            // mark the runs it never reached absent, so the run it never started is out of scope.
             Assert.All(read.Findings, finding => Assert.True(read.Scope(finding)));
+
+            var unread = everything.Findings.Single(finding => CheckFacts.IsIn(finding, "run-b"));
+
+            Assert.False(read.Scope(unread));
+
+            var register = new FindingRegister();
+            register.Observe(check.Key, everything.Findings, 1, null, everything.Scope);
+
+            Assert.Equal(0, register.Observe(check.Key, read.Findings, 2, null, read.Scope).Absent);
         }
 
         // ---------------------------------------------------------------------------------
@@ -114,7 +126,7 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void A_finding_in_two_runs_is_in_scope_for_both_and_read_once()
+        public void A_finding_in_two_runs_is_read_once_and_is_not_marked_absent_by_either_alone()
         {
             var check = new FakeCheck()
                 .With("run-a")
@@ -125,15 +137,41 @@ namespace CamelWorks.Core.Tests
             var finding = Assert.Single(check.Findings);
 
             Assert.Equal(new[] { "run-a", "run-b" }, CheckFacts.RunsOf(finding));
-            Assert.True(CheckFacts.ScopeOf(new[] { "run-a" })(finding));
-            Assert.True(CheckFacts.ScopeOf(new[] { "run-b" })(finding));
-            Assert.False(CheckFacts.ScopeOf(new[] { "run-c" })(finding));
 
-            var read = check.Read(null, null);
+            var both = check.Read(null, null);
 
-            Assert.Single(read.Findings);
-            Assert.Equal(1, read.CountFor("run-a"));
-            Assert.Equal(1, read.CountFor("run-b"));
+            Assert.Single(both.Findings);
+            Assert.Equal(1, both.CountFor("run-a"));
+            Assert.Equal(1, both.CountFor("run-b"));
+
+            var register = new FindingRegister();
+            register.Observe(check.Key, both.Findings, 1, null, both.Scope);
+
+            // A read of one run reports every result naming that run, wherever the fixture holds
+            // it, because a result a read leaves out is a result reported gone.
+            var one = check.Read(new[] { "run-a" }, null);
+
+            Assert.Single(one.Findings);
+            Assert.Equal(0, register.Observe(check.Key, one.Findings, 2, null, one.Scope).Absent);
+            Assert.Single(register.Present);
+
+            // And a read that reports nothing for run-b still cannot mark it absent: the finding
+            // names run-a as well, and a read of run-b alone does not answer for run-a.
+            var empty = new CheckRead(one.Runs, Array.Empty<Finding>(),
+                                      CheckFacts.ScopeOf(new[] { "run-b" }), null);
+
+            Assert.Equal(0, register.Observe(check.Key, empty.Findings, 3, null, empty.Scope).Absent);
+            Assert.Single(register.Present);
+
+            // A finding naming only the run that was read is marked absent, so the scope is a scope
+            // and not a blanket.
+            var single = new FakeCheck().With("run-b").Result("Only in run-b");
+            var read = single.Read(null, null);
+
+            register.Observe(single.Key, read.Findings, 4, null, read.Scope);
+
+            Assert.Equal(1, register.Observe(single.Key, Array.Empty<Finding>(), 5, null,
+                                             read.Scope).Absent);
         }
 
         [Fact]
@@ -302,7 +340,13 @@ namespace CamelWorks.Core.Tests
                 JsonValue.Array(new[] { JsonValue.Object().Set("name", "nameless") }), notes);
 
             Assert.Empty(store.All);
-            Assert.Equal(2, notes.Count);
+
+            // Read rather than counted: two notes that both said "unreadable" would pass a count
+            // and tell a reader nothing about which record went and why.
+            Assert.Contains(notes, note => note.Contains("named no check", StringComparison.Ordinal));
+            Assert.Contains(notes,
+                            note => note.Contains("1 saved run(s) could not be read",
+                                                  StringComparison.Ordinal));
         }
 
         // ---------------------------------------------------------------------------------
@@ -452,7 +496,7 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void An_alias_is_claimed_once_however_many_findings_offer_it()
+        public void An_alias_is_claimed_once_and_by_the_finding_that_offers_it()
         {
             var check = Seat();
             var register = new FindingRegister();
@@ -462,13 +506,52 @@ namespace CamelWorks.Core.Tests
             var journal = new RunJournal("Fake", "run-a", 1,
                 new Dictionary<string, FindingStatus> { ["one-old-id"] = FindingStatus.Active }, null);
 
+            var first = read.Findings.Select(finding => finding.Id)
+                            .OrderBy(id => id, StringComparer.Ordinal).First();
+
             check.AliasSource = _ => new[] { "one-old-id" };
 
             var delta = CheckDelta.Between(journal, intake, register, read.Scope, check.Aliases);
 
-            Assert.Single(delta.Persisting);
+            // Which one took it, not just how many did. All three offer it and the journal holds
+            // it once, so the first by id claims it and the other two are new.
+            Assert.Equal(new[] { first }, delta.Persisting);
             Assert.Equal(2, delta.New.Count);
             Assert.Equal(1, delta.MatchedOnAlias);
+            Assert.Empty(delta.Gone);
+        }
+
+        [Fact]
+        public void An_exact_match_keeps_its_id_against_a_finding_that_offers_it_as_an_alias()
+        {
+            // Matching in one pass lets a finding that sorts earlier take, through an alias, the id
+            // another finding owns exactly. The finding that genuinely persisted then reads as new,
+            // and the alias match reports the model as having moved when it has not — with the
+            // winner decided by the order the register happens to enumerate.
+            var check = Seat();
+            var register = new FindingRegister();
+            var read = check.Read(null, null);
+            var intake = register.Observe(check.Key, read.Findings, 1, null, read.Scope);
+
+            var ids = read.Findings.Select(finding => finding.Id)
+                          .OrderBy(id => id, StringComparer.Ordinal).ToList();
+
+            var owner = ids[ids.Count - 1];   // sorts last, so a one-pass match reaches it last
+            var offering = ids[0];
+
+            var journal = new RunJournal("Fake", "run-a", 1,
+                new Dictionary<string, FindingStatus> { [owner] = FindingStatus.Active }, null);
+
+            // Every other finding offers the owner's id as one of its aliases.
+            check.AliasSource = finding =>
+                finding.Id == owner ? Array.Empty<string>() : new[] { owner };
+
+            var delta = CheckDelta.Between(journal, intake, register, read.Scope, check.Aliases);
+
+            Assert.Equal(new[] { owner }, delta.Persisting);
+            Assert.Contains(offering, delta.New);
+            Assert.Equal(0, delta.MatchedOnAlias);
+            Assert.Empty(delta.Gone);
         }
 
         [Fact]
@@ -569,6 +652,88 @@ namespace CamelWorks.Core.Tests
 
             Assert.Equal(1.5, check.Severity(finding));
             Assert.Equal("past", check.SeverityBand(check.Severity(finding)));
+        }
+
+        [Fact]
+        public void Two_reads_of_the_same_results_derive_the_same_ids()
+        {
+            // A check builds its findings from whatever its engine reported this time. The ids have
+            // to come back the same or every status, assignee, comment and issue attachment is
+            // detached on the next read, so the fixture builds fresh objects too: a fake that
+            // handed the same objects back would be the one check at this seam whose identity rule
+            // was never exercised.
+            var check = Seat();
+
+            var first = check.Read(null, null);
+            var second = check.Read(null, null);
+
+            Assert.All(first.Findings.Zip(second.Findings, (one, two) => (one, two)),
+                       pair => Assert.NotSame(pair.one, pair.two));
+
+            Assert.Equal(first.Findings.Select(finding => finding.Id),
+                         second.Findings.Select(finding => finding.Id));
+
+            // And a read lands on the findings the register already holds rather than beside them.
+            var register = new FindingRegister();
+
+            register.Observe(check.Key, first.Findings, 1, null, first.Scope);
+
+            var again = register.Observe(check.Key, second.Findings, 2, null, second.Scope);
+
+            Assert.Equal(0, again.Added);
+            Assert.Equal(3, register.Count);
+        }
+
+        [Fact]
+        public void Regression_is_scoped_to_the_run_the_delta_is_for()
+        {
+            // The intake covers whatever the read covered. A delta for one run that passed it
+            // through would report every run's reopenings on every run's line.
+            var check = Seat();
+            var register = new FindingRegister();
+            var read = check.Read(null, null);
+
+            register.Observe(check.Key, read.Findings, 1, null, read.Scope);
+
+            var inB = read.Findings.Single(finding => CheckFacts.IsIn(finding, "run-b"));
+            var inA = read.Findings.First(finding => CheckFacts.IsIn(finding, "run-a"));
+
+            register.Find(inA.Id)!.Status = FindingStatus.Approved;
+            register.Find(inB.Id)!.Status = FindingStatus.Approved;
+
+            var again = check.Read(null, null);
+            var intake = register.Observe(check.Key, again.Findings, 2, null, again.Scope);
+
+            Assert.Equal(2, intake.Reopened.Count);
+
+            var justB = CheckDelta.Between(RunJournal.Of("Fake", "run-b", 1, read.Findings),
+                                           intake, register, CheckFacts.ScopeOf(new[] { "run-b" }),
+                                           check.Aliases);
+
+            Assert.Equal(new[] { inB.Id }, justB.Regressed);
+        }
+
+        [Fact]
+        public void A_slot_key_cannot_be_confused_with_another_checks()
+        {
+            // Neither half is validated for the separator, and a host names its tests whatever the
+            // user typed. Joined raw, these two write to one slot and each reads the other's
+            // journal.
+            Assert.NotEqual(RunJournal.Slot("a", "b/c"), RunJournal.Slot("a/b", "c"));
+
+            var store = Project();
+
+            new RunJournal("a", "b/c", 1,
+                           new Dictionary<string, FindingStatus> { ["one"] = FindingStatus.Active },
+                           null).Write(store);
+
+            new RunJournal("a/b", "c", 2,
+                           new Dictionary<string, FindingStatus> { ["two"] = FindingStatus.Active },
+                           null).Write(store);
+
+            Assert.Equal(new[] { "one" }, RunJournal.Current(store, "a", "b/c")!.Statuses.Keys);
+            Assert.Equal(new[] { "two" }, RunJournal.Current(store, "a/b", "c")!.Statuses.Keys);
+            Assert.Null(RunJournal.Previous(store, "a", "b/c"));
         }
 
         private static RunJournal Journal(string findingId) =>

@@ -4,10 +4,31 @@ using Autodesk.Navisworks.Api;
 using Autodesk.Navisworks.Api.ComApi;
 using Autodesk.Navisworks.Api.Interop.ComApi;
 using CamelWorks.Core.Abstractions;
+using CamelWorks.Core.Data;
 using CamelWorks.Core.Report;
 
 namespace CamelWorks.Nav
 {
+    /// <summary>
+    /// What one element's geometry read did.
+    ///
+    /// Refusal and emptiness are different answers and the caller acts differently on them: a
+    /// refused element degrades to its bounding box and is counted, and an element that carries no
+    /// triangles is simply an element with no triangles. Answering the same for both turns every
+    /// grouping node, line and annotation in the model into a box-top surface.
+    /// </summary>
+    public enum GeometryRead
+    {
+        /// <summary>Triangles were read.</summary>
+        Triangles,
+
+        /// <summary>The element was walked and carries no triangles: a group, a line, an annotation.</summary>
+        NoTriangles,
+
+        /// <summary>The host would not walk this element. The caller degrades it to its box.</summary>
+        Refused,
+    }
+
     /// <summary>
     /// Triangles out of the model.
     ///
@@ -44,17 +65,67 @@ namespace CamelWorks.Nav
         /// type back across the seam this whole assembly exists to keep on one side of it.
         /// </param>
         /// <param name="name">What the node should be called.</param>
-        /// <returns>A mesh, or null when the element carries no triangles.</returns>
+        /// <returns>A mesh, or null when the element was refused or carries no triangles.</returns>
         public GltfMesh? Read(IModelItem? item, string name)
+        {
+            if (Walk(item, out var sink) != GeometryRead.Triangles || sink == null) return null;
+
+            // Narrowed here and only here. glTF stores positions as floats, so the file format
+            // asks for the narrowing; the seam does not, and at site coordinates a float ulp is
+            // about 31 mm, which is wider than the weld tolerance and the elevation bucket that
+            // surface detection works to.
+            var positions = new float[sink.Positions.Count];
+
+            for (var i = 0; i < positions.Length; i++) positions[i] = (float)sink.Positions[i];
+
+            return new GltfMesh(name, positions, sink.Indices);
+        }
+
+        /// <summary>
+        /// One element's triangles for the geometry seam, in metres, in world coordinates, welded.
+        ///
+        /// Separate from <see cref="Read"/> because the seam needs the three
+        /// answers apart: a refusal degrades the element to its bounding box, an element with no
+        /// triangles does not, and the glTF writer wants neither distinction and a float buffer.
+        /// </summary>
+        /// <param name="item">The element, as the seam hands it over.</param>
+        /// <param name="mesh">
+        /// The triangles, <see cref="TriangleMesh.Empty"/> when the element carries none, or null
+        /// when the host refused it.
+        /// </param>
+        public GeometryRead ReadTriangles(IModelItem? item, out TriangleMesh? mesh)
+        {
+            var outcome = Walk(item, out var sink);
+
+            if (outcome == GeometryRead.Refused) { mesh = null; return outcome; }
+
+            // Welded on this side of the seam, which is what ITriangleSource asks for: everything
+            // downstream clusters by shared vertex index and this sink emits a fresh vertex per
+            // triangle corner.
+            mesh = outcome == GeometryRead.NoTriangles
+                ? TriangleMesh.Empty
+                : new TriangleMesh(sink!.Positions, sink.Indices).Weld();
+
+            return outcome;
+        }
+
+        /// <summary>
+        /// Walk one element's fragments into a sink.
+        /// </summary>
+        /// <param name="item">The element, as the seam hands it over.</param>
+        /// <param name="sink">What the walk collected, or null when there was nothing to walk.</param>
+        private GeometryRead Walk(IModelItem? item, out TriangleSink? sink)
         {
             // Unwrapped rather than looked up by key: the traversal is already holding the host
             // item, and resolving it again through the document's index would be a dictionary hit
             // per element for something already in hand.
             var host = (item as NavModelItem)?.Item;
 
-            if (host == null) return null;
+            sink = null;
 
-            var sink = new TriangleSink(_scale);
+            if (host == null) return GeometryRead.Refused;
+
+            var collecting = new TriangleSink(_scale);
 
             try
             {
@@ -65,25 +136,25 @@ namespace CamelWorks.Nav
                 {
                     foreach (InwOaFragment3 fragment in path.Fragments())
                     {
-                        sink.Transform = Matrix(fragment);
+                        collecting.Transform = Matrix(fragment);
 
                         // eNONE: this sink reads only the coordinate, so asking for normals makes
                         // Navisworks generate and marshal a per-vertex field that is then thrown
                         // away — on a large model that is tens of millions of wasted marshals.
-                        fragment.GenerateSimplePrimitives(nwEVertexProperty.eNONE, sink);
+                        fragment.GenerateSimplePrimitives(nwEVertexProperty.eNONE, collecting);
                     }
                 }
             }
             catch (Exception)
             {
-                // One element the COM layer will not walk. Reported as "no triangles" and counted
-                // by the caller, rather than taking a whole export down at object 40,000 of 200,000.
-                return null;
+                // One element the COM layer will not walk. Counted by the caller and degraded to a
+                // box, rather than taking a whole export down at object 40,000 of 200,000.
+                return GeometryRead.Refused;
             }
 
-            if (sink.Triangles == 0) return null;
+            sink = collecting;
 
-            return new GltfMesh(name, sink.Positions, sink.Indices);
+            return collecting.Triangles == 0 ? GeometryRead.NoTriangles : GeometryRead.Triangles;
         }
 
         /// <summary>
@@ -125,8 +196,16 @@ namespace CamelWorks.Nav
 
             internal TriangleSink(double scale) => _scale = scale;
 
-            /// <summary>Vertex positions, three floats each, in metres.</summary>
-            internal List<float> Positions { get; } = new List<float>();
+            /// <summary>
+            /// Vertex positions, three doubles each, in metres.
+            ///
+            /// Doubles because these are world coordinates. At site coordinates a float ulp is
+            /// about 31 mm, which is coarser than both the 0.1 mm weld tolerance and the 50 mm
+            /// elevation bucket the surface detector bands on — on exactly the model class the
+            /// site-coordinate tests are about. Core is doubles throughout; only the glTF writer
+            /// narrows, because its file format is float.
+            /// </summary>
+            internal List<double> Positions { get; } = new List<double>();
 
             /// <summary>Triangle indices, three per triangle.</summary>
             internal List<int> Indices { get; } = new List<int>();
@@ -197,9 +276,9 @@ namespace CamelWorks.Nav
                 // second list to hold the answer.
                 if (_scale != 1.0) { x *= _scale; y *= _scale; z *= _scale; }
 
-                Positions.Add((float)x);
-                Positions.Add((float)y);
-                Positions.Add((float)z);
+                Positions.Add(x);
+                Positions.Add(y);
+                Positions.Add(z);
 
                 return (Positions.Count / 3) - 1;
             }

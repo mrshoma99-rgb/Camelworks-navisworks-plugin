@@ -161,8 +161,18 @@ namespace CamelWorks.Core.Data
         /// extruded and not its bounding rectangle. On an L-shaped plate, a ring corridor or a
         /// floor around a stair void the rectangle covers ground nobody stands on, and every
         /// column, railing and riser inside it would be reported as low headroom.
+        ///
+        /// Z-up only, and refused rather than assumed. This maps the patch footprint to plan and
+        /// its top to Z, which is wrong for a patch detected with X or Y up:
+        /// <see cref="WalkablePatch.UpAxis"/> exists because a federation mixes up-axes, and a
+        /// Y-up deck put through here detects normally and then reports no spans at all, with
+        /// nothing on screen to say why. The guard is here rather than on a screen so every caller
+        /// gets it.
         /// </summary>
-        /// <param name="patches">The detected surfaces. Z-up: the patches carry which axis was up.</param>
+        /// <param name="patches">
+        /// The detected surfaces. Z-up only: a patch detected with another axis up is refused, for
+        /// the reason below.
+        /// </param>
         /// <param name="obstructions">What might be above them, in metres.</param>
         /// <param name="minimumMetres">The clear height required.</param>
         /// <param name="cellMetres">The lookup cell size.</param>
@@ -178,6 +188,16 @@ namespace CamelWorks.Core.Data
 
             foreach (var patch in patches)
             {
+                if (patch == null) continue;
+
+                if (patch.UpAxis != 2)
+                    throw new ArgumentException(
+                        "patch " + patch.Id + " was detected with "
+                        + (patch.UpAxis == 0 ? "X" : "Y") + " as its up axis. This measures the "
+                        + "footprint in plan and the top along Z, so it would report no spans over "
+                        + "that patch rather than failing. Transpose the patch to Z-up first.",
+                        nameof(patches));
+
                 floors.Add(new HeadroomElement(patch.Id, Named(patch))
                 {
                     MinX = patch.Footprint.MinX, MaxX = patch.Footprint.MaxX,
@@ -236,10 +256,6 @@ namespace CamelWorks.Core.Data
                 IReadOnlyList<Tri2>? outline = null;
                 outlines?.TryGetValue(floor.Id, out outline);
 
-                // The volume this surface is entitled to. An element that never reaches into it
-                // cannot lower the clear height over it, whatever its plan position.
-                var prism = new Span1(floor.MaxZ, floor.MaxZ + minimumMetres);
-
                 foreach (var candidate in Candidates(floor, grid, cellMetres))
                 {
                     if (ReferenceEquals(candidate, floor)) continue;
@@ -249,6 +265,11 @@ namespace CamelWorks.Core.Data
                     // Strictly above, and only the gap between the floor's top and the element's
                     // underside. An element that starts below the floor's top is through it, which
                     // is a clash and not a headroom problem.
+                    //
+                    // This is also the whole of the vertical test. An element whose underside is
+                    // between the floor's top and the clear height it is entitled to is in that
+                    // volume by definition, so a second test against the prism as a range answers
+                    // true whenever this line has already let the element through.
                     var gap = candidate.MinZ - floor.MaxZ;
                     if (gap < 0 || gap >= minimumMetres || gap >= clear) continue;
 
@@ -256,8 +277,6 @@ namespace CamelWorks.Core.Data
                     var overlapY = Math.Min(floor.MaxY, candidate.MaxY) - Math.Max(floor.MinY, candidate.MinY);
 
                     if (overlapX <= 0 || overlapY <= 0) continue;
-
-                    if (!prism.Overlaps(new Span1(candidate.MinZ, candidate.MaxZ))) continue;
 
                     var lowX = Math.Max(floor.MinX, candidate.MinX);
                     var highX = Math.Min(floor.MaxX, candidate.MaxX);
@@ -304,15 +323,62 @@ namespace CamelWorks.Core.Data
             return false;
         }
 
-        /// <summary>Move a point onto the outline, if it is not already on it.</summary>
+        /// <summary>
+        /// Move the worst point onto the outline, if it is not already on it.
+        ///
+        /// The point has to satisfy both halves at once: it must be on the surface, and it must be
+        /// under the obstruction. A patch triangle's own centroid satisfies only the first, and on
+        /// an L-shaped plate under a duct crossing the missing corner it lands metres away from
+        /// anything the duct is over, carrying a clear height that is not the clear height there.
+        /// So each triangle is clipped to the overlap rectangle and the largest clipped piece's
+        /// centroid is taken: a convex polygon's centroid is inside it, and that polygon is inside
+        /// both the triangle and the rectangle.
+        ///
+        /// Largest rather than first, because the first triangle in list order is an artefact of
+        /// how the mesh was tessellated, and a piece with area is a place somebody can stand.
+        /// </summary>
+        /// <param name="outline">The patch in plan.</param>
+        /// <param name="minX">The overlap rectangle, low across.</param>
+        /// <param name="minY">The overlap rectangle, low along.</param>
+        /// <param name="maxX">The overlap rectangle, high across.</param>
+        /// <param name="maxY">The overlap rectangle, high along.</param>
+        /// <param name="x">The point, across.</param>
+        /// <param name="y">The point, along.</param>
         private static void Onto(IReadOnlyList<Tri2> outline, double minX, double minY,
                                  double maxX, double maxY, ref double x, ref double y)
         {
             for (var i = 0; i < outline.Count; i++)
                 if (outline[i].Holds(x, y)) return;
 
-            // The nearest thing to the overlap that is on the surface: the middle of a patch
-            // triangle the obstruction actually passes over.
+            var bestArea = 0.0;
+            double bestX = 0, bestY = 0;
+
+            for (var i = 0; i < outline.Count; i++)
+            {
+                var triangle = outline[i];
+
+                if (triangle.Area <= 0 || !triangle.Overlaps(minX, minY, maxX, maxY)) continue;
+
+                if (!Clipped(triangle, minX, minY, maxX, maxY, out var area, out var cx, out var cy))
+                    continue;
+
+                if (area <= bestArea) continue;
+
+                bestArea = area;
+                bestX = cx;
+                bestY = cy;
+            }
+
+            if (bestArea > 0)
+            {
+                x = bestX;
+                y = bestY;
+                return;
+            }
+
+            // Nothing clipped to any area. The overlap test accepts a triangle that only touches
+            // the rectangle along an edge or a corner, and there is no interior point to take
+            // there, so the middle of a triangle the obstruction reaches is what is left.
             for (var i = 0; i < outline.Count; i++)
             {
                 var triangle = outline[i];
@@ -323,6 +389,147 @@ namespace CamelWorks.Core.Data
                 y = (triangle.Ay + triangle.By + triangle.Cy) / 3.0;
                 return;
             }
+        }
+
+        /// <summary>
+        /// One outline triangle clipped to an axis-aligned rectangle, as an area and a centroid.
+        ///
+        /// Sutherland-Hodgman against the rectangle's four edges: both shapes are convex, so the
+        /// result is one convex polygon and its area centroid is a point inside it. False when the
+        /// two share no area.
+        /// </summary>
+        /// <param name="triangle">The outline triangle.</param>
+        /// <param name="minX">The rectangle, low across.</param>
+        /// <param name="minY">The rectangle, low along.</param>
+        /// <param name="maxX">The rectangle, high across.</param>
+        /// <param name="maxY">The rectangle, high along.</param>
+        /// <param name="area">How much area is shared.</param>
+        /// <param name="x">The centroid, across.</param>
+        /// <param name="y">The centroid, along.</param>
+        private static bool Clipped(Tri2 triangle, double minX, double minY, double maxX, double maxY,
+                                    out double area, out double x, out double y)
+        {
+            area = 0;
+            x = 0;
+            y = 0;
+
+            var polygon = new List<double>
+            {
+                triangle.Ax, triangle.Ay,
+                triangle.Bx, triangle.By,
+                triangle.Cx, triangle.Cy,
+            };
+
+            for (var edge = 0; edge < 4 && polygon.Count > 0; edge++)
+                polygon = Clip(polygon, edge, minX, minY, maxX, maxY);
+
+            if (polygon.Count < 6) return false;
+
+            // The shoelace formula, which gives the signed area and the area centroid in one pass.
+            var twice = 0.0;
+            var sumX = 0.0;
+            var sumY = 0.0;
+
+            for (var i = 0; i < polygon.Count; i += 2)
+            {
+                var nx = polygon[(i + 2) % polygon.Count];
+                var ny = polygon[(i + 3) % polygon.Count];
+
+                var cross = (polygon[i] * ny) - (nx * polygon[i + 1]);
+
+                twice += cross;
+                sumX += (polygon[i] + nx) * cross;
+                sumY += (polygon[i + 1] + ny) * cross;
+            }
+
+            area = Math.Abs(twice) / 2.0;
+
+            if (area <= 0) return false;
+
+            x = sumX / (3.0 * twice);
+            y = sumY / (3.0 * twice);
+
+            return true;
+        }
+
+        /// <summary>
+        /// A polygon clipped against one edge of the rectangle, as flat x,y pairs.
+        /// </summary>
+        /// <param name="polygon">The polygon, as x,y pairs.</param>
+        /// <param name="edge">Which edge: 0 low across, 1 high across, 2 low along, 3 high along.</param>
+        /// <param name="minX">The rectangle, low across.</param>
+        /// <param name="minY">The rectangle, low along.</param>
+        /// <param name="maxX">The rectangle, high across.</param>
+        /// <param name="maxY">The rectangle, high along.</param>
+        private static List<double> Clip(List<double> polygon, int edge,
+                                         double minX, double minY, double maxX, double maxY)
+        {
+            var kept = new List<double>(polygon.Count + 4);
+
+            for (var i = 0; i < polygon.Count; i += 2)
+            {
+                var cx = polygon[i];
+                var cy = polygon[i + 1];
+                var px = polygon[(i + polygon.Count - 2) % polygon.Count];
+                var py = polygon[(i + polygon.Count - 1) % polygon.Count];
+
+                var inside = Inside(cx, cy, edge, minX, minY, maxX, maxY);
+                var was = Inside(px, py, edge, minX, minY, maxX, maxY);
+
+                if (inside != was)
+                {
+                    var at = Cross(px, py, cx, cy, edge, minX, minY, maxX, maxY);
+
+                    kept.Add(px + ((cx - px) * at));
+                    kept.Add(py + ((cy - py) * at));
+                }
+
+                if (inside)
+                {
+                    kept.Add(cx);
+                    kept.Add(cy);
+                }
+            }
+
+            return kept;
+        }
+
+        /// <summary>Whether a point is on the inside of one rectangle edge.</summary>
+        /// <param name="x">The point, across.</param>
+        /// <param name="y">The point, along.</param>
+        /// <param name="edge">Which edge.</param>
+        /// <param name="minX">The rectangle, low across.</param>
+        /// <param name="minY">The rectangle, low along.</param>
+        /// <param name="maxX">The rectangle, high across.</param>
+        /// <param name="maxY">The rectangle, high along.</param>
+        private static bool Inside(double x, double y, int edge,
+                                   double minX, double minY, double maxX, double maxY) =>
+            edge == 0 ? x >= minX
+            : edge == 1 ? x <= maxX
+            : edge == 2 ? y >= minY
+            : y <= maxY;
+
+        /// <summary>How far along a segment it crosses one rectangle edge, from 0 to 1.</summary>
+        /// <param name="px">The segment's start, across.</param>
+        /// <param name="py">The segment's start, along.</param>
+        /// <param name="cx">The segment's end, across.</param>
+        /// <param name="cy">The segment's end, along.</param>
+        /// <param name="edge">Which edge.</param>
+        /// <param name="minX">The rectangle, low across.</param>
+        /// <param name="minY">The rectangle, low along.</param>
+        /// <param name="maxX">The rectangle, high across.</param>
+        /// <param name="maxY">The rectangle, high along.</param>
+        private static double Cross(double px, double py, double cx, double cy, int edge,
+                                    double minX, double minY, double maxX, double maxY)
+        {
+            var along = edge < 2;
+            var at = edge == 0 ? minX : edge == 1 ? maxX : edge == 2 ? minY : maxY;
+
+            var from = along ? px : py;
+            var to = along ? cx : cy;
+            var span = to - from;
+
+            return Math.Abs(span) < 1e-15 ? 0 : (at - from) / span;
         }
 
         private static bool Finite(HeadroomElement e) =>

@@ -271,8 +271,11 @@ namespace CamelWorks.Core.Data
         /// Detect the walkable surfaces in a set of meshes.
         /// </summary>
         /// <param name="meshes">
-        /// One welded mesh per element, in metres. Unwelded input produces one cluster per triangle
-        /// and therefore no patches at all; see <see cref="TriangleMesh.Weld"/>.
+        /// One mesh per element, in metres. Welded again here whatever the caller did, because the
+        /// cost is one dictionary pass against a flood fill and the failure it prevents is silent:
+        /// unwelded input shares no vertex index, so every cluster is one triangle, every cluster
+        /// falls under the minimum area, and a model full of floors reports no surface at all. See
+        /// <see cref="TriangleMesh.Weld"/>.
         /// </param>
         /// <param name="options">What counts as walkable.</param>
         /// <param name="diagnostics">Filled in with what the run managed, or null.</param>
@@ -286,9 +289,12 @@ namespace CamelWorks.Core.Data
 
             var held = new List<KeyValuePair<ElementKey, TriangleMesh>>();
 
+            // Welded here as well as at the seam. Everything below clusters by shared vertex index,
+            // so an unwelded mesh detects as nothing at all rather than as something wrong, and a
+            // source that forgets would be found on a model rather than in a test.
             foreach (var pair in meshes)
                 if (pair.Value != null && pair.Value.Triangles > 0)
-                    held.Add(pair);
+                    held.Add(new KeyValuePair<ElementKey, TriangleMesh>(pair.Key, pair.Value.Weld()));
 
             var bucket = options.ElevationBucketMetres > 0 ? options.ElevationBucketMetres : 0.050;
             var limit = Math.Cos(Math.Max(0, options.MaxSlopeDegrees) * Math.PI / 180.0);
@@ -388,15 +394,12 @@ namespace CamelWorks.Core.Data
             if (options == null) throw new ArgumentNullException(nameof(options));
 
             var scale = metresPerUnit > 0 ? metresPerUnit : 1.0;
+
+            // Asked again inside the walk, not once at the top. A source can only find out that
+            // the seat has no primitive reader by being refused, so the whole-seat answer arrives
+            // part way through the first sweep and a run that read it once would spend the rest of
+            // that sweep counting per-element refusals for a seat-wide fault.
             var reading = triangles.CanReadTriangles;
-
-            if (diagnostics != null) diagnostics.UsedTriangles = reading;
-
-            if (diagnostics != null && !reading)
-                diagnostics.Notes.Add("No triangles on this seat"
-                    + (triangles.Unavailable == null ? string.Empty : ": " + triangles.Unavailable)
-                    + ". Every element's bounding-box top was taken as a surface, which is the "
-                    + "coarser answer the check gave before.");
 
             var meshes = new List<KeyValuePair<ElementKey, TriangleMesh>>();
             var read = 0;
@@ -425,6 +428,8 @@ namespace CamelWorks.Core.Data
 
                 TriangleMesh? mesh = null;
 
+                if (reading) reading = triangles.CanReadTriangles;
+
                 if (reading && !triangles.TryRead(item.Key, out mesh)) refused++;
 
                 meshes.Add(new KeyValuePair<ElementKey, TriangleMesh>(
@@ -435,8 +440,20 @@ namespace CamelWorks.Core.Data
             {
                 diagnostics.ElementsRead += read;
                 diagnostics.ElementsRefused += refused;
+                diagnostics.UsedTriangles = reading;
 
-                if (refused > 0)
+                // Two different faults and two different sentences. "n elements refused" on a seat
+                // that cannot read primitives at all reads as a model problem, and it is not one:
+                // everything in the model is then a bounding-box top, including every duct, ceiling
+                // and grouping node over the minimum area.
+                if (!reading)
+                    diagnostics.Notes.Add("No triangles on this seat"
+                        + (triangles.Unavailable == null
+                            ? "."
+                            : ": " + triangles.Unavailable.TrimEnd('.') + ".")
+                        + " Every element's bounding-box top was taken as a surface, which is the "
+                        + "coarser answer the check gave before.");
+                else if (refused > 0)
                     diagnostics.Notes.Add(refused.ToString("N0", CultureInfo.InvariantCulture)
                         + " elements would not give triangles; their bounding-box tops were used "
                         + "instead.");
@@ -553,8 +570,14 @@ namespace CamelWorks.Core.Data
             var indices = new List<int>();
 
             var area = 0.0;
-            var top = double.MinValue;
-            BoxFit? box = null;
+
+            // Seeded from the cluster's own first vertex, never from an empty box at the origin:
+            // on a site-coordinate model a box grown from the origin reaches back to it and the
+            // footprint covers the whole quadrant. A cluster always holds at least one triangle,
+            // so there is always a seed and no zero-box fallback to write.
+            var seed = Vertex(mesh, mesh.Indices[cluster[0]]);
+            var box = new BoxFit(seed);
+            var top = seed.Axis(up);
 
             foreach (var t in cluster)
             {
@@ -575,9 +598,7 @@ namespace CamelWorks.Core.Data
                         positions.Add(point.Y);
                         positions.Add(point.Z);
 
-                        // Seeded from the first vertex, never grown from an empty box at the
-                        // origin: a patch at (400000, 300000, 12) has its footprint there.
-                        if (box == null) box = new BoxFit(point); else box.Add(point);
+                        box.Add(point);
 
                         if (point.Axis(up) > top) top = point.Axis(up);
                     }
@@ -605,7 +626,7 @@ namespace CamelWorks.Core.Data
 
             options.Levels.TryGetValue(source, out var level);
 
-            var footprint = box?.Box ?? new BoundingBox(0, 0, 0, 0, 0, 0);
+            var footprint = box.Box;
 
             return new WalkablePatch(Identify(level, top, footprint, options.ElevationBucketMetres),
                                      source, level, footprint, top, area, patch, outline, up);
@@ -629,29 +650,24 @@ namespace CamelWorks.Core.Data
         }
 
         /// <summary>
-        /// The same patches with any repeated id made unique by what the patch actually holds.
+        /// The same patches with what each one actually holds folded into its id.
         ///
-        /// Two surfaces can land on one id — the same rectangle at the same height on two elements
-        /// of the same level — and an id that names two things detaches a decision from the surface
-        /// it was made about.
+        /// Two surfaces can land on one derived id — the same rectangle at the same height on two
+        /// elements of the same level — and an id that names two things detaches a decision from
+        /// the surface it was made about.
+        ///
+        /// Appended to every patch, not only to the ones that collided in this run. Appending it on
+        /// collision alone makes an id depend on what else the run found: a surface read alone
+        /// keeps the short id, the same surface read again beside a new element gets the long one,
+        /// and anything keyed on the id — a dropped patch, a status, a comment — stops matching
+        /// without a word.
         /// </summary>
         private static IReadOnlyList<WalkablePatch> Named(IReadOnlyList<WalkablePatch> patches)
         {
-            var counted = new Dictionary<string, int>(StringComparer.Ordinal);
-
-            foreach (var patch in patches)
-                counted[patch.Id] = counted.TryGetValue(patch.Id, out var n) ? n + 1 : 1;
-
             var named = new List<WalkablePatch>(patches.Count);
 
             foreach (var patch in patches)
             {
-                if (counted[patch.Id] == 1)
-                {
-                    named.Add(patch);
-                    continue;
-                }
-
                 var discriminator = Hash.Of(8, patch.Source.ToString(),
                     patch.AreaSquareMetres.ToString("R", CultureInfo.InvariantCulture),
                     patch.TopMetres.ToString("R", CultureInfo.InvariantCulture));
@@ -675,8 +691,25 @@ namespace CamelWorks.Core.Data
         private static List<WalkablePatch> Dedupe(List<WalkablePatch> patches, int up,
                                                   WalkableDiagnostics? diagnostics)
         {
+            // Ordered on the patches themselves rather than on List.Sort's comparison of tops
+            // alone. That sort is unstable, so which of two patches at the same top survived
+            // depended on the order the elements happened to be enumerated in — and the survivor
+            // carries the Source that Focus and the register key on.
             var sorted = new List<WalkablePatch>(patches);
-            sorted.Sort((a, b) => b.TopMetres.CompareTo(a.TopMetres));
+
+            sorted.Sort((a, b) =>
+            {
+                var byTop = b.TopMetres.CompareTo(a.TopMetres);
+                if (byTop != 0) return byTop;
+
+                // The larger surface absorbs the smaller one, so it is the one to keep.
+                var byArea = b.AreaSquareMetres.CompareTo(a.AreaSquareMetres);
+                if (byArea != 0) return byArea;
+
+                var byId = string.CompareOrdinal(a.Id, b.Id);
+
+                return byId != 0 ? byId : string.CompareOrdinal(a.Source.ToString(), b.Source.ToString());
+            });
 
             var kept = new List<WalkablePatch>();
             var merged = 0;
@@ -715,7 +748,20 @@ namespace CamelWorks.Core.Data
             return kept;
         }
 
-        /// <summary>How much of the smaller patch's plan rectangle the larger one covers.</summary>
+        /// <summary>
+        /// How much of the smaller patch the larger one is actually over.
+        ///
+        /// Measured against the outlines and not the plan rectangles. A rectangle is not the shape:
+        /// a small patch sitting in the missing corner of an L is wholly inside the L's rectangle
+        /// and under none of its surface, and absorbing it drops a real surface from the set.
+        ///
+        /// The rectangles are still used, as the cheap upper bound that decides whether the outline
+        /// comparison is worth doing at all: nothing outside the overlapping rectangle can be
+        /// covered, so a bound under the threshold is a definite miss.
+        /// </summary>
+        /// <param name="one">One patch.</param>
+        /// <param name="two">The other.</param>
+        /// <param name="up">Which axis is up.</param>
         private static double Share(WalkablePatch one, WalkablePatch two, int up)
         {
             var across = up == 0 ? 1 : 0;
@@ -726,14 +772,51 @@ namespace CamelWorks.Core.Data
                         * Overlap(Low(one.Footprint, along), High(one.Footprint, along),
                                   Low(two.Footprint, along), High(two.Footprint, along));
 
-            var areaOne = (High(one.Footprint, across) - Low(one.Footprint, across))
-                        * (High(one.Footprint, along) - Low(one.Footprint, along));
-            var areaTwo = (High(two.Footprint, across) - Low(two.Footprint, across))
-                        * (High(two.Footprint, along) - Low(two.Footprint, along));
+            if (overlap <= 0) return 0;
 
-            var smaller = Math.Min(areaOne, areaTwo);
+            // In plan throughout, including the areas. The patch's own area is the area of a
+            // surface that may be tilted, and comparing a tilted area with a plan overlap would
+            // put the two sides of the ratio in different units.
+            var areaOne = Plan(one.Outline);
+            var areaTwo = Plan(two.Outline);
 
-            return smaller <= 0 ? 0 : overlap / smaller;
+            var smaller = areaOne <= areaTwo ? one : two;
+            var larger = ReferenceEquals(smaller, one) ? two : one;
+            var area = Math.Min(areaOne, areaTwo);
+
+            if (area <= 0) return 0;
+
+            // Nothing outside the shared rectangle can be covered, so this is an upper bound on the
+            // answer and a cheap way out of an outline comparison that cannot reach the threshold.
+            if (overlap / area < StackedOverlapShare) return 0;
+
+            var covered = 0.0;
+
+            foreach (var triangle in smaller.Outline)
+            {
+                var piece = triangle.Area;
+
+                if (piece <= 0) continue;
+
+                var x = (triangle.Ax + triangle.Bx + triangle.Cx) / 3.0;
+                var y = (triangle.Ay + triangle.By + triangle.Cy) / 3.0;
+
+                foreach (var over in larger.Outline)
+                    if (over.Holds(x, y)) { covered += piece; break; }
+            }
+
+            return covered / area;
+        }
+
+        /// <summary>How much ground an outline covers in plan, in square metres.</summary>
+        /// <param name="outline">The patch in plan.</param>
+        private static double Plan(IReadOnlyList<Tri2> outline)
+        {
+            var area = 0.0;
+
+            for (var i = 0; i < outline.Count; i++) area += outline[i].Area;
+
+            return area;
         }
 
         private static double Overlap(double lowOne, double highOne, double lowTwo, double highTwo)

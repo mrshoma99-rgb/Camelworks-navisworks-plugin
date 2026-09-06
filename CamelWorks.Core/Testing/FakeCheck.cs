@@ -19,6 +19,11 @@ namespace CamelWorks.Core.Testing
     /// Every capability is null by default, which is what six of the seven real checks answer, and
     /// is the case a board is most likely to get wrong. Running and naming are switched on rather
     /// than absent, because those two have behaviour worth asserting.
+    ///
+    /// Findings are built fresh on every read, from what the fixture holds. A real check builds one
+    /// from whatever its engine reported this time, and its ids have to come back the same; a fake
+    /// that handed the same objects out twice would be the only check at this seam whose identity
+    /// rule was never exercised.
     /// </summary>
     public sealed class FakeCheck : ICheck, ICheckRunner, ICheckNaming
     {
@@ -28,16 +33,62 @@ namespace CamelWorks.Core.Testing
 
         private sealed class FakeRun
         {
-            internal FakeRun(string id, string name, string? folder)
+            internal FakeRun(string check, string id, string name, string? folder)
             {
-                Id = id; Name = name; Folder = folder;
+                Check = check; Id = id; Name = name; Folder = folder;
             }
 
+            internal string Check { get; }
             internal string Id { get; }
             internal string Name { get; set; }
             internal string? Folder { get; set; }
             internal long LastRunTicks { get; set; }
-            internal List<Finding> Findings { get; } = new List<Finding>();
+            internal List<FakeResult> Results { get; } = new List<FakeResult>();
+        }
+
+        /// <summary>
+        /// One result as the fixture holds it: what it is, not the object a read handed out.
+        ///
+        /// A finding is built from this on every read, as a real check builds one from whatever its
+        /// engine reports. Holding one object and handing it back would make the fake the one check
+        /// whose findings are reference-identical between runs, and the identity rule — the same
+        /// source, rule, title, elements and discriminator derive the same id — would never be
+        /// exercised at this seam.
+        /// </summary>
+        private sealed class FakeResult
+        {
+            internal FakeResult(FakeRun run, string title, double measured, string? discriminator)
+            {
+                Run = run;
+                Title = title;
+                Measured = measured;
+                Discriminator = discriminator ?? run.Id + "/" + title;
+                Runs.Add(run.Id);
+            }
+
+            internal FakeRun Run { get; }
+            internal string Title { get; }
+            internal double Measured { get; }
+            internal string? Discriminator { get; }
+            internal FindingStatus Status { get; set; } = FindingStatus.New;
+            internal string? AssignedTo { get; set; }
+            internal List<string> Runs { get; } = new List<string>();
+
+            /// <summary>A finding for this result, built fresh.</summary>
+            internal Finding Build()
+            {
+                var finding = Finding.Create(
+                    Run.Check, Run.Name, Title, new[] { Element(Title) }, Discriminator);
+
+                finding.Status = Status;
+                finding.AssignedTo = AssignedTo;
+                finding.Facts["Measured"] = Measured.ToString("0.###", CultureInfo.InvariantCulture);
+                finding.Facts["Why"] = Title;
+
+                CheckFacts.SetRuns(finding, Runs);
+
+                return finding;
+            }
         }
 
         /// <summary>Build one.</summary>
@@ -131,7 +182,7 @@ namespace CamelWorks.Core.Testing
         /// <param name="folder">Which folder, or null for the root.</param>
         public FakeCheck With(string id, string? name = null, string? folder = null)
         {
-            _runs.Add(new FakeRun(id, name ?? id, folder));
+            _runs.Add(new FakeRun(Key, id, name ?? id, folder));
 
             return this;
         }
@@ -150,18 +201,7 @@ namespace CamelWorks.Core.Testing
 
             var run = _runs[_runs.Count - 1];
 
-            var finding = Finding.Create(
-                Key, run.Name, title,
-                new[] { Element(title) },
-                discriminator ?? run.Id + "/" + title);
-
-            finding.Status = status;
-            finding.Facts["Measured"] = measured.ToString("0.###", CultureInfo.InvariantCulture);
-            finding.Facts["Why"] = title;
-
-            CheckFacts.SetRuns(finding, new[] { run.Id });
-
-            run.Findings.Add(finding);
+            run.Results.Add(new FakeResult(run, title, measured, discriminator) { Status = status });
 
             return this;
         }
@@ -173,9 +213,9 @@ namespace CamelWorks.Core.Testing
         /// <param name="runId">The other run's id.</param>
         public FakeCheck AlsoIn(string runId)
         {
-            var finding = Last();
+            var result = Last();
 
-            CheckFacts.SetRuns(finding, CheckFacts.RunsOf(finding).Concat(new[] { runId }).ToList());
+            if (!result.Runs.Contains(runId, StringComparer.Ordinal)) result.Runs.Add(runId);
 
             return this;
         }
@@ -189,8 +229,12 @@ namespace CamelWorks.Core.Testing
             return this;
         }
 
-        /// <summary>The findings this check would report, whichever runs they belong to.</summary>
-        public IReadOnlyList<Finding> Findings => _runs.SelectMany(run => run.Findings).ToList();
+        /// <summary>
+        /// The findings this check would report, whichever runs they belong to, built fresh on
+        /// every call as a read builds them.
+        /// </summary>
+        public IReadOnlyList<Finding> Findings =>
+            _runs.SelectMany(run => run.Results).Select(result => result.Build()).ToList();
 
         // ---- Reading ---------------------------------------------------------------------
 
@@ -200,10 +244,25 @@ namespace CamelWorks.Core.Testing
                 ? Array.Empty<CheckRun>()
                 : _runs.Select(run => new CheckRun(
                       run.Id, run.Name, "Fake", "everything against everything", run.Folder,
-                      threshold: null, trades: null, resultCount: run.Findings.Count,
+                      threshold: null, trades: null, resultCount: ResultsNaming(run.Id).Count,
                       lastRunTicks: run.LastRunTicks, isOurs: true)).ToList();
 
-        /// <inheritdoc />
+        /// <summary>Every result naming a run, wherever it was put in.</summary>
+        /// <param name="runId">The run id.</param>
+        private List<FakeResult> ResultsNaming(string runId) =>
+            _runs.SelectMany(run => run.Results)
+                 .Where(result => result.Runs.Contains(runId, StringComparer.Ordinal))
+                 .ToList();
+
+        /// <summary>
+        /// Read the runs asked for, building each result's finding fresh.
+        /// </summary>
+        /// <param name="runIds">Which runs, or null for every run.</param>
+        /// <param name="onProgress">
+        /// Called with the number of runs started, which is this check's own meaning for the
+        /// figure: <see cref="ICheck.Read"/> leaves what it counts to the check, and returning
+        /// false stops the read between runs.
+        /// </param>
         public CheckRead Read(IReadOnlyList<string>? runIds, Func<int, bool>? onProgress)
         {
             _log.Add("read");
@@ -228,10 +287,16 @@ namespace CamelWorks.Core.Testing
 
                 read.Add(Runs().First(one => one.Id == run.Id));
 
-                // One finding reported by two runs is read once and scoped to both, because the
-                // board draws a row per finding and the rail tallies it under each run it names.
-                foreach (var finding in run.Findings)
+                // Every result naming this run, including one put in under another run: a read of a
+                // run reports all of that run's results, and one left out is one reported gone.
+                // A result naming two runs is built once and scoped to both, because the board
+                // draws a row per finding and the rail tallies it under each run it names.
+                foreach (var result in ResultsNaming(run.Id))
+                {
+                    var finding = result.Build();
+
                     if (seen.Add(finding.Id)) findings.Add(finding);
+                }
             }
 
             return new CheckRead(read, findings,
@@ -304,9 +369,9 @@ namespace CamelWorks.Core.Testing
             {
                 var run = Held(id);
 
-                if (run == null || run.Findings.Count == 0) continue;
+                if (run == null || run.Results.Count == 0) continue;
 
-                run.Findings.Clear();
+                run.Results.Clear();
                 emptied = true;
             }
 
@@ -351,13 +416,13 @@ namespace CamelWorks.Core.Testing
         private FakeRun? Held(string? id) =>
             id == null ? null : _runs.FirstOrDefault(run => run.Id == id);
 
-        private Finding Last()
+        private FakeResult Last()
         {
-            var finding = _runs.LastOrDefault(run => run.Findings.Count > 0)?.Findings.LastOrDefault();
+            var result = _runs.LastOrDefault(run => run.Results.Count > 0)?.Results.LastOrDefault();
 
-            if (finding == null) throw new InvalidOperationException("add a result first");
+            if (result == null) throw new InvalidOperationException("add a result first");
 
-            return finding;
+            return result;
         }
 
         private static double? Read(Finding finding, string fact) =>

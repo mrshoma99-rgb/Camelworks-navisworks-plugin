@@ -81,9 +81,19 @@ namespace CamelWorks.Core.Checks
 
         /// <summary>
         /// Read results.
+        ///
+        /// A read of run R reports every result naming R, including one R shares with a run that
+        /// was not read: the register marks absent whatever the read's scope covers and the read
+        /// did not report, so a result left out is a result reported gone.
         /// </summary>
         /// <param name="runIds">Which runs, or null for every run.</param>
-        /// <param name="onProgress">Called with how far it has got; returning false stops it. Null does not report.</param>
+        /// <param name="onProgress">
+        /// Called with how far it has got; returning false stops it. Null does not report. What the
+        /// number counts is the check's own: <see cref="CamelWorks.Core.Testing.FakeCheck"/> passes
+        /// runs started and <see cref="CamelWorks.Core.Data.WalkableSurfaces.Read"/> passes
+        /// elements read. It is a liveness figure for a progress bar, not a total, and no caller
+        /// may read a percentage out of it.
+        /// </param>
         CheckRead Read(IReadOnlyList<string>? runIds, Func<int, bool>? onProgress);
 
         /// <summary>Echoing decisions into the host document, or null when the results live nowhere but here.</summary>
