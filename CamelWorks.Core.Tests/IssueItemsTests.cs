@@ -54,9 +54,10 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void Only_open_issues_reach_the_board()
         {
-            // A resolved issue is kept as a record and left off the board. It is the only evidence
-            // the week's work happened, and a board carrying every issue ever raised would be
-            // unusable within a month.
+            // Open is the lattice's, so Approved comes off the board as well as Resolved. Approved
+            // means somebody has signed the issue off; the board is what is still to settle. Both
+            // are kept as records: they are the evidence the week's work happened, and a board
+            // carrying every issue ever raised would be unusable within a month.
             var register = new IssueRegister();
 
             register.Put(Raised());
@@ -65,9 +66,56 @@ namespace CamelWorks.Core.Tests
             closed.Status = FindingStatus.Resolved;
             register.Put(closed);
 
-            Assert.Equal(2, register.Issues.Count);
-            Assert.Equal("Door swings into the escape route",
-                         Assert.Single(IssueItems.Open(register)).CarriedGroup);
+            var signedOff = Raised("CW-3", "Approved one");
+            signedOff.Status = FindingStatus.Approved;
+            register.Put(signedOff);
+
+            var reviewed = Raised("CW-4", "Reviewed one");
+            reviewed.Status = FindingStatus.Reviewed;
+            register.Put(reviewed);
+
+            Assert.Equal(4, register.Issues.Count);
+
+            Assert.Equal(new[] { "Door swings into the escape route", "Reviewed one" },
+                         IssueItems.Open(register).Select(i => i.CarriedGroup).ToArray());
+        }
+
+        [Fact]
+        public void A_board_identity_is_kept_rather_than_recomputed()
+        {
+            // A clash key is quantised around a point, and the centroid of a selection moves the
+            // moment somebody nudges an element. Re-deriving it on every board build would make the
+            // issue look resolved and then new, and would orphan the group decision, the pinned
+            // group and the per-key assignment held against the old key.
+            var issue = Raised();
+
+            var before = IssueItems.KeyFor(issue);
+
+            Assert.False(before.IsEmpty);
+            Assert.Equal(before.ToString(), issue.Facts[Issue.KeyFact]);
+
+            issue.X = 999;
+            issue.Y = -40;
+            issue.Elements.Insert(0, K("something else"));
+
+            Assert.Equal(before, IssueItems.KeyFor(issue));
+            Assert.Equal(before, IssueItems.KeyFor(Issue.FromJson(issue.ToJson())));
+
+            var register = new IssueRegister();
+            register.Put(issue);
+
+            Assert.Equal(before, Assert.Single(IssueItems.Open(register)).Key);
+        }
+
+        [Fact]
+        public void An_issue_with_no_honest_key_has_none()
+        {
+            var thin = new Issue("CW-5", "No access to this valve");
+            thin.Elements.Add(K("valve"));
+
+            Assert.True(IssueItems.KeyFor(thin).IsEmpty);
+            Assert.False(thin.Facts.ContainsKey(Issue.KeyFact));
+            Assert.True(IssueItems.KeyFor(null).IsEmpty);
         }
 
         [Fact]

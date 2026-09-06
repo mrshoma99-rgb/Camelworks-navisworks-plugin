@@ -23,8 +23,10 @@ namespace CamelWorks.Core.Findings
         /// <summary>Name one place.</summary>
         /// <param name="id">
         /// How this place is referred to. Made by the producer and stable between runs, so a note
-        /// written against it is still against it next week. Only as unique as the producer made
-        /// it: see <see cref="FindingRegister.FindLocation"/>.
+        /// written against it is still against it next week. It must also be unique across every
+        /// finding, because the register indexes locations by it alone: every producer in Core
+        /// writes its finding's id, a slash and the element key. Three specifications failing the
+        /// same wall are three places, and an id that was only the element key made them one.
         /// </param>
         /// <param name="elements">The elements at this place.</param>
         /// <param name="detail">A second line — what failed here, in the producer's own words.</param>

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Clash;
@@ -69,10 +70,18 @@ namespace CamelWorks.Core.Tests
             Assert.Null(missing);
             Assert.Null(blank);
 
-            var register = FindingRegister.FromJson(
-                JsonValue.Object().Set("findings", JsonValue.Array(new[] { Record(null) })));
+            var notes = new List<string>();
 
-            Assert.Equal(0, register.Count);
+            var register = FindingRegister.FromJson(
+                JsonValue.Object().Set("findings",
+                                       JsonValue.Array(new[] { Record(null), Record("   "), Record("Ids") })),
+                notes);
+
+            // Counted, not silently dropped: the reader is told two records were lost rather than
+            // being left to notice a short register.
+            Assert.Equal(1, register.Count);
+            Assert.Contains(notes, n => n.StartsWith("2 finding(s) could not be read",
+                                                     StringComparison.Ordinal));
         }
 
         [Fact]
@@ -121,6 +130,24 @@ namespace CamelWorks.Core.Tests
                          clash!.Id);
 
             Assert.NotEqual(read.Id, clash.Id);
+        }
+
+        [Fact]
+        public void A_padded_source_is_the_same_source()
+        {
+            // Identity is normalised on the way in. " Clash" left as written would hash as a source
+            // of its own and miss the ordinal clash branch — the same re-identification case is
+            // pinned above, arriving through padding rather than through case.
+            var padded = Finding.Create("  " + FindingSource.Clash + " ", "MEP vs Structure",
+                                        "Duct through beam", new[] { Key('a') },
+                                        identity: ClashFindings.Identity("host-test-7"));
+
+            var plain = Finding.Create(FindingSource.Clash, "MEP vs Structure",
+                                       "Duct through beam", new[] { Key('a') },
+                                       identity: ClashFindings.Identity("host-test-7"));
+
+            Assert.Equal(FindingSource.Clash, padded.Source);
+            Assert.Equal(plain.Id, padded.Id);
         }
 
         [Fact]

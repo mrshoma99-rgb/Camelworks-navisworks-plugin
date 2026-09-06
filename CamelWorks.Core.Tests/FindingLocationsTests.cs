@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
+using CamelWorks.Core.Issues;
 using CamelWorks.Core.Store;
 using Xunit;
 
@@ -111,6 +112,7 @@ namespace CamelWorks.Core.Tests
 
             register.Put(Spec(5));
             Assert.Equal(5, register.LocationCount);
+            Assert.NotNull(register.FindLocation("wall-4"));
 
             register.Observe(FindingSource.Ids, new[] { Spec(2) }, 1);
             Assert.Equal(2, register.LocationCount);
@@ -119,9 +121,115 @@ namespace CamelWorks.Core.Tests
             register.Remove(Spec(1).Id);
             Assert.Equal(0, register.LocationCount);
 
+            // The lookup is built before the Clear, so the Clear has an index to drop. Asserting
+            // the count alone would pass on a register that never built one.
             register.Put(Spec(1));
+            Assert.NotNull(register.FindLocation("wall-0"));
+
             register.Clear();
             Assert.Equal(0, register.LocationCount);
+            Assert.Null(register.FindLocation("wall-0"));
+        }
+
+        [Fact]
+        public void A_note_survives_a_run_that_still_reports_the_place()
+        {
+            // The producers build fresh locations with no notes on them, so a run that reports the
+            // same place again must carry the note across or every re-read wipes what a coordinator
+            // wrote.
+            var register = new FindingRegister();
+            register.Put(Spec(3));
+
+            register.FindLocation("wall-1")!.Notes.Add(
+                new FindingComment("A Coordinator", 42, "void former, not a wall"));
+
+            register.Observe(FindingSource.Ids, new[] { Spec(3) }, 100);
+
+            Assert.Equal("void former, not a wall",
+                         register.FindLocation("wall-1")!.Notes.Single().Body);
+
+            // And is not doubled by the run after that.
+            register.Observe(FindingSource.Ids, new[] { Spec(3) }, 200);
+
+            Assert.Single(register.FindLocation("wall-1")!.Notes);
+        }
+
+        [Fact]
+        public void A_note_goes_with_the_place_the_run_stops_reporting()
+        {
+            // Stated rather than worked around: a note is written against one place, and a place the
+            // run no longer reports is not on the finding any more.
+            var register = new FindingRegister();
+            register.Put(Spec(3));
+
+            register.FindLocation("wall-2")!.Notes.Add(
+                new FindingComment("A Coordinator", 42, "void former, not a wall"));
+
+            register.Observe(FindingSource.Ids, new[] { Spec(2) }, 100);
+
+            Assert.Null(register.FindLocation("wall-2"));
+            Assert.Equal(2, register.LocationCount);
+        }
+
+        [Fact]
+        public void Three_findings_over_one_element_are_three_places()
+        {
+            // Location ids are scoped to the finding that made them. Three specifications each
+            // failing the same five hundred walls are fifteen hundred places to visit, and an id
+            // that was only the element key would report five hundred and hand back whichever
+            // finding sorted first for every one of them.
+            var register = new FindingRegister();
+
+            var specs = new[] { "fire-rating", "acoustic", "load-bearing" }
+                .Select(Fails).ToList();
+
+            foreach (var spec in specs) register.Put(spec);
+
+            Assert.Equal(3, register.Count);
+            Assert.Equal(6, register.LocationCount);
+
+            foreach (var spec in specs)
+                foreach (var location in spec.Locations)
+                {
+                    Assert.Same(spec, register.OwnerOfLocation(location.Id));
+                    Assert.Same(location, register.FindLocation(location.Id));
+                }
+        }
+
+        // One specification, failing the same two walls every other specification fails.
+        private static Finding Fails(string specification)
+        {
+            var finding = Finding.CreateParent(FindingSource.Ids, "IDS",
+                                               "Walls failed " + specification, specification);
+
+            for (var n = 0; n < 2; n++)
+                finding.AddLocation(new FindingLocation(finding.Id + "/" + Wall(n),
+                                                        new[] { Wall(n) }, specification));
+
+            return finding;
+        }
+
+        [Fact]
+        public void A_location_is_not_a_topic_and_cannot_be_attached_to_an_issue()
+        {
+            // Two of the decisions in 2.2, pinned. A location is not a register entry: it is not
+            // written as its own BCF topic, and an issue that names one names nothing.
+            var register = new FindingRegister();
+            var spec = Spec(3);
+            register.Put(spec);
+
+            var topics = FindingBcf.Together(new[] { spec }, null, null);
+
+            Assert.Single(topics);
+            Assert.Equal(FindingBcf.TopicGuidFor(spec), topics[0].Guid);
+
+            // IssueFindings.Attach takes findings, so a location cannot be handed to it at all.
+            // What can happen is an id typed or carried in by hand, and that resolves to nothing.
+            var issue = new Issue("CW-1", "The fire-rated walls");
+            issue.Findings.Add("wall-1");
+
+            Assert.Null(register.Find("wall-1"));
+            Assert.Empty(IssueFindings.Attached(issue, register));
         }
     }
 }

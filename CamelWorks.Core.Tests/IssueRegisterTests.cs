@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
@@ -240,6 +241,41 @@ namespace CamelWorks.Core.Tests
             Assert.Equal("Active", topic.TopicStatus);
             Assert.NotNull(topic.DueDate);
             Assert.Single(topic.Comments);
+        }
+
+        [Fact]
+        public void An_imported_topic_with_no_priority_is_given_none()
+        {
+            // Not defaulted to "Normal". The priority vocabulary is the project's, and a project
+            // that has overridden the list may not hold that word; an import that invented one
+            // would be the importer choosing a word the project does not use.
+            var topic = Topic(BcfGuid.For("t9"), "No priority given");
+
+            Assert.Null(IssueBcf.FromTopic(topic, "CW-1").Priority);
+
+            topic.Priority = "High";
+
+            Assert.Equal("High", IssueBcf.FromTopic(topic, "CW-2").Priority);
+        }
+
+        [Fact]
+        public void A_register_written_by_a_newer_build_says_so()
+        {
+            // The version is written, so it is read. Reading it silently would leave a reader with
+            // a short register and no reason for it.
+            var json = new IssueRegister().ToJson().Set("version", IssueRegister.Version + 1);
+
+            var notes = new List<string>();
+
+            IssueRegister.FromJson(json, notes);
+
+            Assert.Contains(notes, n => n.Contains("newer version", StringComparison.Ordinal));
+
+            var quiet = new List<string>();
+
+            IssueRegister.FromJson(new IssueRegister().ToJson(), quiet);
+
+            Assert.Empty(quiet);
         }
 
         [Fact]

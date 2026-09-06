@@ -46,6 +46,17 @@ namespace CamelWorks.Core.Issues
         /// <summary>The <see cref="Facts"/> key holding a typed resolution, as JSON.</summary>
         public const string InstructionFact = "instruction";
 
+        /// <summary>
+        /// The <see cref="Facts"/> key holding this issue's board identity, as a clash key.
+        ///
+        /// Written once and read back thereafter. A clash key is quantised around a point, so
+        /// re-deriving it every board build would move it the moment somebody nudged an element,
+        /// and the group decision, the pinned group and the per-key assignment recorded against the
+        /// old key would all be left behind. A clash-pipeline concept and not a field every issue
+        /// needs, so it rides here rather than on the record. See <c>IssueItems.KeyFor</c>.
+        /// </summary>
+        public const string KeyFact = "key";
+
         /// <summary>The kinds an issue is, offered rather than imposed — the field takes any text.</summary>
         public static readonly string[] Types =
             { "Coordination", "Clash", "Clearance", "Design", "Safety", "Quality", "RFI", "Snag" };
@@ -417,11 +428,18 @@ namespace CamelWorks.Core.Issues
 
         /// <summary>Read a register back. An unreadable record is counted, never thrown.</summary>
         /// <param name="json">What was saved, or null.</param>
-        public static IssueRegister FromJson(JsonValue? json)
+        /// <param name="notes">Anything worth saying about what was read.</param>
+        public static IssueRegister FromJson(JsonValue? json, IList<string>? notes = null)
         {
             var register = new IssueRegister();
 
             if (json == null || json.Kind != JsonKind.Object) return register;
+
+            // The version is written, so it is read. A file from a later build is read for what this
+            // build understands rather than refused, and the reader is told that is what happened.
+            if ((int)json["version"].AsLong(Version) > Version)
+                notes?.Add("These issues were written by a newer version of CamelWorks. What this "
+                           + "one understands has been read.");
 
             foreach (var entry in json["issues"].Items)
             {

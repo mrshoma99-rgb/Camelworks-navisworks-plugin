@@ -115,6 +115,11 @@ namespace CamelWorks.Core.Issues
             {
                 Type = string.IsNullOrWhiteSpace(topic.TopicType) ? "Coordination" : topic.TopicType,
                 Status = Status(topic.TopicStatus),
+
+                // Left blank when the topic gave none, rather than defaulted to "Normal". The
+                // priority vocabulary is the project's, and a project that has overridden the list
+                // may not have that word in it; an import that invents one would be the importer
+                // choosing a word the project does not use.
                 Priority = topic.Priority,
                 Description = topic.Description,
                 AssignedTo = topic.AssignedTo,

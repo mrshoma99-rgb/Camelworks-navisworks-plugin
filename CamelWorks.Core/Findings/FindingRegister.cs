@@ -111,8 +111,12 @@ namespace CamelWorks.Core.Findings
         ///
         /// Not part of <see cref="Count"/> or <see cref="Open"/>. It exists so a screen can say
         /// "37 rules, 1,204 locations" rather than implying 37 problems are 1,204.
+        ///
+        /// Summed, not counted off the lookup index. Three specifications each failing the same
+        /// five hundred walls are fifteen hundred places to visit, and an index keyed by location
+        /// id would report five hundred if any producer ever repeated an id between findings.
         /// </summary>
-        public int LocationCount => Index().Count;
+        public int LocationCount => _findings.Values.Sum(f => f.Locations.Count);
 
         /// <summary>The finding that owns the location with this id, or null.</summary>
         /// <param name="locationId">The location's id.</param>
@@ -122,9 +126,10 @@ namespace CamelWorks.Core.Findings
         /// <summary>
         /// The location with this id, or null.
         ///
-        /// A location id is only as unique as the producer that made it. Where two findings hold
-        /// one id, the first in register order owns the lookup; nothing else depends on which,
-        /// because a location carries no decision.
+        /// A location id is only as unique as the producer that made it, so every producer in Core
+        /// prefixes its finding's id. Where two findings still hold one id, the first in register
+        /// order owns the lookup, and both this and <see cref="OwnerOfLocation"/> then answer for
+        /// that one; a caller sent to a place would be sent to the wrong finding's place.
         /// </summary>
         /// <param name="locationId">The location's id.</param>
         public FindingLocation? FindLocation(string? locationId) =>
@@ -172,6 +177,31 @@ namespace CamelWorks.Core.Findings
 
             _locations = index;
             return index;
+        }
+
+        // Notes written against a place, moved onto this run's location for the same place. The
+        // incoming locations are newly built by the producer and have none of their own, so this is
+        // an add rather than a merge; Repeats still guards the case where a producer supplies some.
+        private static void CarryNotes(IReadOnlyList<FindingLocation> outgoing,
+                                       IReadOnlyList<FindingLocation> incoming)
+        {
+            if (outgoing.Count == 0 || incoming.Count == 0) return;
+
+            var noted = new Dictionary<string, FindingLocation>(StringComparer.Ordinal);
+
+            foreach (var location in outgoing)
+                if (location.Notes.Count > 0 && !noted.ContainsKey(location.Id))
+                    noted[location.Id] = location;
+
+            if (noted.Count == 0) return;
+
+            foreach (var location in incoming)
+            {
+                if (!noted.TryGetValue(location.Id, out var was)) continue;
+
+                foreach (var note in was.Notes)
+                    if (!location.Notes.Any(n => n.Repeats(note))) location.Notes.Add(note);
+            }
         }
 
         /// <summary>
@@ -247,11 +277,15 @@ namespace CamelWorks.Core.Findings
 
                 foreach (var fact in fresh.Facts) held.Facts[fact.Key] = fact.Value;
 
-                // This run's locations in place of the last run's. A location carries no decision,
-                // so nothing anybody said is lost; keeping them would leave "show me all of them"
-                // pointing at a set that has moved on.
+                // This run's locations in place of the last run's; keeping the old set would leave
+                // "show me all of them" pointing at a set that has moved on. A location carries no
+                // decision, so nothing triaged is lost, but it may carry notes, and the producers
+                // build fresh locations with none. Notes are therefore carried onto the incoming
+                // location with the same id. A note on an id this run no longer reports goes with
+                // the location it was written against.
                 if (fresh.HasLocations || held.HasLocations)
                 {
+                    CarryNotes(held.Locations, fresh.Locations);
                     held.ReplaceLocations(fresh.Locations);
                     _locations = null;
                 }

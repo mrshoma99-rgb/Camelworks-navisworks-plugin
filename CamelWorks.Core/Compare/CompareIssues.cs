@@ -70,7 +70,7 @@ namespace CamelWorks.Core.Compare
                 {
                     if (!change.Print.TryKey(out var key)) continue;
 
-                    parent.AddLocation(new FindingLocation(key.ToString(), new[] { key },
+                    parent.AddLocation(new FindingLocation(parent.Id + "/" + key, new[] { key },
                                                            change.Title));
                 }
 

@@ -44,13 +44,21 @@ false positive, the wall is a void former" without claiming the location was dec
 The load-bearing consequence: **a finding's id ignores its locations.** A specification failing 400
 elements this week and 1,000 next week is the same finding, with the same status, assignee and
 comment trail. `ReplaceLocations` records this run's places over last run's, because keeping the
-old ones would leave "show me all of them" pointing at a set that has moved on.
+old ones would leave "show me all of them" pointing at a set that has moved on. `Observe` carries
+notes across the swap, matching on location id, so a note on a place the run still reports survives
+the re-read; a note on a place the run stops reporting goes with it.
+
+A location id must be unique across every finding, not only within one. Every producer in Core
+writes its finding's id, a slash and the element key: three specifications failing the same wall are
+three places, and an id that was only the element key made them one and handed back whichever
+finding sorted first.
 
 Locations are not counted in `FindingRegister.Count` or `Open`, are not attachable to an issue, and
 are not written as their own BCF topics. `FindingRegister.Find(locationId)` returns null;
 `FindLocation` and `OwnerOfLocation` answer instead, off a lazy index dropped whenever the register
-changes. `LocationCount` exists so a screen can say "37 rules, 1,204 locations" rather than implying
-37 problems are 1,204.
+changes. `LocationCount` sums each finding's locations rather than counting that index, so it is
+right whatever the producers do with ids. It exists so a screen can say "37 rules, 1,204 locations"
+rather than implying 37 problems are 1,204.
 
 ### `Issue` — a finding-set somebody raised
 

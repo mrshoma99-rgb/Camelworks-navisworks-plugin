@@ -138,6 +138,18 @@ namespace CamelWorks.UI.Views
         /// <summary>The word for an issue nobody has to do anything more about.</summary>
         internal const string Settled = "Resolved";
 
+        /// <summary>
+        /// Every provenance this build knows, in the order the filter offers them.
+        ///
+        /// The two an issue can have with no findings attached, then every check key. Manual is left
+        /// out because it reads as "Raised", the same word as by-hand, and one word twice in a
+        /// dropdown filters nothing.
+        /// </summary>
+        internal static IReadOnlyList<string> Provenances { get; } =
+            new[] { Issue.ByHand, Issue.ByImport }
+                .Concat(FindingSource.Known.Where(s => s != FindingSource.Manual))
+                .ToList();
+
         /// <summary>How an issue's provenance reads in a column.</summary>
         /// <param name="provenance">What the issue says it came from.</param>
         internal static string Origin(string? provenance)
@@ -145,9 +157,12 @@ namespace CamelWorks.UI.Views
             switch (provenance)
             {
                 case Issue.ByImport: return "Imported";
-                case FindingSource.Ids: return "IDS";
                 case FindingSource.Manual:
                 case Issue.ByHand: return "Raised";
+                case FindingSource.Ids: return "IDS";
+                case FindingSource.Headroom: return "Clearance";
+                case FindingSource.SetDrift: return "Set drift";
+                case FindingSource.FallHazard: return "Fall hazard";
                 default: return string.IsNullOrWhiteSpace(provenance) ? "Raised" : provenance!;
             }
         }
@@ -351,7 +366,7 @@ namespace CamelWorks.UI.Views
 
                 row.Children.Add(Ui.Tally("Raised by"));
                 row.Children.Add(Ui.Choice(
-                    new[] { AnySource, "Raised", "Clash", "Clearance", "Imported" },
+                    new[] { AnySource }.Concat(Provenances.Select(Origin)).ToArray(),
                     _source, pick => { _source = pick; Redraw(); }, 150));
 
                 return row;
@@ -731,18 +746,29 @@ namespace CamelWorks.UI.Views
             /// <summary>What the detail card's subtitle says about where an issue came from.</summary>
             private string Where(Issue issue)
             {
-                var from = Origin(issue.Provenance) switch
+                // Switched on the provenance rather than on the column word, and exhaustive over
+                // FindingSource.Known plus the two by-hand and by-import values. A check key that
+                // fell to the fallback used to read "Raised by hand", which is a false statement
+                // about where the record came from.
+                var from = issue.Provenance switch
                 {
-                    "Clash" => "Made from " + Ui.Count(issue.Findings.Count, "clash result"),
-                    "Clearance" => "Made from a clearance finding",
-                    "Compare" => "Made from what changed between two revisions",
-                    "Health" => "Made from a model review finding",
-                    "IDS" => "Made from a specification the model failed",
-                    "Imported" => "Imported"
-                                  + (Fact(issue, Issue.SourceFact) is string file
-                                      ? " from " + file
-                                      : string.Empty),
-                    _ => "Raised by hand",
+                    Issue.ByHand => "Raised by hand",
+                    FindingSource.Manual => "Raised by hand",
+                    Issue.ByImport => "Imported"
+                                      + (Fact(issue, Issue.SourceFact) is string file
+                                          ? " from " + file
+                                          : string.Empty),
+                    FindingSource.Clash => "Made from " + Ui.Count(issue.Findings.Count, "clash result"),
+                    FindingSource.Headroom => "Made from a clearance finding",
+                    FindingSource.Compare => "Made from what changed between two revisions"
+                                             + (Fact(issue, Issue.SourceFact) is string pair
+                                                 ? " — " + pair
+                                                 : string.Empty),
+                    FindingSource.Health => "Made from a model review finding",
+                    FindingSource.Ids => "Made from a specification the model failed",
+                    FindingSource.SetDrift => "Made from a set that stopped returning what it used to",
+                    FindingSource.FallHazard => "Made from a fall hazard finding",
+                    _ => "Raised by a check",
                 };
 
                 return from + " · raised " + Day(issue.CreatedTicks)

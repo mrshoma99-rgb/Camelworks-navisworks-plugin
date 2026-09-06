@@ -304,7 +304,8 @@ namespace CamelWorks.Core.Findings
 
             if (finding.HasLocations)
                 said.Add(finding.Locations.Count.ToString(CultureInfo.InvariantCulture)
-                         + " places are named on it.");
+                         + (finding.Locations.Count == 1 ? " place is" : " places are")
+                         + " named on it.");
 
             if (!finding.IsPresent)
                 said.Add("The latest run no longer reports this.");

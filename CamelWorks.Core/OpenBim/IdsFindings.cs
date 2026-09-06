@@ -98,7 +98,7 @@ namespace CamelWorks.Core.OpenBim
 
                 if (key.IsEmpty) continue;
 
-                var location = new FindingLocation(key.ToString(), new[] { key },
+                var location = new FindingLocation(parent.Id + "/" + key, new[] { key },
                                                    violation.Requirement?.Describe());
 
                 location.Facts[Why] = violation.Failure.ToString();

@@ -171,7 +171,7 @@ namespace CamelWorks.Core.Tests
             Assert.All(parent.Locations, location =>
             {
                 Assert.Single(location.Elements);
-                Assert.Equal(location.Elements[0].ToString(), location.Id);
+                Assert.Equal(parent.Id + "/" + location.Elements[0], location.Id);
                 Assert.Empty(location.Notes);
             });
         }

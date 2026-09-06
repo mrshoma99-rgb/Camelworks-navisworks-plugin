@@ -449,13 +449,18 @@ namespace CamelWorks.Core.Findings
 
             var named = string.IsNullOrWhiteSpace(identity) ? rule : identity!.Trim();
 
-            var parts = new List<string?> { source, named, discriminator };
+            // Trimmed for the same reason identity is. " Clash" would otherwise hash as a source of
+            // its own and miss the ordinal clash-identity branch, which is the re-identification 2.6
+            // names arriving through padding rather than through case.
+            var from = source.Trim();
+
+            var parts = new List<string?> { from, named, discriminator };
             parts.AddRange(ordered.Select(s => (string?)s));
 
             var id = Hash.Of(Hash.ComponentWidth, parts.ToArray());
             var weakest = elements.Count == 0 ? KeyRung.InstanceGuid : elements.Max(e => e.Rung);
 
-            return new Finding(id, source, rule, title, elements, weakest, discriminator);
+            return new Finding(id, from, rule, title, elements, weakest, discriminator);
         }
 
         /// <summary>
@@ -484,11 +489,14 @@ namespace CamelWorks.Core.Findings
         /// <summary>
         /// Take this run's locations in place of the last run's.
         ///
-        /// Replacing is safe because a location carries no decision: triage lives on the finding,
-        /// which is the unit of decision, so nothing recorded is lost by swapping them. Keeping them
-        /// is not safe: a rule that failed four hundred elements last week and four hundred and one
-        /// today would still show last week's four hundred, so "show me all of them" would point at
-        /// a stale set and miss the new one.
+        /// Keeping the old ones is not safe: a rule that failed four hundred elements last week and
+        /// four hundred and one today would still show last week's four hundred, so "show me all of
+        /// them" would point at a stale set and miss the new one.
+        ///
+        /// Triage is not lost, because a location carries none. Notes are: a location the run no
+        /// longer reports takes its notes with it. Notes on an id the run still reports are carried
+        /// across by <see cref="FindingRegister.Observe"/>, which is where the outgoing locations
+        /// are still in hand; this method has only the incoming ones and does not carry anything.
         /// </summary>
         /// <param name="locations">This run's locations. Null or empty leaves none.</param>
         public void ReplaceLocations(IEnumerable<FindingLocation>? locations)

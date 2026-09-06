@@ -271,7 +271,11 @@ namespace CamelWorks.Core.Tests
 
             finding.AddLocation(new FindingLocation("x", new[] { Key('a') }));
 
-            Assert.Contains("1 places are named on it.", FindingBcf.ToTopic(finding).Description);
+            Assert.Contains("1 place is named on it.", FindingBcf.ToTopic(finding).Description);
+
+            finding.AddLocation(new FindingLocation("y", new[] { Key('b') }));
+
+            Assert.Contains("2 places are named on it.", FindingBcf.ToTopic(finding).Description);
         }
 
         [Fact]

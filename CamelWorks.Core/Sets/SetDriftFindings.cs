@@ -109,12 +109,29 @@ namespace CamelWorks.Core.Sets
             {
                 if (element.IsEmpty || made >= Math.Max(0, cap)) continue;
 
-                parent.AddLocation(new FindingLocation(element.ToString(), new[] { element }));
+                parent.AddLocation(new FindingLocation(parent.Id + "/" + element, new[] { element },
+                                                       Departed(element)));
                 made++;
             }
 
             return parent;
         }
+
+        /// <summary>
+        /// What the per-place line says about one departed element.
+        ///
+        /// The drift result has no per-element text: every element in the list left the same set for
+        /// the same reason, and that reason is the finding's own title. What differs per place is the
+        /// rung the element's key rests on, which is what decides whether the coordinator can trust
+        /// being sent there — a rung-3 key cannot separate two identical parts.
+        /// </summary>
+        /// <param name="element">The element that left.</param>
+        private static string Departed(ElementKey element) => "Left the set. " + (element.Rung switch
+        {
+            KeyRung.InstanceGuid => "Identified by instance GUID.",
+            KeyRung.TreePath => "Identified by tree path; a re-organised tree breaks it.",
+            _ => "Identified by category and size only; treat the match as a proposal.",
+        });
 
         /// <summary>A whole run's drift, as findings. A set holding steady makes none.</summary>
         /// <param name="drifted">What every set did.</param>
