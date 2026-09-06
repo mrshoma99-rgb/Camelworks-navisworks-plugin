@@ -111,6 +111,17 @@ namespace CamelWorks.Studio
                      Child = ClashExchangeViews.Drawn(Filed(), "Riverside", Sent()),
                  }),
 
+            // The other half of the round: several parties' packs read together, with the
+            // conflicts marked. Drawn with nothing chosen, which is the state it opens in and the
+            // one an empty screen has to explain rather than merely be blank in.
+            Page("app-clash-exchange-import", "Clash Manager · Exchange, import", 560,
+                 () => new Border
+                 {
+                     Height = 500,
+                     Child = ClashExchangeViews.Drawn(Filed(), "Riverside", Sent(),
+                                                      importing: true),
+                 }),
+
             Page("app-clash-levels", "Clash Manager · Levels", 620,
                  () => Ui.Loose(Bench.Group("Levels", ClashLevels.Drawn(Storeyed())))),
 

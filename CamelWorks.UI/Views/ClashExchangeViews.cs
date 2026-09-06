@@ -61,9 +61,11 @@ namespace CamelWorks.UI.Views
         /// <param name="store">The project file, which holds the profiles and the storeys.</param>
         /// <param name="projectName">The project's name, for the packs it writes.</param>
         /// <param name="board">The board to send, or null to take the last clash run's.</param>
+        /// <param name="importing">True to open on the import half rather than the export half.</param>
         public static UIElement Drawn(ProjectStore store, string? projectName = null,
-                                      IReadOnlyList<ClashGroup>? board = null) =>
-            new Desk(store, projectName ?? "Untitled project", board).View;
+                                      IReadOnlyList<ClashGroup>? board = null,
+                                      bool importing = false) =>
+            new Desk(store, projectName ?? "Untitled project", board, importing).View;
 
         /// <summary>The two halves of a round.</summary>
         private const string SendOut = "Export";
@@ -105,11 +107,18 @@ namespace CamelWorks.UI.Views
             // The take-back half
             // -------------------------------------------------------------------------------
 
-            private readonly List<TextBox> _returns = new List<TextBox>();
+            /// <summary>The packs chosen, by path, in the order they were chosen.</summary>
+            private readonly List<string> _returns = new List<string>();
+
             private readonly StackPanel _files = Ui.Stack();
+            private readonly StackPanel _packsSaid = Ui.Stack();
             private readonly StackPanel _back = Ui.Stack();
             private readonly StackPanel _rows = Ui.Stack();
+            private readonly StackPanel _rowsSaid = Ui.Stack();
             private readonly StackPanel _applied = Ui.Stack();
+
+            /// <summary>Which returned rows the table lists.</summary>
+            private string _showing = Everything;
 
             private ExchangeReading? _reading;
 
@@ -119,16 +128,20 @@ namespace CamelWorks.UI.Views
             private readonly IReadOnlyList<ClashGroup>? _board;
 
             internal Desk(ProjectStore store, string projectName,
-                          IReadOnlyList<ClashGroup>? board = null)
+                          IReadOnlyList<ClashGroup>? board = null, bool importing = false)
             {
                 _store = store;
                 _projectName = projectName;
                 _board = board;
+                _importing = importing;
 
                 Load();
 
                 View = Build();
             }
+
+            /// <summary>Which half is on show when the desk opens.</summary>
+            private readonly bool _importing;
 
             internal UIElement View { get; }
 
@@ -155,7 +168,9 @@ namespace CamelWorks.UI.Views
                 _out = SendingOut();
                 _in = TakingBack();
 
-                if (_out != null) _half.Content = Ui.Loose(_out);
+                var first = _importing ? _in : _out;
+
+                if (first != null) _half.Content = Ui.Loose(first);
 
                 return _half;
             }
@@ -197,6 +212,7 @@ namespace CamelWorks.UI.Views
             private UIElement SendingOut()
             {
                 var strip = Ui.Across(
+                    Ui.Field("Half", Switch(SendOut)),
                     Ui.Field("Export profile", Saved()),
                     Ui.Field("Find a test", _find),
                     Ui.Field("One file per", Splitting()),
@@ -878,45 +894,69 @@ namespace CamelWorks.UI.Views
             }
 
             // -------------------------------------------------------------------------------
-            // Taking back
+            // Importing
             // -------------------------------------------------------------------------------
 
+            /// <summary>
+            /// The same anatomy as the export half, because it is the same shape of job.
+            ///
+            /// Left is where the answers came from - one pack per party - and right is what they
+            /// say about the board. A pack can be taken out and the rows redraw without it, which
+            /// is the question a coordinator has when one trade's file turns out to be last week's.
+            ///
+            /// Nothing is applied by reading. The right-hand table is what would happen; the
+            /// action row is what does it.
+            /// </summary>
             private UIElement TakingBack()
             {
-                if (_returns.Count == 0) AddReturn(null);
+                var reading = Ui.Runner("Read the packs", _back, Receive, primary: false);
 
-                var strip = Ui.Stack(
-                    Switch(TakeBack),
-                    Ui.Small("One file per party. The party is taken from the file name, so "
-                             + "Mechanical.bcfzip is read as Mechanical's response."),
-                    _files,
-                    Ui.Across(
-                        Ui.Quiet("Another file", () => Ui.Safely(() => AddReturn(null))),
-                        Ui.Quiet("Browse…", Chosen)));
+                reading.VerticalAlignment = VerticalAlignment.Bottom;
 
-                _back.Children.Clear();
-                _back.Children.Add(Bench.Ready(
-                    "Reads the returned packs and reports what they change.",
-                    "Where two parties returned different answers for one clash, the row is "
-                    + "marked as a conflict and applied only once a side is chosen."));
+                var strip = Ui.Across(
+                    Ui.Field("Half", Switch(TakeBack)),
+                    Ui.Field("Returned packs", Ui.Quiet("Choose files…", Chosen)),
+                    Ui.Field("Show", Showing()),
+                    reading);
 
-                var stage = Ui.Stack(strip, _back, _rows, _applied);
+                var foot = new WrapPanel();
 
-                return Bench.Surface(null, Ui.Runner("Read the packs", _back, Receive), stage);
+                foot.Children.Add(Ui.Runner("Apply to the board", _applied, Apply));
+
+                DrawPacks();
+                DrawReading();
+
+                return Bench.Split(strip,
+                                   Bench.Pane("Packs", _packsSaid, _files, null, scrolls: false),
+                                   Bench.Pane("Returned clashes", _rowsSaid, _rows, null,
+                                              scrolls: false),
+                                   Ui.Stack(foot, _back, _applied),
+                                   leftWidth: 400);
             }
 
-            /// <summary>Add a row for one returned pack.</summary>
-            /// <param name="path">The file, or null for an empty row.</param>
-            private void AddReturn(string? path)
+            /// <summary>Which returned rows are listed: all of them, or only what needs a person.</summary>
+            private UIElement Showing()
             {
-                var box = Ui.Text(path ?? string.Empty, "a returned .bcfzip", null, 300);
+                var box = Ui.Choice(new[] { Everything, Changing, Conflicts }, _showing, said =>
+                {
+                    _showing = said;
+                    DrawReading();
+                }, 150);
 
-                _returns.Add(box);
+                box.ToolTip = "A pack of four hundred clashes usually holds a dozen answers. "
+                              + "This is how to see only those.";
 
-                _files.Children.Add(Ui.PathField(
-                    "Pack " + _returns.Count.ToString(CultureInfo.InvariantCulture),
-                    box, PathKind.Open, ClashFile.Filter));
+                return box;
             }
+
+            /// <summary>Every returned row.</summary>
+            private const string Everything = "Everything returned";
+
+            /// <summary>Only the rows that would move the board.</summary>
+            private const string Changing = "Only what changes";
+
+            /// <summary>Only the rows two parties answered differently.</summary>
+            private const string Conflicts = "Only the conflicts";
 
             /// <summary>Take several packs at once, which is how they arrive.</summary>
             private void Chosen()
@@ -925,32 +965,100 @@ namespace CamelWorks.UI.Views
 
                 if (picked.Count == 0) return;
 
-                // The empty rows first: choosing four files when one row is blank should fill it
-                // rather than leave it above four new ones.
                 foreach (var file in picked)
-                {
-                    var empty = _returns.FirstOrDefault(one => one.Text.Trim().Length == 0);
+                    if (!_returns.Contains(file, StringComparer.OrdinalIgnoreCase))
+                        _returns.Add(file);
 
-                    if (empty != null) empty.Text = file;
-                    else AddReturn(file);
-                }
+                // The reading is thrown away, because it was about the packs that were chosen
+                // before. Leaving it would show rows from a pack that is no longer in the list.
+                _reading = null;
+
+                DrawPacks();
+                DrawReading();
             }
 
-            /// <summary>Read every pack named, and say what would happen.</summary>
+            /// <summary>The packs chosen, with what each one turned out to hold.</summary>
+            private void DrawPacks()
+            {
+                _files.Children.Clear();
+                _packsSaid.Children.Clear();
+
+                if (_returns.Count == 0)
+                {
+                    _files.Children.Add(Ui.Empty("No packs chosen.",
+                        "Choose the .bcfzip files the parties returned. The party is taken from "
+                        + "the file name, so Mechanical.bcfzip is read as Mechanical's response."));
+
+                    return;
+                }
+
+                var rows = _returns.Select(one =>
+                {
+                    var read = _reading?.Packs.FirstOrDefault(
+                        pack => string.Equals(pack.FileName, Path.GetFileName(one),
+                                              StringComparison.OrdinalIgnoreCase));
+
+                    var answered = _reading?.Rows.Count(
+                        row => row.Answers.Any(say => string.Equals(
+                            say.Party, Path.GetFileNameWithoutExtension(one),
+                            StringComparison.OrdinalIgnoreCase))) ?? 0;
+
+                    return new TableRow(one,
+                        Path.GetFileNameWithoutExtension(one),
+                        Path.GetFileName(one),
+                        read == null ? string.Empty
+                            : read.Results.ToString("N0", CultureInfo.InvariantCulture),
+                        _reading == null ? "not read yet"
+                            : answered.ToString("N0", CultureInfo.InvariantCulture))
+                    {
+                        Tone = read?.Read?.Problem != null ? Tone.Bad : Tone.Plain,
+                    };
+                }).ToList();
+
+                var table = Ui.Table(rows,
+                    ("Party", 130), ("File", 0), ("In the pack", 84), ("On this board", 92))
+                    .Multi();
+
+                Ui.SetFills(_files, true);
+
+                _files.Children.Add(Ui.Loose(table));
+
+                _files.Children.Add(Ui.Picking(table,
+                    new Ui.OnPicked("Take out these {n}", (picked, said) =>
+                    {
+                        var held = picked.OfType<string>().ToList();
+
+                        if (held.Count == 0)
+                        {
+                            said.Children.Add(Ui.Note("Select at least one pack."));
+                            return;
+                        }
+
+                        foreach (var one in held) _returns.Remove(one);
+
+                        said.Children.Add(Ui.Note(Ui.Count(held.Count, "pack") + " taken out."));
+
+                        _reading = null;
+
+                        DrawPacks();
+                        DrawReading();
+                    })));
+
+                _packsSaid.Children.Add(Ui.Small(
+                    _reading == null
+                        ? Ui.Count(_returns.Count, "pack") + " chosen"
+                        : Ui.Count(_returns.Count, "pack") + " · "
+                          + Ui.Count(_reading.Rows.Count, "clash") + " returned"));
+            }
+
+            /// <summary>Read every pack chosen, and say what would happen.</summary>
             /// <param name="job">The run.</param>
             private void Receive(Job job)
             {
-                _rows.Children.Clear();
-                _applied.Children.Clear();
-
                 var packs = new List<ExchangePack>();
 
-                foreach (var box in _returns)
+                foreach (var file in _returns)
                 {
-                    var file = box.Text.Trim();
-
-                    if (file.Length == 0) continue;
-
                     if (!File.Exists(file))
                     {
                         _back.Children.Add(Ui.Problem("There is no file at " + file + "."));
@@ -981,8 +1089,8 @@ namespace CamelWorks.UI.Views
 
                 if (packs.Count == 0)
                 {
-                    _back.Children.Add(Ui.Empty("No packs named.",
-                        "Name the files the parties returned."));
+                    _back.Children.Add(Ui.Empty("No packs chosen.",
+                        "Choose the files the parties returned."));
 
                     return;
                 }
@@ -991,14 +1099,7 @@ namespace CamelWorks.UI.Views
 
                 _back.Children.Add(Ui.Line(_reading.Explain(), 1, true));
 
-                _back.Children.Add(Ui.Across(
-                    Ui.Pill(Ui.Count(_reading.Packs.Count, "pack")),
-                    Ui.Pill(Ui.Count(_reading.Changes, "change"),
-                            _reading.Changes > 0 ? Tone.Good : Tone.Plain),
-                    Ui.Pill(Ui.Count(_reading.Comments, "comment")),
-                    Ui.Pill(Ui.Count(_reading.Disputed, "disputed"),
-                            _reading.Disputed > 0 ? Tone.Warn : Tone.Plain)));
-
+                DrawPacks();
                 DrawReading();
             }
 
@@ -1006,10 +1107,39 @@ namespace CamelWorks.UI.Views
             private void DrawReading()
             {
                 _rows.Children.Clear();
+                _rowsSaid.Children.Clear();
 
-                if (_reading == null || _reading.Rows.Count == 0) return;
+                if (_reading == null)
+                {
+                    _rows.Children.Add(Ui.Empty("Nothing read yet.",
+                        "Choose the returned packs on the left. Where two parties answered one "
+                        + "clash differently the row is marked as a conflict, and applied only "
+                        + "once a side is chosen."));
 
-                var rows = _reading.Rows.Take(500).Select(one => new TableRow(one,
+                    return;
+                }
+
+                var showing = _reading.Rows
+                    .Where(one => _showing == Conflicts ? one.IsDisputed
+                                : _showing == Changing ? one.Changes || one.IsDisputed
+                                : true)
+                    .ToList();
+
+                if (showing.Count == 0)
+                {
+                    _rows.Children.Add(Ui.Empty(
+                        _showing == Everything
+                            ? "These packs answer no clash on this board."
+                            : "Nothing here to decide.",
+                        _showing == Everything
+                            ? "The parties may have worked against an earlier model issue."
+                            : "Every returned answer either agrees with the board or has been "
+                              + "decided."));
+
+                    return;
+                }
+
+                var rows = showing.Take(2000).Select(one => new TableRow(one,
                     one.Item.Name ?? one.Item.Key.ToString(),
                     one.Item.TestName,
                     one.Current.ToString(),
@@ -1022,11 +1152,12 @@ namespace CamelWorks.UI.Views
                 }).ToList();
 
                 var table = Ui.Table(rows,
-                    ("Clash", 0), ("Test", 150), ("On the board", 100),
-                    ("Returned", 100), ("Parties", 160), ("Accepted", 90)).Multi();
+                    ("Clash", 140), ("Test", 130), ("On the board", 96),
+                    ("Returned", 90), ("Parties", 130), ("Apply", 60)).Multi();
 
-                _rows.Children.Add(Ui.Eyebrow("Returned clashes"));
-                _rows.Children.Add(table);
+                Ui.SetFills(_rows, true);
+
+                _rows.Children.Add(Ui.Loose(table));
 
                 var settling = Ui.Link("Resolve the conflict…", () => { });
 
@@ -1053,19 +1184,19 @@ namespace CamelWorks.UI.Views
                     new Ui.OnPicked("Reject these {n}", (picked, said) =>
                         Decide(picked, said, row => row.Take = false))));
 
-                if (_reading.Undecided > 0)
-                    _rows.Children.Add(Ui.Note(
-                        Ui.Count(_reading.Undecided, "clash")
-                        + " returned conflicting answers. They are applied only once a side "
-                        + "is chosen."));
-
                 if (_reading.Strangers.Count > 0)
                     _rows.Children.Add(Ui.Note(
                         Ui.Count(_reading.Strangers.Count, "result")
                         + " reference elements this federation does not hold, which usually "
                         + "means a party worked against an earlier model issue."));
 
-                _rows.Children.Add(Ui.Runner("Apply to the board", _applied, Apply));
+                _rowsSaid.Children.Add(Ui.Small(
+                    showing.Count.ToString("N0", CultureInfo.InvariantCulture) + " shown · "
+                    + Ui.Count(_reading.Changes, "change") + " to apply"
+                    + (_reading.Undecided > 0
+                        ? " · " + _reading.Undecided.ToString(CultureInfo.InvariantCulture)
+                          + " unresolved"
+                        : string.Empty)));
             }
 
             /// <summary>Do something to the picked rows, then draw them again.</summary>
