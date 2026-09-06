@@ -85,18 +85,15 @@ namespace CamelWorks.UI.Views
             // The send-out half
             // -------------------------------------------------------------------------------
 
-            private readonly StackPanel _clauses = Ui.Stack();
-            private readonly StackPanel _grid = Ui.Stack();
+            private readonly StackPanel _tests = Ui.Stack();
+            private readonly StackPanel _results = Ui.Stack();
+            private readonly StackPanel _packs = Ui.Stack();
             private readonly StackPanel _sending = Ui.Stack();
-            private readonly TextBox _find = Ui.Text(string.Empty, "clash, test, party or level", null, 220);
+            private readonly TextBox _find = Ui.Text(string.Empty, "a test or a folder", null, 220);
             private readonly TextBox _named = Ui.Text("Everything", null, 180);
 
-            private ListView? _table;
             private string _search = string.Empty;
             private System.Windows.Threading.DispatcherTimer? _typing;
-
-            /// <summary>The rows picked by hand, or null when the whole filtered list goes.</summary>
-            private HashSet<Core.Identity.ClashKey>? _only;
 
             // -------------------------------------------------------------------------------
             // The take-back half
@@ -174,32 +171,50 @@ namespace CamelWorks.UI.Views
                 Ui.Segmented(new[] { SendOut, TakeBack }, here, Half);
 
             // -------------------------------------------------------------------------------
-            // Sending out
+            // Exporting
             // -------------------------------------------------------------------------------
 
+            /// <summary>
+            /// Three columns, left to right, in the order the data nests.
+            ///
+            /// A clash belongs to a test, and the two are filtered by different things: a test by
+            /// its folder, its kind and when it last went out; a result by its status, who it is
+            /// assigned to, the storey it stands on. A screen that lists four hundred clashes and
+            /// one search box has flattened that into a list nobody sets an issue up from - nobody
+            /// picks clashes one at a time to send.
+            ///
+            /// So: which tests, then which of their results, then what falls out - the packs. Each
+            /// column says how much it let through, so it is clear which of the three narrowed the
+            /// run when the last number is smaller than expected.
+            /// </summary>
             private UIElement SendingOut()
             {
-                // Live, but not per keystroke. Every letter re-picks the board and rebuilds the
-                // table, which on a job of any size is a tenth of a second between one letter and
-                // the next.
-                _find.TextChanged += (s, e) =>
-                {
-                    _typing ??= new System.Windows.Threading.DispatcherTimer
-                    {
-                        Interval = TimeSpan.FromMilliseconds(250),
-                    };
+                var columns = new Grid { Margin = new Thickness(0, 8, 0, 0) };
 
-                    _typing.Stop();
-                    _typing.Tick -= Settled;
-                    _typing.Tick += Settled;
-                    _typing.Start();
-                };
+                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(270) });
+                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
+                columns.ColumnDefinitions.Add(new ColumnDefinition
+                {
+                    Width = new GridLength(1, GridUnitType.Star),
+                });
+                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
+                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(260) });
+
+                var tests = Column("Tests", _tests);
+                var results = Column("Results", _results);
+                var packs = Column("Packs", _packs);
+
+                Grid.SetColumn(tests, 0);
+                Grid.SetColumn(results, 2);
+                Grid.SetColumn(packs, 4);
+
+                columns.Children.Add(tests);
+                columns.Children.Add(results);
+                columns.Children.Add(packs);
 
                 var stage = Ui.Stack(
                     Switch(SendOut),
-                    Ui.Across(Ui.Field("Find", _find), Sorting(), Splitting()),
-                    _clauses,
-                    _grid,
+                    columns,
                     Ui.Commit("Preview the export", "Write", "pack", Rehearse, Publish),
                     _sending);
 
@@ -213,6 +228,9 @@ namespace CamelWorks.UI.Views
                 return Bench.Surface(null, foot, stage);
             }
 
+            /// <summary>Redraw the columns once the typing in the find box has stopped.</summary>
+            /// <param name="sender">The timer.</param>
+            /// <param name="e">Unused.</param>
             private void Settled(object? sender, EventArgs e)
             {
                 _typing?.Stop();
@@ -222,126 +240,330 @@ namespace CamelWorks.UI.Views
                 if (string.Equals(said, _search, StringComparison.Ordinal)) return;
 
                 _search = said;
-                Redraw();
+                DrawTests();
             }
 
-            /// <summary>What the send-out half is showing: the picked rows, searched.</summary>
-            private IReadOnlyList<ClashItem> Showing()
+            /// <summary>One of the three columns, headed and boxed so the three read as steps.</summary>
+            /// <param name="title">What the column is about.</param>
+            /// <param name="body">The column's own contents, redrawn in place.</param>
+            private static UIElement Column(string title, Panel body)
             {
-                var chosen = _profile.Choose(Results(), Board(), Storeys()).Items;
+                var held = Ui.Stack(Ui.Eyebrow(title), body);
 
-                if (_search.Length == 0) return chosen;
+                var box = new Border
+                {
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(6),
+                    Padding = new Thickness(10, 8, 10, 10),
+                    Child = held,
+                };
 
-                // Across the columns a person can see. A search box that matched a field the
-                // table does not draw returns rows nobody can tell apart.
-                return chosen.Where(one =>
-                    Holds(one.Name) || Holds(one.TestName) || Holds(one.AssignedTo)
-                    || Holds(one.Level) || Holds(one.ModelPair) || Holds(one.Status.ToString()))
+                box.Tint(Border.BorderBrushProperty, "Bd");
+                box.Tint(Border.BackgroundProperty, "Card");
+
+                return box;
+            }
+
+            /// <summary>Draw all three columns from what the profile says.</summary>
+            private void Redraw()
+            {
+                DrawTests();
+                DrawResults();
+                DrawPacks();
+            }
+
+            // -------------------------------------------------------------------------------
+            // Column one: the tests
+            // -------------------------------------------------------------------------------
+
+            /// <summary>Every test the board holds, in its folder, with its result count.</summary>
+            private IReadOnlyList<BoardTest> Tests()
+            {
+                var byName = new Dictionary<string, BoardTest>(StringComparer.OrdinalIgnoreCase);
+                var order = new List<BoardTest>();
+
+                foreach (var item in Results())
+                {
+                    if (!byName.TryGetValue(item.TestName, out var test))
+                    {
+                        test = new BoardTest(item.TestName, item.TestFolder);
+                        byName[item.TestName] = test;
+                        order.Add(test);
+                    }
+
+                    test.Count++;
+                }
+
+                return order
+                    .OrderBy(one => one.Folder ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(one => one.Name, StringComparer.OrdinalIgnoreCase)
                     .ToList();
             }
 
-            private bool Holds(string? said) =>
-                said != null && said.IndexOf(_search, StringComparison.OrdinalIgnoreCase) >= 0;
-
-            /// <summary>The table, the clause chips and the counts, from what the profile picks.</summary>
-            private void Redraw()
+            /// <summary>Whether this test is ticked. A profile that knows nothing sends everything.</summary>
+            /// <param name="name">The test.</param>
+            private bool Sending(string name)
             {
-                DrawClauses();
+                var found = _profile.Tests.FirstOrDefault(
+                    one => string.Equals(one.Name, name, StringComparison.OrdinalIgnoreCase));
 
-                _grid.Children.Clear();
+                return found?.Chosen ?? true;
+            }
 
-                var showing = Showing();
+            /// <summary>Tick or untick a test, adding it to the profile if it had never seen it.</summary>
+            /// <param name="name">The test.</param>
+            /// <param name="on">Whether it goes.</param>
+            private void Send(string name, bool on)
+            {
+                var found = _profile.Tests.FirstOrDefault(
+                    one => string.Equals(one.Name, name, StringComparison.OrdinalIgnoreCase));
 
-                if (showing.Count == 0)
+                if (found == null)
                 {
-                    _grid.Children.Add(Ui.Empty(
-                        Results().Count == 0
-                            ? "No clashes on the board."
-                            : "No clash meets the filter.",
-                        Results().Count == 0
-                            ? "Run the tests on the Manage tab first."
-                            : _profile.Pick.Describe(Storeys())));
+                    // The profile has to hold every test before one can be left out, or unticking
+                    // one would read as "send only that one" - an empty list means everything.
+                    foreach (var test in Tests())
+                        if (!_profile.Tests.Any(held => string.Equals(held.Name, test.Name,
+                                                                      StringComparison.OrdinalIgnoreCase)))
+                            _profile.Add(test.Name);
 
+                    found = _profile.Tests.FirstOrDefault(
+                        one => string.Equals(one.Name, name, StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (found != null) found.Chosen = on;
+
+                Redraw();
+            }
+
+            private void DrawTests()
+            {
+                _tests.Children.Clear();
+
+                var all = Tests();
+
+                if (all.Count == 0)
+                {
+                    _tests.Children.Add(Ui.Small("No tests on the board. Run them on Manage first."));
                     return;
                 }
 
-                var rows = showing.Take(500).Select(one => new TableRow(one,
-                    one.Name ?? one.Key.ToString(),
-                    one.TestName,
-                    one.Status.ToString(),
-                    one.AssignedTo ?? string.Empty,
-                    one.Level ?? string.Empty)).ToList();
-
-                _table = Ui.Table(rows,
-                    ("Clash", 0), ("Test", 170), ("Status", 90),
-                    ("Assigned to", 130), ("Level", 80)).Multi();
-
-                _grid.Children.Add(Ui.Line(
-                    Ui.Count(showing.Count, "clash") + " in scope"
-                    + (showing.Count > rows.Count
-                        ? ", first " + Ui.Count(rows.Count, "row") + " listed"
-                        : string.Empty), 1, true));
-
-                _grid.Children.Add(Ui.Loose(_table));
-
-                _grid.Children.Add(Ui.Picking(_table,
-                    new Ui.OnPicked("Limit to {n} selected", (picked, said) =>
+                // Live, but not per keystroke. Every letter redraws all three columns, which on a
+                // job of any size is a tenth of a second between one letter and the next.
+                if (_typing == null)
+                {
+                    _typing = new System.Windows.Threading.DispatcherTimer
                     {
-                        _only = new HashSet<Core.Identity.ClashKey>(
-                            picked.OfType<ClashItem>().Select(one => one.Key));
+                        Interval = TimeSpan.FromMilliseconds(250),
+                    };
 
-                        said.Children.Add(Ui.Note(
-                            "The export is limited to " + Ui.Count(_only.Count, "clash")
-                            + ". Restore the full list to lift the limit."));
-                    }, primary: true),
-                    new Ui.OnPicked("Restore the full list", (picked, said) =>
+                    _typing.Tick += Settled;
+                    _find.TextChanged += (s, e) => { _typing.Stop(); _typing.Start(); };
+                }
+
+                _find.Margin = new Thickness(0, 2, 0, 6);
+                _tests.Children.Add(Ui.Loose(_find));
+
+                var showing = _search.Length == 0
+                    ? all
+                    : all.Where(one => Holds(one.Name) || Holds(one.Folder)).ToList();
+
+                var list = Ui.Stack();
+
+                foreach (var folder in showing.GroupBy(one => one.Folder ?? string.Empty))
+                {
+                    if (folder.Key.Length > 0)
                     {
-                        _only = null;
+                        var here = folder.ToList();
 
-                        said.Children.Add(Ui.Note("The export covers the full filtered list."));
-                    })));
+                        var band = Ui.Check(folder.Key + "  (" + here.Count + ")",
+                                            here.All(one => Sending(one.Name)),
+                                            on =>
+                                            {
+                                                foreach (var test in here) Send(test.Name, on);
+                                            });
 
-                if (_only != null)
-                    _grid.Children.Add(Ui.Note(
-                        "Limited to " + Ui.Count(Going().Count, "clash") + " selected by hand."));
+                        band.FontWeight = FontWeights.SemiBold;
+                        band.Margin = new Thickness(0, 4, 0, 2);
+
+                        list.Children.Add(band);
+                    }
+
+                    foreach (var test in folder)
+                    {
+                        var here = test;
+
+                        var row = Ui.Check(here.Name + "   " + here.Count.ToString("N0", CultureInfo.InvariantCulture),
+                                           Sending(here.Name), on => Send(here.Name, on));
+
+                        row.Margin = new Thickness(folder.Key.Length > 0 ? 14 : 0, 1, 0, 1);
+                        row.ToolTip = ExportProfile.When(_profile.Tests.FirstOrDefault(
+                            one => string.Equals(one.Name, here.Name,
+                                                 StringComparison.OrdinalIgnoreCase)));
+
+                        list.Children.Add(row);
+                    }
+                }
+
+                _tests.Children.Add(new ScrollViewer
+                {
+                    Content = Ui.Loose(list),
+                    MaxHeight = 340,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                });
+
+                var chosen = all.Count(one => Sending(one.Name));
+
+                _tests.Children.Add(Ui.Across(
+                    Ui.Link("All", () => { foreach (var one in all) Send(one.Name, true); }),
+                    Ui.Link("None", () => { foreach (var one in all) Send(one.Name, false); })));
+
+                _tests.Children.Add(Ui.Small(
+                    chosen + " of " + Ui.Count(all.Count, "test") + " · "
+                    + Ui.Count(all.Where(one => Sending(one.Name)).Sum(one => one.Count), "result")));
             }
 
-            /// <summary>The filter, as a chip per clause and a way to add one.</summary>
-            private void DrawClauses()
-            {
-                _clauses.Children.Clear();
+            // -------------------------------------------------------------------------------
+            // Column two: the results
+            // -------------------------------------------------------------------------------
 
-                var row = new WrapPanel { Margin = new Thickness(0, 4, 0, 4) };
+            private void DrawResults()
+            {
+                _results.Children.Clear();
+
+                _results.Children.Add(Ui.Small(
+                    "Which of the chosen tests' results go in, by any parameter a result carries."));
 
                 foreach (var clause in _profile.Pick.Clauses.ToList())
                 {
                     var here = clause;
+                    var facet = ClashFacets.Of(here.Facet, Results(), Storeys());
 
-                    var chip = Ui.Quiet(
-                        here.Describe(ClashFacets.Of(here.Facet, Results(), Storeys())),
-                        () => Ui.Safely(() =>
-                        {
-                            _profile.Pick.Clauses.Remove(here);
-                            Redraw();
-                        }));
+                    var row = new Grid { Margin = new Thickness(0, 4, 0, 0) };
 
-                    chip.ToolTip = "Press to take this filter off.";
-                    chip.Margin = new Thickness(0, 0, 6, 4);
+                    row.ColumnDefinitions.Add(new ColumnDefinition
+                    {
+                        Width = new GridLength(1, GridUnitType.Star),
+                    });
 
-                    row.Children.Add(chip);
+                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                    var said = Ui.Line(here.Describe(facet));
+
+                    said.TextWrapping = TextWrapping.Wrap;
+                    said.VerticalAlignment = VerticalAlignment.Center;
+
+                    var drop = Ui.Icon(Glyphs.Close, "Remove this filter", () => Ui.Safely(() =>
+                    {
+                        _profile.Pick.Clauses.Remove(here);
+                        Redraw();
+                    }));
+
+                    Grid.SetColumn(drop, 1);
+
+                    row.Children.Add(said);
+                    row.Children.Add(drop);
+
+                    _results.Children.Add(row);
                 }
+
+                if (_profile.Pick.Clauses.Count == 0)
+                    _results.Children.Add(Ui.Small("No filter. Every result of a chosen test goes."));
 
                 var add = Ui.Link("Add a filter", () => { });
 
                 add.Click += (s, e) => Ui.Safely(() => Parts.PopMenu(add, Facets()));
-                add.Margin = new Thickness(0, 0, 6, 4);
+                add.Margin = new Thickness(0, 8, 0, 0);
 
-                row.Children.Add(add);
+                _results.Children.Add(Ui.Across(add, Sorting()));
 
-                _clauses.Children.Add(row);
+                var scope = Scope();
+
+                _results.Children.Add(Ui.Small(
+                    Ui.Count(scope.Count, "result") + " in scope, of "
+                    + Ui.Count(Results().Count, "result") + " on the board."));
             }
 
-            /// <summary>Every parameter a filter can be about, as a menu.</summary>
+            /// <summary>What the tests and the filter between them let through.</summary>
+            private IReadOnlyList<ClashItem> Scope() =>
+                _profile.Choose(Results(), Board(), Storeys()).Items;
+
+            private bool Holds(string? said) =>
+                said != null && said.IndexOf(_search, StringComparison.OrdinalIgnoreCase) >= 0;
+
+            // -------------------------------------------------------------------------------
+            // Column three: the packs
+            // -------------------------------------------------------------------------------
+
+            private void DrawPacks()
+            {
+                _packs.Children.Clear();
+
+                _packs.Children.Add(Splitting());
+
+                var rounds = Rounds(Scope());
+
+                if (rounds.Count == 0 || rounds.All(one => one.Selection.Items.Count == 0))
+                {
+                    _packs.Children.Add(Ui.Small("Nothing to write yet."));
+                    return;
+                }
+
+                foreach (var round in rounds.Take(30))
+                {
+                    var row = new Grid { Margin = new Thickness(0, 4, 0, 0) };
+
+                    row.ColumnDefinitions.Add(new ColumnDefinition
+                    {
+                        Width = new GridLength(1, GridUnitType.Star),
+                    });
+
+                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                    var who = Ui.Line(round.Recipient);
+
+                    who.TextTrimming = TextTrimming.CharacterEllipsis;
+                    who.ToolTip = round.FileStem() + ClashFile.Extension;
+
+                    var count = Ui.Small(round.Selection.Items.Count
+                        .ToString("N0", CultureInfo.InvariantCulture));
+
+                    count.VerticalAlignment = VerticalAlignment.Center;
+
+                    Grid.SetColumn(count, 1);
+
+                    row.Children.Add(who);
+                    row.Children.Add(count);
+
+                    _packs.Children.Add(row);
+                }
+
+                _packs.Children.Add(Ui.Small(
+                    Ui.Count(rounds.Count, "pack") + " · "
+                    + Ui.Count(rounds.Sum(one => one.Selection.Items.Count), "clash")));
+            }
+
+            /// <summary>One test on the board: what it is called, where it sits, how much it holds.</summary>
+            private sealed class BoardTest
+            {
+                internal BoardTest(string name, string? folder)
+                {
+                    Name = name;
+                    Folder = folder;
+                }
+
+                /// <summary>What it is called.</summary>
+                internal string Name { get; }
+
+                /// <summary>The folder it sits in, or null.</summary>
+                internal string? Folder { get; }
+
+                /// <summary>How many results it holds.</summary>
+                internal int Count { get; set; }
+            }
+
+            /// <summary>Every parameter a result filter can be about, as a menu.</summary>
             private IReadOnlyList<Parts.Entry> Facets()
             {
                 var items = new List<Parts.Entry> { Parts.Entry.Heading("Filter by") };
@@ -366,6 +588,7 @@ namespace CamelWorks.UI.Views
                 {
                     Ui.Told("No clash on the board carries a value for "
                             + facet.Title.ToLowerInvariant() + ".");
+
                     return;
                 }
 
@@ -398,7 +621,7 @@ namespace CamelWorks.UI.Views
                 }, page);
             }
 
-            /// <summary>Which parameter the rows are ordered by.</summary>
+            /// <summary>Which parameter the results are ordered by inside each pack.</summary>
             private UIElement Sorting()
             {
                 var by = Ui.Link(_profile.Pick.Sort == null
@@ -452,6 +675,7 @@ namespace CamelWorks.UI.Views
                     : "Split by " + Titled(_profile.SplitBy).ToLowerInvariant(), () => { });
 
                 by.ToolTip = "Writes one pack per value, each holding only that party's clashes.";
+                by.Margin = new Thickness(0, 2, 0, 4);
 
                 by.Click += (s, e) => Ui.Safely(() =>
                 {
@@ -480,7 +704,7 @@ namespace CamelWorks.UI.Views
                 return by;
             }
 
-            /// <summary>Draw the whole half again, for the controls that are captioned by their value.</summary>
+            /// <summary>Draw the whole half again, for the controls captioned by their own value.</summary>
             private void Rebuild()
             {
                 _out = SendingOut();
@@ -499,20 +723,8 @@ namespace CamelWorks.UI.Views
             // Writing the packs
             // -------------------------------------------------------------------------------
 
-            /// <summary>The rows that actually go, once the table's own pick is honoured.</summary>
-            private IReadOnlyList<ClashItem> Going()
-            {
-                var showing = Showing();
-
-                if (_only == null) return showing;
-
-                // Held as keys rather than as the table's own selection, because the table is
-                // rebuilt whenever the filter or the search changes and a selection does not
-                // survive that - which is how somebody presses Write and sends the whole board.
-                var picked = showing.Where(one => _only.Contains(one.Key)).ToList();
-
-                return picked.Count == 0 ? showing : picked;
-            }
+            /// <summary>The results that go out: the chosen tests', through the result filter.</summary>
+            private IReadOnlyList<ClashItem> Going() => Scope();
 
             /// <summary>Work out the packs without writing any of them.</summary>
             /// <param name="job">The run, for its progress line.</param>
