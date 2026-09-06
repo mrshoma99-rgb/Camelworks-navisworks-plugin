@@ -2,6 +2,8 @@ using System.Collections.Generic;
 using System.Linq;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Findings;
+using CamelWorks.Core.Project;
+using CamelWorks.Core.Testing;
 using Xunit;
 
 namespace CamelWorks.Core.Tests
@@ -251,6 +253,122 @@ namespace CamelWorks.Core.Tests
 
             Assert.Equal(1, applied.Assigned);
             Assert.Equal("Structure", one.AssignedTo);
+        }
+
+        // -----------------------------------------------------------------------------------
+        // Where an applied answer is written down
+        // -----------------------------------------------------------------------------------
+
+        /// <summary>The finding the register holds for one board clash.</summary>
+        private static Finding Recorded(ClashItem item)
+        {
+            var finding = Finding.Create(FindingSource.Clash, item.TestName, item.Name,
+                                         new[] { item.Key.A, item.Key.B },
+                                         ClashFindings.CellOf(item.Key));
+
+            finding.TopicGuid = ClashBcf.TopicGuidFor(item.Key);
+
+            return finding;
+        }
+
+        [Fact]
+        public void An_applied_answer_is_in_the_register_after_it_is_closed_and_opened_again()
+        {
+            // The Manage tab works on findings and never sees these items, so an answer written
+            // onto the board alone was gone the moment the tab was left.
+            var one = Item("a");
+            var two = Item("b");
+
+            var fs = new InMemoryFileSystem();
+            var project = ProjectStore.Open(fs, @"C:\job\Tower.nwf", null);
+            var store = FindingStore.Open(fs, project);
+
+            store.Findings.Put(Recorded(one));
+            store.Findings.Put(Recorded(two));
+
+            var reading = ClashExchange.Read(new[]
+            {
+                Pack("Mechanical", Answered(one, FindingStatus.Resolved, "Mechanical", "Duct moved.")),
+                Pack("Structure", Answered(two, FindingStatus.Reviewed, "Structure", "Beam is fixed.")),
+            }, new[] { one, two });
+
+            var applied = ClashExchange.Apply(reading, store.Findings);
+
+            Assert.Equal(2, applied.Moved);
+            Assert.Equal(2, applied.Assigned);
+            Assert.Equal(2, applied.Comments);
+            Assert.Equal(0, applied.Missed);
+
+            Assert.True(store.Save());
+
+            var reopened = FindingStore.Open(fs, project).Findings;
+            var kept = reopened.Find(Recorded(one).Id);
+
+            Assert.NotNull(kept);
+            Assert.Equal(FindingStatus.Resolved, kept!.Status);
+            Assert.Equal("Mechanical", kept.AssignedTo);
+            Assert.Equal("Duct moved.", Assert.Single(kept.Comments).Body);
+
+            Assert.Equal(FindingStatus.Reviewed, reopened.Find(Recorded(two).Id)!.Status);
+        }
+
+        [Fact]
+        public void The_same_pack_applied_twice_does_not_double_the_registers_comments()
+        {
+            var one = Item("a");
+
+            var register = new FindingRegister();
+            register.Put(Recorded(one));
+
+            var packs = new List<ExchangePack>
+            {
+                Pack("Mechanical", Answered(one, FindingStatus.Resolved, comment: "Duct moved.")),
+            };
+
+            ClashExchange.Apply(ClashExchange.Read(packs, new[] { one }), register);
+            var again = ClashExchange.Apply(ClashExchange.Read(packs, new[] { one }), register);
+
+            Assert.Equal(0, again.Comments);
+            Assert.Single(register.Find(Recorded(one).Id)!.Comments);
+        }
+
+        [Fact]
+        public void An_answer_to_a_clash_the_register_does_not_hold_is_counted_not_reported_as_applied()
+        {
+            // A screen that said "14 moved" over a register that took none of them is the failure
+            // this counts.
+            var one = Item("a");
+
+            var reading = ClashExchange.Read(
+                new[] { Pack("Mechanical", Answered(one, FindingStatus.Resolved)) },
+                new[] { one });
+
+            var applied = ClashExchange.Apply(reading, new FindingRegister());
+
+            Assert.Equal(0, applied.Moved);
+            Assert.Equal(1, applied.Missed);
+            Assert.Contains("the register does not hold", applied.Explain(),
+                            System.StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_stale_answer_cannot_undo_a_decision_the_register_already_holds()
+        {
+            var one = Item("a");
+
+            var register = new FindingRegister();
+            var finding = Recorded(one);
+
+            finding.Status = FindingStatus.Approved;
+            register.Put(finding);
+
+            var reading = ClashExchange.Read(
+                new[] { Pack("Mechanical", Answered(one, FindingStatus.Active)) },
+                new[] { one });
+
+            ClashExchange.Apply(reading, register);
+
+            Assert.Equal(FindingStatus.Approved, register.Find(finding.Id)!.Status);
         }
 
         [Fact]

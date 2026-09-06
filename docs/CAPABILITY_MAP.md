@@ -62,7 +62,7 @@ surfaces work, not things a coordinator opens.
 |---|---|
 | `ClashPipeline`, `ClashPipelineOptions`, `ClashFunnel`, `ClashPredicates`, `GroupingRules`, `AssignRule`, `ClashRuleSet`, `FilterSpec`, `GroupingSpec`, `PredicateSpec`, `SpecInput` | Clash Rules |
 | `ClashPipelineResult` — *results no grouping rule could place* | Clash Board — a standing **Ungrouped (N)** row at the foot of the group list. Never hidden: a result nothing grouped is the one most likely to be somebody's problem. |
-| `ClashItem`, `ClashSnapshot`, `ClashDelta`, `ClashCarryOver`, `ClashHydration`, `GroupDecision`, `DuplicateCollapse` | Clash Board |
+| `ClashItem`, `ClashSnapshot`, `ClashSnapshotJson`, `ClashDelta`, `ClashCarryOver`, `ClashHydration`, `GroupDecision`, `DuplicateCollapse` | Clash Board |
 | `ClashTestSides` | Clash Matrix — "The model's tests" mode reads each test's sides back into categories |
 | `ClashResultInfo` | Clash Results (Manage tab) — every row of the results grid, and the Board's read behind it |
 | `Issue`, `IssueOrigin`, `IssueRegister`, `IssueComment` | **Issue Manager ▸ Issues** — the register and its detail panel; raised by hand, from clash results, from clearance findings, or read out of BCF |
@@ -112,7 +112,7 @@ surfaces work, not things a coordinator opens.
 | `ClashBcf`, `ClashBcfDocument`, `ClashBcfOptions`, `ClashFile` | **Clash Manager ▸ Exchange** — clash results as BCF, which every reviewing tool opens. What BCF has no field for (tolerances, distances, element keys) rides in a sidecar inside the same archive, so nothing is lost on the round trip. BCF is the only clash file the product reads or writes. |
 | `ClashPackTest`, `ClashPackResult`, `ClashPackRead` | **Clash Manager ▸ Exchange** — a pack, read: its tests, its results, and the topics no clash answers to, which go to the **Issue Manager**. What the model has no field for (priority, due date, stage, a retitle, the reviewer's tags) becomes a comment on the clash. |
 | `ClashPick`, `ClashClause`, `ClashFacet`, `ClashFacets`, `ExportProfile`, `ExportRound` | **Clash Manager ▸ Exchange ▸ Send out** — which clashes go in a pack and in what order, by any parameter a clash carries: status, assignee, folder, storey, elevation, model, or a property the models themselves carry. Saved as an export profile, and split so one press writes a pack per recipient. |
-| `ClashExchange`, `ExchangePack`, `ExchangeRow`, `ExchangeReading`, `ExchangeApplied` | **Clash Manager ▸ Exchange ▸ Take back** — several parties' returned packs read together and applied once. Where two parties answered the same clash differently the row is marked and applied to nothing until one side is chosen; every party's comments come back, not only the winning side's. |
+| `ClashExchange`, `ExchangePack`, `ExchangeRow`, `ExchangeReading`, `ExchangeApplied`, `ClashStatusMap`, `ClashStatusWord` | **Clash Manager ▸ Exchange ▸ Take back** — several parties' returned packs read together and applied once. Where two parties answered the same clash differently the row is marked and applied to nothing until one side is chosen; every party's comments come back, not only the winning side's. |
 
 ### Issues out
 | Engine | Surface |

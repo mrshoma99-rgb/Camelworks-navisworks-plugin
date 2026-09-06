@@ -49,7 +49,7 @@ namespace CamelWorks.UI.Views
         /// <summary>The surface, for a desk to bench.</summary>
         /// <param name="session">The open document.</param>
         public static UIElement Surface(Session session) =>
-            Drawn(session.Store, session.Profile.ProjectName);
+            Drawn(session.Store, session.Profile.ProjectName, findings: session.Findings);
 
         /// <summary>
         /// The same surface from the project file alone, so it can be drawn without a document.
@@ -62,10 +62,14 @@ namespace CamelWorks.UI.Views
         /// <param name="projectName">The project's name, for the packs it writes.</param>
         /// <param name="board">The board to send, or null to take the last clash run's.</param>
         /// <param name="importing">True to open on the import half rather than the export half.</param>
+        /// <param name="findings">
+        /// Where an applied answer is written to last. Null draws the screen without one, which is
+        /// what the harness does; applying then reaches the live board and says so.
+        /// </param>
         public static UIElement Drawn(ProjectStore store, string? projectName = null,
                                       IReadOnlyList<ClashGroup>? board = null,
-                                      bool importing = false) =>
-            new Desk(store, projectName ?? "Untitled project", board, importing).View;
+                                      bool importing = false, FindingStore? findings = null) =>
+            new Desk(store, projectName ?? "Untitled project", board, importing, findings).View;
 
         /// <summary>The two halves of a round.</summary>
         private const string SendOut = "Export";
@@ -127,13 +131,17 @@ namespace CamelWorks.UI.Views
 
             private readonly IReadOnlyList<ClashGroup>? _board;
 
+            private readonly FindingStore? _findings;
+
             internal Desk(ProjectStore store, string projectName,
-                          IReadOnlyList<ClashGroup>? board = null, bool importing = false)
+                          IReadOnlyList<ClashGroup>? board = null, bool importing = false,
+                          FindingStore? findings = null)
             {
                 _store = store;
                 _projectName = projectName;
                 _board = board;
                 _importing = importing;
+                _findings = findings;
 
                 Load();
 
@@ -1190,6 +1198,8 @@ namespace CamelWorks.UI.Views
                         + " reference elements this federation does not hold, which usually "
                         + "means a party worked against an earlier model issue."));
 
+                DrawStatusMapping();
+
                 _rowsSaid.Children.Add(Ui.Small(
                     showing.Count.ToString("N0", CultureInfo.InvariantCulture) + " shown · "
                     + Ui.Count(_reading.Changes, "change") + " to apply"
@@ -1198,6 +1208,40 @@ namespace CamelWorks.UI.Views
                           + " unresolved"
                         : string.Empty)));
             }
+
+            /// <summary>
+            /// Say what the returned status words become, before anything is applied.
+            ///
+            /// BCF does not fix its status list, so a trade returning forty topics marked
+            /// "Rejected" is ordinary. The mapping used to be applied silently, which left no way
+            /// to see that forty answers had become Active.
+            /// </summary>
+            private void DrawStatusMapping()
+            {
+                var words = _reading?.StatusWords;
+
+                if (words == null || words.Count == 0) return;
+
+                _rows.Children.Add(Ui.Small("Returned statuses become "
+                    + string.Join(", ", words.Select(Said)) + "."));
+
+                var guessed = _reading!.Guessed;
+
+                if (guessed.Count == 0) return;
+
+                _rows.Children.Add(Ui.Note(
+                    "This project's vocabulary does not hold "
+                    + string.Join(", ", guessed.Select(one => "\"" + one.Word + "\"")) + ". "
+                    + (guessed.Count == 1 ? "It is read" : "They are read")
+                    + " as shown above; change the answer on the row to override it."));
+            }
+
+            /// <summary>One status word, as the mapping line reads it.</summary>
+            /// <param name="word">The word and where it lands.</param>
+            private static string Said(ClashStatusWord word) =>
+                (word.Word.Length == 0 ? "(no status)" : word.Word)
+                + " \u00d7" + word.Count.ToString(CultureInfo.InvariantCulture)
+                + " \u2192 " + word.Lands;
 
             /// <summary>Do something to the picked rows, then draw them again.</summary>
             /// <param name="picked">The rows picked.</param>
@@ -1275,18 +1319,28 @@ namespace CamelWorks.UI.Views
 
                 job.Say("Applying...");
 
-                var applied = ClashExchange.Apply(_reading);
+                var applied = ClashExchange.Apply(_reading, _findings?.Findings);
+
+                // The register is written here rather than left to the Manage tab: the Manage tab
+                // works on findings and never sees these items, so a status, an assignee or a
+                // comment left on the board alone was gone when the tab was left.
+                var kept = _findings == null || _findings.Save();
 
                 _applied.Children.Add(Ui.Line(applied.Explain(), 1, true));
 
                 if (applied.Moved == 0 && applied.Assigned == 0 && applied.Comments == 0) return;
 
-                // The board's own save is what carries this into the project database and, on a
-                // Manage seat with an .nwf open, back into Navisworks. Written here would be a
-                // second path to the same place that could disagree with the first.
-                _applied.Children.Add(Ui.Note(
-                    "Save on the Manage tab to write this to the project database. It reaches "
-                    + "Navisworks when the open model is an .nwf and the edition is Manage."));
+                if (!kept)
+                    _applied.Children.Add(Ui.Problem(
+                        "This is on the board but not written down: " + _findings!.LastSaveProblem));
+                else if (_findings == null)
+                    _applied.Children.Add(Ui.Note(
+                        "This screen was opened without a project file, so the answers are on the "
+                        + "board for this session only."));
+                else
+                    _applied.Children.Add(Ui.Note(
+                        "Written to the project database. It reaches Navisworks when the open "
+                        + "model is an .nwf and the edition is Manage."));
 
                 DrawReading();
             }

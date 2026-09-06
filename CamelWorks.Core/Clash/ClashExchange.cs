@@ -241,6 +241,25 @@ namespace CamelWorks.Core.Clash
         /// <summary>How many comments came back.</summary>
         public int Comments => Rows.Sum(one => one.Answers.Sum(say => say.Comments.Count));
 
+        /// <summary>
+        /// Every status word the packs used, where each lands, and how many topics said it.
+        ///
+        /// BCF does not fix its status list, so a trade returning forty topics marked "Rejected"
+        /// is ordinary. The screen shows this before Apply: the mapping was applied silently, and
+        /// a coordinator had no way to see that forty answers had become Active.
+        /// </summary>
+        public IReadOnlyList<ClashStatusWord> StatusWords => _words ??= ClashStatusMap.Tally(
+            Packs.Where(pack => pack?.Read != null)
+                 .SelectMany(pack => pack.Read!.Topics)
+                 .Where(topic => topic != null)
+                 .Select(topic => topic.TopicStatus));
+
+        /// <summary>The words the conventional vocabulary does not hold.</summary>
+        public IReadOnlyList<ClashStatusWord> Guessed =>
+            StatusWords.Where(word => word.IsGuess).ToList();
+
+        private IReadOnlyList<ClashStatusWord>? _words;
+
         /// <summary>The one-line readout.</summary>
         public string Explain()
         {
@@ -269,9 +288,9 @@ namespace CamelWorks.Core.Clash
     /// <summary>What applying the reading did.</summary>
     public sealed class ExchangeApplied
     {
-        internal ExchangeApplied(int moved, int assigned, int comments, int held)
+        internal ExchangeApplied(int moved, int assigned, int comments, int held, int missed = 0)
         {
-            Moved = moved; Assigned = assigned; Comments = comments; Held = held;
+            Moved = moved; Assigned = assigned; Comments = comments; Held = held; Missed = missed;
         }
 
         /// <summary>How many clashes changed status.</summary>
@@ -286,13 +305,27 @@ namespace CamelWorks.Core.Clash
         /// <summary>How many rows were left where they were, disputed or untaken.</summary>
         public int Held { get; }
 
+        /// <summary>
+        /// How many taken rows named a clash the register does not hold.
+        ///
+        /// Reported rather than swallowed: the answer went nowhere, and a screen that said
+        /// "14 moved" over a register that took none of them is the failure this counts.
+        /// </summary>
+        public int Missed { get; }
+
         /// <summary>The one-line readout.</summary>
         public string Explain()
         {
+            if (Moved == 0 && Assigned == 0 && Comments == 0 && Held == 0 && Missed == 0)
+                return "Nothing to apply.";
+
             if (Moved == 0 && Assigned == 0 && Comments == 0)
-                return Held == 0
-                    ? "Nothing to apply."
-                    : "Nothing applied; " + Measure.Count(Held) + " left unchanged.";
+                return "Nothing applied"
+                     + (Held > 0 ? "; " + Measure.Count(Held) + " left unchanged" : string.Empty)
+                     + (Missed > 0
+                         ? "; " + Measure.Count(Missed) + " named a clash the register does not hold"
+                         : string.Empty)
+                     + ".";
 
             var parts = new List<string>();
 
@@ -303,6 +336,8 @@ namespace CamelWorks.Core.Clash
             var line = string.Join(", ", parts);
 
             if (Held > 0) line += "; " + Measure.Count(Held) + " left unchanged";
+            if (Missed > 0) line += "; " + Measure.Count(Missed) + " named a clash the register "
+                                  + "does not hold";
 
             return line + ".";
         }
@@ -324,7 +359,7 @@ namespace CamelWorks.Core.Clash
     /// until somebody picks a side.
     ///
     /// Nothing is applied by reading. <see cref="Read"/> works out what would happen so it can be
-    /// looked at first; <see cref="Apply"/> is the separate press.
+    /// looked at first; <c>Apply</c> is the separate press.
     /// </summary>
     public static class ClashExchange
     {
@@ -387,19 +422,47 @@ namespace CamelWorks.Core.Clash
             return new ExchangeReading(all, rows, strangers, raised);
         }
 
-        /// <summary>Write the taken rows onto the board.</summary>
+        /// <summary>
+        /// Write the taken rows onto the board only.
+        ///
+        /// The live board is a projection, so this alone does not outlive the tab. Callers with a
+        /// register pass it; this overload is for tests and for a board with no project file.
+        /// </summary>
         /// <param name="reading">What was read.</param>
         /// <param name="whenTicks">When this is happening, for the comments. Zero means now.</param>
-        public static ExchangeApplied Apply(ExchangeReading? reading, long whenTicks = 0)
+        public static ExchangeApplied Apply(ExchangeReading? reading, long whenTicks = 0) =>
+            Apply(reading, null, whenTicks);
+
+        /// <summary>
+        /// Write the taken rows onto the board and into the register.
+        ///
+        /// The register is where a decision lives. Writing only onto the <see cref="ClashItem"/>s
+        /// meant six packs read, disputes settled by hand and "14 moved, 9 assigned, 31 comments
+        /// written" reported — and the assignees and the comments gone when the tab was left,
+        /// because the Manage tab keeps findings and had never seen those items.
+        ///
+        /// A row reaches its finding by the topic GUID the key derives, which is how a markup
+        /// coming back from another tool finds its way home; the neighbouring cells are tried
+        /// after the exact one, so a clash that shifted slightly since the pack went out still
+        /// lands. A row that reaches nothing is counted in <see cref="ExchangeApplied.Missed"/>
+        /// rather than reported as applied.
+        /// </summary>
+        /// <param name="reading">What was read.</param>
+        /// <param name="register">The register to write into, or null for the board alone.</param>
+        /// <param name="whenTicks">When this is happening, for the comments. Zero means now.</param>
+        public static ExchangeApplied Apply(ExchangeReading? reading, FindingRegister? register,
+                                            long whenTicks = 0)
         {
             if (reading == null) return new ExchangeApplied(0, 0, 0, 0);
 
             var when = whenTicks > 0 ? whenTicks : DateTime.UtcNow.Ticks;
+            var byTopic = Index(register);
 
             var moved = 0;
             var assigned = 0;
             var comments = 0;
             var held = 0;
+            var missed = 0;
 
             foreach (var row in reading.Rows)
             {
@@ -408,19 +471,40 @@ namespace CamelWorks.Core.Clash
                 if (!row.Take || settled == null) { held++; continue; }
 
                 var would = row.Would;
+                var finding = byTopic == null ? null : Found(byTopic, row.Item.Key);
 
-                if (would != row.Item.Status)
-                {
-                    row.Item.Status = would;
-                    moved++;
-                }
+                if (byTopic != null && finding == null) { missed++; continue; }
 
-                if (settled.AssignedTo != null
+                // The board is a projection of the register, so it takes the same write. The
+                // counts come from the register when there is one: those are the ones that last.
+                var boardMoved = would != row.Item.Status;
+
+                if (boardMoved) row.Item.Status = would;
+
+                var boardAssigned = settled.AssignedTo != null
                     && !string.Equals(row.Item.AssignedTo, settled.AssignedTo,
-                                      StringComparison.OrdinalIgnoreCase))
+                                      StringComparison.OrdinalIgnoreCase);
+
+                if (boardAssigned) row.Item.AssignedTo = settled.AssignedTo;
+
+                if (finding != null)
                 {
-                    row.Item.AssignedTo = settled.AssignedTo;
-                    assigned++;
+                    var landed = FindingStatusLattice.Merge(finding.Status, would);
+
+                    if (landed != finding.Status) { finding.Status = landed; moved++; }
+
+                    if (settled.AssignedTo != null
+                        && !string.Equals(finding.AssignedTo, settled.AssignedTo,
+                                          StringComparison.OrdinalIgnoreCase))
+                    {
+                        finding.AssignedTo = settled.AssignedTo;
+                        assigned++;
+                    }
+                }
+                else
+                {
+                    if (boardMoved) moved++;
+                    if (boardAssigned) assigned++;
                 }
 
                 // Every comment from every party, not only the one whose answer won. A comment is
@@ -432,17 +516,67 @@ namespace CamelWorks.Core.Clash
                     {
                         if (comment == null) continue;
 
-                        if (row.Item.Comments.Any(one => Same(one, comment))) continue;
+                        var already = row.Item.Comments.Any(one => Same(one, comment));
 
-                        row.Item.Comments.Add(comment);
+                        if (!already) row.Item.Comments.Add(comment);
+
+                        if (finding == null)
+                        {
+                            if (!already) comments++;
+                            continue;
+                        }
+
+                        var arriving = new FindingComment(
+                            comment.Author,
+                            comment.WhenTicks > 0 ? comment.WhenTicks : when,
+                            comment.Body);
+
+                        if (finding.Comments.Any(one => one.Repeats(arriving))) continue;
+
+                        finding.Comments.Add(arriving);
                         comments++;
                     }
                 }
-
-                _ = when;
             }
 
-            return new ExchangeApplied(moved, assigned, comments, held);
+            return new ExchangeApplied(moved, assigned, comments, held, missed);
+        }
+
+        /// <summary>
+        /// The clash findings this register holds, by the topic GUID their key derives.
+        ///
+        /// Null when there is no register, which is what tells <c>Apply</c> to count the
+        /// board's own writes instead.
+        /// </summary>
+        /// <param name="register">The register, or null.</param>
+        private static Dictionary<string, Finding>? Index(FindingRegister? register)
+        {
+            if (register == null) return null;
+
+            var byTopic = new Dictionary<string, Finding>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var finding in register.From(FindingSource.Clash))
+            {
+                var guid = finding.TopicGuid;
+
+                if (!string.IsNullOrEmpty(guid) && !byTopic.ContainsKey(guid!))
+                    byTopic[guid!] = finding;
+            }
+
+            return byTopic;
+        }
+
+        /// <summary>The finding for one clash, trying the neighbouring cells after the exact one.</summary>
+        /// <param name="byTopic">The register's findings by topic GUID.</param>
+        /// <param name="key">The clash key.</param>
+        private static Finding? Found(Dictionary<string, Finding> byTopic, ClashKey key)
+        {
+            if (byTopic.TryGetValue(ClashBcf.TopicGuidFor(key), out var exact)) return exact;
+
+            foreach (var nearby in ClashBcf.NearbyTopicGuidsFor(key))
+                if (byTopic.TryGetValue(nearby, out var near)) return near;
+
+            return null;
         }
 
         /// <summary>Whether a topic is one of the clash results this file carried.</summary>

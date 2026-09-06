@@ -266,8 +266,9 @@ namespace CamelWorks.Core.Tests
         }
 
         [Theory]
-        [InlineData("Open", FindingStatus.New)]
+        [InlineData("Open", FindingStatus.Active)]
         [InlineData("In Progress", FindingStatus.Active)]
+        [InlineData("Awaiting client", ClashStatusMap.Unknown)]
         [InlineData("Closed", FindingStatus.Resolved)]
         [InlineData("Solved", FindingStatus.Resolved)]
         [InlineData("Verified", FindingStatus.Reviewed)]
@@ -291,6 +292,28 @@ namespace CamelWorks.Core.Tests
             theirs.Position = 0;
 
             Assert.Equal(expected, ClashBcf.Read(theirs).Results.Single().Status);
+
+            // The same word, through the issue register's leg of the same format. One vocabulary
+            // means one answer, or the word is reported by name rather than mapped either way.
+            Assert.Equal(BcfResponse.StatusOf(said) ?? expected, expected);
+        }
+
+        [Fact]
+        public void AWordNobodyKnowsIsCountedRatherThanApplied()
+        {
+            var tally = ClashStatusMap.Tally(new[] { "Rejected", "rejected", "Closed", null });
+
+            Assert.Equal(3, tally.Count);
+
+            var rejected = tally[0];
+
+            Assert.Equal("Rejected", rejected.Word);
+            Assert.Equal(2, rejected.Count);
+            Assert.True(rejected.IsGuess);
+            Assert.Equal(ClashStatusMap.Unknown, rejected.Lands);
+
+            Assert.False(tally.Single(w => w.Word == "Closed").IsGuess);
+            Assert.Equal(ClashStatusMap.Unsaid, tally.Single(w => w.Word.Length == 0).Lands);
         }
 
         [Fact]

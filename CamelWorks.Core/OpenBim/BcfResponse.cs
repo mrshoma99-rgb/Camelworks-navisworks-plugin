@@ -181,6 +181,9 @@ namespace CamelWorks.Core.OpenBim
 
             switch (status!.Trim().ToUpperInvariant())
             {
+                case "NEW":
+                    return FindingStatus.New;
+
                 case "OPEN":
                 case "ACTIVE":
                 case "IN PROGRESS":
@@ -228,6 +231,37 @@ namespace CamelWorks.Core.OpenBim
             incoming == null ? current
             : isReopen ? incoming.Value
             : FindingStatusLattice.Merge(current, incoming.Value);
+
+        /// <summary>
+        /// A second reading, for a word <see cref="StatusOf"/> does not hold.
+        ///
+        /// Exported by a tool that writes its own vocabulary, a topic can come back saying
+        /// "Closed out", "For verification" or "Solved". Reading those for their sense beats
+        /// treating them as unknown, but it is a guess, so it is a separate call: a caller that
+        /// must not guess uses <see cref="StatusOf"/> alone, and a caller that does guess can say
+        /// on screen which words it guessed at. Returns null when nothing reads.
+        /// </summary>
+        /// <param name="status">The topic status from the file.</param>
+        public static FindingStatus? SenseOf(string? status)
+        {
+            if (string.IsNullOrWhiteSpace(status)) return null;
+
+            var lower = status!.Trim().ToLowerInvariant();
+
+            if (lower.Contains("close") || lower.Contains("resolve") || lower.Contains("solve")
+                || lower.Contains("fixed") || lower.Contains("done"))
+                return FindingStatus.Resolved;
+
+            if (lower.Contains("approve") || lower.Contains("accept")) return FindingStatus.Approved;
+
+            if (lower.Contains("review") || lower.Contains("verif")) return FindingStatus.Reviewed;
+
+            if (lower.Contains("open") || lower.Contains("progress")) return FindingStatus.Active;
+
+            if (lower.Contains("new")) return FindingStatus.New;
+
+            return null;
+        }
 
         /// <summary>True when the word means somebody deliberately re-opened the issue.</summary>
         /// <param name="status">The topic status from the file.</param>

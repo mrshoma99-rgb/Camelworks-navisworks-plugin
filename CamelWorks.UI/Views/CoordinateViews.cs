@@ -401,52 +401,22 @@ namespace CamelWorks.UI.Views
         private static string? CategoryOf(Session session, ElementKey key) =>
             session.Model.Resolve(key)?.Category;
 
-        private static ClashSnapshot? Snapshot(Session session)
-        {
-            var saved = session.Store.Section(ProjectStore.ClashSection)["snapshot"];
-            if (saved.Kind != JsonKind.Array) return null;
-
-            var records = new List<ClashRecord>();
-
-            foreach (var entry in saved.Items)
-            {
-                if (!ClashKey.TryParse(entry["key"].AsString(), out var key)) continue;
-
-                var status = Enum.TryParse<FindingStatus>(entry["status"].AsString(), out var parsed)
-                    ? parsed
-                    : FindingStatus.New;
-
-                records.Add(new ClashRecord(key, status, entry["group"].AsString(),
-                    entry["pinned"].AsString() == "yes", entry["test"].AsString()));
-            }
-
-            return new ClashSnapshot(records, Decisions(session));
-        }
+        private static ClashSnapshot? Snapshot(Session session) =>
+            ClashSnapshotJson.FromJson(session.Store.Section(ProjectStore.ClashSection)["snapshot"],
+                                       Decisions(session));
 
         /// <summary>
         /// The board as it stood before the last run, for the per-party comparison.
         ///
-        /// Only the two figures the ledger needs — the party counts and when they were taken. The
-        /// records themselves are already read by <see cref="Snapshot"/> for carry-over, and
-        /// reading them twice to count them a second way would be work for nothing.
+        /// The per-party counts and the time it was taken ride inside the snapshot value, so moving
+        /// a snapshot into the undo slot moves them with it.
         /// </summary>
         private static ClashSnapshot? Previous(Session session)
         {
-            var section = session.Store.Section(ProjectStore.ClashSection);
-            var parties = section["previousParties"];
+            var read = ClashSnapshotJson.FromJson(
+                session.Store.Section(ProjectStore.ClashSection)["previous"]);
 
-            if (parties.Kind != JsonKind.Object || parties.Keys.Count == 0) return null;
-
-            var open = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var party in parties.Keys) open[party] = (int)parties[party].AsLong();
-
-            var taken = section["previousTaken"];
-
-            return new ClashSnapshot(Array.Empty<ClashRecord>(), null, null, open,
-                taken.Kind == JsonKind.Number
-                    ? DateTimeOffset.FromUnixTimeSeconds(taken.AsLong())
-                    : (DateTimeOffset?)null);
+            return read != null && read.OpenByParty.Count > 0 ? read : null;
         }
 
         /// <summary>
@@ -651,44 +621,15 @@ namespace CamelWorks.UI.Views
             var section = session.Store.Section(ProjectStore.ClashSection);
             var previous = section["snapshot"];
 
-            if (previous.Kind == JsonKind.Array)
-            {
-                section.Set("previous", previous);
-                Shift(section, "parties", "previousParties");
-                Shift(section, "taken", "previousTaken");
-            }
+            if (ClashSnapshotJson.IsSnapshot(previous)) section.Set("previous", previous);
 
-            var taken = DateTimeOffset.UtcNow;
-            var snapshot = ClashSnapshot.Of(board, takenUtc: taken);
-
-            // Per-party open counts ride with the snapshot rather than being re-derived from it: a
-            // record carries its group, not its party, and answering "what did Mechanical have open
-            // last week" through this week's assignment rules would restate history every time
-            // somebody re-assigned a group.
-            var parties = JsonValue.Object();
-            foreach (var entry in snapshot.OpenByParty) parties.Set(entry.Key, JsonValue.Number(entry.Value));
-
-            section.Set("parties", parties);
-            section.Set("taken", JsonValue.Number(taken.ToUnixTimeSeconds()));
+            var snapshot = ClashSnapshot.Of(board, takenUtc: DateTimeOffset.UtcNow);
 
             // Raised issues are kept in their own list and left out of the snapshot. The snapshot
             // is what the next run's carry-over compares the ENGINE's results against, and a record
             // the engine can never produce would read as resolved on every single run.
-            var array = JsonValue.Array(snapshot.Records
-                .Where(r => !string.Equals(r.TestName, ManualIssue.RaisedByHand, StringComparison.Ordinal))
-                .Select(r =>
-            {
-                var json = JsonValue.Object()
-                    .Set("key", JsonValue.String(r.Key.ToString()))
-                    .Set("status", JsonValue.String(r.Status.ToString()));
-
-                if (r.GroupName != null) json.Set("group", JsonValue.String(r.GroupName));
-                if (r.GroupWasPinned) json.Set("pinned", JsonValue.String("yes"));
-                if (r.TestName != null) json.Set("test", JsonValue.String(r.TestName));
-                return json;
-            }));
-
-            section.Set("snapshot", array);
+            section.Set("snapshot", ClashSnapshotJson.ToJson(snapshot,
+                r => !string.Equals(r.TestName, ManualIssue.RaisedByHand, StringComparison.Ordinal)));
             session.Record(ActivityKind.Regroup, summary ?? "ran the rules: " + board.Funnel);
         }
 
@@ -704,37 +645,15 @@ namespace CamelWorks.UI.Views
             var section = session.Store.Section(ProjectStore.ClashSection);
             var previous = section["previous"];
 
-            if (previous.Kind != JsonKind.Array) return false;
+            if (!ClashSnapshotJson.IsSnapshot(previous)) return false;
 
             var current = section["snapshot"];
 
             section.Set("snapshot", previous);
-            if (current.Kind == JsonKind.Array) section.Set("previous", current);
+            if (ClashSnapshotJson.IsSnapshot(current)) section.Set("previous", current);
             else section.Remove("previous");
 
-            Swap(section, "parties", "previousParties");
-            Swap(section, "taken", "previousTaken");
-
             return session.Store.Save();
-        }
-
-        /// <summary>Move one key's value to another, clearing the source.</summary>
-        private static void Shift(JsonValue section, string from, string to)
-        {
-            var value = section[from];
-
-            if (value.Kind == JsonKind.Null) section.Remove(to);
-            else section.Set(to, value);
-        }
-
-        /// <summary>Exchange two keys, so an undo of an undo lands back where it started.</summary>
-        private static void Swap(JsonValue section, string a, string b)
-        {
-            var first = section[a];
-            var second = section[b];
-
-            if (second.Kind == JsonKind.Null) section.Remove(a); else section.Set(a, second);
-            if (first.Kind == JsonKind.Null) section.Remove(b); else section.Set(b, first);
         }
 
         /// <summary>

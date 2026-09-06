@@ -950,32 +950,12 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// The status, mapped from whatever word the sending tool uses.
         ///
-        /// BCF does not fix its status list - a project defines its own in <c>extensions</c> - so
-        /// an imported file says "Closed", "In Progress" or "Solucionado" as readily as one of
-        /// ours. The five we hold are recognised by name and the rest are read for their sense,
-        /// which beats reading every unfamiliar word as New.
+        /// <see cref="ClashStatusMap"/> holds the mapping. This reader used to have its own
+        /// substring pass, which disagreed with the conventional vocabulary about "Open" and read
+        /// every unfamiliar word as Active without saying so.
         /// </summary>
-        private static FindingStatus Status(BcfTopic topic)
-        {
-            var said = (topic.TopicStatus ?? string.Empty).Trim();
-
-            if (Enum.TryParse<FindingStatus>(said, true, out var exact)) return exact;
-
-            var lower = said.ToLowerInvariant();
-
-            if (lower.Length == 0 || lower.Contains("open") || lower.Contains("new"))
-                return FindingStatus.New;
-
-            if (lower.Contains("close") || lower.Contains("resolve") || lower.Contains("solve")
-                || lower.Contains("fixed") || lower.Contains("done"))
-                return FindingStatus.Resolved;
-
-            if (lower.Contains("approve") || lower.Contains("accept")) return FindingStatus.Approved;
-
-            if (lower.Contains("review") || lower.Contains("verif")) return FindingStatus.Reviewed;
-
-            return FindingStatus.Active;
-        }
+        private static FindingStatus Status(BcfTopic topic) =>
+            ClashStatusMap.Read(topic.TopicStatus);
 
         /// <summary>
         /// The reviewer's own fields, as a record the project file can keep.
