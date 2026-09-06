@@ -3457,6 +3457,13 @@ namespace CamelWorks.UI.Views
             var all = Link("All", () => table.SelectAll());
             var none = Link("None", () => table.UnselectAll());
 
+            // Centred and spaced. The bar mixes a hint, padded buttons and two links, and without
+            // this the links sat on the top edge of the buttons' line and ran together as one
+            // word.
+            all.VerticalAlignment = VerticalAlignment.Center;
+            none.VerticalAlignment = VerticalAlignment.Center;
+            all.Margin = new Thickness(0, 0, Gap, 0);
+
             // A gap, or the two read as one word. They had none, so every table on every screen
             // ended its bar with "AllNone".
             all.Margin = new Thickness(0, 0, Gap, 0);
@@ -3491,6 +3498,7 @@ namespace CamelWorks.UI.Views
                 // A worded button carries its own padding; a symbol needs the room put around it,
                 // for the same reason Icon does.
                 button.Margin = new Thickness(glyph == null ? Gap : 3, 2, glyph == null ? 0 : 3, 2);
+                button.VerticalAlignment = VerticalAlignment.Center;
                 button.Tag = here.Caption;
 
                 buttons.Add(button);

@@ -504,7 +504,7 @@ namespace CamelWorks.UI.Views
                 var says = Ui.Small("Only results where");
 
                 says.VerticalAlignment = VerticalAlignment.Center;
-                says.Margin = new Thickness(0, 0, 8, 4);
+                says.Margin = new Thickness(0, 2, 8, 2);
 
                 bar.Children.Add(says);
 
@@ -535,7 +535,8 @@ namespace CamelWorks.UI.Views
                 var add = Ui.Link("and one more…", () => { });
 
                 add.Click += (s, e) => Ui.Safely(() => Parts.PopMenu(add, Facets()));
-                add.Margin = new Thickness(4, 0, 0, 4);
+                add.Margin = new Thickness(4, 2, 0, 2);
+                add.VerticalAlignment = VerticalAlignment.Center;
 
                 bar.Children.Add(add);
 
@@ -555,7 +556,8 @@ namespace CamelWorks.UI.Views
                     here.Title + ": " + (clause == null ? "any" : Values(clause)),
                     () => Ui.Safely(() => Choose(here)));
 
-                button.Margin = new Thickness(0, 0, 6, 4);
+                button.Margin = new Thickness(0, 2, 6, 2);
+                button.VerticalAlignment = VerticalAlignment.Center;
                 button.ToolTip = clause == null
                     ? "Every value goes. Press to choose which."
                     : clause.Describe(here) + ". Press to change it.";
