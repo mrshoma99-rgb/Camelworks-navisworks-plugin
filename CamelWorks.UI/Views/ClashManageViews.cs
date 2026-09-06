@@ -5538,9 +5538,6 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                // Either format. A baseline written by this version is BCF; one written before
-                // the change is Navisworks clash XML, and last month's review round has to still
-                // open.
                 var read = ClashFile.Read(bytes);
 
                 if (!read.IsUsable)

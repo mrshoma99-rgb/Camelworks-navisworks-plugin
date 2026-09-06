@@ -134,7 +134,7 @@ namespace CamelWorks.Core.Clash
         public string? Problem { get; }
 
         /// <summary>
-        /// The BCF topics behind these results, when the file was a BCF. Empty for clash XML.
+        /// The BCF topics behind these results.
         ///
         /// Kept so a caller can do something with the topics that are not clashes at all - the
         /// ones a reviewer raised in their own tool, which belong in the issue register rather

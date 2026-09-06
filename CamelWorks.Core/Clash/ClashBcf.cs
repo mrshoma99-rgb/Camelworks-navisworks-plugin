@@ -121,8 +121,8 @@ namespace CamelWorks.Core.Clash
     /// <summary>
     /// Clash results as BCF, losing nothing.
     ///
-    /// This replaces the clash XML. That format is Navisworks' own report format: it works, and one
-    /// family of tools reads it. BCF is what the rest of the industry reads and writes — Solibri,
+    /// The one clash file this product writes. Navisworks' own report format works, and one family
+    /// of tools reads it. BCF is what the rest of the industry reads and writes — Solibri,
     /// BIMcollab, Revizto, BIMTrack and the issue trackers projects are run on — so a clash file
     /// written as BCF is one the architect can open.
     ///
