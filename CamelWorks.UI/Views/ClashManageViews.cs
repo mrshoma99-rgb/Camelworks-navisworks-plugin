@@ -662,6 +662,25 @@ namespace CamelWorks.UI.Views
                     : "Across " + Ui.Count(held.Count, "level");
             }
 
+            /// <summary>The storey one result is on.</summary>
+            /// <param name="one">The result.</param>
+            private string Storey(Row one)
+            {
+                if (Plan.IsEmpty) return NoLevels;
+
+                var scale = OnFile ? 1.0 : _session.MetresPerUnit;
+
+                return Plan.LevelAt(one.Info.PointZ * scale) ?? Underneath;
+            }
+
+            /// <summary>
+            /// Whether the project has said what its storeys are.
+            ///
+            /// The Level column only exists when it has. A column reading "No levels set up" on
+            /// every row costs the board 96 pixels to say nothing.
+            /// </summary>
+            private bool HasLevels => !Plan.IsEmpty;
+
             /// <summary>Write the naming back to the project file.</summary>
             /// <returns>True when the project file took it.</returns>
             private bool KeepBook()
@@ -3376,6 +3395,8 @@ namespace CamelWorks.UI.Views
                         Named2(ItemB, 1, tight ? 74 : 90);
                     else if (string.Equals(name, Worst, StringComparison.Ordinal))
                         columns.Add((Worst, new GridLength(Wide(Worst, tight ? 60 : 64)), 0));
+                    else if (string.Equals(name, Level, StringComparison.Ordinal))
+                        columns.Add((Level, new GridLength(Wide(Level, 96)), 0));
                     else if (string.Equals(name, Status, StringComparison.Ordinal))
                         columns.Add((Status, new GridLength(Wide(Status, 104)), 0));
                     else if (string.Equals(name, Assigned, StringComparison.Ordinal))
@@ -3447,6 +3468,8 @@ namespace CamelWorks.UI.Views
             {
                 var natural = new List<string> { Named, ItemA, ItemB, Worst };
 
+                if (HasLevels) natural.Add(Level);
+
                 natural.AddRange(_columns.Select(c => c.Title));
                 natural.Add(Status);
                 natural.Add(Assigned);
@@ -3483,7 +3506,8 @@ namespace CamelWorks.UI.Views
             private Dictionary<string, int> Places()
             {
                 var key = string.Join("\u001f", _arranged) + "\u001e"
-                        + string.Join("\u001f", _columns.Select(c => c.Title));
+                        + string.Join("\u001f", _columns.Select(c => c.Title))
+                        + "\u001e" + (HasLevels ? "L" : string.Empty);
 
                 if (_places != null && string.Equals(_placesKey, key, StringComparison.Ordinal))
                     return _places;
@@ -3565,6 +3589,7 @@ namespace CamelWorks.UI.Views
             private const string Worst = "Worst";
             private const string Status = "Status";
             private const string Assigned = "Assigned";
+            private const string Level = "Level";
 
             /// <summary>
             /// How wide each column is: a share for the three that flex, pixels for the rest.
@@ -3577,7 +3602,7 @@ namespace CamelWorks.UI.Views
                 new Dictionary<string, double>(StringComparer.Ordinal)
                 {
                     { Named, 2 }, { ItemA, 1 }, { ItemB, 1 },
-                    { Worst, 64 }, { Status, 104 }, { Assigned, 104 },
+                    { Worst, 64 }, { Status, 104 }, { Assigned, 104 }, { Level, 96 },
                 };
 
             /// <summary>
@@ -3642,6 +3667,7 @@ namespace CamelWorks.UI.Views
                     case ItemB: return row.IsGroup ? string.Empty : row.Only.Info.NameB ?? string.Empty;
                     case Status: return row.Status;
                     case Assigned: return row.Assigned;
+                    case Level: return Storey(row);
 
                     // Numbers, ordered as numbers. Sorting "-9 mm" against "-48 mm" as text puts
                     // the shallower one first, which is the wrong end of the board entirely.
@@ -3800,6 +3826,8 @@ namespace CamelWorks.UI.Views
                 Put(grid, Head(ItemA, false), Where(ItemA));
                 Put(grid, Head(ItemB, false), Where(ItemB));
                 Put(grid, Head(Worst, true), Where(Worst));
+
+                if (HasLevels) Put(grid, Head(Level, false), Where(Level));
 
                 foreach (var column in _columns)
                     Put(grid, Head(column.Title, false), Where(column.Title));
@@ -4061,6 +4089,22 @@ namespace CamelWorks.UI.Views
                     TextWrapping = TextWrapping.NoWrap,
                 }.Wearing("Hint");
 
+            /// <summary>
+            /// The Level cell, with the whole storey name on its tooltip.
+            ///
+            /// A storey name is as long as the project made it and the column is 96 pixels, so
+            /// the cell trims. The tooltip is how a row still says which floor it is on.
+            /// </summary>
+            /// <param name="storey">The storey.</param>
+            private static TextBlock Storeyed(string storey)
+            {
+                var cell = Hint(storey);
+
+                cell.ToolTip = storey;
+
+                return cell;
+            }
+
             /// <summary>Push a cell to the right of its column, for a figure.</summary>
             /// <param name="cell">The cell.</param>
             private static TextBlock Right(TextBlock cell)
@@ -4208,6 +4252,8 @@ namespace CamelWorks.UI.Views
                     Put(grid, Right(Hint("—")), Where(ItemB));
                 }
                 Put(grid, Figure(Deepest(row), Bad(row)), Where(Worst));
+
+                if (HasLevels) Put(grid, Storeyed(Storey(row)), Where(Level));
 
                 for (var i = 0; i < _columns.Count; i++)
                     Put(grid, Hint(Custom(row.Only, _columns[i])), Where(_columns[i].Title));
@@ -4511,6 +4557,8 @@ namespace CamelWorks.UI.Views
                 Put(grid, Item(itemB), Where(ItemB));
 
                 Put(grid, Figure(Millimetres(result), Bad(result)), Where(Worst));
+
+                if (HasLevels) Put(grid, Storeyed(Storey(result)), Where(Level));
 
                 for (var i = 0; i < _columns.Count; i++)
                     Put(grid, Hint(Custom(result, _columns[i])), Where(_columns[i].Title));

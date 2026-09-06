@@ -575,6 +575,54 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void The_coordinators_note_reaches_the_board_when_there_is_no_register()
+        {
+            var one = Item("a");
+
+            var reading = ClashExchange.Read(new[]
+            {
+                Pack("Mechanical", Answered(one, FindingStatus.Resolved)),
+                Pack("Structure", Answered(one, FindingStatus.Reviewed)),
+            }, new[] { one });
+
+            var row = Assert.Single(reading.Rows);
+
+            row.Chosen = "Structure";
+            row.Take = true;
+            row.Note = "Beam is fixed; mechanical to re-route.";
+
+            // No register: the screen says a session with no project file keeps answers on the
+            // board, and the note is part of the answer.
+            ClashExchange.Apply(reading, null);
+
+            Assert.Contains(one.Comments,
+                            said => said.Body.StartsWith("Beam is fixed",
+                                                         System.StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void An_answer_nobody_disagreed_with_overrules_nothing()
+        {
+            var one = Item("a");
+
+            var reading = ClashExchange.Read(new[]
+            {
+                Pack("Mechanical", Answered(one, FindingStatus.Resolved)),
+                Pack("Structure", Answered(one, FindingStatus.Resolved)),
+            }, new[] { one });
+
+            var row = Assert.Single(reading.Rows);
+
+            Assert.False(row.IsDisputed);
+            Assert.Empty(row.Overruled);
+
+            // Still readable while the row is open: what every party said, for the person
+            // deciding.
+            Assert.Contains("Mechanical", row.Disagreement(), System.StringComparison.Ordinal);
+            Assert.Contains("Structure", row.Disagreement(), System.StringComparison.Ordinal);
+        }
+
+        [Fact]
         public void Nothing_to_read_says_so_rather_than_looking_empty()
         {
             var reading = ClashExchange.Read(null, new[] { Item("a") });

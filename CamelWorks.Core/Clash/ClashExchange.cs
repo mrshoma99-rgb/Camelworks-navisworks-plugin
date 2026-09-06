@@ -150,8 +150,8 @@ namespace CamelWorks.Core.Clash
         ///
         /// Three parties disagreeing is ordinary, and the resolution is usually a note and an
         /// action rather than a winner: "Structure is right, mechanical to re-route, agreed on
-        /// Thursday". Kept on the row and carried onto the finding, because a decision with no
-        /// reasoning is one the same three people argue about again next week.
+        /// Thursday". Kept on the row and carried onto the board and the finding, so the
+        /// reasoning stays with the decision.
         /// </summary>
         public string? Note { get; set; }
 
@@ -170,7 +170,8 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// The answers that were not taken, so the screen can keep them readable.
         ///
-        /// A resolution that hides what the other parties said is one nobody can check.
+        /// Empty until a side is taken, and empty on a row nobody disagreed on: three parties
+        /// saying the same thing have not overruled each other.
         /// </summary>
         public IReadOnlyList<ExchangeSay> Overruled
         {
@@ -178,10 +179,25 @@ namespace CamelWorks.Core.Clash
             {
                 var settled = Settled;
 
-                return settled == null
+                return settled == null || !IsDisputed
                     ? Array.Empty<ExchangeSay>()
                     : _answers.Where(one => !ReferenceEquals(one, settled)).ToList();
             }
+        }
+
+        /// <summary>
+        /// What the parties said, in one line, for a row the screen has to explain.
+        ///
+        /// Every answer while the row is still open, and the ones that were not taken once it is
+        /// settled. A resolution that hides what the other parties said is one nobody can check.
+        /// </summary>
+        public string Disagreement()
+        {
+            var said = Overruled.Count > 0 ? Overruled : _answers;
+
+            return string.Join("; ", said.Select(
+                one => (one.Party ?? "A pack") + ": " + one.Incoming
+                       + (one.AssignedTo == null ? string.Empty : ", to " + one.AssignedTo)));
         }
 
         /// <summary>True when two parties answered this differently.</summary>
@@ -639,10 +655,28 @@ namespace CamelWorks.Core.Clash
                     // by the Manage tab's sync and dropped by this one.
                     Reviewed(finding, settled.Result);
 
-                    // What the coordinator decided, in their own words, alongside what the parties
-                    // said. Three parties disagreeing is ordinary and the resolution is usually a
-                    // note rather than a winner.
-                    if (!string.IsNullOrWhiteSpace(row.Note))
+                }
+                else if (matcher == null)
+                {
+                    // No register at all: the board is the only record there is, so it is what the
+                    // counts describe. A register that simply does not hold this clash is a miss,
+                    // and a miss is never reported as applied.
+                    if (boardMoved) moved++;
+                    if (boardAssigned) assigned++;
+                }
+
+                // What the coordinator decided, in their own words. Written to the board first
+                // and to the register second, the same way the parties' own comments are: written
+                // only inside the register branch, a note typed in a session with no project file
+                // - which the screen says keeps answers on the board - was discarded in silence.
+                if (!string.IsNullOrWhiteSpace(row.Note))
+                {
+                    var said = new ClashComment("The coordinator", when, row.Note!.Trim());
+                    var kept = row.Item.Comments.Any(one => Same(one, said));
+
+                    if (!kept) row.Item.Comments.Add(said);
+
+                    if (finding != null)
                     {
                         var decided = new FindingComment("The coordinator", when, row.Note!.Trim());
 
@@ -653,14 +687,10 @@ namespace CamelWorks.Core.Clash
                             comments++;
                         }
                     }
-                }
-                else if (matcher == null)
-                {
-                    // No register at all: the board is the only record there is, so it is what the
-                    // counts describe. A register that simply does not hold this clash is a miss,
-                    // and a miss is never reported as applied.
-                    if (boardMoved) moved++;
-                    if (boardAssigned) assigned++;
+                    else if (!kept && matcher == null)
+                    {
+                        comments++;
+                    }
                 }
 
                 // Every comment from every party, not only the one whose answer won. A comment is

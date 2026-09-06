@@ -476,18 +476,20 @@ namespace CamelWorks.Core.Clash
                 if (takes) kept.Add(item);
             }
 
-            return Ordered(kept, plan);
+            return Ordered(kept, plan, issued);
         }
 
         /// <summary>The same results, put in the pick's order.</summary>
         /// <param name="items">The results to order.</param>
         /// <param name="plan">The project's storeys.</param>
+        /// <param name="issued">What has already gone out, for an order that names it.</param>
         public IReadOnlyList<ClashItem> Ordered(IReadOnlyList<ClashItem>? items,
-                                                LevelPlan? plan = null)
+                                                LevelPlan? plan = null,
+                                                ClashIssueLog? issued = null)
         {
             var all = (items ?? Array.Empty<ClashItem>()).ToList();
 
-            var by = ClashFacets.Of(Sort, all, plan);
+            var by = ClashFacets.Of(Sort, all, plan, issued);
 
             if (by == null) return all;
 
@@ -505,12 +507,14 @@ namespace CamelWorks.Core.Clash
 
         /// <summary>How the whole pick reads, in one line.</summary>
         /// <param name="plan">The project's storeys, so a facet reads by its title.</param>
-        public string Describe(LevelPlan? plan = null)
+        /// <param name="issued">What has already gone out, so those facets read by title too.</param>
+        public string Describe(LevelPlan? plan = null, ClashIssueLog? issued = null)
         {
             if (_clauses.Count == 0) return "Every clash.";
 
             var said = string.Join(", ",
-                _clauses.Select(one => one.Describe(ClashFacets.Of(one.Facet, null, plan))));
+                _clauses.Select(one => one.Describe(
+                    ClashFacets.Of(one.Facet, null, plan, issued))));
 
             return said + ".";
         }

@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Data;
+using CamelWorks.Core.Identity;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.OpenBim;
 using CamelWorks.Core.Project;
@@ -1005,11 +1006,14 @@ namespace CamelWorks.UI.Views
                     wrote++;
 
                     // Which clashes went out, to whom, and where each stood when it went. The
-                    // per-test stamp below answers "have I sent this test" and nothing else; a
-                    // weekly issue is a delta on the results, and without this a pack either
-                    // repeated four hundred clashes the trade already had or left out the ones
-                    // that moved.
-                    Issued().Stamp(round.Selection.Items, round.Recipient, when);
+                    // per-test stamp below answers "have I sent this test" and nothing else.
+                    //
+                    // A round's name is only a party when the profile splits by one. Unsplit, it
+                    // is the profile's own name, and stamping that put "Weekly MEP" under the
+                    // facet titled "Last sent to".
+                    var to = string.IsNullOrWhiteSpace(_profile.SplitBy) ? null : round.Recipient;
+
+                    Issued().Stamp(round.Selection.Items, to, when);
 
                     _sending.Children.Add(Ui.Note(
                         Path.GetFileName(file) + " - " + round.Selection.Explain()));
@@ -1112,6 +1116,9 @@ namespace CamelWorks.UI.Views
 
                 // The reading is thrown away, because it was about the packs that were chosen
                 // before. Leaving it would show rows from a pack that is no longer in the list.
+                // What was decided on those rows is kept for the next read.
+                Keeping();
+
                 _reading = null;
 
                 DrawPacks();
@@ -1194,11 +1201,20 @@ namespace CamelWorks.UI.Views
                             foreach (var one in held) _parties[one] = named;
 
                             // The reading carries the old names on every answer, so it is read
-                            // again rather than relabelled in place.
+                            // again rather than relabelled in place. What was decided on those
+                            // rows is kept and put back on the next read: correcting a pack's
+                            // party is what somebody does after working through the disputes, and
+                            // dropping the reading dropped every one of those answers with it.
+                            Keeping();
+
                             _reading = null;
 
                             DrawPacks();
                             DrawReading();
+
+                            _rowsSaid.Children.Add(Ui.Note(
+                                "Read the packs again to see them under the new name. What has "
+                                + "been decided is kept."));
                         }));
                     }, primary: true),
                     new Ui.OnPicked("Take out these {n}", (picked, said) =>
@@ -1212,6 +1228,8 @@ namespace CamelWorks.UI.Views
                         }
 
                         foreach (var one in held) _returns.Remove(one);
+
+                        Keeping();
 
                         said.Children.Add(Ui.Note(Ui.Count(held.Count, "pack") + " taken out."));
 
@@ -1258,11 +1276,9 @@ namespace CamelWorks.UI.Views
                         return;
                     }
 
-                    // The party is the file's own name unless somebody has said otherwise. Asking
-                    // for "Mechanical" beside a file called Mechanical.bcfzip is asking them to do
-                    // the tool's job; what actually arrives is "RE_ L3 clashes - responses FINAL
-                    // v2 (3).bcfzip", and one from the sprinkler subcontractor called
-                    // Mechanical.bcfzip.
+                    // The party is the file's own name unless somebody has said otherwise. A
+                    // returned file is often named after the thread it came from rather than the
+                    // trade that sent it, so the name is a default and not a fact.
                     packs.Add(new ExchangePack(Party(file),
                                                ClashFile.Read(bytes), Path.GetFileName(file)));
                 }
@@ -1277,10 +1293,57 @@ namespace CamelWorks.UI.Views
 
                 _reading = ClashExchange.Read(packs, Results());
 
+                Restore();
+
                 _back.Children.Add(Ui.Line(_reading.Explain(), 1, true));
 
                 DrawPacks();
                 DrawReading();
+            }
+
+            /// <summary>
+            /// What has been decided on the rows, keyed by clash, so a re-read can put it back.
+            ///
+            /// Kept across a re-read rather than on the rows, because the rows are rebuilt from
+            /// the packs and the decisions are the coordinator's, not the packs'.
+            /// </summary>
+            private readonly Dictionary<ClashKey, (string? Chosen, string? Note, bool Take)>
+                _decided = new Dictionary<ClashKey, (string?, string?, bool)>();
+
+            /// <summary>Take a copy of every decision on the reading.</summary>
+            private void Keeping()
+            {
+                if (_reading == null) return;
+
+                foreach (var row in _reading.Rows)
+                {
+                    if (row.Chosen == null && string.IsNullOrWhiteSpace(row.Note) && !row.Take)
+                        continue;
+
+                    _decided[row.Item.Key] = (row.Chosen, row.Note, row.Take);
+                }
+            }
+
+            /// <summary>Put the kept decisions back onto a reading that has just been built.</summary>
+            private void Restore()
+            {
+                if (_reading == null || _decided.Count == 0) return;
+
+                foreach (var row in _reading.Rows)
+                {
+                    if (!_decided.TryGetValue(row.Item.Key, out var had)) continue;
+
+                    // The chosen party is only put back when a pack still answers under that
+                    // name. After a rename it does not, and forcing it would settle the row on a
+                    // party that is no longer in the reading.
+                    if (had.Chosen != null
+                        && row.Answers.Any(say => string.Equals(say.Party, had.Chosen,
+                                                                StringComparison.OrdinalIgnoreCase)))
+                        row.Chosen = had.Chosen;
+
+                    row.Note = had.Note;
+                    row.Take = had.Take && row.Settled != null;
+                }
             }
 
             /// <summary>The rows that came back, and what each would do.</summary>
@@ -1384,10 +1447,24 @@ namespace CamelWorks.UI.Views
                         return;
                     }
 
-                    // What the coordinator decided, in their own words. Three parties disagreeing
-                    // is ordinary and the resolution is usually a note and an action rather than
-                    // a winner; the note travels onto the finding with the answer.
-                    Parts.Ask(_rows, "What was decided", picked[0].Note, "Keep this note",
+                    // What the coordinator decided, in their own words. The note travels onto
+                    // the finding with the answer.
+                    //
+                    // One note goes onto every picked row, so the prompt says when that replaces
+                    // notes already typed on the others rather than seeding from the first row
+                    // and overwriting the rest in silence.
+                    var written = picked
+                        .Select(one => (one.Note ?? string.Empty).Trim())
+                        .Where(one => one.Length > 0)
+                        .Distinct(StringComparer.Ordinal)
+                        .Count();
+
+                    var asking = written > 1
+                        ? "What was decided - replaces " + Ui.Count(written, "different note")
+                          + " already on these rows"
+                        : "What was decided";
+
+                    Parts.Ask(_rows, asking, picked[0].Note, "Keep this note",
                               said => Ui.Safely(() =>
                               {
                                   foreach (var row in picked) row.Note = said;
@@ -1504,7 +1581,24 @@ namespace CamelWorks.UI.Views
                 {
                     var here = party;
 
-                    items.Add(Parts.Entry.Act(here, null, () =>
+                    // What this party actually said, on the entry that takes their answer. The
+                    // menu listed names alone, so the choice was between three labels with the
+                    // answers behind them on a table the menu covers.
+                    var said = picked
+                        .SelectMany(one => one.Answers)
+                        .Where(say => string.Equals(say.Party, here,
+                                                    StringComparison.OrdinalIgnoreCase))
+                        .Select(say => say.Incoming.ToString()
+                                       + (say.AssignedTo == null
+                                          ? string.Empty : ", to " + say.AssignedTo))
+                        .Distinct(StringComparer.Ordinal)
+                        .ToList();
+
+                    var says = said.Count == 1 ? said[0]
+                             : said.Count > 1 ? Ui.Count(said.Count, "different answer")
+                             : "Their answer";
+
+                    items.Add(Parts.Entry.Saying(here, null, says, () =>
                     {
                         foreach (var row in picked)
                         {
@@ -1608,16 +1702,19 @@ namespace CamelWorks.UI.Views
 
                 box.Children.Add(Ui.Eyebrow("The viewpoint on each topic"));
 
+                // Said in words rather than as the enum's own names. "North" alone is read as
+                // both "looking north" and "the north elevation", which are opposite cameras.
                 var facing = Ui.Choice(
-                    Enum.GetNames(typeof(BcfView)), _profile.View.ToString(),
+                    ((BcfView[])Enum.GetValues(typeof(BcfView))).Select(Facing), Facing(_profile.View),
                     said =>
                     {
-                        if (Enum.TryParse<BcfView>(said, out var view)) _profile.View = view;
-                    }, 150);
+                        foreach (BcfView view in Enum.GetValues(typeof(BcfView)))
+                            if (string.Equals(said, Facing(view), StringComparison.Ordinal))
+                                _profile.View = view;
+                    }, 190);
 
-                facing.ToolTip = "A reviewer works through a pack faster when every topic faces "
-                                 + "the same way. Standing is eye level and across; Plan is "
-                                 + "straight down.";
+                facing.ToolTip = "Where the camera stands. A reviewer works through a pack faster "
+                                 + "when every topic faces the same way.";
 
                 box.Children.Add(Ui.Field("Camera", facing));
 
@@ -1633,9 +1730,23 @@ namespace CamelWorks.UI.Views
 
                 reach.TextChanged += (s, e) => Ui.Safely(() =>
                 {
-                    if (double.TryParse(reach.Text, NumberStyles.Any, CultureInfo.InvariantCulture,
-                                        out var metres) && metres > 0)
+                    // A reach that is not a positive number left the profile on its previous value
+                    // while the box on screen read 0, so the pack came back sectioned at 2 m.
+                    var said = double.TryParse(reach.Text, NumberStyles.Any,
+                                               CultureInfo.InvariantCulture, out var metres);
+
+                    if (said && metres > 0)
+                    {
                         _profile.SectionMetres = metres;
+                        reach.ToolTip = null;
+                        return;
+                    }
+
+                    reach.ToolTip = "The box reaches a positive number of metres each way from "
+                                    + "the clash. Still cutting at "
+                                    + _profile.SectionMetres.ToString("0.##",
+                                                                     CultureInfo.InvariantCulture)
+                                    + " m.";
                 });
 
                 box.Children.Add(Ui.Field("How far the box reaches (m)", reach));
@@ -1662,6 +1773,24 @@ namespace CamelWorks.UI.Views
                     Ui.Small("A profile holds the tests, statuses, filter, order and split, so "
                              + "a recurring issue is configured once."));
             }
+
+
+            /// <summary>
+            /// Where a camera stands, in words.
+            ///
+            /// The enum's own names are compass points, and a compass point on its own reads as
+            /// both the place and the direction.
+            /// </summary>
+            /// <param name="view">The camera position.</param>
+            private static string Facing(BcfView view) => view switch
+            {
+                BcfView.Plan => "Above, looking down",
+                BcfView.North => "From the north",
+                BcfView.South => "From the south",
+                BcfView.East => "From the east",
+                BcfView.West => "From the west",
+                _ => "Standing, off to one side",
+            };
 
             /// <summary>Switch to a saved profile.</summary>
             /// <param name="name">Which one.</param>

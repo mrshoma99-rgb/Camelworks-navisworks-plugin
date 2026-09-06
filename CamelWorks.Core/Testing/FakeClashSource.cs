@@ -143,7 +143,7 @@ namespace CamelWorks.Core.Testing
         {
             _log.Add("Results " + testId);
 
-            var test = Found(testId);
+            var test = IsAvailable ? Found(testId) : null;
 
             if (test == null) return Array.Empty<ClashResultInfo>();
 
@@ -162,6 +162,8 @@ namespace CamelWorks.Core.Testing
             var read = new List<ClashTestRead>();
             var seen = 0;
 
+            if (!IsAvailable) return read;
+
             foreach (var test in _tests)
             {
                 if (onProgress != null && !onProgress(++seen)) break;
@@ -175,7 +177,7 @@ namespace CamelWorks.Core.Testing
         /// <inheritdoc />
         public ClashTestSides? Sides(string testId)
         {
-            var test = Found(testId);
+            var test = IsAvailable ? Found(testId) : null;
 
             return test == null
                 ? null
@@ -186,14 +188,14 @@ namespace CamelWorks.Core.Testing
 
         /// <inheritdoc />
         public IReadOnlyList<ClashComment> CommentsOn(string testId, string resultId) =>
-            Result(testId, resultId)?.Comments.ToList()
+            (IsAvailable ? Result(testId, resultId)?.Comments.ToList() : null)
             ?? (IReadOnlyList<ClashComment>)Array.Empty<ClashComment>();
 
         /// <inheritdoc />
         public IReadOnlyList<ClashResultComments> CommentsFor(string testId,
                                                               Func<int, bool>? onProgress)
         {
-            var test = Found(testId);
+            var test = IsAvailable ? Found(testId) : null;
 
             if (test == null) return Array.Empty<ClashResultComments>();
 
@@ -253,8 +255,23 @@ namespace CamelWorks.Core.Testing
         {
             if (!Writable("Create " + spec?.Name)) return null;
 
+            if (spec == null)
+            {
+                LastProblem = "No test was described.";
+                return null;
+            }
+
+            // The host resolves both sides against the document and returns null when either
+            // names nothing. There is no document here, so the fake refuses the case it can see:
+            // a side that names nothing at all.
+            if (spec.A == null || spec.B == null)
+            {
+                LastProblem = "A clash test is between two things, and one side is missing.";
+                return null;
+            }
+
             var made = new FakeTest("test-" + Guid.NewGuid().ToString("N").Substring(0, 8),
-                                    spec!.Name, spec.Folder)
+                                    spec.Name, spec.Folder)
             {
                 ToleranceMetres = spec.Tolerance,
                 Kind = spec.Kind,
@@ -282,8 +299,26 @@ namespace CamelWorks.Core.Testing
         }
 
         /// <inheritdoc />
-        public bool SetStatus(string testId, IReadOnlyList<string> resultIds, string status) =>
-            Each(testId, resultIds, "SetStatus " + status, one => one.Status = status);
+        public bool SetStatus(string testId, IReadOnlyList<string> resultIds, string status)
+        {
+            // The host parses the word against its own enum and refuses anything else, so a
+            // status the product invents fails on a seat and passed against the fake.
+            var said = status ?? string.Empty;
+
+            if (!Statuses.Contains(said))
+            {
+                _log.Add("SetStatus " + said);
+                LastProblem = "\"" + said + "\" is not a status the host knows.";
+                return false;
+            }
+
+            return Each(testId, resultIds, "SetStatus " + said, one => one.Status = said);
+        }
+
+        /// <summary>The only five words the host's result status takes.</summary>
+        private static readonly HashSet<string> Statuses = new HashSet<string>(
+            new[] { "New", "Active", "Reviewed", "Approved", "Resolved" },
+            StringComparer.OrdinalIgnoreCase);
 
         /// <inheritdoc />
         public bool Assign(string testId, IReadOnlyList<string> resultIds, string assignee) =>
@@ -292,9 +327,27 @@ namespace CamelWorks.Core.Testing
 
         /// <inheritdoc />
         public bool Comment(string testId, IReadOnlyList<string> resultIds, string body,
-                            string author) =>
-            Each(testId, resultIds, "Comment",
-                 one => one.Comments.Add(new ClashComment(author, DateTime.UtcNow.Ticks, body)));
+                            string author)
+        {
+            if (string.IsNullOrWhiteSpace(body))
+            {
+                _log.Add("Comment");
+                LastProblem = "There is no comment to add.";
+                return false;
+            }
+
+            // The same author saying the same thing is the same comment. Skipped here as the host
+            // skips it, which is what lets a markup sync run twice without doubling every trail.
+            return Each(testId, resultIds, "Comment", one =>
+            {
+                if (one.Comments.Any(had => string.Equals(had.Body, body, StringComparison.Ordinal)
+                                            && string.Equals(had.Author, author ?? string.Empty,
+                                                             StringComparison.OrdinalIgnoreCase)))
+                    return;
+
+                one.Comments.Add(new ClashComment(author, DateTime.UtcNow.Ticks, body));
+            });
+        }
 
         /// <inheritdoc />
         public bool Regroup(string testId, IReadOnlyList<string> resultIds, string groupName) =>
@@ -350,12 +403,28 @@ namespace CamelWorks.Core.Testing
                 if (wanted.Contains(one.Id))
                     one.Name = prefix + (at++).ToString(CultureInfo.InvariantCulture);
 
+            if (at == 1)
+            {
+                LastProblem = "None of those results are in the test any more.";
+                return false;
+            }
+
             return true;
         }
 
         /// <inheritdoc />
-        public bool RenameResult(string testId, string resultId, string name) =>
-            Each(testId, new[] { resultId }, "RenameResult " + name, one => one.Name = name);
+        public bool RenameResult(string testId, string resultId, string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                _log.Add("RenameResult " + name);
+                LastProblem = "A result needs a name.";
+                return false;
+            }
+
+            return Each(testId, new[] { resultId }, "RenameResult " + name,
+                        one => one.Name = name);
+        }
 
         /// <inheritdoc />
         public bool Retune(string testId, double toleranceMetres, MatrixTest kind)
@@ -376,6 +445,12 @@ namespace CamelWorks.Core.Testing
         public bool RenameTest(string testId, string name)
         {
             if (!Writable("RenameTest " + name)) return false;
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                LastProblem = "A test needs a name.";
+                return false;
+            }
 
             var test = Found(testId);
 
@@ -469,6 +544,12 @@ namespace CamelWorks.Core.Testing
         {
             _log.Add("ApplyResultView " + testId + "/" + resultId);
 
+            if (!IsAvailable)
+            {
+                LastProblem = "This document has no clash engine.";
+                return false;
+            }
+
             if (Result(testId, resultId) == null) return Missing();
 
             Focused = testId + "/" + resultId;
@@ -484,20 +565,25 @@ namespace CamelWorks.Core.Testing
         {
             _log.Add("SelectResults " + testId);
 
-            var test = Found(testId);
+            var test = IsAvailable ? Found(testId) : null;
 
             if (test == null) { Missing(); return -1; }
 
-            var wanted = (resultIds ?? Array.Empty<string>())
+            if (resultIds == null || resultIds.Count == 0) return 0;
+
+            var wanted = resultIds
                 .Where(id => test.Results.Any(one => string.Equals(one.Id, id,
                                                                    StringComparison.OrdinalIgnoreCase)))
+                .Distinct(StringComparer.Ordinal)
                 .ToList();
 
             Selected = add ? Selected.Concat(wanted).Distinct(StringComparer.Ordinal).ToList()
                            : wanted;
 
-            // Two elements per result, de-duplicated the way the adapter does.
-            return Selected.Count * 2;
+            // Two elements per result named in THIS call, de-duplicated the way the adapter does.
+            // Counting the whole selection reported the elements already selected as though this
+            // call had added them.
+            return wanted.Count * 2;
         }
 
         // ---- Plumbing ---------------------------------------------------------------------

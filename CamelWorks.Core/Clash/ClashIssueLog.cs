@@ -14,11 +14,14 @@ namespace CamelWorks.Core.Clash
         /// <param name="whenTicks">When the pack carrying it was written, UTC ticks.</param>
         /// <param name="party">Who it went to.</param>
         /// <param name="status">Where it stood when it went.</param>
-        internal ClashIssued(long whenTicks, string? party, FindingStatus status)
+        /// <param name="assigned">Who it was assigned to when it went.</param>
+        internal ClashIssued(long whenTicks, string? party, FindingStatus status,
+                             string? assigned = null)
         {
             WhenTicks = whenTicks;
             Party = party;
             Status = status;
+            Assigned = assigned;
         }
 
         /// <summary>When the pack carrying it was written, UTC ticks.</summary>
@@ -30,6 +33,9 @@ namespace CamelWorks.Core.Clash
         /// <summary>Where it stood when it went.</summary>
         public FindingStatus Status { get; }
 
+        /// <summary>Who it was assigned to when it went, or null when it was nobody's.</summary>
+        public string? Assigned { get; }
+
         /// <inheritdoc />
         public override string ToString() =>
             new DateTime(WhenTicks, DateTimeKind.Utc).ToLocalTime()
@@ -40,11 +46,10 @@ namespace CamelWorks.Core.Clash
     /// <summary>
     /// Which clashes have been issued, when, and to whom.
     ///
-    /// The profile already stamps each test with the last time it went out, which answers "have I
-    /// sent this test" and nothing else. A weekly issue is a delta on the results: what is new
-    /// since the last pack to this party, what has changed since it went, and what is in progress
-    /// and should be left alone. A per-test stamp cannot express any of those, so a pack either
-    /// repeated four hundred clashes the trade already had or left out the ones that moved.
+    /// The profile stamps each test with the last time it went out, which answers "have I sent
+    /// this test" and nothing else. A weekly issue is a delta on the results: what is new since
+    /// the last pack, what has changed since it went, and what is in progress. A per-test stamp
+    /// expresses none of those.
     ///
     /// Kept in the project file rather than on the results, because it outlives a run: the point
     /// is to compare this week's board against what actually went out last week.
@@ -54,8 +59,7 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// Where the project file keeps it.
         ///
-        /// Not "issued": the report writer already keeps its revision log under that name, and two
-        /// things in one key is one of them being overwritten by the other.
+        /// Not "issued": the report writer keeps its revision log under that name.
         /// </summary>
         public const string Key = "issuedClashes";
 
@@ -65,15 +69,45 @@ namespace CamelWorks.Core.Clash
         /// <summary>How many clashes the log knows about.</summary>
         public int Count => _sent.Count;
 
-        /// <summary>When one clash last went out, or null when it never has.</summary>
+        /// <summary>
+        /// How long an entry is kept once nothing has re-stamped it.
+        ///
+        /// The log is written into the project file, which is parsed whole on load and written
+        /// whole on save, and nothing else takes an entry out: a clash that is resolved and gone
+        /// from the board would keep its entry for the life of the project. A year is longer than
+        /// any issue cycle the log is asked about and it bounds the file.
+        /// </summary>
+        public static readonly TimeSpan Keep = TimeSpan.FromDays(365);
+
+        /// <summary>
+        /// When one clash last went out, or null when it never has.
+        ///
+        /// The cell the key quantises to moves when the model is re-exported and the intersection
+        /// point crosses a boundary, so an exact lookup answers "never sent" for a clash that went
+        /// out last week. The neighbouring cells are searched for the same element pair, which is
+        /// what <c>ClashCarryOver</c> does to keep a decision attached across the same drift.
+        /// </summary>
         /// <param name="key">The clash.</param>
-        public ClashIssued? Sent(ClashKey key) => _sent.TryGetValue(key, out var had) ? had : null;
+        public ClashIssued? Sent(ClashKey key)
+        {
+            if (_sent.TryGetValue(key, out var had)) return had;
+
+            foreach (var near in key.NeighbourCells())
+                if (_sent.TryGetValue(near, out var moved))
+                    return moved;
+
+            return null;
+        }
 
         /// <summary>
         /// Record that these clashes have gone out.
+        ///
+        /// An entry the clash has drifted away from is taken out as its replacement is written,
+        /// so a re-exported model leaves one entry per clash rather than one per cell it has ever
+        /// quantised into. Entries nothing has re-stamped inside <see cref="Keep"/> go with it.
         /// </summary>
         /// <param name="items">What the pack carried.</param>
-        /// <param name="party">Who it went to.</param>
+        /// <param name="party">Who it went to, or null when the pack was not split by party.</param>
         /// <param name="whenTicks">When it was written, UTC ticks.</param>
         /// <returns>How many were stamped.</returns>
         public int Stamp(IEnumerable<ClashItem>? items, string? party, long whenTicks)
@@ -86,11 +120,33 @@ namespace CamelWorks.Core.Clash
             {
                 if (item == null) continue;
 
-                _sent[item.Key] = new ClashIssued(whenTicks, party, item.Status);
+                if (!_sent.ContainsKey(item.Key))
+                    foreach (var near in item.Key.NeighbourCells())
+                        if (_sent.Remove(near)) break;
+
+                _sent[item.Key] = new ClashIssued(whenTicks, party, item.Status, item.AssignedTo);
                 stamped++;
             }
 
+            Forget(whenTicks - Keep.Ticks);
+
             return stamped;
+        }
+
+        /// <summary>Drop every entry older than a moment.</summary>
+        /// <param name="beforeTicks">The moment, UTC ticks.</param>
+        /// <returns>How many were dropped.</returns>
+        public int Forget(long beforeTicks)
+        {
+            if (beforeTicks <= 0) return 0;
+
+            var stale = _sent.Where(pair => pair.Value.WhenTicks < beforeTicks)
+                             .Select(pair => pair.Key)
+                             .ToList();
+
+            foreach (var key in stale) _sent.Remove(key);
+
+            return stale.Count;
         }
 
         /// <summary>
@@ -105,9 +161,16 @@ namespace CamelWorks.Core.Clash
 
             var sent = Sent(item.Key);
 
-            return sent == null ? NotSent
-                 : sent.Status != item.Status ? Changed
-                 : Unchanged;
+            if (sent == null) return NotSent;
+
+            // Status and assignee both. A clash reassigned from the structural engineer to the
+            // mechanical contractor has changed for everyone who reads the pack, and comparing
+            // only the status reported it as one the trade already has.
+            var moved = sent.Status != item.Status
+                     || !string.Equals(sent.Assigned ?? string.Empty,
+                                       item.AssignedTo ?? string.Empty, StringComparison.Ordinal);
+
+            return moved ? Changed : Unchanged;
         }
 
         /// <summary>A clash no pack has carried.</summary>
@@ -134,6 +197,7 @@ namespace CamelWorks.Core.Clash
                                             .Set("status", pair.Value.Status.ToString());
 
                 if (pair.Value.Party != null) one.Set("party", pair.Value.Party);
+                if (pair.Value.Assigned != null) one.Set("assigned", pair.Value.Assigned);
 
                 json.Set(pair.Key.ToString(), one);
             }
@@ -160,7 +224,8 @@ namespace CamelWorks.Core.Clash
 
                 Enum.TryParse<FindingStatus>(one["status"].AsString(), out var status);
 
-                log._sent[key] = new ClashIssued(when, one["party"].AsString(), status);
+                log._sent[key] = new ClashIssued(when, one["party"].AsString(), status,
+                                                 one["assigned"].AsString());
             }
 
             return log;

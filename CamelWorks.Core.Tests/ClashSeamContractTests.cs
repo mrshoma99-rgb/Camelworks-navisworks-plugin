@@ -152,12 +152,79 @@ namespace CamelWorks.Core.Tests
         public void A_seat_with_no_clash_engine_reads_nothing_and_refuses_every_write()
         {
             var seat = Seat();
+            var id = TestId(seat);
 
             seat.IsAvailable = false;
 
+            // Every read, not only the test list. The adapter guards each of these on the engine
+            // being there, and a fake that answered from its own state made a seat with no engine
+            // look like a seat with results on it.
             Assert.Empty(seat.Tests());
+            Assert.Empty(seat.Results(id));
+            Assert.Null(seat.Sides(id));
+            Assert.Empty(seat.CommentsOn(id, "0"));
+            Assert.Empty(seat.CommentsFor(id, null));
+            Assert.Empty(seat.ReadEverything(null));
+            Assert.False(seat.ApplyResultView(id, "0"));
+
             Assert.False(seat.Run("anything"));
             Assert.Contains("no clash engine", seat.LastProblem, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_status_the_host_does_not_know_is_refused_by_name()
+        {
+            var seat = Seat();
+            var id = TestId(seat);
+
+            Assert.False(seat.SetStatus(id, new[] { seat.Results(id)[0].Id }, "Sorted"));
+            Assert.Contains("Sorted", seat.LastProblem, StringComparison.Ordinal);
+            Assert.Equal("New", seat.Results(id)[0].HostStatus);
+        }
+
+        [Fact]
+        public void A_blank_comment_is_refused_and_the_same_one_twice_is_written_once()
+        {
+            var seat = Seat();
+            var id = TestId(seat);
+            var result = seat.Results(id)[0].Id;
+
+            Assert.False(seat.Comment(id, new[] { result }, "   ", "R. Patel"));
+
+            Assert.True(seat.Comment(id, new[] { result }, "Re-routed above", "R. Patel"));
+            Assert.True(seat.Comment(id, new[] { result }, "Re-routed above", "R. Patel"));
+
+            Assert.Single(seat.CommentsOn(id, result));
+        }
+
+        [Fact]
+        public void A_test_with_no_two_sides_and_a_rename_with_no_name_are_both_refused()
+        {
+            var seat = Seat();
+            var id = TestId(seat);
+
+            Assert.Null(seat.Create(null!));
+            Assert.Contains("No test was described", seat.LastProblem, StringComparison.Ordinal);
+
+            Assert.False(seat.RenameTest(id, "  "));
+            Assert.False(seat.RenameResult(id, seat.Results(id)[0].Id, string.Empty));
+            Assert.False(seat.RenamePicked(id, new[] { "not-a-result" }, "Riser "));
+        }
+
+        [Fact]
+        public void Selecting_results_counts_the_elements_this_call_named()
+        {
+            var seat = Seat();
+            var id = TestId(seat);
+            var results = seat.Results(id).Select(one => one.Id).ToList();
+
+            Assert.Equal(0, seat.SelectResults(id, Array.Empty<string>(), add: false));
+            Assert.Equal(2, seat.SelectResults(id, new[] { results[0] }, add: false));
+
+            // The second call names one result, so it reports two elements - not the four that
+            // are now selected.
+            Assert.Equal(2, seat.SelectResults(id, new[] { results[1] }, add: true));
+            Assert.Equal(2, seat.Selected.Count);
         }
 
         [Fact]

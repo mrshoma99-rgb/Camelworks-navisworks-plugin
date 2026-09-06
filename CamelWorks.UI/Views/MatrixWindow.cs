@@ -158,7 +158,7 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>Which slot of the project file the matrix is kept in.</summary>
-        private const string Slot = "clashmatrix";
+        private const string Slot = ClashKeys.Matrix;
 
         /// <summary>One editing session over the matrix.</summary>
         private sealed class Editor
@@ -2455,7 +2455,7 @@ namespace CamelWorks.UI.Views
                 ways.Children.Add(Ui.Row(
                     "The tests this model already has",
                     "Every clash test says what it is between, so the matrix is already there - "
-                    + "read it back and see it whole.",
+                    + "read it back and see it whole. It replaces the matrix on screen.",
                     "Read the tests",
                     FromModel));
 
@@ -4030,9 +4030,8 @@ namespace CamelWorks.UI.Views
                     cell.BorderBrush = Painted(_style.SpineColour, "SpineBd");
                 else cell.Tint(Border.BorderBrushProperty, spine ? "SpineBd" : "Bd");
 
-                // A cell on the diagonal that carries a symbol is a test somebody asked for — a
-                // duct through its own hanger is a test that runs every week — so it counts like
-                // any other. Only an empty one is drawn as the spine.
+                // A cell on the diagonal that carries a symbol is a test somebody asked for, so
+                // it counts like any other. Only an empty one is drawn as the spine.
                 if (_board.IsSelfPair(row, column) && _board.At(row, column) == null)
                 {
                     Ground(cell, spine ? _style.SpineColour : string.Empty, spine ? "Spine" : "Nav");
@@ -6078,7 +6077,11 @@ namespace CamelWorks.UI.Views
                 foreach (var column in _board.Columns)
                 {
                     if (!_board.IsKeptHalf(row, column)) continue;
-                    if (_board.IsSelfPair(row, column)) continue;
+
+                    // A diagonal cell somebody has written a symbol in is a real test - a duct
+                    // against its own discipline - and the cell draws its count. Skipped here
+                    // outright, it was drawn with a number and left out of the bar above it.
+                    if (_board.IsSelfPair(row, column) && _board.At(row, column) == null) continue;
 
                     var open = _counts.OpenBetween(row, column);
 
@@ -6151,16 +6154,19 @@ namespace CamelWorks.UI.Views
                 foreach (var column in _board.Columns)
                 {
                     if (!_board.IsKeptHalf(row, column)) continue;
-                    if (_board.IsSelfPair(row, column)) continue;
 
                     var held = _board.At(row, column);
 
+                    // An empty diagonal is not a pair; a written one is, the same as in the bar
+                    // above and in the cell itself.
                     if (held == null || MatrixBoard.IsNotRequired(held)) continue;
 
                     live++;
                 }
 
-                var done = _board.Ranks().Count(one => !_board.IsSelfPair(one.Row, one.Column));
+                var done = _board.Ranks().Count(
+                    one => !_board.IsSelfPair(one.Row, one.Column)
+                           || _board.At(one.Row, one.Column) != null);
 
                 _progress.Children.Add(Ui.Eyebrow("Ranked"));
 
@@ -9278,7 +9284,7 @@ namespace CamelWorks.UI.Views
                     FromSets),
 
                 Parts.Entry.Saying("From existing clash tests", Glyphs.Model,
-                    "Every test says what it is between, so the matrix is already there",
+                    "Every test says what it is between - replaces the matrix on screen",
                     FromModel),
 
                 Parts.Entry.Saying("From a spreadsheet", Glyphs.Table,
@@ -9860,6 +9866,26 @@ namespace CamelWorks.UI.Views
 
             /// <summary>Read the matrix the document is already carrying in its tests.</summary>
             private void FromModel()
+            {
+                // A read builds the whole grid from the document's tests, so it discards whatever
+                // is on screen. The menu entry says so; a board with work in it is asked as well,
+                // because "From existing clash tests" reads as adding to what is there.
+                if (_board.Rows.Count + _board.Columns.Count > 0)
+                {
+                    Parts.Sure(_grid,
+                        "Reading the tests builds the matrix again from what the document holds. "
+                        + "The rows, columns and symbols on screen are replaced. Nothing in the "
+                        + "document changes, and Undo brings this matrix back.",
+                        "Read the tests", ReadFromModel);
+
+                    return;
+                }
+
+                ReadFromModel();
+            }
+
+            /// <summary>Build the matrix out of the document's clash tests.</summary>
+            private void ReadFromModel()
             {
                 if (!_session.Clash.IsAvailable)
                 {

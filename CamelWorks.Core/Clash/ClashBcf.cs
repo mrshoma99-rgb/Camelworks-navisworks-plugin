@@ -73,12 +73,6 @@ namespace CamelWorks.Core.Clash
         /// <summary>How far the section box reaches from the clash point, in metres.</summary>
         public double SectionMetres { get; set; } = 2.0;
 
-        /// <summary>How wide a snapshot is asked for, in pixels.</summary>
-        public int SnapshotWidth { get; set; } = 1024;
-
-        /// <summary>How tall a snapshot is asked for, in pixels.</summary>
-        public int SnapshotHeight { get; set; } = 768;
-
         /// <summary>
         /// Renders one clash as a PNG, or returns null.
         ///
@@ -589,18 +583,19 @@ namespace CamelWorks.Core.Clash
 
             if (how.Section && how.SectionMetres > 0)
             {
-                // A camera on a clash inside a plant room shows the wall in front of it. The box
-                // is the clash point plus the stated reach each way.
-                // Six planes, each facing inwards at the stated reach. BCF has no box of its own;
-                // a box is what six planes make.
+                // BCF has no box of its own; a box is what six planes make. Each plane sits at the
+                // stated reach from the clash point with its normal pointing away from that point,
+                // because a plane's normal names the side that is cut away - the convention the
+                // repo's own single-plane fixture uses. Pointed the other way, all six cut towards
+                // the clash and the topic opens showing everything except the clash.
                 var reach = how.SectionMetres;
 
-                view.ClippingPlanes.Add(new BcfClippingPlane(point.X - reach, point.Y, point.Z, 1, 0, 0));
-                view.ClippingPlanes.Add(new BcfClippingPlane(point.X + reach, point.Y, point.Z, -1, 0, 0));
-                view.ClippingPlanes.Add(new BcfClippingPlane(point.X, point.Y - reach, point.Z, 0, 1, 0));
-                view.ClippingPlanes.Add(new BcfClippingPlane(point.X, point.Y + reach, point.Z, 0, -1, 0));
-                view.ClippingPlanes.Add(new BcfClippingPlane(point.X, point.Y, point.Z - reach, 0, 0, 1));
-                view.ClippingPlanes.Add(new BcfClippingPlane(point.X, point.Y, point.Z + reach, 0, 0, -1));
+                view.ClippingPlanes.Add(new BcfClippingPlane(point.X - reach, point.Y, point.Z, -1, 0, 0));
+                view.ClippingPlanes.Add(new BcfClippingPlane(point.X + reach, point.Y, point.Z, 1, 0, 0));
+                view.ClippingPlanes.Add(new BcfClippingPlane(point.X, point.Y - reach, point.Z, 0, -1, 0));
+                view.ClippingPlanes.Add(new BcfClippingPlane(point.X, point.Y + reach, point.Z, 0, 1, 0));
+                view.ClippingPlanes.Add(new BcfClippingPlane(point.X, point.Y, point.Z - reach, 0, 0, -1));
+                view.ClippingPlanes.Add(new BcfClippingPlane(point.X, point.Y, point.Z + reach, 0, 0, 1));
             }
 
             return view;

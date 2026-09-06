@@ -70,7 +70,7 @@ namespace CamelWorks.UI.Views
             {
                 state.Children.Clear();
 
-                session.Store.Section(ProjectStore.ClashSection).Remove("freeze");
+                session.Store.Section(ProjectStore.ClashSection).Remove(ClashKeys.Freeze);
 
                 state.Children.Add(session.Store.Save()
                     ? Ui.Done("Unfrozen. Nothing in the model changed - only the record that it "

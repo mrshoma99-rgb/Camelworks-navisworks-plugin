@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using CamelWorks.Core.Identity;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Findings;
 using Xunit;
@@ -125,6 +126,82 @@ namespace CamelWorks.Core.Tests
                             facet => facet.Key == "issued");
 
             Assert.NotNull(ClashFacets.Of("issuedTo", new[] { one }, null, log));
+        }
+
+        [Fact]
+        public void A_clash_whose_cell_has_drifted_is_still_the_clash_that_went_out()
+        {
+            var sent = ClashFixture.Item("a", z: 0);
+            var moved = ClashFixture.Item("a", z: ClashKey.DefaultCell);
+
+            Assert.NotEqual(sent.Key, moved.Key);
+
+            var log = new ClashIssueLog();
+
+            log.Stamp(new[] { sent }, "Mechanical", Friday);
+
+            Assert.NotNull(log.Sent(moved.Key));
+            Assert.Equal(ClashIssueLog.Unchanged, log.Standing(moved));
+
+            // And the entry follows the clash rather than doubling: the cell it left is dropped
+            // as the cell it arrived in is written.
+            log.Stamp(new[] { moved }, "Mechanical", Friday);
+
+            Assert.Equal(1, log.Count);
+        }
+
+        [Fact]
+        public void A_clash_that_has_been_reassigned_has_changed_since_it_went_out()
+        {
+            var one = Item("a");
+
+            one.AssignedTo = "Structures";
+
+            var log = new ClashIssueLog();
+
+            log.Stamp(new[] { one }, "Structures", Friday);
+
+            Assert.Equal(ClashIssueLog.Unchanged, log.Standing(one));
+
+            one.AssignedTo = "Mechanical";
+
+            Assert.Equal(ClashIssueLog.Changed, log.Standing(one));
+        }
+
+        [Fact]
+        public void Entries_nothing_has_restamped_for_a_year_are_dropped()
+        {
+            var old = Item("a");
+            var now = Item("b");
+
+            var log = new ClashIssueLog();
+
+            log.Stamp(new[] { old }, "Mechanical", Friday);
+
+            Assert.Equal(1, log.Count);
+
+            log.Stamp(new[] { now }, "Mechanical", Friday + ClashIssueLog.Keep.Ticks + 1);
+
+            Assert.Equal(1, log.Count);
+            Assert.Null(log.Sent(old.Key));
+            Assert.NotNull(log.Sent(now.Key));
+        }
+
+        [Fact]
+        public void An_assignee_survives_the_round_trip_through_the_project_file()
+        {
+            var one = Item("a");
+
+            one.AssignedTo = "Structures";
+
+            var log = new ClashIssueLog();
+
+            log.Stamp(new[] { one }, "Structures", Friday);
+
+            var read = ClashIssueLog.FromJson(log.ToJson());
+
+            Assert.Equal("Structures", read.Sent(one.Key)!.Assigned);
+            Assert.Equal(ClashIssueLog.Unchanged, read.Standing(one));
         }
     }
 }

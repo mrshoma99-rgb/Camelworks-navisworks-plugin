@@ -92,50 +92,52 @@ namespace CamelWorks.Core.OpenBim
     }
 
     /// <summary>
-    /// Works out where to stand to see a set of points.
+    /// Where a written viewpoint stands to look at the clash it frames.
     ///
-    /// Not a plan view and not a straight-on elevation. A clash between a duct and a beam is
-    /// invisible from directly above and ambiguous from directly in front, and the reason a
-    /// viewpoint is worth attaching is that it shows the two things missing each other. So the eye
-    /// goes off to one side and slightly above.
-    /// </summary>
-    /// <summary>
-    /// Which way a written viewpoint looks at the clash it frames.
-    ///
-    /// A pack of two hundred topics reads faster when they all face the same way, and which way
-    /// that is depends on the job: a plan for a ceiling void, an elevation for a riser.
+    /// Named for where the camera is, which is how an elevation is named on a drawing: North is
+    /// the camera to the north of the clash looking south. Named for where it points instead, the
+    /// four would each mean the opposite of the drawing they are compared against.
     /// </summary>
     public enum BcfView
     {
-        /// <summary>Down and across, at eye level.</summary>
+        /// <summary>Off to one side and slightly above, at eye level.</summary>
         Standing = 0,
 
-        /// <summary>Straight down.</summary>
+        /// <summary>Above, looking straight down.</summary>
         Plan = 1,
 
-        /// <summary>Looking north.</summary>
+        /// <summary>North of the clash, looking south.</summary>
         North = 2,
 
-        /// <summary>Looking south.</summary>
+        /// <summary>South of the clash, looking north.</summary>
         South = 3,
 
-        /// <summary>Looking east.</summary>
+        /// <summary>East of the clash, looking west.</summary>
         East = 4,
 
-        /// <summary>Looking west.</summary>
+        /// <summary>West of the clash, looking east.</summary>
         West = 5,
     }
 
     /// <summary>
     /// Where a camera stands so that what it is about is in the picture.
     ///
+    /// The default is neither a plan nor a straight-on elevation: a clash between a duct and a
+    /// beam is invisible from directly above and ambiguous from directly in front, so the eye goes
+    /// off to one side and slightly above.
+    ///
     /// The one piece of viewpoint arithmetic in the product, in Core so that both writers use it
     /// and both are tested on a machine with no graphics.
     /// </summary>
     public static class BcfFraming
     {
-        /// <summary>Which way a written viewpoint looks at what it frames.</summary>
-        /// <param name="from">The direction asked for.</param>
+        /// <summary>
+        /// Which way the camera points, for a place it is asked to stand.
+        ///
+        /// <c>Box</c> puts the eye at the centre less this times the distance, so North - the
+        /// camera north of the clash - points south.
+        /// </summary>
+        /// <param name="from">Where the camera stands.</param>
         private static (double X, double Y, double Z) Facing(BcfView from) => from switch
         {
             BcfView.Plan => (0, 0, -1),

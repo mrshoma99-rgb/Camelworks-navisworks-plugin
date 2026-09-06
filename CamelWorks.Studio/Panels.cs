@@ -433,8 +433,10 @@ namespace CamelWorks.Studio
             {
                 at++;
 
-                if (board.IsSelfPair(cell.Row, cell.Column)) continue;
-
+                // Diagonal cells included. Cells() only yields written ones, and a written
+                // diagonal is a real test in the product - a duct against its own discipline -
+                // so a harness that skipped them could not draw one.
+                //
                 // A third of the pairs have no test at all, so the view has to draw "nobody has
                 // checked this" beside "checked, nothing left".
                 if (at % 3 == 0) continue;

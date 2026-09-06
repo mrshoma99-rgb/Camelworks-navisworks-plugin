@@ -372,6 +372,24 @@ namespace CamelWorks.Core.OpenBim
 
             viewpoint.Camera = Camera(root);
 
+            // The section box. Without this a pack read in and written back out again lost every
+            // section it arrived with, and the round trip could not tell a malformed plane from
+            // none at all.
+            var planes = root.Element("ClippingPlanes");
+
+            if (planes != null)
+            {
+                foreach (var plane in planes.Elements("ClippingPlane"))
+                {
+                    var (x, y, z) = Vector(plane, "Location");
+                    var (dx, dy, dz) = Vector(plane, "Direction");
+
+                    if (dx == 0 && dy == 0 && dz == 0) continue;
+
+                    viewpoint.ClippingPlanes.Add(new BcfClippingPlane(x, y, z, dx, dy, dz));
+                }
+            }
+
             var components = root.Element("Components");
 
             if (components == null) return;

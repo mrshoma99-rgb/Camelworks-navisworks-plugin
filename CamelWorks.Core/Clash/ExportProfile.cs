@@ -438,7 +438,7 @@ namespace CamelWorks.Core.Clash
             }
             else
             {
-                keeping = Pick.Ordered(keeping, plan).ToList();
+                keeping = Pick.Ordered(keeping, plan, issued).ToList();
             }
 
             var kept = new HashSet<ClashKey>(keeping.Select(i => i.Key));
@@ -493,7 +493,7 @@ namespace CamelWorks.Core.Clash
             if (string.IsNullOrWhiteSpace(SplitBy))
                 return new[] { new ExportRound(Name, chosen) };
 
-            var facet = ClashFacets.Of(SplitBy, chosen.Items, plan);
+            var facet = ClashFacets.Of(SplitBy, chosen.Items, plan, issued);
 
             if (facet == null) return new[] { new ExportRound(Name, chosen) };
 

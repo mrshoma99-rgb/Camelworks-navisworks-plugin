@@ -347,6 +347,38 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void ASectionBoxIsSixPlanesFacingAwayFromTheClashAndSurvivesTheRoundTrip()
+        {
+            var item = Item("11111111-1111-1111-1111-111111111111",
+                            "22222222-2222-2222-2222-222222222222");
+
+            var how = new ClashBcfOptions { Section = true, SectionMetres = 2 };
+
+            using var stream = new MemoryStream(ClashBcf.Write(new[] { item }, null, how).Bytes);
+
+            var viewpoint = BcfReader.Read(stream).Topics.Single().Viewpoints.Single();
+
+            Assert.Equal(6, viewpoint.ClippingPlanes.Count);
+
+            // The six sit at the reach either side of the clash, so their mean is the clash
+            // point. A plane's normal names the side that is cut away, so each of the six points
+            // away from that centre: pointed inwards, the six between them cut away everything
+            // the topic is about.
+            var cx = viewpoint.ClippingPlanes.Average(one => one.X);
+            var cy = viewpoint.ClippingPlanes.Average(one => one.Y);
+            var cz = viewpoint.ClippingPlanes.Average(one => one.Z);
+
+            foreach (var plane in viewpoint.ClippingPlanes)
+            {
+                var away = (plane.X - cx) * plane.DirectionX
+                         + (plane.Y - cy) * plane.DirectionY
+                         + (plane.Z - cz) * plane.DirectionZ;
+
+                Assert.Equal(2, away, 6);
+            }
+        }
+
+        [Fact]
         public void TheIfcGlobalIdReachesTheComponentSoAToolCanSelectTheElement()
         {
             // The whole point of carrying it: without an IfcGuid a receiving tool gets the camera

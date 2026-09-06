@@ -3,11 +3,10 @@ namespace CamelWorks.Core.Clash
     /// <summary>
     /// What the project file's clash section holds, by name.
     ///
-    /// Every one of these was a string literal at its use site, which meant a key written in one
-    /// screen and read in another agreed only as long as both were spelt the same way. Two of them
-    /// already have their names on the type that owns the value — <see cref="ClashIssueLog.Key"/>
-    /// and the levels — and those stay where they are; this is for the rest, which belong to no
-    /// type in particular.
+    /// Each of these was a string literal at its use site, which meant a key written in one screen
+    /// and read in another agreed only as long as both were spelt the same way. Keys whose value
+    /// already has a name on the type that owns it — <see cref="ClashIssueLog.Key"/> and the
+    /// levels — stay where they are; this is for the ones that belong to no type in particular.
     /// </summary>
     public static class ClashKeys
     {
@@ -49,5 +48,28 @@ namespace CamelWorks.Core.Clash
 
         /// <summary>The frozen board a comparison is read against.</summary>
         public const string Freeze = "freeze";
+
+        /// <summary>The matrix as it was last edited.</summary>
+        public const string Matrix = "clashmatrix";
+
+        /// <summary>
+        /// Keys nothing writes any more, kept so a project file that still holds them can be
+        /// migrated and cleared. Named here rather than spelt out at the one site that removes
+        /// them, so a rename cannot leave a stale value behind unnoticed.
+        /// </summary>
+        public static class Retired
+        {
+            /// <summary>The snapshot's per-party counts, before they moved into the snapshot.</summary>
+            public const string Parties = "parties";
+
+            /// <summary>When the snapshot was taken, before it moved into the snapshot.</summary>
+            public const string Taken = "taken";
+
+            /// <summary><see cref="Parties"/>, for the board Undo puts back.</summary>
+            public const string PreviousParties = "previousParties";
+
+            /// <summary><see cref="Taken"/>, for the board Undo puts back.</summary>
+            public const string PreviousTaken = "previousTaken";
+        }
     }
 }

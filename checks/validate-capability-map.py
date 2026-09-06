@@ -42,7 +42,7 @@ ALLOWED = {
     "PhysicalFileSystem", "AtomicFile", "JournalEntry", "JournalFold", "JsonReader",
     "JsonValue", "VersionedDocument", "SectionDiff",
     # The names of the keys the clash section holds. A list of strings, not a capability.
-    "ClashKeys",
+    "ClashKeys", "Retired",
     # Primitives.
     "Hash", "IfcGuid", "Measure", "BcfGuid",
     # File-format writers' internal blocks - the report IS the surface, not its parts.
