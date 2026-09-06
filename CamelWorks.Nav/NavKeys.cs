@@ -17,9 +17,42 @@ namespace CamelWorks.Nav
     /// </summary>
     public static class NavKeys
     {
-        /// <summary>The scope for a model — the hash of its source path.</summary>
-        public static string ScopeOf(Model model) =>
-            ElementKey.ScopeOf(model == null ? null : SourcePathOf(model));
+        /// <summary>
+        /// The scope for a model — the hash of its source path.
+        ///
+        /// Memoised per <c>Model</c>. A federation holds a handful of models and this is asked once
+        /// per element: reading the source path and hashing it 500,000 times to get 40 answers was
+        /// most of the cost of indexing a document. The table is by reference and the host hands
+        /// out the same <c>Model</c> objects for the life of a document, so it is bounded by the
+        /// models a session opens; a re-cached model is a different path and hashes to a different
+        /// scope, which is the behaviour a memo by reference preserves.
+        ///
+        /// Main thread only, like everything else here.
+        /// </summary>
+        /// <param name="model">The model.</param>
+        public static string ScopeOf(Model model)
+        {
+            if (model == null) return ElementKey.ScopeOf(null);
+
+            if (_scopes.TryGetValue(model, out var known)) return known;
+
+            var scope = ElementKey.ScopeOf(SourcePathOf(model));
+
+            _scopes[model] = scope;
+
+            return scope;
+        }
+
+        private static readonly Dictionary<Model, string> _scopes =
+            new Dictionary<Model, string>();
+
+        /// <summary>
+        /// Forget the memoised scopes.
+        ///
+        /// Called when a document closes, so a long session does not hold the models it has
+        /// finished with.
+        /// </summary>
+        public static void Forget() => _scopes.Clear();
 
         /// <summary>
         /// Where a model was loaded from.

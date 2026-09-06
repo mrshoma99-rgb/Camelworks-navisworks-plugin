@@ -116,6 +116,20 @@ namespace CamelWorks.Core.Clash
         /// <summary>Whether this row is applied.</summary>
         public bool Take { get; set; }
 
+        // IsDisputed and Settled are read six times over in the course of drawing one row —
+        // Settled reads IsDisputed, Would and Changes each read Settled, Explain reads all three.
+        // Cached, and thrown away by the two things that can change the answer.
+        private bool? _disputed;
+        private ExchangeSay? _settled;
+        private bool _settledKnown;
+
+        private void Restate()
+        {
+            _disputed = null;
+            _settled = null;
+            _settledKnown = false;
+        }
+
         /// <summary>
         /// Whose answer is taken when the parties disagree, or null for none yet.
         ///
@@ -123,28 +137,59 @@ namespace CamelWorks.Core.Clash
         /// how a clash somebody closed re-opens itself a week later with nobody able to say who
         /// did it.
         /// </summary>
-        public string? Chosen { get; set; }
+        public string? Chosen
+        {
+            get => _chosen;
+            set { _chosen = value; Restate(); }
+        }
+
+        private string? _chosen;
 
         /// <summary>True when two parties answered this differently.</summary>
-        public bool IsDisputed =>
-            _answers.Select(one => one.Incoming).Distinct().Count() > 1
-            || _answers.Select(one => one.AssignedTo)
-                       .Where(one => one != null)
-                       .Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1;
+        public bool IsDisputed => _disputed ??= Disagrees();
+
+        private bool Disagrees()
+        {
+            if (_answers.Count < 2) return false;
+
+            var status = _answers[0].Incoming;
+            var party = _answers.Select(one => one.AssignedTo).FirstOrDefault(one => one != null);
+
+            foreach (var say in _answers)
+            {
+                if (say.Incoming != status) return true;
+
+                if (say.AssignedTo != null
+                    && !string.Equals(say.AssignedTo, party, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
 
         /// <summary>The answer that would be applied, or null when there is none to apply.</summary>
         public ExchangeSay? Settled
         {
             get
             {
-                if (_answers.Count == 0) return null;
+                if (_settledKnown) return _settled;
 
-                if (Chosen != null)
-                    return _answers.FirstOrDefault(
-                        one => string.Equals(one.Party, Chosen, StringComparison.OrdinalIgnoreCase));
+                _settled = Decided();
+                _settledKnown = true;
 
-                return IsDisputed ? null : _answers[0];
+                return _settled;
             }
+        }
+
+        private ExchangeSay? Decided()
+        {
+            if (_answers.Count == 0) return null;
+
+            if (Chosen != null)
+                return _answers.FirstOrDefault(
+                    one => string.Equals(one.Party, Chosen, StringComparison.OrdinalIgnoreCase));
+
+            return IsDisputed ? null : _answers[0];
         }
 
         /// <summary>Where the clash would end up.</summary>
@@ -201,7 +246,11 @@ namespace CamelWorks.Core.Clash
                 : settled.Party + " changes it from " + Current + " to " + Would + ".";
         }
 
-        internal void Add(ExchangeSay say) => _answers.Add(say);
+        internal void Add(ExchangeSay say)
+        {
+            _answers.Add(say);
+            Restate();
+        }
 
         /// <inheritdoc />
         public override string ToString() => Item.Name ?? Item.TestName;
@@ -410,8 +459,17 @@ namespace CamelWorks.Core.Clash
 
                 // Topics that answer no clash at all - what a reviewer raised in their own tool
                 // while they were in there. They belong in the issue register, not nowhere.
+                //
+                // The pack's own result GUIDs, indexed once: asking each topic whether any result
+                // carried its GUID was a scan of the results per topic, and a pack holds one of
+                // each.
+                var answered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var result in pack.Read.Results)
+                    if (result?.FileGuid != null) answered.Add(result.FileGuid);
+
                 foreach (var topic in pack.Read.Topics)
-                    if (topic != null && !Answers(topic, pack.Read)) raised.Add(topic);
+                    if (topic != null && !answered.Contains(topic.Guid)) raised.Add(topic);
             }
 
             // A disputed row starts with nobody chosen and untaken, so applying the reading as it
@@ -441,11 +499,17 @@ namespace CamelWorks.Core.Clash
         /// written" reported — and the assignees and the comments gone when the tab was left,
         /// because the Manage tab keeps findings and had never seen those items.
         ///
+        /// Each field written is held (<see cref="Finding.Hold"/>), which is what makes it survive
+        /// the next read of the host and what offers it to the host writer. A field written and not
+        /// held is reverted by the next press of "Read the results".
+        ///
         /// A row reaches its finding by the topic GUID the key derives, which is how a markup
-        /// coming back from another tool finds its way home; the neighbouring cells are tried
-        /// after the exact one, so a clash that shifted slightly since the pack went out still
-        /// lands. A row that reaches nothing is counted in <see cref="ExchangeApplied.Missed"/>
-        /// rather than reported as applied.
+        /// coming back from another tool finds its way home. Every exact match is made before any
+        /// neighbouring cell is tried, and a finding is claimed at most once: a duct that crosses
+        /// one beam twice is two clashes, and a neighbour match that took the finding another row
+        /// needed exactly would write one party's answer onto the other conflict. A row that
+        /// reaches nothing lands on the board and is counted in
+        /// <see cref="ExchangeApplied.Missed"/> rather than reported as applied.
         /// </summary>
         /// <param name="reading">What was read.</param>
         /// <param name="register">The register to write into, or null for the board alone.</param>
@@ -456,27 +520,48 @@ namespace CamelWorks.Core.Clash
             if (reading == null) return new ExchangeApplied(0, 0, 0, 0);
 
             var when = whenTicks > 0 ? whenTicks : DateTime.UtcNow.Ticks;
-            var byTopic = Index(register);
+            var taking = reading.Rows.Where(row => row.Take && row.Settled != null).ToList();
+            var held = reading.Rows.Count - taking.Count;
+
+            var matcher = register == null ? null : new Matcher(register);
+            var found = new Dictionary<ExchangeRow, Finding>();
+
+            if (matcher != null)
+            {
+                foreach (var row in taking)
+                {
+                    var exact = matcher.Exact(row.Item);
+
+                    if (exact != null) found[row] = exact;
+                }
+
+                foreach (var row in taking)
+                {
+                    if (found.ContainsKey(row)) continue;
+
+                    var near = matcher.Near(row.Item);
+
+                    if (near != null) found[row] = near;
+                }
+            }
 
             var moved = 0;
             var assigned = 0;
             var comments = 0;
-            var held = 0;
             var missed = 0;
 
-            foreach (var row in reading.Rows)
+            foreach (var row in taking)
             {
-                var settled = row.Settled;
-
-                if (!row.Take || settled == null) { held++; continue; }
-
+                var settled = row.Settled!;
                 var would = row.Would;
-                var finding = byTopic == null ? null : Found(byTopic, row.Item.Key);
 
-                if (byTopic != null && finding == null) { missed++; continue; }
+                found.TryGetValue(row, out var finding);
 
-                // The board is a projection of the register, so it takes the same write. The
-                // counts come from the register when there is one: those are the ones that last.
+                if (matcher != null && finding == null) missed++;
+
+                // The board is a projection, so it takes the write whether or not the register
+                // could be reached: an answer nobody can see on screen is worse than one that is
+                // only on screen, and Missed says which happened.
                 var boardMoved = would != row.Item.Status;
 
                 if (boardMoved) row.Item.Status = would;
@@ -491,18 +576,32 @@ namespace CamelWorks.Core.Clash
                 {
                     var landed = FindingStatusLattice.Merge(finding.Status, would);
 
-                    if (landed != finding.Status) { finding.Status = landed; moved++; }
+                    if (landed != finding.Status)
+                    {
+                        finding.Status = landed;
+                        finding.Hold(FindingField.Status);
+                        moved++;
+                    }
 
                     if (settled.AssignedTo != null
                         && !string.Equals(finding.AssignedTo, settled.AssignedTo,
                                           StringComparison.OrdinalIgnoreCase))
                     {
                         finding.AssignedTo = settled.AssignedTo;
+                        finding.Hold(FindingField.AssignedTo);
                         assigned++;
                     }
+
+                    // What the reviewer set beyond the status: a due date, a priority, a retitle
+                    // and their own labels. These are on the returned result and were being read
+                    // by the Manage tab's sync and dropped by this one.
+                    Reviewed(finding, settled.Result);
                 }
-                else
+                else if (matcher == null)
                 {
+                    // No register at all: the board is the only record there is, so it is what the
+                    // counts describe. A register that simply does not hold this clash is a miss,
+                    // and a miss is never reported as applied.
                     if (boardMoved) moved++;
                     if (boardAssigned) assigned++;
                 }
@@ -522,7 +621,7 @@ namespace CamelWorks.Core.Clash
 
                         if (finding == null)
                         {
-                            if (!already) comments++;
+                            if (!already && matcher == null) comments++;
                             continue;
                         }
 
@@ -534,6 +633,7 @@ namespace CamelWorks.Core.Clash
                         if (finding.Comments.Any(one => one.Repeats(arriving))) continue;
 
                         finding.Comments.Add(arriving);
+                        finding.Hold(FindingField.Comments);
                         comments++;
                     }
                 }
@@ -543,48 +643,146 @@ namespace CamelWorks.Core.Clash
         }
 
         /// <summary>
-        /// The clash findings this register holds, by the topic GUID their key derives.
+        /// Carry the reviewer's own fields onto the finding.
         ///
-        /// Null when there is no register, which is what tells <c>Apply</c> to count the
-        /// board's own writes instead.
+        /// The same fields the Manage tab's sync applies through <see cref="ClashAside"/>. Each is
+        /// held, so it reaches the host on the next write rather than being reverted by the next
+        /// read.
         /// </summary>
-        /// <param name="register">The register, or null.</param>
-        private static Dictionary<string, Finding>? Index(FindingRegister? register)
+        /// <param name="finding">The finding.</param>
+        /// <param name="result">The returned result.</param>
+        private static void Reviewed(Finding finding, ClashPackResult result)
         {
-            if (register == null) return null;
+            if (result.DueTicks > 0)
+                finding.DueDayNumber =
+                    Finding.DayNumberFor(new DateTime(result.DueTicks, DateTimeKind.Utc));
 
-            var byTopic = new Dictionary<string, Finding>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(result.Priority)) finding.Priority = result.Priority;
+            if (!string.IsNullOrWhiteSpace(result.Stage)) finding.Stage = result.Stage;
 
-            foreach (var finding in register.From(FindingSource.Clash))
+            foreach (var label in result.Labels)
+                if (!string.IsNullOrWhiteSpace(label)
+                    && !finding.Labels.Contains(label, StringComparer.OrdinalIgnoreCase))
+                    finding.Labels.Add(label);
+        }
+
+        /// <summary>
+        /// The way from a board clash back to the finding that records it.
+        ///
+        /// Findings are indexed under both the topic GUID they carry and the one their own
+        /// elements and cell derive, because the two are not always the same: a pack synced on the
+        /// Manage tab first stamps the returning file's GUID onto the finding, and a finding
+        /// indexed only under that is unreachable from the board.
+        ///
+        /// A finding is claimed once. Findings this run reported come before ones it did not, and
+        /// a finding whose rule is the row's test comes before one that is not, so two clashes on
+        /// one pair land the way a person would sort them.
+        /// </summary>
+        private sealed class Matcher
+        {
+            private readonly Dictionary<string, List<Finding>> _byGuid =
+                new Dictionary<string, List<Finding>>(StringComparer.OrdinalIgnoreCase);
+
+            private readonly HashSet<string> _claimed = new HashSet<string>(StringComparer.Ordinal);
+
+            internal Matcher(FindingRegister register)
             {
-                var guid = finding.TopicGuid;
+                foreach (var finding in register.From(FindingSource.Clash))
+                {
+                    if (!string.IsNullOrEmpty(finding.TopicGuid)) Under(finding.TopicGuid!, finding);
 
-                if (!string.IsNullOrEmpty(guid) && !byTopic.ContainsKey(guid!))
-                    byTopic[guid!] = finding;
+                    var derived = Derived(finding);
+
+                    if (derived != null && !string.Equals(derived, finding.TopicGuid,
+                                                          StringComparison.OrdinalIgnoreCase))
+                        Under(derived, finding);
+                }
             }
 
-            return byTopic;
+            /// <summary>The finding for this clash's own cell, or null.</summary>
+            /// <param name="item">The clash on the board.</param>
+            internal Finding? Exact(ClashItem item) =>
+                Claim(ClashBcf.TopicGuidFor(item.Key), item.TestName);
+
+            /// <summary>The finding for a cell beside this clash's, or null.</summary>
+            /// <param name="item">The clash on the board.</param>
+            internal Finding? Near(ClashItem item)
+            {
+                foreach (var guid in ClashBcf.NearbyTopicGuidsFor(item.Key))
+                {
+                    var found = Claim(guid, item.TestName);
+
+                    if (found != null) return found;
+                }
+
+                return null;
+            }
+
+            private void Under(string guid, Finding finding)
+            {
+                if (!_byGuid.TryGetValue(guid, out var held))
+                {
+                    held = new List<Finding>();
+                    _byGuid[guid] = held;
+                }
+
+                if (!held.Contains(finding)) held.Add(finding);
+            }
+
+            private Finding? Claim(string guid, string? testName)
+            {
+                if (!_byGuid.TryGetValue(guid, out var held)) return null;
+
+                Finding? best = null;
+                var bestRank = int.MinValue;
+
+                foreach (var finding in held)
+                {
+                    if (_claimed.Contains(finding.Id)) continue;
+
+                    var rank = (finding.IsPresent ? 2 : 0)
+                             + (testName != null && string.Equals(finding.Rule, testName,
+                                                                  StringComparison.OrdinalIgnoreCase)
+                                 ? 1 : 0);
+
+                    // Ordinal by id breaks a tie, so the same register answers the same way twice.
+                    if (best != null
+                        && (rank < bestRank
+                            || (rank == bestRank
+                                && string.CompareOrdinal(finding.Id, best.Id) >= 0)))
+                        continue;
+
+                    best = finding;
+                    bestRank = rank;
+                }
+
+                if (best != null) _claimed.Add(best.Id);
+
+                return best;
+            }
+
+            /// <summary>
+            /// The topic GUID a finding's own elements and cell derive, or null when it does not
+            /// carry the two elements and the cell a clash key is made of.
+            /// </summary>
+            /// <param name="finding">The finding.</param>
+            private static string? Derived(Finding finding)
+            {
+                if (finding.Elements.Count != 2 || string.IsNullOrEmpty(finding.Discriminator))
+                    return null;
+
+                var a = finding.Elements[0].ToString();
+                var b = finding.Elements[1].ToString();
+
+                // Canonical order, as ClashKey.Create writes it: the finding's element list is in
+                // the order the host reported the pair.
+                if (string.CompareOrdinal(a, b) > 0) { var swap = a; a = b; b = swap; }
+
+                return ClashKey.TryParse(a + "|" + b + "|" + finding.Discriminator, out var key)
+                    ? ClashBcf.TopicGuidFor(key)
+                    : null;
+            }
         }
-
-        /// <summary>The finding for one clash, trying the neighbouring cells after the exact one.</summary>
-        /// <param name="byTopic">The register's findings by topic GUID.</param>
-        /// <param name="key">The clash key.</param>
-        private static Finding? Found(Dictionary<string, Finding> byTopic, ClashKey key)
-        {
-            if (byTopic.TryGetValue(ClashBcf.TopicGuidFor(key), out var exact)) return exact;
-
-            foreach (var nearby in ClashBcf.NearbyTopicGuidsFor(key))
-                if (byTopic.TryGetValue(nearby, out var near)) return near;
-
-            return null;
-        }
-
-        /// <summary>Whether a topic is one of the clash results this file carried.</summary>
-        /// <param name="topic">The topic.</param>
-        /// <param name="read">The file it came from.</param>
-        private static bool Answers(BcfTopic topic, ClashPackRead read) =>
-            read.Results.Any(one => string.Equals(one.FileGuid, topic.Guid,
-                                                  StringComparison.OrdinalIgnoreCase));
 
         /// <summary>Whether two comments are the same one, so a pack read twice does not double them.</summary>
         /// <param name="held">What the clash already carries.</param>

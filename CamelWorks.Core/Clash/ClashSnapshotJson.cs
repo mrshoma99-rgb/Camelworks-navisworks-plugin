@@ -104,6 +104,33 @@ namespace CamelWorks.Core.Clash
                     : (DateTimeOffset?)null);
         }
 
+        /// <summary>
+        /// A snapshot in either shape, as the current one.
+        ///
+        /// The bare-array shape kept its per-party counts and its time in two sibling keys beside
+        /// it. Reading the array on its own lost them, and the per-party comparison with them —
+        /// so the two keys are folded in here, once, and the caller can then stop writing them.
+        /// Returns the value unchanged when it is already an object.
+        /// </summary>
+        /// <param name="snapshot">The stored snapshot, in either shape.</param>
+        /// <param name="parties">The sibling per-party open counts, or null.</param>
+        /// <param name="taken">The sibling time it was taken, as Unix seconds, or null.</param>
+        public static JsonValue? Migrated(JsonValue? snapshot, JsonValue? parties, JsonValue? taken)
+        {
+            if (snapshot == null || snapshot.Kind != JsonKind.Array) return snapshot;
+
+            var json = JsonValue.Object()
+                .Set("version", Version)
+                .Set("records", snapshot);
+
+            if (parties != null && parties.Kind == JsonKind.Object && parties.Keys.Count > 0)
+                json.Set("parties", parties);
+
+            if (taken != null && taken.Kind == JsonKind.Number) json.Set("taken", taken);
+
+            return json;
+        }
+
         /// <summary>True when the value holds a snapshot in either shape.</summary>
         /// <param name="json">The stored value.</param>
         public static bool IsSnapshot(JsonValue? json) =>

@@ -6813,16 +6813,44 @@ namespace CamelWorks.UI.Views
             // What is picked
             // -------------------------------------------------------------------------------
 
-            /// <summary>Every result under what is ticked, each one once.</summary>
+            private List<Row>? _picks;
+            private string? _picksKey;
+
+            /// <summary>
+            /// Every result under what is ticked, each one once.
+            ///
+            /// Worked out once per redraw and kept. This is reached from <c>Verbs</c> through
+            /// <c>Reaching</c> for every realised row, and it used to re-run the filters over the
+            /// whole test each time: scrolling a screenful of a 5,000-result test with 40 rows
+            /// ticked was on the order of 450,000 filter evaluations, which is the scroll stutter
+            /// that survived the virtualiser. The key is the board's own shape key plus what is
+            /// ticked, so it goes stale for the same reasons the rows do.
+            ///
+            /// A copy is returned because a caller keeps it — a drag holds the list for the length
+            /// of the gesture.
+            /// </summary>
             private List<Row> Picked()
             {
                 var entry = Entry();
                 if (entry == null) return new List<Row>();
 
+                var shape = Shape(entry);
+
+                var mark = 17;
+
+                foreach (var id in _picked) mark ^= StringComparer.Ordinal.GetHashCode(id);
+
+                var now = _shapeKey + "\u001f"
+                        + _picked.Count.ToString(CultureInfo.InvariantCulture) + "\u001f"
+                        + mark.ToString(CultureInfo.InvariantCulture);
+
+                if (_picks != null && string.Equals(_picksKey, now, StringComparison.Ordinal))
+                    return new List<Row>(_picks);
+
                 var rows = new List<Row>();
                 var seen = new HashSet<string>(StringComparer.Ordinal);
 
-                foreach (var row in GroupRows(entry).Concat(LooseRows(entry)))
+                foreach (var row in shape.Groups.Concat(shape.Loose))
                 {
                     if (!_picked.Contains(row.Id)) continue;
 
@@ -6834,7 +6862,10 @@ namespace CamelWorks.UI.Views
                 foreach (var member in entry.Rows)
                     if (_picked.Contains(Id(member)) && seen.Add(Id(member))) rows.Add(member);
 
-                return rows;
+                _picks = rows;
+                _picksKey = now;
+
+                return new List<Row>(rows);
             }
 
             /// <summary>The results among these that are in no clash group.</summary>

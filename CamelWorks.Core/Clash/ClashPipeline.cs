@@ -280,6 +280,11 @@ namespace CamelWorks.Core.Clash
             var flagged = new List<ClashItem>();
             var rulesApplied = new List<string>();
 
+            // Parallel sets, so neither membership test walks a list that grows with the board.
+            // On 18,000 results with several flag rules, both of these were scans.
+            var isFlagged = new HashSet<ClashItem>();
+            var applied = new HashSet<string>(StringComparer.Ordinal);
+
             foreach (var item in all)
             {
                 var removed = false;
@@ -288,10 +293,10 @@ namespace CamelWorks.Core.Clash
                 {
                     if (!rule.When.Matches(item)) continue;
 
-                    if (!rulesApplied.Contains(rule.Name)) rulesApplied.Add(rule.Name);
+                    if (applied.Add(rule.Name)) rulesApplied.Add(rule.Name);
 
                     if (rule.Suppress) { removed = true; break; }
-                    if (!flagged.Contains(item)) flagged.Add(item);
+                    if (isFlagged.Add(item)) flagged.Add(item);
                 }
 
                 if (removed) suppressed.Add(item); else kept.Add(item);

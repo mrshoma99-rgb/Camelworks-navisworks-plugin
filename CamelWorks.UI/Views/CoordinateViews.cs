@@ -401,9 +401,14 @@ namespace CamelWorks.UI.Views
         private static string? CategoryOf(Session session, ElementKey key) =>
             session.Model.Resolve(key)?.Category;
 
-        private static ClashSnapshot? Snapshot(Session session) =>
-            ClashSnapshotJson.FromJson(session.Store.Section(ProjectStore.ClashSection)["snapshot"],
-                                       Decisions(session));
+        private static ClashSnapshot? Snapshot(Session session)
+        {
+            var section = session.Store.Section(ProjectStore.ClashSection);
+
+            return ClashSnapshotJson.FromJson(
+                ClashSnapshotJson.Migrated(section["snapshot"], section["parties"], section["taken"]),
+                Decisions(session));
+        }
 
         /// <summary>
         /// The board as it stood before the last run, for the per-party comparison.
@@ -413,8 +418,10 @@ namespace CamelWorks.UI.Views
         /// </summary>
         private static ClashSnapshot? Previous(Session session)
         {
-            var read = ClashSnapshotJson.FromJson(
-                session.Store.Section(ProjectStore.ClashSection)["previous"]);
+            var section = session.Store.Section(ProjectStore.ClashSection);
+
+            var read = ClashSnapshotJson.FromJson(ClashSnapshotJson.Migrated(
+                section["previous"], section["previousParties"], section["previousTaken"]));
 
             return read != null && read.OpenByParty.Count > 0 ? read : null;
         }
@@ -621,7 +628,22 @@ namespace CamelWorks.UI.Views
             var section = session.Store.Section(ProjectStore.ClashSection);
             var previous = section["snapshot"];
 
-            if (ClashSnapshotJson.IsSnapshot(previous)) section.Set("previous", previous);
+            if (ClashSnapshotJson.IsSnapshot(previous))
+            {
+                // A snapshot written before ClashSnapshotJson existed is a bare array with its
+                // counts in two sibling keys. Folded in as it moves, so the per-party comparison
+                // does not disappear on the first save after an upgrade.
+                var carried = ClashSnapshotJson.Migrated(previous, section["parties"], section["taken"]);
+
+                if (carried != null) section.Set("previous", carried);
+            }
+
+            // The four keys the two shapes were spread across. Removed once the value that
+            // replaced them is written, so a stale count cannot be read back later.
+            section.Remove("parties");
+            section.Remove("taken");
+            section.Remove("previousParties");
+            section.Remove("previousTaken");
 
             var snapshot = ClashSnapshot.Of(board, takenUtc: DateTimeOffset.UtcNow);
 

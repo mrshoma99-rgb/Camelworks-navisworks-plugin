@@ -497,6 +497,7 @@ namespace CamelWorks.Core.Clash
 
             var order = new List<string>();
             var byWhom = new Dictionary<string, List<ClashItem>>(StringComparer.OrdinalIgnoreCase);
+            var whose = new Dictionary<ClashKey, string>();
 
             foreach (var item in chosen.Items)
             {
@@ -512,38 +513,51 @@ namespace CamelWorks.Core.Clash
                 }
 
                 held.Add(item);
+                whose[item.Key] = said;
             }
 
             order.Sort(StringComparer.OrdinalIgnoreCase);
 
+            // One pass over the folders, routing each member to its recipient's copy of the group
+            // it is in. Trimming every group for every recipient in turn walked the whole board
+            // once per recipient, and a split by assignee on a large job has thirty of them.
+            var trimmed = new Dictionary<string, List<ClashGroup>>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var group in folders)
+            {
+                var copies = new Dictionary<string, ClashGroup>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var member in group.Items)
+                {
+                    if (member == null || !whose.TryGetValue(member.Key, out var who)) continue;
+
+                    if (!copies.TryGetValue(who, out var copy))
+                    {
+                        copy = new ClashGroup(group.Id, group.Name) { AssignedTo = group.AssignedTo };
+                        copies[who] = copy;
+
+                        if (!trimmed.TryGetValue(who, out var theirs))
+                        {
+                            theirs = new List<ClashGroup>();
+                            trimmed[who] = theirs;
+                        }
+
+                        theirs.Add(copy);
+                    }
+
+                    copy.Items.Add(member);
+                }
+            }
+
             var rounds = new List<ExportRound>();
 
             foreach (var who in order)
-            {
-                var mine = byWhom[who];
-                var keys = new HashSet<ClashKey>(mine.Select(one => one.Key));
-                var trimmed = new List<ClashGroup>();
-
-                foreach (var group in folders)
-                {
-                    var survivors = group.Items.Where(m => m != null && keys.Contains(m.Key))
-                                               .ToList();
-
-                    if (survivors.Count == 0) continue;
-
-                    var copy = new ClashGroup(group.Id, group.Name)
-                    {
-                        AssignedTo = group.AssignedTo,
-                    };
-
-                    foreach (var member in survivors) copy.Items.Add(member);
-
-                    trimmed.Add(copy);
-                }
-
-                rounds.Add(new ExportRound(who,
-                    new ExportSelection(mine, trimmed, 0, 0, 0, 0)));
-            }
+                rounds.Add(new ExportRound(who, new ExportSelection(
+                    byWhom[who],
+                    trimmed.TryGetValue(who, out var groupsFor)
+                        ? groupsFor
+                        : (IReadOnlyList<ClashGroup>)Array.Empty<ClashGroup>(),
+                    0, 0, 0, 0)));
 
             return rounds;
         }

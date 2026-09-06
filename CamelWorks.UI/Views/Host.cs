@@ -329,6 +329,11 @@ namespace CamelWorks.UI.Views
         /// <summary>Tell every cache that what it holds is about a document nobody has open.</summary>
         private static void Changed()
         {
+            // The key memo is keyed by Model reference, so it holds the models of the document
+            // being left. Cleared here rather than registered like a screen's cache, because it
+            // belongs to the identity layer and there is no screen to own it.
+            Nav.NavKeys.Forget();
+
             List<Action> forgetters;
 
             lock (_onChange) forgetters = new List<Action>(_onChange);

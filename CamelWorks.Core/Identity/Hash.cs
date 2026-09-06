@@ -1,5 +1,4 @@
 using System;
-using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -40,21 +39,78 @@ namespace CamelWorks.Core.Identity
                 throw new ArgumentOutOfRangeException(nameof(hexWidth), "hexWidth must be 1..64");
             if (parts == null) throw new ArgumentNullException(nameof(parts));
 
-            var sb = new StringBuilder();
+            var sb = Builder();
+
             for (var i = 0; i < parts.Length; i++)
             {
                 if (i > 0) sb.Append(Sep);
                 Escape(sb, parts[i]);
             }
 
-            using (var sha = SHA256.Create())
+            var digest = Digest(sb);
+            var hex = new char[hexWidth];
+
+            for (var i = 0; i < hexWidth; i++)
             {
-                var digest = sha.ComputeHash(Encoding.UTF8.GetBytes(sb.ToString()));
-                var hex = new StringBuilder(hexWidth + 2);
-                for (var i = 0; i < digest.Length && hex.Length < hexWidth; i++)
-                    hex.Append(digest[i].ToString("x2", CultureInfo.InvariantCulture));
-                return hex.ToString(0, hexWidth);
+                var nibble = (i & 1) == 0 ? digest[i / 2] >> 4 : digest[i / 2] & 0xF;
+
+                hex[i] = (char)(nibble < 10 ? '0' + nibble : 'a' + nibble - 10);
             }
+
+            return new string(hex);
+        }
+
+        // One hasher and one set of buffers per thread. SHA256.Create() per call meant three
+        // disposable digest objects for every element key made, and the host document index makes one
+        // per geometry leaf: 1.5 million of them on a 500k-leaf federation before any clash work.
+        // Per-thread rather than shared because a hasher holds state between the calls that make
+        // one digest.
+        [ThreadStatic] private static SHA256? _sha;
+        [ThreadStatic] private static StringBuilder? _text;
+        [ThreadStatic] private static char[]? _chars;
+        [ThreadStatic] private static byte[]? _bytes;
+
+        /// <summary>How large a buffer is worth holding on to between calls.</summary>
+        private const int MostKept = 4096;
+
+        private static StringBuilder Builder()
+        {
+            var sb = _text;
+
+            if (sb == null) return _text = new StringBuilder(64);
+
+            sb.Length = 0;
+
+            return sb;
+        }
+
+        /// <summary>
+        /// The digest of what the builder holds, encoded as UTF-8 without an intermediate string.
+        /// </summary>
+        /// <param name="sb">The escaped, separated parts.</param>
+        private static byte[] Digest(StringBuilder sb)
+        {
+            var length = sb.Length;
+
+            var chars = _chars != null && _chars.Length >= length
+                ? _chars
+                : new char[Math.Max(64, length)];
+
+            if (chars.Length <= MostKept) _chars = chars;
+
+            sb.CopyTo(0, chars, 0, length);
+
+            var needed = Encoding.UTF8.GetByteCount(chars, 0, length);
+
+            var bytes = _bytes != null && _bytes.Length >= needed
+                ? _bytes
+                : new byte[Math.Max(128, needed)];
+
+            if (bytes.Length <= MostKept) _bytes = bytes;
+
+            var written = Encoding.UTF8.GetBytes(chars, 0, length, bytes, 0);
+
+            return (_sha ??= SHA256.Create()).ComputeHash(bytes, 0, written);
         }
 
         private static void Escape(StringBuilder sb, string? part)

@@ -372,6 +372,154 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void What_the_exchange_writes_is_held_until_the_host_takes_it()
+        {
+            // A field written and not held is reverted by the next press of "Read the results":
+            // the fresh read carries the host's value and the merge takes it.
+            var one = Item("a");
+
+            var register = new FindingRegister();
+            register.Put(Recorded(one));
+
+            var reading = ClashExchange.Read(
+                new[] { Pack("Mechanical", Answered(one, FindingStatus.Reviewed, "Structure",
+                                                    "Beam is fixed.")) },
+                new[] { one });
+
+            ClashExchange.Apply(reading, register);
+
+            var kept = register.Find(Recorded(one).Id)!;
+
+            Assert.Contains(FindingField.Status, kept.Pending);
+            Assert.Contains(FindingField.AssignedTo, kept.Pending);
+            Assert.Contains(FindingField.Comments, kept.Pending);
+            Assert.False(kept.HostHasIt);
+        }
+
+        [Fact]
+        public void Two_clashes_on_one_pair_cannot_both_land_on_one_finding()
+        {
+            // A duct that crosses one beam twice is two clashes. A neighbouring-cell match that
+            // took the finding the other row needed exactly would write one party's answer onto
+            // the other conflict, and report both as applied.
+            var here = ClashFixture.Item("a", x: 0, y: 0, z: 0);
+            var there = ClashFixture.Item("a", x: 12, y: 0, z: 0);
+
+            Assert.NotEqual(here.Key, there.Key);
+
+            var register = new FindingRegister();
+            register.Put(Recorded(there));
+
+            var reading = ClashExchange.Read(new[]
+            {
+                Pack("Mechanical", Answered(here, FindingStatus.Resolved)),
+                Pack("Structure", Answered(there, FindingStatus.Reviewed)),
+            }, new[] { here, there });
+
+            var applied = ClashExchange.Apply(reading, register);
+
+            // The exact match wins the one finding there is; the other row is a miss, not a
+            // second write onto the same record.
+            Assert.Equal(1, applied.Missed);
+            Assert.Equal(FindingStatus.Reviewed, register.Find(Recorded(there).Id)!.Status);
+        }
+
+        [Fact]
+        public void A_finding_stamped_with_another_tools_topic_guid_is_still_reachable()
+        {
+            // Syncing a pack on the Manage tab first stamps the returning file's GUID onto the
+            // finding. Indexed only under that, it was unreachable from the board.
+            var one = Item("a");
+
+            var finding = Recorded(one);
+            finding.TopicGuid = "11111111-2222-3333-4444-555555555555";
+
+            var register = new FindingRegister();
+            register.Put(finding);
+
+            var reading = ClashExchange.Read(
+                new[] { Pack("Mechanical", Answered(one, FindingStatus.Resolved)) },
+                new[] { one });
+
+            var applied = ClashExchange.Apply(reading, register);
+
+            Assert.Equal(0, applied.Missed);
+            Assert.Equal(FindingStatus.Resolved, register.Find(finding.Id)!.Status);
+        }
+
+        [Fact]
+        public void Where_two_findings_share_a_topic_guid_the_answer_lands_on_the_one_this_test_found()
+        {
+            // Two overlapping tests reporting one pair at one point make two findings under one
+            // derived GUID. Picking at random left one of them holding a stale status and
+            // reported it as applied.
+            var one = Item("a");
+
+            var mine = Recorded(one);
+            var other = Finding.Create(FindingSource.Clash, "Another test", one.Name,
+                                       new[] { one.Key.A, one.Key.B },
+                                       ClashFindings.CellOf(one.Key), identity: "test:other");
+
+            var register = new FindingRegister();
+            register.Put(other);
+            register.Put(mine);
+
+            var reading = ClashExchange.Read(
+                new[] { Pack("Mechanical", Answered(one, FindingStatus.Resolved)) },
+                new[] { one });
+
+            ClashExchange.Apply(reading, register);
+
+            Assert.Equal(FindingStatus.Resolved, register.Find(mine.Id)!.Status);
+            Assert.Equal(FindingStatus.New, register.Find(other.Id)!.Status);
+        }
+
+        [Fact]
+        public void The_reviewers_own_fields_come_back_with_the_status()
+        {
+            // A due date and a priority set by the reviewer used to go nowhere, which is
+            // discovered at the coordination meeting.
+            var one = Item("a");
+
+            var register = new FindingRegister();
+            register.Put(Recorded(one));
+
+            var answered = Answered(one, FindingStatus.Reviewed);
+
+            answered.Review = new ClashAside(ClashBcf.TopicGuidFor(one.Key))
+            {
+                Priority = "High",
+                DueTicks = new System.DateTime(2026, 4, 1, 0, 0, 0, System.DateTimeKind.Utc).Ticks,
+            };
+
+            ClashExchange.Apply(
+                ClashExchange.Read(new[] { Pack("Mechanical", answered) }, new[] { one }),
+                register);
+
+            var kept = register.Find(Recorded(one).Id)!;
+
+            Assert.Equal("High", kept.Priority);
+            Assert.NotNull(kept.DueDayNumber);
+        }
+
+        [Fact]
+        public void An_answer_the_register_cannot_take_still_reaches_the_board()
+        {
+            // An answer nobody can see on screen is worse than one that is only on screen, and
+            // Missed is what says which happened.
+            var one = Item("a");
+
+            var reading = ClashExchange.Read(
+                new[] { Pack("Mechanical", Answered(one, FindingStatus.Resolved)) },
+                new[] { one });
+
+            var applied = ClashExchange.Apply(reading, new FindingRegister());
+
+            Assert.Equal(1, applied.Missed);
+            Assert.Equal(FindingStatus.Resolved, one.Status);
+        }
+
+        [Fact]
         public void Nothing_to_read_says_so_rather_than_looking_empty()
         {
             var reading = ClashExchange.Read(null, new[] { Item("a") });
