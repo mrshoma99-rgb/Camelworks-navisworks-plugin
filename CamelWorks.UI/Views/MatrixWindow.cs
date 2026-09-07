@@ -4836,7 +4836,7 @@ namespace CamelWorks.UI.Views
                                        ? row.Titled + " against itself"
                                        : row.Titled + " against " + column.Titled)
                                    + " — " + MatrixNaming.Worded(meaning.Test) + " at "
-                                   + Millimetres(meaning.Tolerance)
+                                   + Toleranced(meaning.Tolerance)
                                    + Finding(row, column);
                 }
 
@@ -6324,7 +6324,7 @@ namespace CamelWorks.UI.Views
                         one.Symbol + (string.Equals(one.Symbol, here, StringComparison.OrdinalIgnoreCase)
                             ? "  ·  in this cell now" : string.Empty),
                         Glyphs.Tick,
-                        MatrixNaming.Worded(one.Test) + " at " + Millimetres(one.Tolerance)
+                        MatrixNaming.Worded(one.Test) + " at " + Toleranced(one.Tolerance)
                         + (one.Enabled ? string.Empty : ", turned off"),
                         () => Laid(reach, one.Symbol,
                                    "putting " + Quoted(one.Symbol)
@@ -6638,7 +6638,7 @@ namespace CamelWorks.UI.Views
                     _palette.Children.Add(Swatch(
                         one.Symbol,
                         MatrixNaming.Worded(one.Test),
-                        Millimetres(one.Tolerance) + (one.Enabled ? string.Empty : " · off"),
+                        Toleranced(one.Tolerance) + (one.Enabled ? string.Empty : " · off"),
                         at < 9 ? (at + 1).ToString(CultureInfo.InvariantCulture) : one.Symbol,
                         armed,
                         one.Enabled,
@@ -7997,7 +7997,7 @@ namespace CamelWorks.UI.Views
                     groups.Children.Add(Gathered(
                         symbol.Symbol, Washed(symbol), symbol.Enabled,
                         MatrixNaming.Worded(symbol.Test),
-                        Millimetres(symbol.Tolerance)
+                        Toleranced(symbol.Tolerance)
                         + (symbol.Enabled ? string.Empty : " · turned off, so these build nothing"),
                         names));
                 }
@@ -8205,7 +8205,7 @@ namespace CamelWorks.UI.Views
 
                 reading.Children.Add(new TextBlock
                 {
-                    Text = MatrixNaming.Worded(symbol.Test) + " at " + Millimetres(symbol.Tolerance),
+                    Text = MatrixNaming.Worded(symbol.Test) + " at " + Toleranced(symbol.Tolerance),
                     FontWeight = FontWeights.SemiBold,
                     FontSize = 12,
                     TextWrapping = TextWrapping.Wrap,
@@ -8371,7 +8371,7 @@ namespace CamelWorks.UI.Views
                         ? "Agreed, and no test is made."
                         : meaning == null
                             ? "Define it in the palette, or this cell builds no test."
-                            : Millimetres(meaning.Tolerance)
+                            : Toleranced(meaning.Tolerance)
                               + (meaning.Enabled ? string.Empty : " · turned off, so it builds nothing"));
 
                 under.TextWrapping = TextWrapping.Wrap;
@@ -9410,7 +9410,7 @@ namespace CamelWorks.UI.Views
             private void AddSymbol()
             {
                 var made = MatrixKey.Ask("A symbol for the legend", "Add",
-                    new MatrixKeyEdit { Symbol = Suggested() }, Clashing);
+                    new MatrixKeyEdit { Symbol = Suggested() }, Clashing, _session.Profile.Units);
 
                 if (made == null) return;
 
@@ -9459,7 +9459,8 @@ namespace CamelWorks.UI.Views
                     },
                     wanted => string.Equals(wanted, was, StringComparison.OrdinalIgnoreCase)
                         ? null
-                        : Clashing(wanted));
+                        : Clashing(wanted),
+                    _session.Profile.Units);
 
                 if (made == null) return;
 
@@ -9532,7 +9533,7 @@ namespace CamelWorks.UI.Views
             private void Define(string symbol)
             {
                 var made = MatrixKey.Ask("What " + Quoted(symbol) + " means", "Add",
-                    new MatrixKeyEdit { Symbol = symbol }, Clashing);
+                    new MatrixKeyEdit { Symbol = symbol }, Clashing, _session.Profile.Units);
 
                 if (made == null) return;
 
@@ -11366,8 +11367,15 @@ namespace CamelWorks.UI.Views
                 return held;
             }
 
-            private static string Millimetres(double metres) =>
-                (metres * 1000).ToString("0.###", CultureInfo.InvariantCulture) + " mm";
+            /// <summary>
+            /// One tolerance, in the seat's own units.
+            ///
+            /// It was millimetres whatever the profile said, so an imperial seat typed feet and
+            /// inches on every check panel in the product and millimetres in the legend for the
+            /// same quantity.
+            /// </summary>
+            /// <param name="metres">The tolerance.</param>
+            private string Toleranced(double metres) => _session.Profile.Units.Length(metres);
 
             private static string Quoted(string said) => "“" + said + "”";
         }

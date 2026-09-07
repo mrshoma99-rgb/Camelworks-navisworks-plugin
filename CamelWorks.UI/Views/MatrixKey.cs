@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using CamelWorks.Core.Clash;
+using CamelWorks.Core.Measurement;
 
 namespace CamelWorks.UI.Views
 {
@@ -47,11 +48,12 @@ namespace CamelWorks.UI.Views
         /// Says why a name cannot be used, or null when it can. The legend is keyed on the
         /// symbol, so a clash would quietly replace the entry it collided with.
         /// </param>
+        /// <param name="units">The seat's units, so the tolerance is typed the way the rest is.</param>
         /// <returns>What was filled in, or null when the window was closed without finishing.</returns>
         internal static MatrixKeyEdit? Ask(string title, string caption, MatrixKeyEdit starting,
-                                           Func<string, string?> taken)
+                                           Func<string, string?> taken, Measure units)
         {
-            if (starting == null || taken == null) return null;
+            if (starting == null || taken == null || units == null) return null;
 
             var held = new MatrixKeyEdit
             {
@@ -86,23 +88,24 @@ namespace CamelWorks.UI.Views
             // name, and a name belongs in the legend line beside it.
             name.MaxLength = 4;
 
-            var mm = Ui.Text(
-                (held.Tolerance * 1000).ToString("0.###", CultureInfo.CurrentCulture), null, 80);
+            var mm = Ui.Text(units.Bare(held.Tolerance), null, 80);
 
             body.Children.Add(Ui.Field("What the cells say", name,
                 "A letter or a short mark — whatever the sheet this matrix came from uses. Four "
                 + "characters at most, because it has to read inside a cell."));
 
+            Fill(body, held, mm, units);
+
+            // Last. It defaults to Automatic and is right almost always, and it used to be asked
+            // second — above the two fields that decide what the test actually is.
+            //
+            // The strip marks what is chosen itself. It used to be left to this to redraw it, and
+            // this cannot: the dropdown that would trigger a rebuild is one of the things a
+            // rebuild would take away while its own event is still running.
             body.Children.Add(Ui.Field("Colour",
-                // The strip marks what is chosen itself. It used to be left to this to redraw
-                // it, and this cannot: Fill keeps the first two children of the form, and the
-                // colour field is the second of them - so the ring never moved and choosing a
-                // colour looked like pressing a dead control.
                 MatrixLook.Colours(held.Colour, colour => held.Colour = colour),
                 "Automatic assigns a colour from its position in the legend, which is the "
                 + "default appearance."));
-
-            Fill(body, held, mm);
 
             var take = Ui.Primary(caption, () =>
             {
@@ -129,15 +132,15 @@ namespace CamelWorks.UI.Views
                 // assign, so on a seat whose decimal separator is a comma, typing "12,5" left the
                 // box showing 12,5, reported nothing, and saved the old number. A wrong clearance is
                 // not something caught by eye in a grid of a hundred and ninety cells.
-                if (!Millimetres(mm.Text, out var tolerance))
+                if (!units.TryRead(mm.Text, out var tolerance) || tolerance < 0)
                 {
                     trouble.Children.Add(Ui.Problem(
                         "\u201c" + mm.Text.Trim() + "\u201d is not a tolerance. Give it a number "
-                        + "of millimetres, or zero."));
+                        + "of " + units.LengthUnit + ", or zero."));
                     return;
                 }
 
-                held.Tolerance = tolerance / 1000;
+                held.Tolerance = tolerance;
 
                 done = held;
                 window.Close();
@@ -192,7 +195,8 @@ namespace CamelWorks.UI.Views
         /// <param name="body">The form.</param>
         /// <param name="held">What is being filled in.</param>
         /// <param name="mm">The tolerance box, built once so what is typed into it survives.</param>
-        private static void Fill(Panel body, MatrixKeyEdit held, TextBox mm)
+        /// <param name="units">The seat's units, for the field's label.</param>
+        private static void Fill(Panel body, MatrixKeyEdit held, TextBox mm, Measure units)
         {
             while (body.Children.Count > 2) body.Children.RemoveAt(2);
 
@@ -229,7 +233,7 @@ namespace CamelWorks.UI.Views
                 + "slower, and it catches more. Clearance is closer than they are allowed to be. "
                 + "Duplicate is the same thing modelled twice."));
 
-            body.Children.Add(Ui.Field("Tolerance, in millimetres", mm));
+            body.Children.Add(Ui.Field("Tolerance (" + units.LengthUnit + ")", mm));
 
             tolerance.TextWrapping = TextWrapping.Wrap;
             tolerance.Margin = new Thickness(0, -6, 0, 9);
@@ -248,29 +252,5 @@ namespace CamelWorks.UI.Views
                                        + "drawn struck through, and no test is built for them."));
         }
 
-        /// <summary>
-        /// A tolerance in millimetres, read the way the person typing it writes numbers.
-        ///
-        /// Their own culture first, because that is what their keyboard and their habits give;
-        /// the invariant one after, so a sheet or a colleague's "12.5" is still read on a seat
-        /// that writes "12,5". Anything that is neither is refused rather than dropped.
-        /// </summary>
-        /// <param name="said">What was typed.</param>
-        /// <param name="millimetres">The number, when there is one.</param>
-        private static bool Millimetres(string? said, out double millimetres)
-        {
-            millimetres = 0;
-
-            var text = (said ?? string.Empty).Trim();
-
-            if (text.Length == 0) return false;
-
-            if (!double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out millimetres)
-                && !double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture,
-                                    out millimetres))
-                return false;
-
-            return millimetres >= 0;
-        }
     }
 }
