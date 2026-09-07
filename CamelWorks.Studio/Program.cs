@@ -45,7 +45,7 @@ namespace CamelWorks.Studio
         /// from a Windows runner billed at twice the rate, twenty-eight of which nobody opens. Named
         /// pages are two.
         /// </summary>
-        private const string Only = "app-clash-manage,app-clash-finder,app-clash-matrix,app-clash-matrix-drawn,app-clash-matrix-fields,app-clash-matrix-read,app-clash-matrix-scrolled,app-clash-matrix-line,app-clash-exchange,app-clash-exchange-import,app-clash-naming-tests,app-clash-naming-patterns,app-clash-naming-write,app-clash-matrix-results,app-clash-matrix-priority";
+        private const string Only = "app-clash-create,app-clash-settings-team,app-clash-settings-units,app-clash-report,app-clash-manage,app-clash-rules-set";
 
         /// <summary>Run the harness.</summary>
         /// <param name="args">
