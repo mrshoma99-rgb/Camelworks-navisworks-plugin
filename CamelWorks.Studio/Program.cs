@@ -173,6 +173,13 @@ namespace CamelWorks.Studio
 
             Log(written.ToString(CultureInfo.InvariantCulture) + " images in " + folder);
 
+            var layout = _log.Count(line => line.StartsWith("LAYOUT ", StringComparison.Ordinal));
+
+            Log(layout == 0
+                ? "layout clean: nothing cut off, nothing overlapping"
+                : layout.ToString(CultureInfo.InvariantCulture)
+                  + " LAYOUT FAULTS — see the lines above");
+
             try
             {
                 File.WriteAllLines(System.IO.Path.Combine(folder, "_log.txt"), _log);
@@ -265,6 +272,13 @@ namespace CamelWorks.Studio
             // Anything that did not photograph itself gets taken here, settled. Snap takes the
             // page off the window first, so nothing the window did to it is still on it.
             Shoot();
+
+            // Read the layout back, on the same tree the picture was taken of. Reading the picture
+            // does not catch a field clipped by the box beside it or a label sitting on a button;
+            // the layout system measured both and can be asked.
+            foreach (var fault in Fits.Of(host))
+                Log("LAYOUT " + sheet.Id + " @" + width.ToString(CultureInfo.InvariantCulture)
+                    + "  " + fault);
         }
 
         /// <summary>Write one laid-out element to a PNG.</summary>
