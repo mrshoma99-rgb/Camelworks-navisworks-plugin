@@ -1719,6 +1719,37 @@ namespace CamelWorks.UI.Views
 
                 _railTools.Children.Clear();
 
+                _railTools.Children.Add(Parts.MoreMenu(Glyphs.Sort, "Sort: " + Ordered(State.Sort),
+                    RailSortMenu(), on: State.Sort != MostNew));
+
+                var narrow = Ui.Icon(Glyphs.Filter, WhatIsNarrowed(), () =>
+                {
+                    _panel = !_panel;
+                    RedrawRail();
+                });
+
+                // The funnel says whether it is doing anything. With the chips gone this is the
+                // only thing on the closed rail that does, and a list quietly hiding half its
+                // tests with nothing on screen admitting it is the fault the chips were for.
+                if (Narrowed) narrow.Content = Ui.Glyph(Glyphs.Filter, 15, "Accent");
+
+                _railTools.Children.Add(narrow);
+
+                _railPanel.Child = _panel ? Narrowing(read) : null;
+
+                RedrawRailList();
+                RedrawRailFoot();
+            }
+
+            /// <summary>
+            /// What the rail's sort symbol opens: the orders the test list can be put in.
+            ///
+            /// Built apart from the symbol that opens it so the harness can draw the list
+            /// without a popup, which is the only way this menu is ever reviewed. The rail's
+            /// order is not the board's: this one orders tests, the board's orders results.
+            /// </summary>
+            internal List<Parts.Entry> RailSortMenu()
+            {
                 var orders = new List<Parts.Entry>();
 
                 foreach (var one in new[]
@@ -1751,26 +1782,7 @@ namespace CamelWorks.UI.Views
                     }
                 }
 
-                _railTools.Children.Add(Parts.MoreMenu(Glyphs.Sort, "Sort: " + Ordered(State.Sort),
-                    orders, on: State.Sort != MostNew));
-
-                var narrow = Ui.Icon(Glyphs.Filter, WhatIsNarrowed(), () =>
-                {
-                    _panel = !_panel;
-                    RedrawRail();
-                });
-
-                // The funnel says whether it is doing anything. With the chips gone this is the
-                // only thing on the closed rail that does, and a list quietly hiding half its
-                // tests with nothing on screen admitting it is the fault the chips were for.
-                if (Narrowed) narrow.Content = Ui.Glyph(Glyphs.Filter, 15, "Accent");
-
-                _railTools.Children.Add(narrow);
-
-                _railPanel.Child = _panel ? Narrowing(read) : null;
-
-                RedrawRailList();
-                RedrawRailFoot();
+                return orders;
             }
 
             /// <summary>Whether anything is narrowing the rail.</summary>
@@ -3883,29 +3895,6 @@ namespace CamelWorks.UI.Views
             /// control. What remains is the return to the order held by the test itself. A header
             /// press only reverses an order; it cannot clear one.
             /// </summary>
-            /// <summary>
-            /// This board's menus, named, for the harness door above.
-            ///
-            /// The ones that need only what the screen already holds. The column menu wants a
-            /// particular property column and a board with none has nothing to hand it, so it is
-            /// not here and the harness page says so rather than drawing four and meaning three.
-            /// </summary>
-            internal IReadOnlyList<BoardMenu> Menus()
-            {
-                var entry = Current()?.FirstOrDefault();
-                var rows = entry?.Rows ?? new List<Row>();
-
-                return new List<BoardMenu>
-                {
-                    new BoardMenu("Sort the results", SortMenu()),
-                    new BoardMenu("Show", entry == null
-                        ? (IReadOnlyList<Parts.Entry>)Array.Empty<Parts.Entry>()
-                        : FilterMenu(entry)),
-                    new BoardMenu("The test's own menu", TestMenu(entry)),
-                    new BoardMenu("More actions on the picked rows", PickedMenu(rows)),
-                };
-            }
-
             private List<Parts.Entry> SortMenu()
             {
                 var items = new List<Parts.Entry>();
@@ -3987,6 +3976,34 @@ namespace CamelWorks.UI.Views
                 }
 
                 return items;
+            }
+
+            /// <summary>
+            /// This board's menus, named, for the harness door above.
+            ///
+            /// Each entry is a menu the screen actually opens, not a fragment of one. The first
+            /// draft of this listed <c>SortMenu</c> and <c>FilterMenu</c> separately; they are
+            /// halves of <c>TableMenu</c>, which is what the funnel opens, so the page was
+            /// drawing two menus a coordinator never sees and hiding the one they do.
+            ///
+            /// The column menu is absent: it wants a particular property column and a board with
+            /// none has nothing to hand it. The harness page says so rather than drawing four
+            /// and meaning three.
+            /// </summary>
+            internal IReadOnlyList<BoardMenu> Menus()
+            {
+                var entry = Current()?.FirstOrDefault();
+                var rows = entry?.Rows ?? new List<Row>();
+
+                return new List<BoardMenu>
+                {
+                    new BoardMenu("The rail's order, over the tests", RailSortMenu()),
+                    new BoardMenu("What the table shows, and in what order", entry == null
+                        ? (IReadOnlyList<Parts.Entry>)Array.Empty<Parts.Entry>()
+                        : TableMenu(entry)),
+                    new BoardMenu("The test's own menu", TestMenu(entry)),
+                    new BoardMenu("More actions on the picked rows", PickedMenu(rows)),
+                };
             }
 
             /// <summary>What is behind the board's filter menu: show, assigned to, the columns.</summary>
@@ -6460,7 +6477,10 @@ namespace CamelWorks.UI.Views
 
                     var here = status;
 
-                    setting.Add(Parts.Entry.Act(FindingStatusWords.Of(here), Glyphs.Tick,
+                    // Not a tick. A tick beside a word means that word is the current one, and
+                    // five of them down a menu read as five states at once; these are verbs that
+                    // set a status, and the one already set is the one left out of the list.
+                    setting.Add(Parts.Entry.Act(FindingStatusWords.Of(here), Glyphs.Right,
                         () => SetMany(picked, FindingStatusWords.Of(here), true)));
                 }
 
