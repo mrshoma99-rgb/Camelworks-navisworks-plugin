@@ -3060,8 +3060,11 @@ namespace CamelWorks.UI.Views
                         Ui.Field("File name", _template,
                                  "tokens: " + string.Join(", ", Deliverable.Tokens))));
 
-                var help = Ui.Icon(Glyphs.Info, "What goes in each document", Help);
-                var markers = Ui.Icon(Glyphs.Sphere, "Markers in the model", Markers);
+                // Labelled, as on Exchange. Two bare symbols beside the primary said nothing
+                // about what they open, and one of them was the same picture the board uses for
+                // something else.
+                var help = Ui.Quiet("What goes in each document…", Help);
+                var markers = Ui.Quiet("Markers in the model…", Markers);
 
                 var write = _live == null
                     ? Ui.Blocked("Write the report",

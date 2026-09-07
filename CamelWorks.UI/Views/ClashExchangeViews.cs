@@ -459,13 +459,16 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private UIElement Kind()
             {
-                // Wrapped, not a horizontal stack. The kind and the way to change it are wider
-                // than the column this field sits in, and a stack that cannot wrap ran the link
-                // into the box beside it with no gap between them.
-                var row = new WrapPanel
+                // Two lines, not one. A wrap panel put the link on the same line as the word
+                // whenever the two happened to fit, which drew "ClashChange on Manage" with no
+                // gap and ran to the edge of the box beside it. The line break is now fixed
+                // rather than a measurement.
+                var stack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+
+                var row = new StackPanel
                 {
+                    Orientation = Orientation.Horizontal,
                     VerticalAlignment = VerticalAlignment.Center,
-                    MaxWidth = 170,
                 };
 
                 var named = new TextBlock
@@ -479,17 +482,19 @@ namespace CamelWorks.UI.Views
 
                 link.ToolTip = "The Manage tab holds the selected kind. This tab exchanges "
                              + "whatever it has selected, so the two cannot disagree.";
-                link.VerticalAlignment = VerticalAlignment.Center;
-                link.Margin = new Thickness(0, 2, 0, 0);
+                link.HorizontalAlignment = HorizontalAlignment.Left;
+                link.Margin = new Thickness(0, 3, 0, 0);
 
                 // The symbol first, then the word. The same mark this kind carries in the Create
                 // list and the check picker, so the three screens name the kind the same way.
                 row.Children.Add(Ui.Glyph(Symbolled(CheckKey), 15, "Muted",
                                           new Thickness(0, 0, 7, 0)));
                 row.Children.Add(named);
-                row.Children.Add(link);
 
-                return row;
+                stack.Children.Add(row);
+                stack.Children.Add(link);
+
+                return stack;
             }
 
             /// <summary>
