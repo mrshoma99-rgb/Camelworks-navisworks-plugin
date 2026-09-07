@@ -29,6 +29,78 @@ namespace CamelWorks.Core.Tests
                                     "L03", name);
 
         /// <summary>Two clash tests reporting one physical conflict, which is one topic guid.</summary>
+        // ---------------------------------------------------------------------------------
+        // Making one, from the Create tab rather than from the matrix
+        // ---------------------------------------------------------------------------------
+
+        [Fact]
+        public void A_check_makes_one_clash_test_and_hands_back_what_the_host_holds()
+        {
+            // The capability was here from the day the matrix was written and the matrix was its
+            // only caller, so one test by hand meant drawing a grid or leaving for the native
+            // clash window.
+            var source = new FakeClashSource();
+            var check = new ClashCheck(source);
+
+            var made = check.Make(
+                new ClashTestSpec("L03 MEP v STR", ClashSide.Set("MEP"), ClashSide.Set("Structure"),
+                                  0.025, "Weekly", MatrixTest.Clearance),
+                out var problem);
+
+            Assert.NotNull(made);
+            Assert.Null(problem);
+
+            var run = Assert.Single(check.Runs());
+
+            Assert.Equal("L03 MEP v STR", run.Name);
+            Assert.Equal("Weekly", run.Folder);
+            Assert.Equal("Clearance clash", run.Kind);
+            Assert.Equal(0.025, check.ThresholdMetres(run.Id) ?? 0, 6);
+        }
+
+        [Fact]
+        public void A_document_that_will_not_take_a_test_says_so_rather_than_returning_nothing()
+        {
+            var source = new FakeClashSource { Refuses = "This NWD is published." };
+            var check = new ClashCheck(source);
+
+            var made = check.Make(
+                new ClashTestSpec("L03 MEP v STR", ClashSide.Set("MEP"), ClashSide.Set("Structure"),
+                                  0.025),
+                out var problem);
+
+            Assert.Null(made);
+            Assert.Contains("published", problem);
+            Assert.Empty(check.Runs());
+        }
+
+        [Fact]
+        public void Retuning_changes_the_kind_and_the_tolerance_and_reads_back_the_new_shape()
+        {
+            var source = new FakeClashSource().With("L03 MEP v STR", "Weekly", "t1");
+            var check = new ClashCheck(source);
+
+            // Read once, so the shape is held. A retune that did not drop it would leave the rail
+            // printing what the test was judged at before the change.
+            Assert.Equal("Hard clash", Assert.Single(check.Runs()).Kind);
+
+            Assert.True(check.Retune("t1", 0.05, MatrixTest.Clearance, out var problem));
+            Assert.Null(problem);
+
+            Assert.Equal("Clearance clash", Assert.Single(check.Runs()).Kind);
+            Assert.Equal(0.05, check.ThresholdMetres("t1") ?? 0, 6);
+            Assert.Equal("Clearance", check.Sides("t1")!.Kind);
+        }
+
+        [Fact]
+        public void A_retune_of_a_test_the_document_no_longer_holds_is_refused_with_the_reason()
+        {
+            var check = new ClashCheck(new FakeClashSource());
+
+            Assert.False(check.Retune("gone", 0.05, MatrixTest.Hard, out var problem));
+            Assert.NotNull(problem);
+        }
+
         private static FakeClashSource Twice() =>
             new FakeClashSource()
                 .With("L03 MEP v STR", "Weekly", "t1")

@@ -247,7 +247,30 @@ namespace CamelWorks.Studio
             // Not in the render's default list; named on dispatch.
             Page("app-clash-create-empty", "Clash Manager · Create, no tests yet", 620,
                  () => Creating(null)),
+
+            // The form that makes one clash test. It is a modal in the product, so what is drawn
+            // is its body: the two sides, the kind and the tolerance, with both sides unset, which
+            // is the state it opens in and the one that has to say what to do next.
+            // Not in the render's default list; named on dispatch.
+            Page("app-clash-new", "Clash Manager · A new clash test", 620, NewClash),
         };
+
+        /// <summary>The new-clash-test form, as it opens.</summary>
+        private static UIElement NewClash()
+        {
+            var seat = Seated();
+            var clash = seat.Checks.All.OfType<ClashCheck>().First();
+
+            var body = new Border
+            {
+                Padding = new Thickness(18, 16, 18, 16),
+                Child = ClashTestViews.Drawn(seat, clash, "Clash 1"),
+            };
+
+            body.Tint(Border.BackgroundProperty, "Bg");
+
+            return body;
+        }
 
         /// <summary>
         /// The Create tab, with a test of one kind picked.
