@@ -5558,7 +5558,8 @@ namespace CamelWorks.UI.Views
             /// <param name="inside">True when it is a member of an open group.</param>
             private UIElement Finish(Grid grid, BoardRow row, bool on, bool inside)
             {
-                Put(grid, StatusChip(row.Status), Where(Status));
+                // A control, not a label. The row's own status, set on the row.
+                Put(grid, StatusCell(row), Where(Status));
 
                 // The person, and nothing else in the cell. What kind of party it is comes from
                 // the symbol in front of the name, and everyone the row is assigned to is on the
@@ -8242,22 +8243,44 @@ namespace CamelWorks.UI.Views
             /// <param name="name">The group's name.</param>
             private static string GroupId(string name) => "group" + name;
 
-            /// <summary>How a status reads.</summary>
-            /// <param name="status">The status.</param>
-
             /// <summary>
-            /// A row's status, as a chip that reads rather than a control that opens.
+            /// The row's status, as the control that sets it.
             ///
-            /// Every row carried a drop-down, so the column was five chip widths wide with a
-            /// chevron on each of them, and a board of four hundred rows carried four hundred
-            /// controls to change one value at a time. The chip is one width for all five
-            /// statuses, so the column reads down; the status is set from the row's own menu and
-            /// from the bar for picked rows, which is where every other verb on a row is.
+            /// This reverses an earlier decision and the argument for that decision is worth
+            /// keeping: every row used to carry a drop-down, the column was five chip widths plus
+            /// a chevron on each, and a board of four hundred rows carried four hundred controls
+            /// to change one value at a time. So it became a chip that reads, one width for all
+            /// five statuses, set from the row's menu and from the bar.
+            ///
+            /// What that cost is the reason to go back. Setting a status is the most frequent
+            /// edit on this board, and it ended up the only common one with no control at all:
+            /// the chip's own tooltip read "Set it from the row's menu, or pick rows and set it
+            /// on the bar", which is a control telling you where the control is. The assignee
+            /// cell beside it - a far less frequent edit - kept its chevron the whole time, so
+            /// the "four hundred controls is noise" argument was already conceded one column
+            /// along, on the less useful of the two.
+            ///
+            /// The column width is the real cost and it is watched: the chevron adds about
+            /// fourteen pixels to a chip whose floor is seventy-six, in a column of a hundred and
+            /// four, on a board that has twice had to be pulled back from a sideways scroll.
             /// </summary>
-            /// <param name="status">The row's status.</param>
-            private static UIElement StatusChip(FindingStatus status) =>
-                FindingStatusWords.Chip(status, FindingStatusWords.Of(status)
-                    + ". Set it from the row's menu, or pick rows and set it on the bar.");
+            /// <param name="row">The row.</param>
+            private UIElement StatusCell(BoardRow row)
+            {
+                var cell = FindingStatusWords.Picker(row.Status, status =>
+                {
+                    // This row, whatever else is ticked: the tooltip promises it and a press that
+                    // meant one row here and twenty there is a press nobody can use quickly.
+                    Mark(new object[] { row }, status, _toast);
+                });
+
+                // Handled here, or the press that sets a status also selects the row and opens
+                // the detail beside it - which is what the group name cell had to do too.
+                if (cell is FrameworkElement pressable)
+                    pressable.PreviewMouseLeftButtonUp += (s, e) => e.Handled = true;
+
+                return cell;
+            }
 
             /// <summary>
             /// A small label over a group of controls, in sentence case.

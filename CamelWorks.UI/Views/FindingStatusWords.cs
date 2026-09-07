@@ -98,6 +98,39 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
+        /// A status as the control the board draws it as.
+        ///
+        /// The same chip, with the chevron the assignee cell beside it carries. Setting a status
+        /// is the most frequent edit on the board and it had no control at all: the cell was the
+        /// inert <see cref="Chip"/>, and the only thing saying how to change it was that chip's
+        /// tooltip, which read "Set it from the row's menu, or pick rows and set it on the bar."
+        /// Assigning, which a coordinator does far less often, was a one-press control on the
+        /// same row.
+        ///
+        /// The chevron is the whole of the difference between this and <see cref="Chip"/>, and it
+        /// has to stay that way: one shape meaning both "a status" and "a status you can set" is
+        /// the fault this pair exists to avoid. Anywhere a status is a fact rather than an edit -
+        /// both Exchange tables, the counter strip - keeps calling Chip.
+        ///
+        /// It sets its own row and nothing else, whatever else is ticked. A press that meant one
+        /// row on one board and twenty on another is a press nobody can use quickly.
+        /// </summary>
+        /// <param name="status">The status now.</param>
+        /// <param name="onSet">Called with the status picked.</param>
+        internal static UIElement Picker(FindingStatus status, Action<FindingStatus> onSet)
+        {
+            var chip = Parts.InlineChip(Of(status), Words,
+                                        word => onSet?.Invoke(Read(word)),
+                                        Reads(status), Of(status));
+
+            if (chip is FrameworkElement said)
+                said.ToolTip = Of(status) + ". Press to set this row's status. To set several at "
+                             + "once, tick them and use the bar.";
+
+            return chip;
+        }
+
+        /// <summary>
         /// The status one of this class's own words stands for.
         ///
         /// The round trip of <see cref="Of"/>, and nothing more: it is for reading back what a
