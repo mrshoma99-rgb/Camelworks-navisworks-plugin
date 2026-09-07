@@ -62,13 +62,19 @@ namespace CamelWorks.UI.Views
             body.ColumnDefinitions.Add(new ColumnDefinition
             {
                 Width = new GridLength(shared ? 1 - setupShare : 1, GridUnitType.Star),
+                MinWidth = shared ? 260 : 0,
             });
+
+            // The grip's own column, so a shared surface can be dragged. Zero wide and empty on
+            // a fixed panel, where there is nothing to trade.
+            body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             body.ColumnDefinitions.Add(new ColumnDefinition
             {
                 Width = shared
                     ? new GridLength(setupShare, GridUnitType.Star)
                     : GridLength.Auto,
+                MinWidth = shared ? 300 : 0,
             });
 
             UIElement data = stage;
@@ -114,7 +120,26 @@ namespace CamelWorks.UI.Views
                 options.Tint(Border.BackgroundProperty, "Pane");
                 options.Tint(Border.BorderBrushProperty, "Bd");
 
-                Grid.SetColumn(options, 1);
+                if (shared)
+                {
+                    // Two star columns, so what one takes the other gives. A preview line while
+                    // dragging rather than a live re-layout, for the same reason as the split
+                    // bench: both sides re-measure on every pixel otherwise.
+                    var grip = new GridSplitter
+                    {
+                        Width = 4,
+                        HorizontalAlignment = HorizontalAlignment.Stretch,
+                        VerticalAlignment = VerticalAlignment.Stretch,
+                        ResizeBehavior = GridResizeBehavior.PreviousAndNext,
+                        ShowsPreview = true,
+                    };
+
+                    grip.Tint(GridSplitter.BackgroundProperty, "Bd");
+                    Grid.SetColumn(grip, 1);
+                    body.Children.Add(grip);
+                }
+
+                Grid.SetColumn(options, 2);
                 body.Children.Add(options);
             }
 

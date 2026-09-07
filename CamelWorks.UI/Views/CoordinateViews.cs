@@ -1302,7 +1302,7 @@ namespace CamelWorks.UI.Views
                 // every keystroke would take the caret with it, so a change marks the project
                 // unsaved and the list is redrawn only when the shape of the search changes.
                 var when = new SearchEditor(card.When, _seat.Checks.Find(FindingSource.Clash),
-                                            Touched);
+                                            Touched, Offered);
 
                 var act = Ui.Choice(Acts.Select(Verb), Verb(card.Action), picked =>
                 {
@@ -1432,6 +1432,115 @@ namespace CamelWorks.UI.Views
 
                 return held;
             }
+
+            /// <summary>
+            /// What a search condition offers for a field instead of a box to type in.
+            ///
+            /// From the project and from the results already on the board, never from a fixed
+            /// list written here: the statuses are the lattice's, the priorities and parties are
+            /// the project's, and the tests are the ones the checks on this seat actually hold.
+            /// A field with nothing to offer gets a box, which is every free-text field.
+            /// </summary>
+            /// <param name="field">The field id.</param>
+            private IReadOnlyList<SearchEditor.Choice> Offered(string field)
+            {
+                switch (field)
+                {
+                    case ResultFields.Status:
+                        return Offering(FindingStatusWords.Words);
+
+                    case ResultFields.Priority:
+                        return Offering(Ranks());
+
+                    case ResultFields.Assignee:
+                        return Offering(Parties());
+
+                    case ResultFields.Orientation:
+                        return Offering(new[] { ElementGeometry.Vertical,
+                                                ElementGeometry.Horizontal });
+
+                    case ResultFields.Source:
+                        return _seat.Checks.All
+                            .Select(one => new SearchEditor.Choice(one.Key, one.Name))
+                            .ToList();
+
+                    case ResultFields.Run:
+                        return Tests();
+
+                    case ResultFields.Model:
+                        return Offering(Told(_seat.Models()));
+
+                    default:
+                        // The rest are read off the results the board already holds, so a group,
+                        // a stage or a label that exists is offered and one that does not is not
+                        // invented.
+                        return Offering(Seen(field));
+                }
+            }
+
+            /// <summary>Values offered under their own names.</summary>
+            /// <param name="values">The values.</param>
+            private static IReadOnlyList<SearchEditor.Choice> Offering(IEnumerable<string> values) =>
+                values.Select(one => new SearchEditor.Choice(one)).ToList();
+
+            /// <summary>
+            /// Every test on this seat: the id a result carries, under the name people know it by.
+            ///
+            /// A clash result names its test by the host's own id, so a picker offering the ids
+            /// themselves would be a column of GUIDs.
+            /// </summary>
+            private IReadOnlyList<SearchEditor.Choice> Tests()
+            {
+                var found = new List<SearchEditor.Choice>();
+
+                foreach (var check in _seat.Checks.All)
+                {
+                    try
+                    {
+                        foreach (var run in check.Runs())
+                            found.Add(new SearchEditor.Choice(run.Id, run.Name));
+                    }
+                    catch (Exception)
+                    {
+                        // A check that will not list its tests offers none, like one with none.
+                    }
+                }
+
+                return found.OrderBy(one => one.Said, StringComparer.OrdinalIgnoreCase).ToList();
+            }
+
+            /// <summary>The results the register holds, without reading the document.</summary>
+            private IReadOnlyList<Finding> Held() =>
+                _seat.Findings.Findings.Present.ToList();
+
+            /// <summary>What the results on the board actually say under a field.</summary>
+            /// <param name="field">The field id.</param>
+            private IReadOnlyList<string> Seen(string field)
+            {
+                switch (field)
+                {
+                    case ResultFields.Group:
+                        return Told(Held().Select(one => one.Group));
+
+                    case ResultFields.Stage:
+                        return Told(Held().Select(one => one.Stage));
+
+                    case ResultFields.Label:
+                        return Told(Held().SelectMany(one => one.Labels));
+
+                    default:
+                        return Array.Empty<string>();
+                }
+            }
+
+            /// <summary>A list of values, without the empties, the repeats or the disorder.</summary>
+            /// <param name="values">What was found.</param>
+            private static IReadOnlyList<string> Told(IEnumerable<string?> values) =>
+                values.Where(one => !string.IsNullOrWhiteSpace(one))
+                      .Select(one => one!)
+                      .Distinct(StringComparer.OrdinalIgnoreCase)
+                      .OrderBy(one => one, StringComparer.OrdinalIgnoreCase)
+                      .ToList();
 
             /// <summary>The project's parties, never empty.</summary>
             private IReadOnlyList<string> Parties()
