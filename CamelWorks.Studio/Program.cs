@@ -239,6 +239,12 @@ namespace CamelWorks.Studio
             {
                 window.Show();
                 shown = true;
+
+                Log("  window shown at "
+                    + window.ActualWidth.ToString("0", System.Globalization.CultureInfo.InvariantCulture)
+                    + "x"
+                    + window.ActualHeight.ToString("0", System.Globalization.CultureInfo.InvariantCulture)
+                    + " for " + sheet.Id);
             }
             catch (Exception e)
             {
@@ -302,16 +308,14 @@ namespace CamelWorks.Studio
             // shoot has been getting: manage cut at x=1030 and y=774, header columns and footer
             // buttons sliced, transparent pixels beyond. Detached, the page is its own layout root
             // and these are the only measure and arrange it gets.
-            if (host.Parent is Window frame)
-            {
-                frame.Content = null;
+            if (host.Parent is Window frame) frame.Content = null;
 
-                // The skin goes onto the page itself before it is cut loose. Styles are resolved by
-                // walking up from the element, and off the window that walk ends at the page: the
-                // second and third pages of a shoot came back in Windows' default controls, which
-                // looks enough like a deliberate design to be reviewed as one.
-                Skin.Apply(host);
-            }
+            // The skin goes onto the page itself, whether or not it was still on a window when it
+            // got here. Styles are resolved by walking up from the element, and off the window that
+            // walk ends at the page: the second and third pages of a shoot came back in Windows'
+            // default controls, which looks enough like a deliberate design to be reviewed as one.
+            // Merging twice is a no-op, so this is unconditional rather than guarded on the parent.
+            Skin.Apply(host);
 
             // Detaching is not enough on its own. Measure and arrange are skipped for a subtree
             // that is not dirty, so the elements inside the page keep the layout clip the window's
@@ -338,6 +342,18 @@ namespace CamelWorks.Studio
 
                 height = wanted;
             }
+
+            // What the page came out as, per picture. The first page of a shoot has come back cut
+            // at the build agent's display width more than once, and each theory about why has cost
+            // a Windows run to test; the numbers say which one is right.
+            Log("  " + System.IO.Path.GetFileName(path) + ": desired "
+                + host.DesiredSize.Width.ToString("0", CultureInfo.InvariantCulture) + "x"
+                + host.DesiredSize.Height.ToString("0", CultureInfo.InvariantCulture)
+                + ", actual "
+                + host.ActualWidth.ToString("0", CultureInfo.InvariantCulture) + "x"
+                + host.ActualHeight.ToString("0", CultureInfo.InvariantCulture)
+                + ", clip " + (host.Clip == null ? "none" : host.Clip.Bounds.ToString())
+                + ", parent " + (host.Parent == null ? "none" : host.Parent.GetType().Name));
 
             var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
             bitmap.Render(host);
