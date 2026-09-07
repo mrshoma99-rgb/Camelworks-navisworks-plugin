@@ -664,6 +664,82 @@ namespace CamelWorks.Studio
         private static readonly string[] SentLevels = { "L02", "L03", "L04" };
 
         /// <summary>
+        /// What each discipline's elements are called, as a real model names them.
+        ///
+        /// Long enough to be the widest thing on the row, because they are: a board whose element
+        /// names are "Clash1" has never shown what a column of them does to the layout.
+        /// </summary>
+        private static readonly Dictionary<string, string[]> SentElements =
+            new Dictionary<string, string[]>(StringComparer.Ordinal)
+            {
+                ["Mechanical"] = new[]
+                {
+                    "Rectangular Duct: 450x250mm",
+                    "Round Duct: 300mm dia",
+                    "Pipe Types: Chilled Water Flow 100mm",
+                    "Pipe Types: Heating Return 65mm",
+                },
+                ["Structure"] = new[]
+                {
+                    "UB-Universal Beam: 457x191x67UB",
+                    "Concrete-Rectangular Column: 400x400mm",
+                    "Floor: 200mm RC Slab",
+                    "UC-Universal Column: 305x305x97UC",
+                },
+                ["Electrical"] = new[]
+                {
+                    "Cable Tray: 300mm Ladder",
+                    "Conduit: 25mm Galvanised",
+                    "Lighting Fixture: Recessed Troffer 600x600",
+                    "Cable Tray: 600mm Perforated",
+                },
+                ["Architecture"] = new[]
+                {
+                    "Basic Wall: SW-01 Plasterboard 140mm",
+                    "Ceiling: Suspended Grid 600x600",
+                    "Door: Single-Flush 926x2134mm",
+                    "Basic Wall: EW-04 Blockwork 215mm",
+                },
+            };
+
+        /// <summary>One element of a discipline, by name.</summary>
+        /// <param name="discipline">Which discipline it belongs to.</param>
+        /// <param name="at">Which clash, so a board carries several of each.</param>
+        private static string Element(string discipline, int at)
+        {
+            if (!SentElements.TryGetValue(discipline, out var named)) return discipline;
+
+            var one = named[Math.Abs(at) % named.Length];
+
+            return one + " [" + (100000 + (Math.Abs(at) * 137) % 800000)
+                                .ToString(CultureInfo.InvariantCulture) + "]";
+        }
+
+        /// <summary>
+        /// How deep one clash is, in model units.
+        ///
+        /// Spread across the bands the board tones against so a column of them shows the tone
+        /// scale rather than one colour: a few clear, a few touching, most inside the tolerance
+        /// and some well past it.
+        /// </summary>
+        /// <param name="at">Which clash.</param>
+        /// <param name="tolerance">The test's tolerance, in metres.</param>
+        private static double Depth(int at, double tolerance)
+        {
+            switch (at % 8)
+            {
+                case 0: return tolerance * 0.4;
+                case 1: return -0.0004;
+                case 2: return -tolerance * 0.3;
+                case 3: return -tolerance * 0.9;
+                case 4: return -tolerance * 1.8;
+                case 5: return -tolerance * 4.2;
+                case 6: return -0.132;
+                default: return -tolerance * 2.6;
+            }
+        }
+
+        /// <summary>
         /// One clash of the board, as the board has it.
         ///
         /// Made here rather than inside <see cref="Sent"/> because the returned packs are written
@@ -727,6 +803,12 @@ namespace CamelWorks.Studio
 
                     engine.Finding(item.Key.A, item.Key.B, item.X, item.Y, item.Z,
                                    Hosted(item.Status));
+
+                    // The two element names and the depth. Without them the board drew its two
+                    // widest columns empty on every row and an em-dash under Overlap, which is
+                    // the board's whole subject missing from every render of it.
+                    engine.Hitting(Element(shape.A, at), Element(shape.B, at + 3));
+                    engine.Deep(Depth(at, shape.Tolerance));
 
                     var result = "r" + (++results).ToString(CultureInfo.InvariantCulture);
 

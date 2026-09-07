@@ -58,6 +58,12 @@ namespace CamelWorks.Core.Testing
             internal string Id { get; }
             internal string Name { get; set; } = string.Empty;
 
+            /// <summary>What the first element is called, as the host names it.</summary>
+            internal string? NameA { get; set; }
+
+            /// <summary>What the second element is called.</summary>
+            internal string? NameB { get; set; }
+
             /// <summary>What each side of this result says under a property, by category and name.</summary>
             internal Dictionary<string, string> Properties { get; } =
                 new Dictionary<string, string>(StringComparer.Ordinal);
@@ -218,6 +224,32 @@ namespace CamelWorks.Core.Testing
             return this;
         }
 
+        /// <summary>
+        /// What the last result's two elements are called.
+        ///
+        /// The board's two widest columns are these names, and a fake that left them null drew a
+        /// board whose "First item" and "Second item" columns were empty on every row. Every
+        /// judgment made about that screen's layout was made against a board missing the two
+        /// facts it exists to state.
+        /// </summary>
+        /// <param name="a">What the first element is called.</param>
+        /// <param name="b">What the second element is called.</param>
+        public FakeClashSource Hitting(string? a, string? b)
+        {
+            if (_tests.Count == 0) throw new InvalidOperationException("add a test first");
+
+            var test = _tests[_tests.Count - 1];
+
+            if (test.Results.Count == 0) throw new InvalidOperationException("add a result first");
+
+            var result = test.Results[test.Results.Count - 1];
+
+            result.NameA = a;
+            result.NameB = b;
+
+            return this;
+        }
+
         // ---- Reading ---------------------------------------------------------------------
 
         /// <inheritdoc />
@@ -243,6 +275,8 @@ namespace CamelWorks.Core.Testing
                 one.Id, one.A, one.B, one.X, one.Y, one.Z, one.Status, one.AssignedTo)
             {
                 Name = one.Name,
+                NameA = one.NameA,
+                NameB = one.NameB,
                 GroupName = one.Group,
                 Comments = one.Comments.ToList(),
                 Distance = one.Distance,
