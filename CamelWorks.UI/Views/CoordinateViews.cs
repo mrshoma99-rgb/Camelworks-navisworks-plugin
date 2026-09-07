@@ -906,6 +906,16 @@ namespace CamelWorks.UI.Views
             private Point _pressAt;
 
             /// <summary>
+            /// Whether the press that is still down landed on a row rather than on one of its
+            /// symbols.
+            ///
+            /// A symbol handles its own press, so the row never sees it and never records where it
+            /// was. Without this the next mouse move would measure against wherever the last row
+            /// press happened to be, and dragging off the Delete symbol would pick the rule up.
+            /// </summary>
+            private bool _pressed;
+
+            /// <summary>
             /// The rules, all drawn to one width.
             ///
             /// The width is the list's, not each row's. Sized to their own text the cards came out
@@ -1111,11 +1121,19 @@ namespace CamelWorks.UI.Views
 
                 line.Child = body;
 
-                line.MouseLeftButtonDown += (s, e) => _pressAt = e.GetPosition(line);
+                line.MouseLeftButtonDown += (s, e) =>
+                {
+                    _pressAt = e.GetPosition(line);
+                    _pressed = true;
+                };
 
                 line.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
                 {
-                    if (_carrying != null) return;
+                    var opening = _pressed && _carrying == null;
+
+                    _pressed = false;
+
+                    if (!opening) return;
 
                     _open = card;
                     Redraw();
@@ -1163,11 +1181,6 @@ namespace CamelWorks.UI.Views
 
                 verbs.Children.Add(Ui.Icon(Glyphs.Bin, "Delete this rule", () => Forget(card)));
 
-                // The row itself opens the rule and can be dragged. A press on one of these is
-                // neither, so it must not reach the row underneath it.
-                foreach (var one in verbs.Children.OfType<UIElement>())
-                    one.PreviewMouseLeftButtonDown += (s, e) => e.Handled = false;
-
                 return verbs;
             }
 
@@ -1200,7 +1213,7 @@ namespace CamelWorks.UI.Views
                 line.MouseMove += (s, e) => Ui.Safely(() =>
                 {
                     if (e.LeftButton != System.Windows.Input.MouseButtonState.Pressed) return;
-                    if (_carrying != null) return;
+                    if (_carrying != null || !_pressed) return;
 
                     var at = e.GetPosition(line);
 
@@ -1218,6 +1231,7 @@ namespace CamelWorks.UI.Views
                     finally
                     {
                         _carrying = null;
+                        _pressed = false;
                     }
                 });
 
