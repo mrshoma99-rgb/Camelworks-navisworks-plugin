@@ -257,10 +257,17 @@ namespace CamelWorks.UI.Views
         /// </summary>
         private static readonly (string Key, string Light, string Dark)[] Palette =
         {
-            ("Accent",      "#0070C0", "#3AA0F0"),
-            ("AccentHover", "#0D83DA", "#5BB3F5"),
-            ("AccentPress", "#005A9C", "#2A8AD6"),
-            ("AccentWash",  "#E6F0FA", "#1F2D3D"),
+            // The BIMCamel web brand blue, and the web's own hover direction: a hovered primary
+            // darkens rather than lightening, so it does not become harder to read than at rest.
+            //
+            // Accent is ink and edges, so it lifts in the dark palette to stay legible on a dark
+            // ground. Hover and press are the primary's plate, which is brand-coloured in both
+            // themes and carries white text, so they are the same dark blue in both: lightening
+            // them for the dark theme would put white on #93C5FD at 1.5:1.
+            ("Accent",      "#2563EB", "#60A5FA"),
+            ("AccentHover", "#1D4ED8", "#1D4ED8"),
+            ("AccentPress", "#1E40AF", "#1E40AF"),
+            ("AccentWash",  "#DBEAFE", "#1E3A5F"),
 
             ("Bg",          "#EEF1F5", "#15171B"),
             ("Pane",        "#F7F8FA", "#1C1F24"),
@@ -296,7 +303,7 @@ namespace CamelWorks.UI.Views
             // The keyboard ring. Two of thirteen control templates drew focus at all, and the two
             // used different geometry - one swapped a border brush, the other added a border and
             // moved the content under it.
-            ("Focus",       "#0070C0", "#5BB3F5"),
+            ("Focus",       "#2563EB", "#93C5FD"),
             // In light the input is the brightest surface on the panel, which is what makes it
             // read as "type here". In dark it was #1B1E23 inside a #15171B well - 1.07:1, an
             // input visible only by its border. It sits above both the well and the card now.
@@ -329,9 +336,9 @@ namespace CamelWorks.UI.Views
             ("RedBd",       "#F3C6C6", "#5C2B2B"),
             ("RedTx",       "#B3261E", "#F08C84"),
 
-            ("BlueBg",      "#E6F0FA", "#152836"),
-            ("BlueBd",      "#BBD8F2", "#274966"),
-            ("BlueTx",      "#0F5FA0", "#7CC0F5"),
+            ("BlueBg",      "#E0F2FE", "#10262F"),
+            ("BlueBd",      "#B6E1F8", "#1F4457"),
+            ("BlueTx",      "#0B6C97", "#67C8EA"),
 
             ("ConsoleBg",   "#0E1116", "#0A0C10"),
             ("ConsoleTx",   "#CFE3D5", "#BFE0C8"),

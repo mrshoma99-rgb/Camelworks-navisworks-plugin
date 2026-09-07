@@ -31,10 +31,10 @@
        Skin.cs replaces every one of these entries by key when the theme changes, so the keys
        are the contract and the values here are only the starting point. -->
 
-  <SolidColorBrush x:Key="Accent"      Color="#0070C0"/>
-  <SolidColorBrush x:Key="AccentHover" Color="#0D83DA"/>
-  <SolidColorBrush x:Key="AccentPress" Color="#005A9C"/>
-  <SolidColorBrush x:Key="AccentWash"  Color="#E6F0FA"/>
+  <SolidColorBrush x:Key="Accent"      Color="#2563EB"/>
+  <SolidColorBrush x:Key="AccentHover" Color="#1D4ED8"/>
+  <SolidColorBrush x:Key="AccentPress" Color="#1E40AF"/>
+  <SolidColorBrush x:Key="AccentWash"  Color="#DBEAFE"/>
 
   <SolidColorBrush x:Key="Bg"          Color="#EEF1F5"/>
   <SolidColorBrush x:Key="Pane"        Color="#F7F8FA"/>
@@ -53,7 +53,7 @@
   <SolidColorBrush x:Key="BtnBd"       Color="#C6CDD6"/>
   <SolidColorBrush x:Key="BtnHover"    Color="#E2E7ED"/>
   <SolidColorBrush x:Key="Well"        Color="#EDF1F6"/>
-  <SolidColorBrush x:Key="Focus"       Color="#0070C0"/>
+  <SolidColorBrush x:Key="Focus"       Color="#2563EB"/>
 
   <SolidColorBrush x:Key="Nav"         Color="#F0F2F5"/>
   <SolidColorBrush x:Key="NavActive"   Color="#E6F0FA"/>
@@ -77,9 +77,9 @@
   <SolidColorBrush x:Key="RedBd"       Color="#F3C6C6"/>
   <SolidColorBrush x:Key="RedTx"       Color="#B3261E"/>
 
-  <SolidColorBrush x:Key="BlueBg"      Color="#E6F0FA"/>
-  <SolidColorBrush x:Key="BlueBd"      Color="#BBD8F2"/>
-  <SolidColorBrush x:Key="BlueTx"      Color="#0F5FA0"/>
+  <SolidColorBrush x:Key="BlueBg"      Color="#E0F2FE"/>
+  <SolidColorBrush x:Key="BlueBd"      Color="#B6E1F8"/>
+  <SolidColorBrush x:Key="BlueTx"      Color="#0B6C97"/>
 
   <SolidColorBrush x:Key="ConsoleBg"   Color="#0E1116"/>
   <SolidColorBrush x:Key="ConsoleTx"   Color="#CFE3D5"/>
@@ -98,9 +98,12 @@
 
   <!-- The brand bar. A gradient rather than a flat fill because it is the one place in the pane
        that is allowed to be decorative, and it is what the exporter's title bar already does. -->
-  <LinearGradientBrush x:Key="BrandBar" StartPoint="0,0" EndPoint="1,0">
-    <GradientStop Color="#0070C0" Offset="0"/>
-    <GradientStop Color="#0D83DA" Offset="1"/>
+  <!-- The web product's primary: 135 degrees, brand blue into indigo. It was a horizontal
+       blue-to-blue wash here, which is a gradient nobody can see, and neither end was the
+       brand colour. -->
+  <LinearGradientBrush x:Key="BrandBar" StartPoint="0,0" EndPoint="1,1">
+    <GradientStop Color="#2563EB" Offset="0"/>
+    <GradientStop Color="#4F46E5" Offset="1"/>
   </LinearGradientBrush>
 
   <!-- ════════════════════════════════ Depth ════════════════════════════════
@@ -502,8 +505,11 @@
           </Border>
           </Grid>
           <ControlTemplate.Triggers>
+            <!-- Darker, not fainter. Fading the plate to 0.92 let the pane through, so hovering
+                 the one action on the screen made it harder to read than at rest. The plate is
+                 brand-coloured in both themes and carries white text, so it darkens in both. -->
             <Trigger Property="IsMouseOver" Value="True">
-              <Setter TargetName="b" Property="Opacity" Value="0.92"/>
+              <Setter TargetName="b" Property="Background" Value="{DynamicResource AccentHover}"/>
             </Trigger>
             <Trigger Property="IsPressed" Value="True">
               <Setter TargetName="b" Property="Background" Value="{DynamicResource AccentPress}"/>
