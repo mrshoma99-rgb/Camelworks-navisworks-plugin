@@ -61,7 +61,7 @@ namespace CamelWorks.Studio
             // Drawn from the fielded board: it is the same grid plus a scheme, so one page
             // covers the matrix and the two things the fields add to it — a number counted down
             // the axis, and the mark on the row that has left the counting.
-            Page("app-clash-matrix-drawn", "Clash Manager · Matrix, drawn", 820,
+            Page("app-clash-matrix-drawn", "Clash Manager · Matrix, drawn", 880,
                  () => MatrixWindow.Surface(Seated(), Fielded())),
 
             // The fields window, and the state that matters in it: a built-in field counted down
@@ -76,7 +76,7 @@ namespace CamelWorks.Studio
             // exist on and this harness has none - so until this was split out, every dialogue
             // in the product was checked by a coordinator on a licensed seat and described to me
             // in words.
-            Page("app-clash-matrix-read", "Clash Manager · Read from the model", 660,
+            Page("app-clash-matrix-read", "Clash Manager · Read from the model", 700,
                  () => MatrixReadWindow.Draw(Named(), "{rowCode}-{rowNumber} {row} vs "
                                                       + "{columnCode}-{columnNumber} {column}",
                                              null, null)),
@@ -91,7 +91,7 @@ namespace CamelWorks.Studio
             // The panel beside the grid, with a line picked, which is the only state it draws
             // anything in. Every field of a line is typed here and a field of the project's own
             // is made here, and until this page existed none of it had been photographed.
-            Page("app-clash-matrix-line", "Clash Manager · Matrix, a line picked", 820,
+            Page("app-clash-matrix-line", "Clash Manager · Matrix, a line picked", 880,
                  () => MatrixWindow.Surface(Seated(), Fielded(), MatrixWindow.Showing.Symbols,
                                             null, "ARC_Internal Partitions")),
 
@@ -112,19 +112,62 @@ namespace CamelWorks.Studio
                      Child = ClashExchangeViews.Drawn(Filed(), "Riverside", Sent()),
                  }),
 
-            // The other half of the round: several parties' packs read together, with the
-            // conflicts marked. Drawn with nothing chosen, which is the state it opens in and the
-            // one an empty screen has to explain rather than merely be blank in.
-            Page("app-clash-exchange-import", "Clash Manager · Exchange, import", 560,
+            // The other half of the round with nothing chosen, which is the state it opens in and
+            // the one an empty screen has to explain rather than merely be blank in. Short,
+            // because that state is one card.
+            Page("app-clash-exchange-import", "Clash Manager · Exchange, import", 360,
                  () => new Border
                  {
-                     Height = 500,
+                     Height = 300,
                      Child = ClashExchangeViews.Drawn(Filed(), "Riverside", Sent(),
                                                       importing: true),
                  }),
 
-            Page("app-clash-levels", "Clash Manager · Levels", 620,
-                 () => Ui.Loose(Bench.Group("Levels", ClashLevels.Drawn(Storeyed())))),
+            // The import mode in the state it is used in: two parties' packs read against the
+            // board, one clash answered differently by each. The conflict row, the verb that
+            // resolves it and the primary that applies the rest are all drawn only in this state,
+            // and none of them had been photographed.
+            Page("app-clash-exchange-import-read", "Clash Manager · Exchange, packs read", 560,
+                 () => new Border
+                 {
+                     Height = 500,
+                     Child = ClashExchangeViews.Drawn(Filed(), "Riverside", Sent(),
+                                                      importing: true, returned: Returned()),
+                 }),
+
+            // The Filter tab as a fresh project has it: three sections with nothing in them, the
+            // composer beside them, and the preview blocked because a preview reads results and
+            // this seat has no model. The empty states were written for this and had never been
+            // drawn.
+            Page("app-clash-rules", "Clash Manager · Filter", 720,
+                 () => Deck("clash", "rules", CoordinateViews.Rules(Seated()))),
+
+            // The same tab with rules on it, which is the state every list, every order control
+            // and every trim on this screen exists for.
+            Page("app-clash-rules-set", "Clash Manager · Filter, rules written", 860, Ruled),
+
+            // The Report tab. A report is written from the board and this seat has none, so what
+            // the page draws is the rest of the screen: the document picker, the audience, the
+            // marker settings and the revision line, none of which had been looked at.
+            Page("app-clash-report", "Clash Manager · Report", 620,
+                 () => Deck("clash", "clashreport", CoordinateViews.Report(Seated()))),
+
+            // The Settings tab, on each of the three sections that has data behind it. The whole
+            // tab each time: the rail says which section is open and the foot says whether
+            // anything is unsaved, and neither is visible in a picture of the pane alone.
+            Page("app-clash-settings", "Clash Manager · Settings, levels", 760,
+                 () => Deck("clash", "clashsettings",
+                            ClashSettingsViews.Drawn(Seated(), ClashSettingsViews.Part.Levels,
+                                                     Storeyed()))),
+
+            Page("app-clash-settings-naming", "Clash Manager · Settings, test naming", 760,
+                 () => Deck("clash", "clashsettings",
+                            ClashSettingsViews.Drawn(Seated(), ClashSettingsViews.Part.Naming,
+                                                     null, Booked(), Testing()))),
+
+            Page("app-clash-settings-units", "Clash Manager · Settings, units and distances", 760,
+                 () => Deck("clash", "clashsettings",
+                            ClashSettingsViews.Drawn(Seated(), ClashSettingsViews.Part.Units))),
 
             // The naming, drawn on each of its panes. This is the surface that decides what the
             // manager can band, filter, sort and renumber by, and every one of those reads a
@@ -145,7 +188,7 @@ namespace CamelWorks.Studio
             // cell and the difference between a nought and a pair no test covers were drawing
             // nobody had ever seen. It is handed the same list a real read hands back, and the
             // tab counts it through MatrixTally exactly as a licensed seat does.
-            Page("app-clash-matrix-results", "Clash Manager · Matrix, results", 820,
+            Page("app-clash-matrix-results", "Clash Manager · Matrix, results", 880,
                  () =>
                  {
                      var board = Drawn(pointed: true);
@@ -159,7 +202,7 @@ namespace CamelWorks.Studio
             // described to me in words, which is how every layout fault on this tab has been
             // found so far. The results view is not here: it counts what a document holds, and
             // this seat holds none.
-            Page("app-clash-matrix-priority", "Clash Manager · Matrix, priority", 820,
+            Page("app-clash-matrix-priority", "Clash Manager · Matrix, priority", 880,
                  () => MatrixWindow.Surface(Seated(), Drawn(), MatrixWindow.Showing.Priority)),
 
             // The detected-surface window, opened from a clearance test's settings panel. The
@@ -301,6 +344,59 @@ namespace CamelWorks.Studio
         }
 
         /// <summary>
+        /// The Filter tab with a project's rules on it.
+        ///
+        /// The rules are written into the scratch project on the way in, as
+        /// <see cref="Creating"/> writes its tests: the store is shared by every page, so a page
+        /// that needs data puts it there itself rather than relying on the order the harness draws
+        /// in. Nothing is saved, so the empty Filter page still opens on an empty project.
+        ///
+        /// What is written is what the three lists have to draw: both filter actions, a name long
+        /// enough to be trimmed, a grouping step that carries a number and one that carries a
+        /// property name, and assignments with and without a priority.
+        /// </summary>
+        private static UIElement Ruled()
+        {
+            var seat = Seated();
+            var rules = new ClashRuleSet();
+
+            rules.Filters.Add(new FilterSpec(
+                "Insulation grazing insulation",
+                new PredicateSpec("maxVolume") { A = 0.001 }, suppress: true));
+
+            rules.Filters.Add(new FilterSpec(
+                "Sleeves already coordinated against the structural openings schedule REV21",
+                new PredicateSpec("bothInSet") { Name = "Sleeves REV21" }, suppress: true));
+
+            rules.Filters.Add(new FilterSpec(
+                "Touching, not passing through",
+                new PredicateSpec("distance") { A = 0, B = 0.005 }, suppress: false));
+
+            rules.Filters.Add(new FilterSpec(
+                "Services through structural framing",
+                new PredicateSpec("category") { Name = "Structural Framing" }, suppress: false));
+
+            rules.Grouping.Add(new GroupingSpec("level"));
+            rules.Grouping.Add(new GroupingSpec("proximity") { A = 2.5 });
+            rules.Grouping.Add(new GroupingSpec("property") { Name = "System Name" });
+
+            rules.Assigns.Add(new AssignSpec(
+                new PredicateSpec("eitherInSet") { Name = "WSC_DUCTS_REV21_ISSUED" },
+                "Mechanical", "High"));
+
+            rules.Assigns.Add(new AssignSpec(
+                new PredicateSpec("category") { Name = "Cable Tray" }, "Electrical"));
+
+            rules.Assigns.Add(new AssignSpec(
+                new PredicateSpec("propertyContains") { Name = "System Name", Value = "SPR" },
+                "Fire", "Normal"));
+
+            seat.Store.Section(ProjectStore.ClashSection).Set(ClashKeys.Rules, rules.ToJson());
+
+            return Deck("clash", "rules", CoordinateViews.Rules(seat));
+        }
+
+        /// <summary>
         /// A seat with nothing in it, and a scratch project beside the images.
         ///
         /// Empty on purpose. This is the state a screen is in before a document is open, and the one
@@ -324,27 +420,148 @@ namespace CamelWorks.Studio
         /// </summary>
         private static IReadOnlyList<ClashGroup> Sent()
         {
-            var parties = new[] { "Mechanical", "Structure", "Electrical", "Architecture" };
-            var tests = new[] { "L02 MEP v STR", "L03 MEP v STR", "L04 MEP v ARC",
-                                "L02 ARC v STR", "Basement services", "Roof plant" };
-            var folders = new[] { "Weekly", "Weekly", "Weekly", "Handover", "Handover", null };
-            var levels = new[] { "L02", "L03", "L04" };
-
             var made = new List<ClashItem>();
 
-            for (var at = 0; at < 96; at++)
-            {
-                var item = ClashFixture(at, tests[at % tests.Length], levels[at % levels.Length]);
-
-                item.TestFolder = folders[at % tests.Length];
-                item.AssignedTo = parties[at % parties.Length];
-                item.Status = (FindingStatus)(at % 5);
-
-                made.Add(item);
-            }
+            for (var at = 0; at < 96; at++) made.Add(Boarded(at));
 
             return ClashPipeline.Run(made).Groups;
         }
+
+        /// <summary>Who the board's clashes are assigned to.</summary>
+        private static readonly string[] SentParties =
+            { "Mechanical", "Structure", "Electrical", "Architecture" };
+
+        /// <summary>The tests the board's clashes came from.</summary>
+        private static readonly string[] SentTests =
+            { "L02 MEP v STR", "L03 MEP v STR", "L04 MEP v ARC", "L02 ARC v STR",
+              "Basement services", "Roof plant" };
+
+        /// <summary>The folder each test is filed under, or null for one at the root.</summary>
+        private static readonly string?[] SentFolders =
+            { "Weekly", "Weekly", "Weekly", "Handover", "Handover", null };
+
+        /// <summary>The storeys the board's clashes stand on.</summary>
+        private static readonly string[] SentLevels = { "L02", "L03", "L04" };
+
+        /// <summary>
+        /// One clash of the board, as the board has it.
+        ///
+        /// Made here rather than inside <see cref="Sent"/> because the returned packs are written
+        /// from the same clashes: a pack whose keys are derived any other way matches nothing on
+        /// the board and the import mode draws an empty reading.
+        /// </summary>
+        /// <param name="at">Which one.</param>
+        private static ClashItem Boarded(int at)
+        {
+            var item = ClashFixture(at, SentTests[at % SentTests.Length],
+                                    SentLevels[at % SentLevels.Length]);
+
+            item.TestFolder = SentFolders[at % SentTests.Length];
+            item.AssignedTo = SentParties[at % SentParties.Length];
+            item.Status = (FindingStatus)(at % 5);
+
+            return item;
+        }
+
+        /// <summary>
+        /// Two returned packs on disk, for the import page.
+        ///
+        /// Written rather than fabricated: the tab takes paths, reads the archives and matches
+        /// what it finds against the board, so a fixture that skipped the writer would photograph
+        /// a screen the product cannot produce.
+        ///
+        /// Both parties answer clash 007, and differently, which is the state the conflict row,
+        /// the verb that resolves it and the enabled primary are all drawn in.
+        /// </summary>
+        private static IReadOnlyList<string> Returned()
+        {
+            var folder = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+                                                "camelworks-shots", "returned");
+
+            System.IO.Directory.CreateDirectory(folder);
+
+            // Every answer differs from the status the board has, so each row is a row that
+            // changes something and the "only what changes" filter has the same list under it.
+            return new[]
+            {
+                Answered(folder, "Mechanical", new[]
+                {
+                    (7, FindingStatus.Resolved),
+                    (13, FindingStatus.Active),
+                    (25, FindingStatus.Approved),
+                    (31, FindingStatus.Reviewed),
+                }),
+                Answered(folder, "Structure", new[]
+                {
+                    (7, FindingStatus.Active),
+                    (18, FindingStatus.Resolved),
+                    (44, FindingStatus.Active),
+                }),
+            };
+        }
+
+        /// <summary>
+        /// One party's pack, written to the temp folder.
+        ///
+        /// The file's name is the party: the tab reads the party off the file name unless somebody
+        /// renames it, which is what a coordinator sees when the packs arrive by mail.
+        /// </summary>
+        /// <param name="folder">Where to write it.</param>
+        /// <param name="party">Who sent it back.</param>
+        /// <param name="answers">Which of the board's clashes they answered, and how.</param>
+        private static string Answered(string folder, string party,
+                                       IReadOnlyList<(int At, FindingStatus Said)> answers)
+        {
+            // A fixed moment, so two renders of this page produce the same file.
+            var when = new DateTime(2026, 3, 2, 9, 30, 0, DateTimeKind.Utc).Ticks;
+
+            var findings = new List<Finding>();
+
+            foreach (var answer in answers)
+            {
+                var item = Boarded(answer.At);
+
+                var result = new ClashResultInfo(
+                    answer.At.ToString(CultureInfo.InvariantCulture),
+                    item.Key.A, item.Key.B, item.X, item.Y, item.Z, null, null)
+                {
+                    Name = item.Name,
+                };
+
+                // Through the product's own projection, so the topic guid and the sidecar identity
+                // are the ones a real pack carries and the return leg lands on the right clash.
+                var finding = ClashFindings.From(item.TestName, result);
+
+                finding.Status = answer.Said;
+                finding.AssignedTo = party;
+                finding.Comments.Add(new FindingComment(party, when, Remarked(answer.Said)));
+
+                findings.Add(finding);
+            }
+
+            var path = System.IO.Path.Combine(folder, party + ClashFile.Extension);
+
+            var written = FindingBcf.Write(findings, null, new FindingBcfOptions
+            {
+                ProjectName = "Riverside",
+                Author = party,
+                WhenTicks = when,
+            });
+
+            System.IO.File.WriteAllBytes(path, written.Bytes);
+
+            return path;
+        }
+
+        /// <summary>What a party writes on a clash when they answer it.</summary>
+        /// <param name="said">The status they returned.</param>
+        private static string Remarked(FindingStatus said) => said switch
+        {
+            FindingStatus.Resolved => "Re-routed above the beam, re-issued this morning.",
+            FindingStatus.Approved => "Within the agreed tolerance, no change needed.",
+            FindingStatus.Reviewed => "Looked at; waiting on the structural opening.",
+            _ => "Still ours, not started.",
+        };
 
         /// <summary>One clash, far enough from the last that the grouping keeps them apart.</summary>
         /// <param name="at">Which one, for its name and its position.</param>
