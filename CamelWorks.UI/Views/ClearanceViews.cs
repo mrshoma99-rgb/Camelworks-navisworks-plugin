@@ -144,14 +144,16 @@ namespace CamelWorks.UI.Views
                         Sized(Ui.Field("Search for walkable surfaces in",
                                  Source(from, settings.Surfaces,
                                      "Where to look for walkable surfaces",
-                                     pick => Keep(one => one.Surfaces = pick), 380)),
+                                     pick => Keep(one => one.Surfaces = pick), 380),
+                                 null, Need.Required),
                               380),
                         Sized(Ui.Field("Search against",
                                  Source(to, settings.Targets, "What the height is measured to",
-                                        pick => Keep(one => one.Targets = pick), 380)),
+                                        pick => Keep(one => one.Targets = pick), 380),
+                                 null, Need.Required),
                               380),
                         Chosen("Levels", settings.Levels, storeys, EveryLevel,
-                               "Optional. Reports only the surfaces on the storeys named.",
+                               "Reports only the surfaces on the storeys named.",
                                (one, add) => one.Levels.Add(add),
                                (one, drop) => one.Levels.Remove(drop))),
 
@@ -159,10 +161,12 @@ namespace CamelWorks.UI.Views
                         Ui.Across(
                             Sized(Number("Height", settings.MinimumMetres,
                                          metres => metres > 0,
-                                         (one, metres) => one.MinimumMetres = metres), 190),
+                                         (one, metres) => one.MinimumMetres = metres,
+                                         Need.Required), 190),
                             Sized(Number("Tolerance", settings.ToleranceMetres,
                                          metres => metres >= 0,
-                                         (one, metres) => one.ToleranceMetres = metres), 190)),
+                                         (one, metres) => one.ToleranceMetres = metres,
+                                         Need.Optional), 190)),
                         settings.ToleranceMetres > 0
                             ? null
                             : Ui.Note("Every shortfall is reported, however small.")),
@@ -206,7 +210,7 @@ namespace CamelWorks.UI.Views
 
                 // Picker, then what is chosen, then the line that says what the list does. The chips
                 // are the answer and belong next to the control that adds to it.
-                var stack = Ui.Stack(Ui.Field(label, Reading(picker)));
+                var stack = Ui.Stack(Ui.Field(label, Reading(picker), null, Need.Optional));
 
                 if (chosen.Count > 0)
                     stack.Children.Add(Ui.Across(chosen
@@ -309,14 +313,17 @@ namespace CamelWorks.UI.Views
             /// <param name="value">What it is now, in metres.</param>
             /// <param name="allows">Whether a value read off the box may be written.</param>
             /// <param name="write">Puts an accepted value onto the settings.</param>
+            /// <param name="need">What the field asks of the person filling it in.</param>
             private Panel Number(string label, double value, Func<double, bool> allows,
-                                 Action<ClearanceSettings, double> write) =>
+                                 Action<ClearanceSettings, double> write,
+                                 Need need = Need.Unsaid) =>
                 Ui.Field(label + " (" + Units.LengthUnit + ")",
                          Ui.Settled(Units.Bare(value), string.Empty, text => Keep(one =>
                          {
                              if (Units.TryRead(text, out var metres) && allows(metres))
                                  write(one, metres);
-                         }), 90));
+                         }), 90),
+                         null, need);
 
             /// <summary>A field capped to a readable width, so short fields sit two to a row.</summary>
             /// <param name="field">The field.</param>

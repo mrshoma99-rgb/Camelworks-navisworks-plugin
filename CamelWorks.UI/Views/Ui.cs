@@ -158,6 +158,28 @@ namespace CamelWorks.UI.Views
             Binding.DoNothing;
     }
 
+    /// <summary>
+    /// What a field asks of the person filling it in.
+    ///
+    /// Three states rather than two, because "the app fills this in" is a different promise from
+    /// "you may leave this out": a cut elevation taken from a storey is not optional, it is
+    /// already answered, and a box that says neither is a box that has to be guessed at.
+    /// </summary>
+    public enum Need
+    {
+        /// <summary>The field makes no claim. The default, so nothing changes where nobody has said.</summary>
+        Unsaid = 0,
+
+        /// <summary>Has to be filled in before the surface's action can run.</summary>
+        Required = 1,
+
+        /// <summary>The check runs without it.</summary>
+        Optional = 2,
+
+        /// <summary>Filled in from elsewhere, and overwritable by hand.</summary>
+        Automatic = 3,
+    }
+
     /// <summary>What a path field is asking for, and therefore which dialog it opens.</summary>
     public enum PathKind
     {
@@ -2206,18 +2228,50 @@ namespace CamelWorks.UI.Views
         /// <param name="label">The label.</param>
         /// <param name="control">The control.</param>
         /// <param name="hint">One line saying what to put in it, or null.</param>
-        public static Panel Field(string label, UIElement control, string? hint)
+        public static Panel Field(string label, UIElement control, string? hint) =>
+            Field(label, control, hint, Need.Unsaid);
+
+        /// <summary>
+        /// A control with its label, an optional line of explanation, and what the field asks of
+        /// the person filling it in.
+        ///
+        /// The last part is the one the product did not have. Nothing was ever marked required,
+        /// the word "optional" appeared once in the whole of Views, and a value filled in from
+        /// somewhere else - a cut elevation taken from a storey - was the same box as one typed by
+        /// hand. So a form could only be learned by pressing its action and reading what it
+        /// refused.
+        /// </summary>
+        /// <param name="label">The label.</param>
+        /// <param name="control">The control.</param>
+        /// <param name="hint">One line saying what to put in it, or null.</param>
+        /// <param name="need">What the field asks of the person filling it in.</param>
+        public static Panel Field(string label, UIElement control, string? hint, Need need)
         {
             var panel = new StackPanel { Margin = new Thickness(0, 0, 0, 10) };
 
             Free(control);
 
-            panel.Children.Add(new TextBlock
+            var head = new DockPanel { Margin = new Thickness(0, 0, 0, 4), LastChildFill = false };
+
+            var name = new TextBlock
             {
                 Text = label,
                 TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 0, 0, 4),
-            }.Wearing("Lbl"));
+                VerticalAlignment = VerticalAlignment.Center,
+            }.Wearing("Lbl");
+
+            DockPanel.SetDock(name, Dock.Left);
+            head.Children.Add(name);
+
+            var asked = Asked(need);
+
+            if (asked != null)
+            {
+                DockPanel.SetDock(asked, Dock.Left);
+                head.Children.Add(asked);
+            }
+
+            panel.Children.Add(head);
 
             // Deliberately not touching the control's alignment. Text and Choice already ask to
             // stretch; Segmented asks not to, because a three-way switch pulled across a whole
@@ -2227,6 +2281,41 @@ namespace CamelWorks.UI.Views
             if (!string.IsNullOrEmpty(hint)) panel.Children.Add(Small(hint!));
 
             return panel;
+        }
+
+        /// <summary>
+        /// The mark that says what a field asks for, or null when it asks nothing in particular.
+        /// </summary>
+        /// <param name="need">What the field asks.</param>
+        private static UIElement? Asked(Need need)
+        {
+            if (need == Need.Unsaid) return null;
+
+            var said = new TextBlock
+            {
+                Text = need == Need.Required ? "Required"
+                     : need == Need.Optional ? "Optional"
+                     : "Automatic",
+                FontSize = 10,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            said.Tint(TextBlock.ForegroundProperty,
+                      need == Need.Required ? "AmberTx" : need == Need.Optional ? "Faint" : "BlueTx");
+
+            var mark = new Border { Child = said };
+
+            mark.Wearing(need == Need.Required ? "BadgeReq"
+                       : need == Need.Optional ? "BadgeOpt" : "BadgeAuto");
+
+            mark.ToolTip = need == Need.Required
+                ? "This has to be filled in before the test can run."
+                : need == Need.Optional
+                    ? "The check runs without this."
+                    : "Filled in from elsewhere. Typing over it keeps what you type.";
+
+            return mark;
         }
 
         /// <summary>

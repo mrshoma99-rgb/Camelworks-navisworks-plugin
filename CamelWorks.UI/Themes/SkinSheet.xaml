@@ -239,18 +239,26 @@
     <Setter Property="SnapsToDevicePixels" Value="True"/>
   </Style>
 
+  <!-- What a field asks for. Three styles that were declared here and never used by anything:
+       they carried a fill and no edge, so adopting them as written would have produced three
+       washes with no shape. They have an edge now, and Ui.Field draws them. -->
+
   <Style x:Key="BadgeReq" TargetType="Border">
-    <Setter Property="Background" Value="{DynamicResource OkBg}"/>
+    <Setter Property="Background" Value="{DynamicResource AmberBg}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource AmberBd}"/>
+    <Setter Property="BorderThickness" Value="1"/>
     <Setter Property="CornerRadius" Value="7"/>
-    <Setter Property="Padding" Value="7,1"/>
+    <Setter Property="Padding" Value="6,0"/>
     <Setter Property="Margin" Value="8,0,0,0"/>
     <Setter Property="VerticalAlignment" Value="Center"/>
   </Style>
   <Style x:Key="BadgeOpt" TargetType="Border" BasedOn="{StaticResource BadgeReq}">
     <Setter Property="Background" Value="{DynamicResource Nav}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Bd}"/>
   </Style>
   <Style x:Key="BadgeAuto" TargetType="Border" BasedOn="{StaticResource BadgeReq}">
-    <Setter Property="Background" Value="{DynamicResource AccentWash}"/>
+    <Setter Property="Background" Value="{DynamicResource BlueBg}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource BlueBd}"/>
   </Style>
 
   <!-- ════════════════════════════════ TextBox ════════════════════════════════ -->
