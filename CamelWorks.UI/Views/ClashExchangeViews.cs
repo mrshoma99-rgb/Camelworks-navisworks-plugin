@@ -73,13 +73,18 @@ namespace CamelWorks.UI.Views
         internal static ExchangeRequest? Preferred { get; set; }
 
         /// <summary>
-        /// Which check this tab exchanges. The Manage tab owns the choice.
+        /// Which check this tab exchanges.
         ///
-        /// Not a second picker. Two pickers that can disagree is a coordinator exporting one
-        /// check's findings while reading another check's board, so this tab says which check is
-        /// selected and links back to Manage to change it.
+        /// The Clash Manager's one selection, not a copy of it. This was a field of its own that
+        /// the Manage tab wrote on every draw, on the reasoning that two pickers can disagree.
+        /// Two pickers over one value cannot: the field was the disagreement, and it made
+        /// exporting another check's results a trip to Manage and back.
         /// </summary>
-        internal static string CheckKey { get; set; } = FindingSource.Clash;
+        internal static string CheckKey
+        {
+            get => ClashManageViews.Showing;
+            set => ClashManageViews.Showing = value;
+        }
 
         /// <summary>The surface, for a desk to bench.</summary>
         /// <param name="session">The open document.</param>
@@ -452,49 +457,85 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Which kind of test is being exchanged, and where it is chosen.
+            /// Which kind of test is being exchanged.
             ///
-            /// Read-only here on purpose: see <see cref="CheckKey"/>. Drawn as the value it is
-            /// rather than as a button, with the way to change it beside it.
+            /// A picker, like every other field on this strip. It was a read-only value with a
+            /// link to the Manage tab, on the reasoning that two pickers over one choice can
+            /// disagree — but both write the one selection, so they cannot, and the link made
+            /// exporting a clearance run a trip to Manage and back for a value this strip was
+            /// already showing.
+            ///
+            /// The tab is rebuilt rather than patched, as on Manage: the tests, the results, the
+            /// filter and the profile all belong to the check that was showing.
             /// </summary>
             private UIElement Kind()
             {
-                // Two lines, not one. A wrap panel put the link on the same line as the word
-                // whenever the two happened to fit, which drew "ClashChange on Manage" with no
-                // gap and ran to the edge of the box beside it. The line break is now fixed
-                // rather than a measurement.
-                var stack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                var offered = Kinds();
 
-                var row = new StackPanel
+                // Nothing to choose between. With no seat there is no register to list, so the
+                // value is drawn as the value it is rather than as a picker over one entry.
+                if (offered.Count < 2)
                 {
-                    Orientation = Orientation.Horizontal,
-                    VerticalAlignment = VerticalAlignment.Center,
-                };
+                    var row = new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        ToolTip = "This seat offers one kind of check, so there is nothing to "
+                                + "choose between.",
+                    };
 
-                var named = new TextBlock
+                    // The symbol first, then the word. The same mark this kind carries in the
+                    // Create list and the check picker.
+                    row.Children.Add(Ui.Glyph(Symbolled(CheckKey), 15, "Muted",
+                                              new Thickness(0, 0, 7, 0)));
+
+                    row.Children.Add(new TextBlock
+                    {
+                        Text = Named(CheckKey),
+                        VerticalAlignment = VerticalAlignment.Center,
+                    }.Wearing("Body"));
+
+                    return row;
+                }
+
+                var words = offered.Select(Named).ToList();
+
+                return Ui.Choice(words, Named(CheckKey), picked =>
                 {
-                    Text = Named(CheckKey),
-                    VerticalAlignment = VerticalAlignment.Center,
-                }.Wearing("Body");
+                    var key = offered.FirstOrDefault(
+                        one => string.Equals(Named(one), picked, StringComparison.Ordinal));
 
-                var link = Ui.Link("Change on Manage",
-                                   () => Ui.Told(Shell.AppWindow.Show("clash", "manage")));
+                    if (key == null || string.Equals(key, CheckKey, StringComparison.OrdinalIgnoreCase))
+                        return;
 
-                link.ToolTip = "The Manage tab holds the selected kind. This tab exchanges "
-                             + "whatever it has selected, so the two cannot disagree.";
-                link.HorizontalAlignment = HorizontalAlignment.Left;
-                link.Margin = new Thickness(0, 3, 0, 0);
+                    CheckKey = key;
 
-                // The symbol first, then the word. The same mark this kind carries in the Create
-                // list and the check picker, so the three screens name the kind the same way.
-                row.Children.Add(Ui.Glyph(Symbolled(CheckKey), 15, "Muted",
-                                          new Thickness(0, 0, 7, 0)));
-                row.Children.Add(named);
+                    Ui.Told(Shell.AppWindow.Show("clash", "exchange"));
+                }, Ui.Wide.Word);
+            }
 
-                stack.Children.Add(row);
-                stack.Children.Add(link);
+            /// <summary>
+            /// Every kind this seat can exchange: clash first, then whatever else is registered.
+            ///
+            /// The same list and the same order the Manage tab's own picker offers, so the two
+            /// name the kinds identically.
+            /// </summary>
+            private IReadOnlyList<string> Kinds()
+            {
+                var found = new List<string> { FindingSource.Clash };
 
-                return stack;
+                if (_session == null) return found;
+
+                foreach (var one in _session.Checks.All)
+                    if (!string.Equals(one.Key, FindingSource.Clash, StringComparison.OrdinalIgnoreCase)
+                        && !found.Contains(one.Key, StringComparer.OrdinalIgnoreCase))
+                        found.Add(one.Key);
+
+                // A key the board carries that this seat cannot offer still has to be shown, or
+                // the picker would silently read as a kind other than the one being exported.
+                if (!found.Contains(CheckKey, StringComparer.OrdinalIgnoreCase)) found.Add(CheckKey);
+
+                return found;
             }
 
             /// <summary>

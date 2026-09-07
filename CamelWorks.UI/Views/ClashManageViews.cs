@@ -53,6 +53,19 @@ namespace CamelWorks.UI.Views
         /// <summary>Which check the board is drawing. The picker above the rail sets it.</summary>
         private static string _checkKey = FindingSource.Clash;
 
+        /// <summary>
+        /// Which check the Clash Manager is working on, across every tab.
+        ///
+        /// One value, not a board setting that other tabs mirror. Exchange used to hold a copy
+        /// that this tab overwrote on every draw, so the only way to export another check's
+        /// results was to come here, change the board, and go back.
+        /// </summary>
+        internal static string Showing
+        {
+            get => _checkKey;
+            set => _checkKey = string.IsNullOrWhiteSpace(value) ? FindingSource.Clash : value;
+        }
+
         // The property columns survive tab switches with the read: they are how somebody set the
         // board up, and rebuilding them after every glance at another tab is work nobody should
         // have to repeat. Keyed on the check, because a column reading a duct's system name means
@@ -1318,12 +1331,6 @@ namespace CamelWorks.UI.Views
                 // built out of that check's declared columns.
                 Wanted();
                 Indexed();
-
-                // The Exchange tab exchanges whatever this tab has selected, and it holds that as
-                // a key rather than a check. Set on every draw, not only when Export is pressed:
-                // opening Exchange from the ribbon otherwise exported whichever check was selected
-                // the last time somebody did press it.
-                ClashExchangeViews.CheckKey = Check?.Key ?? FindingSource.Clash;
 
                 // One caption for both sources: the results are what gets read either way, and
                 // the tool registry promises this exact action.
