@@ -198,14 +198,43 @@ namespace CamelWorks.Studio
                 && (words.TextTrimming != TextTrimming.None || words.TextWrapping != TextWrapping.NoWrap))
                 return;
 
+            // Text is measured against the text, not against DesiredSize.
+            //
+            // WPF clamps DesiredSize to the room it offered, so a line of text in a slot half its
+            // length reports asking for exactly what it got. The only way to know a line is cut
+            // is to lay it out again with no constraint and compare, which is what this does: the
+            // reader's first working run found the deliberate overlap in its own canary and not
+            // the deliberate clipping, because of this.
+            if (here is TextBlock line && !string.IsNullOrEmpty(line.Text))
+            {
+                var wanted = Wide(line);
+
+                if (!scrollsWide && wanted - line.RenderSize.Width > Slack)
+                    found.Add(new Fault(
+                        "cut off",
+                        Named(line) + " is " + Size(wanted) + " wide in "
+                        + Size(line.RenderSize.Width) + ", and neither trims nor wraps",
+                        path));
+
+                return;
+            }
+
+            // The margin is in DesiredSize and not in RenderSize, so comparing the two as they
+            // come reports every element with a margin as cut off. The reader's first working run
+            // called 216 of them faults on three pages, all of them margins.
+            var margin = here.Margin;
+
+            var asked = new Size(Math.Max(0, here.DesiredSize.Width - margin.Left - margin.Right),
+                                 Math.Max(0, here.DesiredSize.Height - margin.Top - margin.Bottom));
+
             // A scroller's own content is meant to exceed it on the axis that scrolls.
-            var wide = !scrollsWide && here.DesiredSize.Width - here.RenderSize.Width > Slack;
-            var tall = !scrollsTall && here.DesiredSize.Height - here.RenderSize.Height > Slack;
+            var wide = !scrollsWide && asked.Width - here.RenderSize.Width > Slack;
+            var tall = !scrollsTall && asked.Height - here.RenderSize.Height > Slack;
 
             if (!wide && !tall) return;
 
             var said = Named(here) + " asked for "
-                     + Size(here.DesiredSize.Width) + " x " + Size(here.DesiredSize.Height)
+                     + Size(asked.Width) + " x " + Size(asked.Height)
                      + " and was given "
                      + Size(here.RenderSize.Width) + " x " + Size(here.RenderSize.Height);
 
@@ -265,6 +294,26 @@ namespace CamelWorks.Studio
                         + parent.GetType().Name,
                         path));
                 }
+        }
+
+        /// <summary>
+        /// How wide a line of text is when nothing constrains it.
+        ///
+        /// Laid out from the block's own typeface and size, because the block itself will not say:
+        /// its DesiredSize is whatever it was offered.
+        /// </summary>
+        /// <param name="line">The text block.</param>
+        private static double Wide(TextBlock line)
+        {
+            var typeface = new Typeface(line.FontFamily, line.FontStyle, line.FontWeight,
+                                        line.FontStretch);
+
+            var drawn = new FormattedText(line.Text, CultureInfo.InvariantCulture,
+                                          line.FlowDirection, typeface, line.FontSize,
+                                          Brushes.Black, 96);
+
+            return drawn.WidthIncludingTrailingWhitespace
+                 + line.Padding.Left + line.Padding.Right;
         }
 
         /// <summary>
