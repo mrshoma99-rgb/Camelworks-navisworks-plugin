@@ -286,7 +286,10 @@ namespace CamelWorks.Studio
             var body = new Border
             {
                 Padding = new Thickness(18, 16, 18, 16),
-                Child = ClashTestViews.Drawn(seat, clash, "Clash 1"),
+                // Panel, not Drawn. Drawn returns the form's body without its footer, so
+                // "Make the test" - the one press this whole form exists for - was in no render
+                // and had never been reviewed.
+                Child = ClashTestViews.Panel(seat, clash, "Clash 1", _ => { }, () => { }),
             };
 
             body.Tint(Border.BackgroundProperty, "Bg");
@@ -1324,6 +1327,14 @@ namespace CamelWorks.Studio
                 Ui.Field("Smallest surface kept",
                          Ui.Choice(new[] { "0.05 m²", "0.25 m²", "1.0 m²", "4.0 m²", "10.0 m²" },
                                    "0.05 m²", null, 160)),
+                // The screen's second setting, missing from this fixture until the review looked
+                // for it. It is the field most likely to be misread - a 1:5 car-park ramp is
+                // 11.3 degrees, and nothing over the threshold is checked at all - and it had
+                // never appeared in a render.
+                Ui.Field("Steepest surface still walked on",
+                         Ui.Choice(new[] { "3°", "5°", "10°", "12°", "30°" }, "10°", null, 160),
+                         "Anything steeper is a ramp or a roof, and headroom over it is not "
+                         + "measured."),
                 Ui.Check("Prefer elements whose category names a floor", false, null),
                 stairs,
                 Ui.Runner("Find the surfaces", Ui.Stack(), _ => { }, primary: false),

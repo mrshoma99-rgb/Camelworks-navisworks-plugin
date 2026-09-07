@@ -66,17 +66,6 @@ namespace CamelWorks.UI.Views
             return new Form(seat, check, named, onMade, onDropped).Panel();
         }
 
-        /// <summary>
-        /// The form's fields alone, for the design harness.
-        /// </summary>
-        /// <param name="seat">The seat this is running in.</param>
-        /// <param name="check">The clash check that would hold it.</param>
-        /// <param name="named">What the test would be called.</param>
-        public static UIElement Drawn(ISeat seat, ClashCheck check, string named) =>
-            new Form(seat ?? throw new ArgumentNullException(nameof(seat)),
-                     check ?? throw new ArgumentNullException(nameof(check)),
-                     named, _ => { }, () => { }).Body();
-
         // -----------------------------------------------------------------------------------
 
         private sealed class Form
