@@ -363,30 +363,47 @@ namespace CamelWorks.Core.Tests
             when.Parts.Add(new PredicateSpec("not"));
             when.Parts[1].Parts.Add(new PredicateSpec("category") { Name = "Insulation" });
 
-            rules.Filters.Add(new FilterSpec("Tolerance noise", when, suppress: true));
+            rules.Cards.Add(new ClashCard("Tolerance noise", when, ClashActionKind.Suppress));
             rules.Grouping.Add(new GroupingSpec("proximity") { A = 2.5 });
-            rules.Assigns.Add(new AssignSpec(new PredicateSpec("bothInSet") { Name = "Level 3" }, "Mechanical", "High"));
+            rules.Cards.Add(new ClashCard("Level 3 to Mechanical",
+                                          new PredicateSpec("bothInSet") { Name = "Level 3" },
+                                          ClashActionKind.Assign) { Value = "Mechanical" });
             rules.Pinned["Level 3 riser"] = new[] { "c1", "c2" };
 
             var back = ClashRuleSet.FromJson(rules.ToJson());
 
-            Assert.Equal("Tolerance noise", back.Filters[0].Name);
-            Assert.True(back.Filters[0].Suppress);
-            Assert.Equal("Insulation", back.Filters[0].When.Parts[1].Parts[0].Name);
+            Assert.Equal("Tolerance noise", back.Cards[0].Name);
+            Assert.Equal(ClashActionKind.Suppress, back.Cards[0].Action);
+            Assert.Equal("Insulation", back.Cards[0].When.Parts[1].Parts[0].Name);
             Assert.Equal(2.5, back.Grouping[0].A);
-            Assert.Equal("High", back.Assigns[0].Priority);
+            Assert.Equal(ClashActionKind.Assign, back.Cards[1].Action);
+            Assert.Equal("Mechanical", back.Cards[1].Value);
             Assert.Equal(new[] { "c1", "c2" }, back.Pinned["Level 3 riser"].ToArray());
         }
 
         [Fact]
-        public void A_disabled_rule_stays_in_the_list_and_out_of_the_run()
+        public void A_disabled_card_stays_in_the_list_and_out_of_the_run()
         {
             var rules = new ClashRuleSet();
-            rules.Filters.Add(new FilterSpec("Off", new PredicateSpec("always"), suppress: true) { IsEnabled = false });
 
-            Assert.Single(rules.Filters);
+            rules.Cards.Add(new ClashCard("Off", new PredicateSpec("always"),
+                                          ClashActionKind.Suppress) { IsEnabled = false });
+
+            Assert.Single(rules.Cards);
             Assert.Empty(rules.ToOptions().Filters);
-            Assert.False(ClashRuleSet.FromJson(rules.ToJson()).Filters[0].IsEnabled);
+            Assert.False(ClashRuleSet.FromJson(rules.ToJson()).Cards[0].IsEnabled);
+        }
+
+        [Fact]
+        public void A_card_naming_an_action_this_build_does_not_know_is_dropped()
+        {
+            // Not read as the first entry of the enum. A card saved as something newer must not
+            // come back as Suppress and then be run: the list is acted on, not only displayed.
+            var json = new ClashCard("Odd", new PredicateSpec("always"), ClashActionKind.Suppress)
+                .ToJson()
+                .Set("action", JsonValue.String("Incinerate"));
+
+            Assert.Null(ClashCard.FromJson(json));
         }
     }
 

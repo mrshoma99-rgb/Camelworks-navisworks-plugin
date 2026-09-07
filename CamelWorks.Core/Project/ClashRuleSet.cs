@@ -301,125 +301,6 @@ namespace CamelWorks.Core.Project
         public override string ToString() => Describe();
     }
 
-    /// <summary>A suppress-or-flag rule, saved.</summary>
-    public sealed class FilterSpec
-    {
-        /// <summary>Create a rule.</summary>
-        /// <param name="name">What it is called on the board and in the funnel.</param>
-        /// <param name="when">What it matches.</param>
-        /// <param name="suppress">True to remove matches from the board, false to flag them on it.</param>
-        public FilterSpec(string name, PredicateSpec when, bool suppress)
-        {
-            Name = string.IsNullOrWhiteSpace(name) ? throw new ArgumentException("name is required", nameof(name)) : name;
-            When = when ?? throw new ArgumentNullException(nameof(when));
-            Suppress = suppress;
-        }
-
-        /// <summary>What it is called.</summary>
-        public string Name { get; }
-
-        /// <summary>What it matches.</summary>
-        public PredicateSpec When { get; }
-
-        /// <summary>True to suppress, false to flag.</summary>
-        public bool Suppress { get; }
-
-        /// <summary>Off rules stay in the list and do nothing.</summary>
-        public bool IsEnabled { get; set; } = true;
-
-        /// <summary>Build the real rule.</summary>
-        public FilterRule Build() => new FilterRule(Name, When.Build(), Suppress);
-
-        /// <summary>Serialise.</summary>
-        public JsonValue ToJson() =>
-            JsonValue.Object()
-                .Set("name", JsonValue.String(Name))
-                .Set("suppress", JsonValue.String(Suppress ? "yes" : "no"))
-                .Set("enabled", JsonValue.String(IsEnabled ? "yes" : "no"))
-                .Set("when", When.ToJson());
-
-        /// <summary>Read one back, or null.</summary>
-        /// <param name="json">The candidate.</param>
-        public static FilterSpec? FromJson(JsonValue? json)
-        {
-            if (json == null || json.Kind != JsonKind.Object) return null;
-
-            var name = json["name"].AsString();
-            var when = PredicateSpec.FromJson(json["when"]);
-            if (string.IsNullOrWhiteSpace(name) || when == null) return null;
-
-            return new FilterSpec(name!, when, json["suppress"].AsString() == "yes")
-            {
-                IsEnabled = json["enabled"].AsString() != "no",
-            };
-        }
-
-        /// <inheritdoc />
-        public override string ToString() =>
-            (Suppress ? "Suppress" : "Flag") + " " + Name + ": " + When.Describe();
-    }
-
-    /// <summary>An assignment rule, saved.</summary>
-    public sealed class AssignSpec
-    {
-        /// <summary>Create a rule.</summary>
-        /// <param name="when">What it matches.</param>
-        /// <param name="party">Who the match goes to.</param>
-        /// <param name="priority">The priority to stamp, or null.</param>
-        public AssignSpec(PredicateSpec when, string party, string? priority = null)
-        {
-            When = when ?? throw new ArgumentNullException(nameof(when));
-            Party = string.IsNullOrWhiteSpace(party) ? throw new ArgumentException("party is required", nameof(party)) : party;
-            Priority = priority;
-        }
-
-        /// <summary>What it matches.</summary>
-        public PredicateSpec When { get; }
-
-        /// <summary>Who the match goes to.</summary>
-        public string Party { get; }
-
-        /// <summary>The priority to stamp, or null.</summary>
-        public string? Priority { get; }
-
-        /// <summary>Off rules stay in the list and do nothing.</summary>
-        public bool IsEnabled { get; set; } = true;
-
-        /// <summary>Build the real rule.</summary>
-        public AssignRule Build() => new AssignRule(When.Build(), Party, Priority);
-
-        /// <summary>Serialise.</summary>
-        public JsonValue ToJson()
-        {
-            var json = JsonValue.Object()
-                .Set("party", JsonValue.String(Party))
-                .Set("enabled", JsonValue.String(IsEnabled ? "yes" : "no"))
-                .Set("when", When.ToJson());
-
-            if (Priority != null) json.Set("priority", JsonValue.String(Priority));
-            return json;
-        }
-
-        /// <summary>Read one back, or null.</summary>
-        /// <param name="json">The candidate.</param>
-        public static AssignSpec? FromJson(JsonValue? json)
-        {
-            if (json == null || json.Kind != JsonKind.Object) return null;
-
-            var party = json["party"].AsString();
-            var when = PredicateSpec.FromJson(json["when"]);
-            if (string.IsNullOrWhiteSpace(party) || when == null) return null;
-
-            return new AssignSpec(when, party!, json["priority"].AsString())
-            {
-                IsEnabled = json["enabled"].AsString() != "no",
-            };
-        }
-
-        /// <inheritdoc />
-        public override string ToString() => Party + " gets " + When.Describe();
-    }
-
     /// <summary>
     /// Every clash rule on the project, in one saveable object.
     ///
@@ -429,21 +310,24 @@ namespace CamelWorks.Core.Project
     /// </summary>
     public sealed class ClashRuleSet
     {
-        /// <summary>Suppress and flag rules, in order.</summary>
-        public IList<FilterSpec> Filters { get; } = new List<FilterSpec>();
+        /// <summary>
+        /// The cards, in the order they run.
+        ///
+        /// One list. It was three — suppress and flag, then group, then assign — which put the
+        /// shape of the pipeline on screen instead of the shape of the work, and left three of the
+        /// six things a coordinator does to a set of results with nowhere to be written at all.
+        /// </summary>
+        public IList<ClashCard> Cards { get; } = new List<ClashCard>();
 
-        /// <summary>The grouping stack, outermost first. Empty means the default stack.</summary>
+        /// <summary>The grouping stack the board bands by. Empty means the default stack.</summary>
         public IList<GroupingSpec> Grouping { get; } = new List<GroupingSpec>();
-
-        /// <summary>Assignment rules, first match wins.</summary>
-        public IList<AssignSpec> Assigns { get; } = new List<AssignSpec>();
 
         /// <summary>Group names the user pinned, so re-running does not rearrange them.</summary>
         public IDictionary<string, IReadOnlyList<string>> Pinned { get; } =
             new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
 
         /// <summary>True when nothing has been configured and the defaults are what will run.</summary>
-        public bool IsDefault => Filters.Count == 0 && Grouping.Count == 0 && Assigns.Count == 0;
+        public bool IsDefault => Cards.Count == 0 && Grouping.Count == 0;
 
         /// <summary>
         /// The options to run the pipeline with.
@@ -455,7 +339,16 @@ namespace CamelWorks.Core.Project
 
             return new ClashPipelineOptions
             {
-                Filters = Filters.Where(f => f.IsEnabled).Select(f => f.Build()).ToList(),
+                // The preview reads the same cards the run writes, so the two cannot disagree
+                // about what a rule finds. Only the four that shape a board are built here: a
+                // status, and a result deleted from the document, are not view states.
+                Filters = Cards.Where(one => one.IsEnabled)
+                               .Where(one => one.Action == ClashActionKind.Suppress
+                                             || one.Action == ClashActionKind.Flag)
+                               .Select(one => new FilterRule(
+                                   one.Name, one.When.Build(),
+                                   one.Action == ClashActionKind.Suppress))
+                               .ToList(),
                 Grouping = grouping.Count > 0
                     ? (IReadOnlyList<IGroupingRule>)grouping
                     : new IGroupingRule[]
@@ -464,7 +357,10 @@ namespace CamelWorks.Core.Project
                         GroupingRules.ByLevel(),
                         GroupingRules.ByProximity(proximityMetres > 0 ? proximityMetres : 5.0),
                     },
-                Assigns = Assigns.Where(a => a.IsEnabled).Select(a => a.Build()).ToList(),
+                Assigns = Cards.Where(one => one.IsEnabled && !one.NeedsValue)
+                               .Where(one => one.Action == ClashActionKind.Assign)
+                               .Select(one => new AssignRule(one.When.Build(), one.Value!))
+                               .ToList(),
                 PinnedGroups = new Dictionary<string, IReadOnlyList<string>>(Pinned, StringComparer.Ordinal),
             };
         }
@@ -477,9 +373,8 @@ namespace CamelWorks.Core.Project
                 pinned.Set(pair.Key, JsonValue.Array(pair.Value.Select(JsonValue.String)));
 
             return JsonValue.Object()
-                .Set("filters", JsonValue.Array(Filters.Select(f => f.ToJson())))
+                .Set("cards", JsonValue.Array(Cards.Select(one => one.ToJson())))
                 .Set("grouping", JsonValue.Array(Grouping.Select(g => g.ToJson())))
-                .Set("assigns", JsonValue.Array(Assigns.Select(a => a.ToJson())))
                 .Set("pinned", pinned);
         }
 
@@ -490,22 +385,16 @@ namespace CamelWorks.Core.Project
             var rules = new ClashRuleSet();
             if (json == null || json.Kind != JsonKind.Object) return rules;
 
-            foreach (var item in json["filters"].Items)
+            foreach (var item in json["cards"].Items)
             {
-                var filter = FilterSpec.FromJson(item);
-                if (filter != null) rules.Filters.Add(filter);
+                var card = ClashCard.FromJson(item);
+                if (card != null) rules.Cards.Add(card);
             }
 
             foreach (var item in json["grouping"].Items)
             {
                 var group = GroupingSpec.FromJson(item);
                 if (group != null) rules.Grouping.Add(group);
-            }
-
-            foreach (var item in json["assigns"].Items)
-            {
-                var assign = AssignSpec.FromJson(item);
-                if (assign != null) rules.Assigns.Add(assign);
             }
 
             var pinned = json["pinned"];
@@ -520,6 +409,6 @@ namespace CamelWorks.Core.Project
         public override string ToString() =>
             IsDefault
                 ? "the built-in rules"
-                : Filters.Count + " filters, " + Grouping.Count + " grouping, " + Assigns.Count + " assignments";
+                : Cards.Count + " cards, " + Grouping.Count + " grouping";
     }
 }

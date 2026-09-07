@@ -543,6 +543,37 @@ namespace CamelWorks.Core.Testing
         }
 
         /// <inheritdoc />
+        public bool DeleteResults(string testId, IReadOnlyList<string> resultIds)
+        {
+            if (!Writable("DeleteResults " + testId)) return false;
+
+            var test = Found(testId);
+
+            if (test == null) return Missing();
+
+            var wanted = new HashSet<string>(resultIds ?? Array.Empty<string>(),
+                                             StringComparer.OrdinalIgnoreCase);
+
+            if (wanted.Count == 0)
+            {
+                LastProblem = "No results were named.";
+                return false;
+            }
+
+            var going = test.Results.Where(one => wanted.Contains(one.Id)).ToList();
+
+            if (going.Count == 0)
+            {
+                LastProblem = "None of those results are in the test any more. Re-read it.";
+                return false;
+            }
+
+            foreach (var one in going) test.Results.Remove(one);
+
+            return true;
+        }
+
+        /// <inheritdoc />
         public bool DeleteTests(IReadOnlyList<string> testIds)
         {
             if (!Writable("DeleteTests")) return false;

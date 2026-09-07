@@ -440,52 +440,56 @@ namespace CamelWorks.Studio
         }
 
         /// <summary>
-        /// The Filter tab with a project's rules on it.
+        /// The Filter tab with a project's cards on it.
         ///
-        /// The rules are written into the scratch project on the way in, as
+        /// The cards are written into the scratch project on the way in, as
         /// <see cref="Creating"/> writes its tests: the store is shared by every page, so a page
         /// that needs data puts it there itself rather than relying on the order the harness draws
         /// in. Nothing is saved, so the empty Filter page still opens on an empty project.
         ///
-        /// What is written is what the three lists have to draw: both filter actions, a name long
-        /// enough to be trimmed, a grouping step that carries a number and one that carries a
-        /// property name, and assignments with and without a priority.
+        /// What is written is what the two lists have to draw: all six actions, a name long enough
+        /// to be trimmed, a card turned off, and a band that carries a number beside one that
+        /// carries a property name.
         /// </summary>
         private static UIElement Ruled()
         {
             var seat = Seated();
             var rules = new ClashRuleSet();
 
-            rules.Filters.Add(new FilterSpec(
+            rules.Cards.Add(new ClashCard(
                 "Insulation grazing insulation",
-                new PredicateSpec("maxVolume") { A = 0.001 }, suppress: true));
+                new PredicateSpec("maxVolume") { A = 0.001 }, ClashActionKind.Suppress));
 
-            rules.Filters.Add(new FilterSpec(
+            rules.Cards.Add(new ClashCard(
                 "Sleeves already coordinated against the structural openings schedule REV21",
-                new PredicateSpec("bothInSet") { Name = "Sleeves REV21" }, suppress: true));
+                new PredicateSpec("bothInSet") { Name = "Sleeves REV21" }, ClashActionKind.Suppress));
 
-            rules.Filters.Add(new FilterSpec(
+            rules.Cards.Add(new ClashCard(
                 "Touching, not passing through",
-                new PredicateSpec("distance") { A = 0, B = 0.005 }, suppress: false));
+                new PredicateSpec("distance") { A = 0, B = 0.005 }, ClashActionKind.Flag));
 
-            rules.Filters.Add(new FilterSpec(
-                "Services through structural framing",
-                new PredicateSpec("category") { Name = "Structural Framing" }, suppress: false));
+            rules.Cards.Add(new ClashCard(
+                "Ducts through structural framing",
+                new PredicateSpec("eitherInSet") { Name = "WSC_DUCTS_REV21_ISSUED" },
+                ClashActionKind.Assign) { Value = "Mechanical" });
+
+            rules.Cards.Add(new ClashCard(
+                "Cable tray",
+                new PredicateSpec("category") { Name = "Cable Tray" },
+                ClashActionKind.Group) { Value = "Electrical containment" });
+
+            rules.Cards.Add(new ClashCard(
+                "Sprinkler branches already agreed",
+                new PredicateSpec("propertyContains") { Name = "System Name", Value = "SPR" },
+                ClashActionKind.Status) { Value = "Approved" });
+
+            rules.Cards.Add(new ClashCard(
+                "Duplicated by the coordination model",
+                new PredicateSpec("sameModel"), ClashActionKind.Remove) { IsEnabled = false });
 
             rules.Grouping.Add(new GroupingSpec("level"));
             rules.Grouping.Add(new GroupingSpec("proximity") { A = 2.5 });
             rules.Grouping.Add(new GroupingSpec("property") { Name = "System Name" });
-
-            rules.Assigns.Add(new AssignSpec(
-                new PredicateSpec("eitherInSet") { Name = "WSC_DUCTS_REV21_ISSUED" },
-                "Mechanical", "High"));
-
-            rules.Assigns.Add(new AssignSpec(
-                new PredicateSpec("category") { Name = "Cable Tray" }, "Electrical"));
-
-            rules.Assigns.Add(new AssignSpec(
-                new PredicateSpec("propertyContains") { Name = "System Name", Value = "SPR" },
-                "Fire", "Normal"));
 
             seat.Store.Section(ProjectStore.ClashSection).Set(ClashKeys.Rules, rules.ToJson());
 

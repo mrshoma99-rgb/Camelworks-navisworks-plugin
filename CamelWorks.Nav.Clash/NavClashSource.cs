@@ -925,6 +925,69 @@ namespace CamelWorks.Nav.Clash
         }
 
         /// <inheritdoc />
+        public bool DeleteResults(string testId, IReadOnlyList<string> resultIds)
+        {
+            LastProblem = null;
+
+            var clash = Writable();
+            if (clash == null) return false;
+
+            var test = FindTest(clash, testId);
+
+            if (test == null)
+            {
+                LastProblem = "That test is no longer in the document.";
+                return false;
+            }
+
+            var wanted = new HashSet<string>(resultIds ?? Array.Empty<string>(),
+                                             StringComparer.OrdinalIgnoreCase);
+
+            if (wanted.Count == 0)
+            {
+                LastProblem = "No results were named.";
+                return false;
+            }
+
+            try
+            {
+                var found = new List<(ClashResult Result, string? Group)>();
+                CollectWithGroups(test.Children, null, found);
+
+                var going = found.Select(one => one.Result)
+                                 .Where(one => wanted.Contains(one.Guid.ToString()))
+                                 .ToList();
+
+                if (going.Count == 0)
+                {
+                    LastProblem = "None of those results are in the test any more. Re-read it.";
+                    return false;
+                }
+
+                // Last first. Removing one renumbers what is under its parent, and a forward walk
+                // over a list collected before the first removal would then delete by a position
+                // that has moved.
+                for (var at = going.Count - 1; at >= 0; at--)
+                {
+                    var result = going[at];
+
+                    // The two-argument form, as DeleteTests uses: a result sits either directly
+                    // under its test or under a result group, and both are GroupItems.
+                    var parent = result.Parent as GroupItem ?? (GroupItem)test;
+
+                    clash.TestsData.TestsRemove(parent, result);
+                }
+
+                return true;
+            }
+            catch (Exception e)
+            {
+                LastProblem = "The host refused to delete those results: " + e.Message;
+                return false;
+            }
+        }
+
+        /// <inheritdoc />
         public bool DeleteTests(IReadOnlyList<string> testIds)
         {
             LastProblem = null;
