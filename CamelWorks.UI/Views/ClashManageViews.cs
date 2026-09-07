@@ -8160,14 +8160,6 @@ namespace CamelWorks.UI.Views
 
             /// <summary>How a status reads.</summary>
             /// <param name="status">The status.</param>
-            private static Tone Reads(FindingStatus status) => status switch
-            {
-                FindingStatus.New => Tone.Bad,
-                FindingStatus.Reviewed => Tone.Warn,
-                FindingStatus.Approved => Tone.Good,
-                FindingStatus.Resolved => Tone.Good,
-                _ => Tone.Plain,
-            };
 
             /// <summary>
             /// A row's status, as a chip that reads rather than a control that opens.
@@ -8179,46 +8171,9 @@ namespace CamelWorks.UI.Views
             /// from the bar for picked rows, which is where every other verb on a row is.
             /// </summary>
             /// <param name="status">The row's status.</param>
-            private static UIElement StatusChip(FindingStatus status)
-            {
-                var tone = Reads(status);
-
-                var label = new TextBlock
-                {
-                    Text = FindingStatusWords.Of(status),
-                    FontSize = 11,
-                    FontWeight = FontWeights.SemiBold,
-                    TextAlignment = TextAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Foreground = Skin.Ink(tone),
-                };
-
-                var chip = new Border
-                {
-                    // One width for all five, or the column is five ragged edges.
-                    MinWidth = 76,
-                    Height = 20,
-                    CornerRadius = new CornerRadius(7),
-                    BorderThickness = new Thickness(1),
-                    Padding = new Thickness(8, 0, 8, 0),
-                    HorizontalAlignment = HorizontalAlignment.Left,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Background = Skin.Wash(tone),
-                    BorderBrush = Skin.Edge(tone),
-                    Child = label,
-                    ToolTip = FindingStatusWords.Of(status)
-                              + ". Set it from the row's menu, or pick rows and set it on the bar.",
-                };
-
-                if (tone == Tone.Plain)
-                {
-                    chip.Tint(Border.BackgroundProperty, "Nav");
-                    chip.Tint(Border.BorderBrushProperty, "Bd");
-                    label.Tint(TextBlock.ForegroundProperty, "Muted");
-                }
-
-                return chip;
-            }
+            private static UIElement StatusChip(FindingStatus status) =>
+                FindingStatusWords.Chip(status, FindingStatusWords.Of(status)
+                    + ". Set it from the row's menu, or pick rows and set it on the bar.");
 
             /// <summary>
             /// A small label over a group of controls, in sentence case.

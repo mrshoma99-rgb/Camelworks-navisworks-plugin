@@ -809,15 +809,15 @@ namespace CamelWorks.UI.Views
                 var rows = scope.Take(2000).Select(one => new TableRow(one,
                     one.Name ?? one.Key.ToString(),
                     one.TestName,
-                    one.Status.ToString(),
+                    FindingStatusWords.Of(one.Status),
                     one.AssignedTo ?? string.Empty,
                     one.Level ?? string.Empty)).ToList();
 
                 // Every column fixed. With the first one flexible it took the whole leftover
                 // width and pushed the last column past the right edge of the pane.
                 var table = Ui.Table(rows,
-                    ("Clash", 150), ("Test", 130), ("Status", 80),
-                    ("Assigned to", 100), ("Level", 56)).Multi();
+                    ("Clash", 150), ("Test", 130), ("Status", 92),
+                    ("Assigned to", 100), ("Level", 56)).Multi().Stated(2);
 
                 Ui.SetFills(_results, true);
 
@@ -1957,12 +1957,12 @@ namespace CamelWorks.UI.Views
                 var rows = showing.Take(2000).Select(one => new TableRow(one,
                     one.Item.Name ?? one.Item.Key.ToString(),
                     one.Item.TestName,
-                    one.Current.ToString(),
+                    FindingStatusWords.Of(one.Current),
                     one.IsDisputed && one.Chosen == null
                         ? (one.IsThreeWay
                             ? Ui.Count(one.Parties, "way") + " conflict"
                             : "Conflict")
-                        : one.Would.ToString(),
+                        : FindingStatusWords.Of(one.Would),
                     string.Join(", ", one.Answers.Select(say => say.Party))
                     + (string.IsNullOrWhiteSpace(one.Note) ? string.Empty : " · noted"),
                     one.Take ? "Yes" : "No")
@@ -1971,9 +1971,13 @@ namespace CamelWorks.UI.Views
                          : one.Changes ? Tone.Good : Tone.Plain,
                 }).ToList();
 
+                // Both status columns drawn as the board draws them. The conflict rows fall
+                // through to their words, which is the point: a row the trades disagree about is
+                // not one of the five statuses and must not be dressed as one.
                 var table = Ui.Table(rows,
                     ("Clash", 140), ("Test", 130), ("On the board", 96),
-                    ("Returned", 90), ("Parties", 130), ("Apply", 60)).Multi();
+                    ("Returned", 104), ("Parties", 120), ("Apply", 60))
+                    .Multi().Stated(2).Stated(3);
 
                 Ui.SetFills(_rows, true);
 

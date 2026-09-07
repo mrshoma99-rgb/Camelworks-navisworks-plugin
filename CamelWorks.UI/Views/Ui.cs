@@ -102,6 +102,45 @@ namespace CamelWorks.UI.Views
     }
 
     /// <summary>
+    /// One cell of a table, drawn as the status its word names.
+    ///
+    /// Built as a visual for the same reason <see cref="SymbolCell"/> is: the chip is assembled
+    /// once, in the place that owns how a status looks.
+    /// </summary>
+    internal sealed class StatusCell : IValueConverter
+    {
+        /// <summary>Make one.</summary>
+        /// <param name="column">Which of the row's cells holds the status word.</param>
+        internal StatusCell(int column) => Column = column;
+
+        /// <summary>Which of the row's cells holds the status word.</summary>
+        internal int Column { get; }
+
+        /// <inheritdoc />
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (!(value is TableRow row)) return string.Empty;
+
+            var word = row[Column];
+
+            // A cell that is not one of the five words is drawn as it is: a table may mix a
+            // status column with a row that has none, and an empty cell is not an error.
+            return CamelWorks.Core.Findings.FindingStatusLattice.TryParse(word, out var status)
+                ? FindingStatusWords.Chip(status)
+                : (object)new TextBlock
+                {
+                    Text = word,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                };
+        }
+
+        /// <inheritdoc />
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
+            Binding.DoNothing;
+    }
+
+    /// <summary>
     /// The heading over one band of a table's rows: what they are filed under, and how many.
     ///
     /// Built as a visual rather than a factory tree with the values bound, for the reason
@@ -3652,6 +3691,33 @@ namespace CamelWorks.UI.Views
             {
                 HeaderTemplate = new DataTemplate { VisualTree = head },
             });
+
+            return table;
+        }
+
+        /// <summary>
+        /// Draw one column as the status chip the board draws, rather than as its word.
+        ///
+        /// The same five statuses were three visual languages: filled chips on the Manage rows,
+        /// coloured figures in its counter strip, and plain body text in both of Exchange's
+        /// tables. A coordinator who learns the colours on the board could not use them on the
+        /// tab where the work goes out to a trade.
+        /// </summary>
+        /// <param name="table">The table.</param>
+        /// <param name="column">Which column, from nought. Its cells hold a status word.</param>
+        public static ListView Stated(this ListView table, int column)
+        {
+            if (!(table.View is GridView grid) || column < 0 || column >= grid.Columns.Count)
+                return table;
+
+            var cell = new FrameworkElementFactory(typeof(ContentPresenter));
+
+            cell.SetBinding(ContentPresenter.ContentProperty, new Binding(".")
+            {
+                Converter = new StatusCell(column),
+            });
+
+            grid.Columns[column].CellTemplate = new DataTemplate { VisualTree = cell };
 
             return table;
         }
