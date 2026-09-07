@@ -179,6 +179,22 @@ namespace CamelWorks.Studio
                  () => Deck("clash", "clashsettings",
                             ClashSettingsViews.Drawn(Seated(), ClashSettingsViews.Part.Units))),
 
+            // The other three sections. They were left out of the render set because the scratch
+            // seat draws two of them empty, which is the wrong reason: an empty state is a state,
+            // and the roster can be seeded.
+            Page("app-clash-settings-team", "Clash Manager · Settings, the team", 760,
+                 () => Deck("clash", "clashsettings",
+                            ClashSettingsViews.Drawn(Peopled(), ClashSettingsViews.Part.Team))),
+
+            Page("app-clash-settings-disciplines", "Clash Manager · Settings, disciplines", 620,
+                 () => Deck("clash", "clashsettings",
+                            ClashSettingsViews.Drawn(Seated(),
+                                                     ClashSettingsViews.Part.Disciplines))),
+
+            Page("app-clash-settings-board", "Clash Manager · Settings, the Manage tab", 760,
+                 () => Deck("clash", "clashsettings",
+                            ClashSettingsViews.Drawn(Seated(), ClashSettingsViews.Part.Board))),
+
             // The naming, drawn on each of its panes. This is the surface that decides what the
             // manager can band, filter, sort and renumber by, and every one of those reads a
             // test's name through a pattern somebody wrote here.
@@ -872,6 +888,49 @@ namespace CamelWorks.Studio
                 Y = at * 2.0,
                 Z = at % 3 * 4.0,
             };
+        }
+
+        /// <summary>
+        /// A seat whose project already names a team.
+        ///
+        /// The Team section reads the roster out of the project file, so on a fresh scratch store
+        /// it draws its empty state and the table, the party column and the active-or-not mark are
+        /// never seen. Six people across four organisations is the size at which the table has to
+        /// hold a name, a role, a company and an address on one row.
+        /// </summary>
+        private static ISeat Peopled()
+        {
+            var seat = Seated();
+            var roster = new TeamRoster();
+
+            roster.Members.Add(new TeamMember("Dana Whitfield", "Northgate Construction",
+                                              "d.whitfield@northgate.example")
+            { Role = "BIM coordinator" });
+
+            roster.Members.Add(new TeamMember("Samir Haddad", "Meridian MEP",
+                                              "s.haddad@meridian.example")
+            { Role = "Mechanical lead" });
+
+            roster.Members.Add(new TeamMember("Priya Raghavan", "Meridian MEP",
+                                              "p.raghavan@meridian.example")
+            { Role = "Electrical lead" });
+
+            roster.Members.Add(new TeamMember("Tom Ellery", "Calder Structures",
+                                              "t.ellery@calder.example")
+            { Role = "Structural engineer" });
+
+            roster.Members.Add(new TeamMember("Anneke Vos", "Vos Architecten",
+                                              "a.vos@vosarchitecten.example")
+            { Role = "Project architect" });
+
+            // Off the job, so the row that is drawn differently is drawn.
+            roster.Members.Add(new TeamMember("Iain Brodie", "Calder Structures",
+                                              "i.brodie@calder.example")
+            { Role = "Setting-out engineer", IsActive = false });
+
+            seat.Store.Section(ProjectStore.ProfileSection).Set("roster", roster.ToJson());
+
+            return seat;
         }
 
         private static ISeat Seated() => new EmptySeat(
