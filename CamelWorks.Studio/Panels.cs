@@ -282,15 +282,23 @@ namespace CamelWorks.Studio
                 Folder = "Weekly",
             };
 
-            new ClearanceSettings
+            var heights = new ClearanceSettings
             {
                 Surfaces = "Level 03 Floors",
                 Targets = ClearanceSettings.NotTheSurfaces,
                 MinimumMetres = 2.1,
                 ToleranceMetres = 0.05,
+                DetectSurfaces = true,
                 Zone = "Level 03",
                 WorstPerPatch = true,
-            }.Write(measured);
+            };
+
+            // Two storeys, so the render shows what a list-valued scope looks like rather than
+            // the one-value case the panel used to be limited to.
+            heights.Levels.Add("Level 03");
+            heights.Levels.Add("Level 04");
+
+            heights.Write(measured);
 
             clearance.Put(measured);
 
@@ -304,6 +312,7 @@ namespace CamelWorks.Studio
                 Floors = "Level 03 Floors",
                 Handrails = "Level 03 Handrails",
                 Obstructions = FallSettings.Nothing,
+                LevelName = "Level 03",
                 LevelMetres = 10.5,
                 BandMetres = 1.0,
                 CellMetres = 0.1,

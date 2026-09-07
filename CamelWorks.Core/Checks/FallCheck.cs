@@ -387,6 +387,23 @@ namespace CamelWorks.Core.Checks
                                                settings.LevelMetres, settings.LimitMetres,
                                                FallHazardFindings.DefaultCell, spec.Id, spec.Name);
 
+            // Changing the floor side or the cut elevation re-derives every id under this run: a
+            // hazard is keyed by the run, the cell it sits in and the elements around it, so the
+            // delta reports the whole run as gone and reported again. Said here, because nothing
+            // downstream can tell that from a floor that was covered over.
+            var floors = settings.Floors + " at " + Printed(settings.LevelMetres) + " m";
+
+            if (spec.Settings.TryGetValue(FallSettings.LastFloorsKey, out var last)
+                && !string.IsNullOrWhiteSpace(last)
+                && !string.Equals(last, floors, StringComparison.OrdinalIgnoreCase))
+                _notes.Add("This run read the floor from \"" + last + "\" last time and from \""
+                           + floors + "\" now. A hazard is identified differently either side of "
+                           + "that change, so every hazard under this run reads as gone and "
+                           + "reported again rather than as the same hazard, and the status, the "
+                           + "assignee and the comments on it do not carry over.");
+
+            spec.Settings[FallSettings.LastFloorsKey] = floors;
+
             _register.Observe(Key, found, DateTime.UtcNow.Ticks,
                               scope: CheckFacts.ScopeOf(new[] { spec.Id }));
 

@@ -60,7 +60,7 @@ namespace CamelWorks.Core.Tests
             Assert.Equal("t1", first.Id);
             Assert.Equal("L03 MEP v STR", first.Name);
             Assert.Equal("Weekly", first.Folder);
-            Assert.Equal("Hard", first.Kind);
+            Assert.Equal("Hard clash", first.Kind);
             Assert.Equal("25 mm", first.Threshold);
             Assert.Equal(2, first.ResultCount);
 

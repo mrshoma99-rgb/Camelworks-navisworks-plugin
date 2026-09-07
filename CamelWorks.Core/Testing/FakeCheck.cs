@@ -30,6 +30,7 @@ namespace CamelWorks.Core.Testing
         private readonly List<FakeRun> _runs = new List<FakeRun>();
         private readonly List<string> _log = new List<string>();
         private readonly List<ResultColumn> _columns = new List<ResultColumn>();
+        private readonly List<string> _notes = new List<string>();
 
         private sealed class FakeRun
         {
@@ -142,7 +143,11 @@ namespace CamelWorks.Core.Testing
         public IReadOnlyList<string> Log => _log;
 
         /// <summary>What the read could not do, reported on every read.</summary>
-        public IList<string> Notes { get; } = new List<string>();
+        public IReadOnlyList<string> Notes => _notes;
+
+        /// <summary>Make every read report this.</summary>
+        /// <param name="note">What the check could not do.</param>
+        public void Says(string note) => _notes.Add(note);
 
         /// <summary>
         /// The ids a finding may also be recognised under, or null to offer none — which is what

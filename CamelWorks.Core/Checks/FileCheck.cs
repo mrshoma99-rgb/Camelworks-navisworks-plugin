@@ -87,6 +87,12 @@ namespace CamelWorks.Core.Checks
         public string? Unavailable => IsAvailable ? null : _read.Explain();
 
         /// <summary>
+        /// Nothing to report. This check reads a file that was already written, so there is no
+        /// press here that can do part of what it was asked.
+        /// </summary>
+        public IReadOnlyList<string> Notes => Array.Empty<string>();
+
+        /// <summary>
         /// The same three columns the document leg declares.
         ///
         /// The same columns and not a copy of them: a file board and a document board show one

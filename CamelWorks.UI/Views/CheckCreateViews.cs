@@ -383,6 +383,7 @@ namespace CamelWorks.UI.Views
                 var verbs = new List<Ui.OnPicked>
                 {
                     new Ui.OnPicked("Run these {n}", (picked, said) => RunPicked(picked, said)),
+                    new Ui.OnPicked("Duplicate this one", (picked, said) => Duplicate(picked, said)),
                     new Ui.OnPicked("Rename this one...", (picked, said) => Rename(picked, said)),
                     new Ui.OnPicked("Move these {n}...", (picked, said) => Refile(picked, said)),
                     new Ui.OnPicked("Delete these {n}", (picked, said) => Delete(picked, said)),
@@ -811,10 +812,25 @@ namespace CamelWorks.UI.Views
                 }
 
                 var ran = 0;
+                var stopped = (Listed?)null;
+                var notes = new List<(string Test, IReadOnlyList<string> Said)>();
 
                 foreach (var one in targets)
                 {
-                    if (one.Check.Runner?.Run(one.Run.Id, onProgress) != true) break;
+                    var went = one.Check.Runner?.Run(one.Run.Id, onProgress) == true;
+
+                    // Off the check straight after its run and before the next one starts: every
+                    // check clears its notes at the top of a run, so a pass over five tests keeps
+                    // only the fifth one's.
+                    var said = one.Check.Notes;
+
+                    if (said != null && said.Count > 0) notes.Add((one.Run.Name, said.ToList()));
+
+                    if (!went)
+                    {
+                        stopped = one;
+                        break;
+                    }
 
                     ran++;
                 }
@@ -827,6 +843,20 @@ namespace CamelWorks.UI.Views
                 var found = after.Sum(one => one.Run.ResultCount);
 
                 _outcome = Ui.Count(ran, "test") + " run, " + Ui.Count(found, "finding") + ".";
+
+                // The reason, where the button was pressed.
+                //
+                // Every check writes a specific sentence when it cannot do what it was asked —
+                // "resolved to no surface to measure from", "gave no triangles within 1 m of 0 m" —
+                // onto the run, and the only place that reached was the Manage board. What the
+                // Create tab showed for all of them was "0 tests run, 0 findings", which is a dead
+                // end wherever the answer already exists.
+                if (stopped != null)
+                    say.Children.Add(Ui.Problem(stopped.Run.Name + " did not run."));
+
+                foreach (var (test, said) in notes)
+                    foreach (var line in said)
+                        say.Children.Add(Ui.Note(targets.Count > 1 ? test + ": " + line : line));
 
                 var first = targets.Count > 0 ? targets[0] : null;
 
@@ -845,6 +875,97 @@ namespace CamelWorks.UI.Views
             }
 
             // ---- Naming and deleting -------------------------------------------------------
+
+            /// <summary>
+            /// Copy one test, settings and all, and pick the copy.
+            ///
+            /// The second corridor and the eleventh storey are the first one with a different name
+            /// and one field changed. Without this each of them was the whole form again, including
+            /// re-dropping the same detected desk tops, while the matrix one tab over has offered
+            /// "Duplicate this row, source and all" since it was written.
+            /// </summary>
+            /// <param name="picked">The tests picked.</param>
+            /// <param name="said">Where the bar says what it did.</param>
+            private void Duplicate(IReadOnlyList<object> picked, Panel said)
+            {
+                var chosen = picked.OfType<Listed>().ToList();
+
+                if (chosen.Count != 1)
+                {
+                    said.Children.Add(Ui.Note("Pick one test to duplicate."));
+
+                    return;
+                }
+
+                var one = chosen[0];
+                var name = Copied(one.Check, one.Run.Name);
+
+                switch (one.Check)
+                {
+                    case ClearanceCheck clearance when clearance.Spec(one.Run.Id) is CheckRunSpec was:
+                        Made(clearance,
+                             was.CopyAs(Guid.NewGuid().ToString("N"), name, ClearanceDerived),
+                             clearance, said);
+                        break;
+
+                    case FallCheck fall when fall.Spec(one.Run.Id) is CheckRunSpec was:
+                        Made(fall, was.CopyAs(Guid.NewGuid().ToString("N"), name, FallDerived),
+                             fall, said);
+                        break;
+
+                    default:
+                        said.Children.Add(Ui.Note(
+                            one.Check.Name + " tests are not duplicated here. A clash test is a "
+                            + "row of the Clash matrix, and the matrix duplicates a row with its "
+                            + "two sides and its symbol."));
+                        break;
+                }
+            }
+
+            /// <summary>
+            /// Settings a clearance copy does not inherit: what the last run read, and the surfaces
+            /// somebody dropped, which are keyed to findings the copy has not produced.
+            /// </summary>
+            private static readonly string[] ClearanceDerived =
+                { ClearanceSettings.LastSurfacesKey, ClearanceSettings.ExcludedKey };
+
+            /// <summary>Settings a fall-hazard copy does not inherit, for the same reason.</summary>
+            private static readonly string[] FallDerived = { FallSettings.LastFloorsKey };
+
+            /// <summary>Save a copy and take it up, or say why the save was refused.</summary>
+            /// <param name="check">The check that owns it.</param>
+            /// <param name="copy">The copy.</param>
+            /// <param name="into">The same check, as whatever can save a run.</param>
+            /// <param name="said">Where the bar says what it did.</param>
+            private void Made(ICheck check, CheckRunSpec copy, object into, Panel said)
+            {
+                var problem = into is ClearanceCheck clearance
+                    ? clearance.Put(copy)
+                    : into is FallCheck fall ? fall.Put(copy) : "This test cannot be copied.";
+
+                if (problem == null)
+                    said.Children.Add(Ui.Done("Copied as \"" + copy.Name + "\". It has not been "
+                                              + "run yet, and it holds no results."));
+
+                Made(check, copy, problem);
+            }
+
+            /// <summary>The next unused name for a copy of this test.</summary>
+            /// <param name="check">The check that owns it.</param>
+            /// <param name="name">What the original is called.</param>
+            private static string Copied(ICheck check, string name)
+            {
+                var held = check.Runs();
+
+                for (var at = 2; ; at++)
+                {
+                    var wanted = name + " (" + at.ToString(CultureInfo.InvariantCulture) + ")";
+
+                    if (!held.Any(two => string.Equals(two.Name, wanted,
+                                                       StringComparison.OrdinalIgnoreCase)))
+                        return wanted;
+                }
+            }
 
             /// <summary>Rename one test, through whichever check owns it.</summary>
             /// <param name="picked">The tests picked.</param>

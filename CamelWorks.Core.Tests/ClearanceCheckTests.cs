@@ -32,8 +32,8 @@ namespace CamelWorks.Core.Tests
             var document = new FakeDocument();
             var model = document.AddModel("Arch", @"C:\job\Arch.nwc");
 
-            document.AddItem(model, "Slab L3", "Floors", "Concrete",
-                             new BoundingBox(0, 0, -0.2, 20, 10, 0));
+            var slab = document.AddItem(model, "Slab L3", "Floors", "Concrete",
+                                        new BoundingBox(0, 0, -0.2, 20, 10, 0));
 
             document.AddItem(model, "Duct A", "Ducts", "Rectangular",
                              new BoundingBox(2, 2, 1.85, 6, 4, 2.15));
@@ -41,10 +41,12 @@ namespace CamelWorks.Core.Tests
             document.AddItem(model, "Duct B", "Ducts", "Rectangular",
                              new BoundingBox(12, 2, 1.90, 16, 4, 2.20));
 
+            document.DefineSet("Floors", slab.Key);
+
             return document;
         }
 
-        /// <summary>A saved run over the guessed surfaces, at 2.1 m.</summary>
+        /// <summary>A saved run over the named floors set, at 2.1 m.</summary>
         private static CheckRunSpec Spec(string id, string name, double minimum = 2.1)
         {
             var spec = new CheckRunSpec(FindingSource.Headroom, id, name);
@@ -52,7 +54,8 @@ namespace CamelWorks.Core.Tests
             var settings = new ClearanceSettings
             {
                 MinimumMetres = minimum,
-                Surfaces = ClearanceSettings.Guessed,
+                Surfaces = "Floors",
+                DetectSurfaces = false,
                 Targets = ClearanceSettings.NotTheSurfaces,
                 WorstPerPatch = false,
             };
@@ -239,8 +242,10 @@ namespace CamelWorks.Core.Tests
             var document = new FakeDocument();
             var model = document.AddModel("Arch", @"C:\job\Arch.nwc");
 
-            document.AddItem(model, "Slab L3", "Floors", "Concrete",
-                             new BoundingBox(0, 0, -0.2, 20, 10, 0));
+            var floors = document.AddItem(model, "Slab L3", "Floors", "Concrete",
+                                          new BoundingBox(0, 0, -0.2, 20, 10, 0));
+
+            document.DefineSet("Floors", floors.Key);
             document.AddItem(model, "Duct A", "Ducts", "Rectangular",
                              new BoundingBox(2, 2, 3.0, 6, 4, 3.3));
 
@@ -306,8 +311,10 @@ namespace CamelWorks.Core.Tests
             var document = new FakeDocument();
             var model = document.AddModel("Arch", @"C:\job\Arch.nwc");
 
-            document.AddItem(model, "Slab L3", "Floors", "Concrete",
-                             new BoundingBox(0, 0, -0.2, 20, 10, 0));
+            var floors = document.AddItem(model, "Slab L3", "Floors", "Concrete",
+                                          new BoundingBox(0, 0, -0.2, 20, 10, 0));
+
+            document.DefineSet("Floors", floors.Key);
             document.AddItem(model, "Duct A", "Ducts", "Rectangular",
                              new BoundingBox(2, 2, 2.0, 6, 4, 2.3));
 
@@ -339,8 +346,10 @@ namespace CamelWorks.Core.Tests
             var document = new FakeDocument();
             var model = document.AddModel("Arch", @"C:\job\Arch.nwc");
 
-            document.AddItem(model, "Slab L3", "Floors", "Concrete",
-                             new BoundingBox(0, 0, -0.2, 20, 10, 0));
+            var floors = document.AddItem(model, "Slab L3", "Floors", "Concrete",
+                                          new BoundingBox(0, 0, -0.2, 20, 10, 0));
+
+            document.DefineSet("Floors", floors.Key);
             document.AddItem(model, "Head 12", "Sprinklers", "Pendent",
                              new BoundingBox(2, 2, 1.9, 2.1, 2.1, 2.0));
 
@@ -550,13 +559,18 @@ namespace CamelWorks.Core.Tests
             var document = new FakeDocument();
             var model = document.AddModel("Arch", @"C:\job\Arch.nwc");
 
-            document.AddItem(model, "Slab L3", "Floors", "Concrete",
-                             new BoundingBox(0, 0, -0.2, 20, 10, 0));
+            var floors = document.AddItem(model, "Slab L3", "Floors", "Concrete",
+                                          new BoundingBox(0, 0, -0.2, 20, 10, 0));
+
             document.AddItem(model, "Duct A", "Ducts", "Rectangular",
                              new BoundingBox(2, 2, 1.85, 6, 4, 2.15));
 
-            document.AddItem(model, "Slab L4", "Floors", "Concrete",
-                             new BoundingBox(0, 0, 3.8, 20, 10, 4));
+            var upper = document.AddItem(model, "Slab L4", "Floors", "Concrete",
+                                         new BoundingBox(0, 0, 3.8, 20, 10, 4));
+
+            // Both storeys are in the set, so it is the level scope and not the source that drops
+            // the one on Level 04.
+            document.DefineSet("Floors", floors.Key, upper.Key);
             document.AddItem(model, "Duct B", "Ducts", "Rectangular",
                              new BoundingBox(2, 2, 5.85, 6, 4, 6.15));
 
@@ -608,6 +622,7 @@ namespace CamelWorks.Core.Tests
             document.AddItem(model, "Duct B", "Ducts", "Rectangular",
                              new BoundingBox(12, 2, 1.90, 16, 4, 2.20));
 
+            document.DefineSet("Floors", slab.Key);
             document.DefineSet("West corridor", slab.Key, ductA.Key);
 
             var spec = Spec("corridor", "Corridors, 2.1 m");
@@ -625,6 +640,109 @@ namespace CamelWorks.Core.Tests
 
             Assert.Single(found);
             Assert.Equal("Duct A", found[0].Facts[ClearanceFindings.Obstruction]);
+        }
+
+        [Fact]
+        public void Detection_sweeps_the_source_rather_than_the_whole_document()
+        {
+            var register = new FindingRegister();
+            var runs = new CheckRunStore();
+
+            var document = new FakeDocument();
+            var model = document.AddModel("Arch", @"C:\job\Arch.nwc");
+
+            var slab = document.AddItem(model, "Slab L3", "Floors", "Concrete");
+            var desk = document.AddItem(model, "Desk 12", "Furniture", "Bench");
+
+            document.SetSlab(slab.Key, 0, 0, -0.2, 20, 10, 0);
+
+            // A desk top is an up-facing surface over the minimum area and detection cannot tell
+            // it from a floor. Naming the floors set is how a coordinator says so, and before this
+            // detection swept the whole document and threw the set away.
+            document.SetSlab(desk.Key, 2, 2, 0.70, 3.6, 3, 0.75);
+
+            document.DefineSet("Floors", slab.Key);
+
+            var settings = new ClearanceSettings
+            {
+                MinimumMetres = 2.1,
+                Surfaces = "Floors",
+                DetectSurfaces = true,
+                Targets = ClearanceSettings.NotTheSurfaces,
+            };
+
+            var check = new ClearanceCheck(register, runs, document, document);
+            var patches = check.Detect(settings);
+
+            Assert.NotEmpty(patches);
+            Assert.All(patches, patch => Assert.Equal(slab.Key, patch.Source));
+
+            // The same run over everything loaded finds the desk as well, which is the state the
+            // caveat on the set-up screen describes.
+            settings.Surfaces = ClearanceSettings.Loaded;
+
+            Assert.Contains(check.Detect(settings), patch => patch.Source.Equals(desk.Key));
+        }
+
+        [Fact]
+        public void Detection_falls_back_to_the_zone_when_the_source_names_everything()
+        {
+            var register = new FindingRegister();
+            var runs = new CheckRunStore();
+
+            var document = new FakeDocument();
+            var model = document.AddModel("Arch", @"C:\job\Arch.nwc");
+
+            var slab = document.AddItem(model, "Slab L3", "Floors", "Concrete");
+            var desk = document.AddItem(model, "Desk 12", "Furniture", "Bench");
+
+            document.SetSlab(slab.Key, 0, 0, -0.2, 20, 10, 0);
+            document.SetSlab(desk.Key, 2, 2, 0.70, 3.6, 3, 0.75);
+
+            document.DefineSet("West corridor", slab.Key);
+
+            var settings = new ClearanceSettings
+            {
+                MinimumMetres = 2.1,
+                Surfaces = ClearanceSettings.Loaded,
+                DetectSurfaces = true,
+                Zone = "West corridor",
+            };
+
+            var check = new ClearanceCheck(register, runs, document, document);
+
+            Assert.All(check.Detect(settings), patch => Assert.Equal(slab.Key, patch.Source));
+        }
+
+        [Fact]
+        public void A_new_run_leaves_the_three_costliest_categories_out()
+        {
+            var settings = new ClearanceSettings();
+
+            Assert.Equal(new[] { "Sprinkler", "Lighting", "Fire Alarm" }, settings.Ignore);
+            Assert.True(settings.Ignores("Sprinklers"));
+            Assert.True(settings.Ignores("Lighting Fixtures"));
+            Assert.False(settings.Ignores("Ducts"));
+
+            // A run that says "report everything" must survive the save. Without the key being
+            // read as authoritative, an emptied list came back holding the three defaults.
+            var spec = new CheckRunSpec(FindingSource.Headroom, "all", "Everything");
+
+            settings.Ignore.Clear();
+            settings.Write(spec);
+
+            Assert.Empty(ClearanceSettings.From(spec).Ignore);
+        }
+
+        [Fact]
+        public void A_new_run_reports_shortfalls_deeper_than_the_survey_band()
+        {
+            // 25 mm rather than nothing. At nothing a 2.099 m soffit under a 2.100 m minimum is a
+            // row, and the first federation run is thousands of them.
+            var settings = new ClearanceSettings();
+
+            Assert.Equal(0.025, settings.ToleranceMetres, 6);
+            Assert.Equal(2.075, settings.ReportUnderMetres, 6);
         }
 
         [Fact]
@@ -647,7 +765,8 @@ namespace CamelWorks.Core.Tests
             var settings = new ClearanceSettings
             {
                 MinimumMetres = 2.1,
-                Surfaces = ClearanceSettings.Detected,
+                Surfaces = ClearanceSettings.Loaded,
+                DetectSurfaces = true,
                 Targets = ClearanceSettings.NotTheSurfaces,
                 WorstPerPatch = false,
             };
@@ -797,9 +916,11 @@ namespace CamelWorks.Core.Tests
             var document = new FakeDocument();
             var model = document.AddModel("Arch", @"C:\job\Arch.nwc");
 
-            document.AddItem(model, "Slab L3", "Floors", "Concrete",
-                             new BoundingBox(0, 0, -0.2, 20, 10, 0))
-                    .WithProperty("Element", "Workset", "ST-Slabs");
+            var floors = document.AddItem(model, "Slab L3", "Floors", "Concrete",
+                                          new BoundingBox(0, 0, -0.2, 20, 10, 0))
+                                 .WithProperty("Element", "Workset", "ST-Slabs");
+
+            document.DefineSet("Floors", floors.Key);
 
             document.AddItem(model, "Duct A", "Ducts", "Rectangular",
                              new BoundingBox(2, 2, 1.85, 6, 4, 2.15))
@@ -854,7 +975,7 @@ namespace CamelWorks.Core.Tests
             {
                 MinimumMetres = 2.4,
                 ToleranceMetres = 0.15,
-                Surfaces = ClearanceSettings.Detected,
+                Surfaces = ClearanceSettings.Loaded,
                 Targets = "Services",
                 Zone = "West corridor",
                 WorstPerPatch = false,
@@ -865,6 +986,7 @@ namespace CamelWorks.Core.Tests
 
             settings.Levels.Add("Level 03");
             settings.Levels.Add("Level 04");
+            settings.Ignore.Clear();
             settings.Ignore.Add("Sprinklers");
             settings.Ignore.Add("Lighting Fixtures");
             settings.Excluded.Add("patch-7");
@@ -880,7 +1002,8 @@ namespace CamelWorks.Core.Tests
 
             Assert.Equal(2.4, again.MinimumMetres, 6);
             Assert.Equal(0.15, again.ToleranceMetres, 6);
-            Assert.Equal(ClearanceSettings.Detected, again.Surfaces);
+            Assert.Equal(ClearanceSettings.Loaded, again.Surfaces);
+            Assert.True(again.DetectSurfaces);
             Assert.Equal("Services", again.Targets);
             Assert.Equal("West corridor", again.Zone);
             Assert.Equal(new[] { "Level 03", "Level 04" }, again.Levels);

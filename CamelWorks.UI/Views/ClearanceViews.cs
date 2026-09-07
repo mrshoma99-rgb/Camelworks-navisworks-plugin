@@ -27,9 +27,6 @@ namespace CamelWorks.UI.Views
     /// </summary>
     public static class ClearanceViews
     {
-        /// <summary>The words the guess matches, on the element's category or type.</summary>
-        internal static IReadOnlyList<string> WalkingWords => ClearanceCheck.WalkingWords;
-
         static ClearanceViews() => Host.WhenDocumentChanges(Forget);
 
         /// <summary>
@@ -38,15 +35,28 @@ namespace CamelWorks.UI.Views
         /// </summary>
         internal static void Forget() => ClearanceSurfaces.Forget();
 
+        /// <summary>What the detection tick says, caveat included.</summary>
+        internal static string DetectSaid => "Find the walkable surfaces in it";
+
         /// <summary>
-        /// The option's whole sentence, caveat included. An option that says only "detected
-        /// walkable surfaces" reads as though the software found the floors.
+        /// What detection will keep, said in the seat's units.
+        ///
+        /// The caveat belongs beside the tick. A control that says only "find the walkable
+        /// surfaces" reads as though the software can tell a floor from a desk top.
         /// </summary>
         /// <param name="units">The seat's units, so the area reads in them.</param>
         /// <param name="minimumAreaSquareMetres">The smallest patch detection will report.</param>
-        internal static string DetectedSaid(Measure units, double minimumAreaSquareMetres) =>
-            ClearanceSettings.Detected + " — every up-facing surface over " + units.Area(minimumAreaSquareMetres)
-            + ", which includes desk tops and duct tops.";
+        /// <param name="maxSlopeDegrees">How far a surface may tilt and still be walked on.</param>
+        internal static string DetectHint(Measure units, double minimumAreaSquareMetres,
+                                          double maxSlopeDegrees) =>
+            "Every up-facing surface over " + units.Area(minimumAreaSquareMetres) + " tilted no more "
+            + "than " + Whole(maxSlopeDegrees) + "°, which includes desk tops and duct tops. Off, "
+            + "the source's elements are the surfaces.";
+
+        /// <summary>A degree count without a trailing zero.</summary>
+        /// <param name="degrees">The angle.</param>
+        private static string Whole(double degrees) =>
+            degrees.ToString("0.#", System.Globalization.CultureInfo.CurrentCulture);
 
         /// <summary>
         /// One clearance test's settings.
@@ -93,11 +103,12 @@ namespace CamelWorks.UI.Views
             {
                 var settings = ClearanceSettings.From(_run);
                 var sets = Sets();
-                var said = DetectedSaid(Units, settings.MinPatchAreaSquareMetres);
                 var blocked = Blocked;
+                var storeys = Storeys();
 
-                var from = new List<string> { said, ClearanceSettings.Guessed,
-                                              ClearanceSettings.Selected, ClearanceSettings.Loaded };
+                // A source, never a mode: detection refines what is named here. The three
+                // whole-model answers plus the document's own sets, and nothing that guesses.
+                var from = new List<string> { ClearanceSettings.Loaded, ClearanceSettings.Selected };
 
                 from.AddRange(sets);
 
@@ -106,13 +117,11 @@ namespace CamelWorks.UI.Views
 
                 to.AddRange(sets);
 
-                var chosen = settings.IsDetecting ? said : settings.Surfaces;
+                if (!from.Contains(settings.Surfaces, StringComparer.OrdinalIgnoreCase))
+                    from.Add(settings.Surfaces);
 
-                if (!from.Contains(chosen, StringComparer.OrdinalIgnoreCase)) from.Add(chosen);
-                if (!to.Contains(settings.Targets, StringComparer.OrdinalIgnoreCase)) to.Add(settings.Targets);
-
-                var storeys = Storeys();
-                var level = settings.Levels.Count == 0 ? EveryLevel : settings.Levels[0];
+                if (!to.Contains(settings.Targets, StringComparer.OrdinalIgnoreCase))
+                    to.Add(settings.Targets);
 
                 return Ui.Stack(
                     _log,
@@ -127,7 +136,42 @@ namespace CamelWorks.UI.Views
                                 folder => Keep(_ => _run.Folder =
                                     string.IsNullOrWhiteSpace(folder) ? null : folder),
                                 160)), 170))),
+                    // Scope first. It is the decision that makes the answer usable, and the panel
+                    // used to ask it third, under two numbers and two sides.
+                    Bench.Group("Where",
+                        Sized(Ui.Field("Zone",
+                                 Reading(Ui.Choice(new[] { WholeModel }.Concat(sets).ToList(),
+                                     string.IsNullOrWhiteSpace(settings.Zone)
+                                         ? WholeModel : settings.Zone!,
+                                     pick => Keep(one => one.Zone =
+                                         string.Equals(pick, WholeModel, StringComparison.Ordinal)
+                                             ? null : pick), 230)),
+                                 "Narrows what is measured. Nothing named measures the whole "
+                                 + "federation."),
+                              380),
+                        Chosen("Levels", settings.Levels, storeys, EveryLevel,
+                               "Narrows what is reported, by the storey a surface stands on.",
+                               (one, add) => one.Levels.Add(add),
+                               (one, drop) => one.Levels.Remove(drop))),
                     Bench.Group("What to measure",
+                        Sized(Ui.Field("Measure up from",
+                                 Reading(Ui.Choice(from, settings.Surfaces,
+                                     pick => Keep(one => one.Surfaces = pick), 380))),
+                              380),
+                        Detecting(settings),
+                        Sized(Ui.Field("Measure up to",
+                                 Reading(Ui.Choice(to, settings.Targets,
+                                                   pick => Keep(one => one.Targets = pick), 230))),
+                              380),
+                        // With the side it modifies. What counts as an obstruction is one decision,
+                        // and it used to be split across two groups with the scope between them.
+                        Chosen("Categories not worth reporting", settings.Ignore, Categories(),
+                               NoCategories,
+                               "Matched anywhere in the category name, so \"Duct\" also leaves out "
+                               + "\"Duct Fittings\".",
+                               (one, add) => one.Ignore.Add(add),
+                               (one, drop) => one.Ignore.Remove(drop))),
+                    Bench.Group("How much clearance",
                         Ui.Across(
                             Sized(Number("Minimum clear height", settings.MinimumMetres,
                                          metres => metres > 0,
@@ -137,39 +181,7 @@ namespace CamelWorks.UI.Views
                                          (one, metres) => one.ToleranceMetres = metres), 190)),
                         settings.ToleranceMetres > 0
                             ? null
-                            : Ui.Note("Every shortfall is reported, however small."),
-                        Sized(Ui.Field("Measure up from",
-                                 Reading(Ui.Choice(from, chosen,
-                                     pick => Keep(one => one.Surfaces =
-                                         pick == said ? ClearanceSettings.Detected : pick), 380))),
-                              380),
-                        settings.IsDetecting ? Detected() : null,
-                        Sized(Ui.Field("Measure up to",
-                                 Reading(Ui.Choice(to, settings.Targets,
-                                                   pick => Keep(one => one.Targets = pick), 230))),
-                              380)),
-                    Bench.Group("Scope",
-                        Ui.Across(
-                            Sized(Ui.Field("Level", Ui.Choice(
-                                new[] { EveryLevel }.Concat(storeys).ToList(), level,
-                                pick => Keep(one =>
-                                {
-                                    one.Levels.Clear();
-
-                                    if (!string.Equals(pick, EveryLevel, StringComparison.Ordinal))
-                                        one.Levels.Add(pick);
-                                }), 180)), 190),
-                            Sized(Ui.Field("Zone", Reading(Pickers.Set(settings.Zone,
-                                pick => Keep(one => one.Zone = pick), 180))), 190)),
-                        Sized(Ui.Field("Ignore category",
-                                       Reading(Pickers.Category(settings.Ignore.FirstOrDefault(),
-                                           pick => Keep(one =>
-                                           {
-                                               one.Ignore.Clear();
-
-                                               if (!string.IsNullOrWhiteSpace(pick))
-                                                   one.Ignore.Add(pick);
-                                           }), 220))), 380)),
+                            : Ui.Note("Every shortfall is reported, however small.")),
                     Bench.Group("What to report",
                         Ui.Check("One row per surface — its worst obstruction only",
                                  settings.WorstPerPatch,
@@ -178,8 +190,103 @@ namespace CamelWorks.UI.Views
                     Ui.Link("How clearance is measured", Explain));
             }
 
-            /// <summary>What the level list calls no level filter at all.</summary>
+            /// <summary>
+            /// The detection tick and, when it is on, the way into what it found.
+            ///
+            /// A tick over the source rather than an entry in the source list. Detection refines
+            /// what the source names; as a list entry it replaced it, so a run scoped to a floors
+            /// set swept the whole federation and threw the set away.
+            /// </summary>
+            /// <param name="settings">The run's settings as they stand.</param>
+            private UIElement Detecting(ClearanceSettings settings)
+            {
+                var blocked = Blocked;
+
+                var tick = Ui.Check(DetectSaid, settings.DetectSurfaces,
+                                    on => Keep(one => one.DetectSurfaces = on));
+
+                if (blocked != null)
+                {
+                    tick.IsEnabled = false;
+                    tick.ToolTip = blocked;
+                }
+
+                if (!settings.DetectSurfaces)
+                    return Ui.Stack(tick, Ui.Small(DetectHint(Units, settings.MinPatchAreaSquareMetres,
+                                                              settings.MaxSlopeDegrees)));
+
+                var link = Ui.Link("Review what detection found, and how it looks", () =>
+                    Ui.Configure("Walkable surfaces", () => Ui.Safely(_onChanged),
+                                 new Ui.Page("Walkable surfaces",
+                                             () => ClearanceSurfaces.Page(_check, Units, _run.Id, Keep))));
+
+                link.IsEnabled = blocked == null;
+
+                if (blocked != null) link.ToolTip = blocked;
+
+                return Ui.Stack(tick,
+                                Ui.Small(DetectHint(Units, settings.MinPatchAreaSquareMetres,
+                                                    settings.MaxSlopeDegrees)),
+                                link);
+            }
+
+            /// <summary>
+            /// A list-valued setting: what is chosen, as chips that come off, and one picker to add.
+            ///
+            /// The record has held lists here since it was written and the panel wrote one of them,
+            /// so a 2.4 m minimum across levels 2 to 4 excluding three categories was three tests.
+            /// </summary>
+            /// <param name="label">What the list is.</param>
+            /// <param name="chosen">What is in it now.</param>
+            /// <param name="offered">Everything that could go in it.</param>
+            /// <param name="empty">What the picker reads when the list is empty.</param>
+            /// <param name="hint">One line under the picker.</param>
+            /// <param name="add">Puts one value into the settings.</param>
+            /// <param name="drop">Takes one value out.</param>
+            private UIElement Chosen(string label, IList<string> chosen, IReadOnlyList<string> offered,
+                                     string empty, string hint,
+                                     Action<ClearanceSettings, string> add,
+                                     Action<ClearanceSettings, string> drop)
+            {
+                var left = offered.Where(one => !chosen.Contains(one, StringComparer.OrdinalIgnoreCase))
+                                  .ToList();
+
+                var picker = Ui.Choice(new[] { chosen.Count == 0 ? empty : Add }.Concat(left).ToList(),
+                                       chosen.Count == 0 ? empty : Add,
+                                       pick =>
+                                       {
+                                           if (string.Equals(pick, empty, StringComparison.Ordinal)
+                                               || string.Equals(pick, Add, StringComparison.Ordinal))
+                                               return;
+
+                                           Keep(one => add(one, pick));
+                                       }, 230);
+
+                var stack = Ui.Stack(Ui.Field(label, Reading(picker), hint));
+
+                if (chosen.Count == 0) return Sized(stack, 380);
+
+                var chips = Ui.Across(chosen
+                    .Select(one => (UIElement)Parts.FilterChip(label, one,
+                                                               () => Keep(two => drop(two, one))))
+                    .ToArray());
+
+                stack.Children.Add(chips);
+
+                return Sized(stack, 380);
+            }
+
+            /// <summary>What the level picker reads when no level narrows the run.</summary>
             private const string EveryLevel = "Every level";
+
+            /// <summary>What the category picker reads when nothing is left out.</summary>
+            private const string NoCategories = "Everything is reported";
+
+            /// <summary>What the zone picker reads when the run is not confined to a set.</summary>
+            private const string WholeModel = "The whole model";
+
+            /// <summary>What a list picker reads once it holds something.</summary>
+            private const string Add = "Add another";
 
             /// <summary>
             /// One notice region for everything this panel's surroundings are missing.
@@ -206,31 +313,9 @@ namespace CamelWorks.UI.Views
 
                 if (sets == 0)
                     said.Add("This document holds no saved sets yet. Build one in Set Builder and "
-                             + "it appears in the two surface lists.");
+                             + "it appears in the zone and the two surface lists.");
 
                 return said.Count == 0 ? null : Ui.Note(string.Join(Environment.NewLine, said));
-            }
-
-            /// <summary>
-            /// The way into the detected surfaces, shown only while the test is detecting them.
-            ///
-            /// Detection reads the document's triangles, so with no model there is nothing to
-            /// detect and the way in is greyed with the reason on it.
-            /// </summary>
-            private UIElement Detected()
-            {
-                var blocked = Blocked;
-
-                var link = Ui.Link("Review the detected surfaces", () =>
-                    Ui.Configure(ClearanceSettings.Detected, () => Ui.Safely(_onChanged),
-                                 new Ui.Page(ClearanceSettings.Detected,
-                                             () => ClearanceSurfaces.Page(_check, Units, _run.Id, Keep))));
-
-                link.IsEnabled = blocked == null;
-
-                if (blocked != null) link.ToolTip = blocked;
-
-                return link;
             }
 
             /// <summary>
@@ -250,25 +335,23 @@ namespace CamelWorks.UI.Views
                                      + "difference and the same corridor at 1.850 m is a "
                                      + "coordination issue.")),
                         Bench.Group("The two sides",
-                            Ui.Small("Apart from the first two entries, both lists are this "
-                                     + "model's own search sets and selection sets. \""
-                                     + ClearanceSettings.Guessed + "\" reads names: it takes "
-                                     + "anything whose category or type contains "
-                                     + string.Join(", ", WalkingWords)
-                                     + ". Name a set instead and nothing is guessed."),
-                            Ui.Small(ClearanceSettings.Detected + " reads the model's triangles "
-                                     + "and cannot tell a floor from a desk top or a duct top, "
-                                     + "which is why the detected list can be edited.")),
+                            Ui.Small("Apart from the fixed entries, both lists are this model's "
+                                     + "own search sets and selection sets."),
+                            Ui.Small("Detection reads the model's triangles. It cannot tell a "
+                                     + "floor from a desk top or a duct top, which is why what it "
+                                     + "found can be reviewed and dropped. It refines the source "
+                                     + "rather than replacing it: naming a floors set and leaving "
+                                     + "the tick on sweeps that set, not the federation.")),
                         Bench.Group("Scope",
                             Ui.Small("Without a scope the first federation run returns every "
-                                     + "soffit in the building. A level narrows what is reported; "
-                                     + "a zone narrows what is measured. One level and one "
-                                     + "category per test: the record holds a list and this panel "
-                                     + "writes one of them."),
-                            Ui.Small("The ignored category is matched anywhere in the category "
+                                     + "soffit in the building. A zone narrows what is measured; "
+                                     + "levels narrow what is reported. Both take more than one "
+                                     + "value."),
+                            Ui.Small("An ignored category is matched anywhere in the category "
                                      + "name, so \"Duct\" also leaves out \"Duct Fittings\" and "
-                                     + "\"Duct Insulation\". Every sprinkler head and smoke "
-                                     + "detector is under the minimum somewhere.")),
+                                     + "\"Duct Insulation\". Sprinklers, lighting and fire alarm "
+                                     + "devices start in the list because every one of them is "
+                                     + "under the minimum somewhere.")),
                         Bench.Group("What to report",
                             Ui.Small("A slab under a plant room has a thousand things above it "
                                      + "and one of them is the lowest. Turn the one-row setting "
@@ -292,7 +375,7 @@ namespace CamelWorks.UI.Views
             /// <summary>A field capped to a readable width, so short fields sit two to a row.</summary>
             /// <param name="field">The field.</param>
             /// <param name="width">How wide it may be.</param>
-            private static UIElement Sized(Panel field, double width)
+            private static UIElement Sized(FrameworkElement field, double width)
             {
                 field.Width = width;
 
@@ -343,6 +426,25 @@ namespace CamelWorks.UI.Views
                 Named(() => _seat.Sets().Select(set => set.Name)
                                  .Distinct(StringComparer.OrdinalIgnoreCase)
                                  .OrderBy(name => name, StringComparer.OrdinalIgnoreCase));
+
+            /// <summary>
+            /// The categories this document's elements carry, for the ignore list.
+            ///
+            /// The three the run leaves out by default are always offered, whether or not the
+            /// bounded scan reached one: a list that cannot show what a run is set to is a list
+            /// that cannot take it back off.
+            /// </summary>
+            private List<string> Categories()
+            {
+                var found = Named(() => Pickers.CategoryNames());
+
+                foreach (var one in ClearanceSettings.Unreported)
+                    if (!found.Contains(one, StringComparer.OrdinalIgnoreCase)) found.Add(one);
+
+                found.Sort(StringComparer.OrdinalIgnoreCase);
+
+                return found;
+            }
 
             /// <summary>The storeys this project declares, for the level scope.</summary>
             private List<string> Storeys() =>

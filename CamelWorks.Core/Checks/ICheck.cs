@@ -58,6 +58,17 @@ namespace CamelWorks.Core.Checks
         /// <summary>Why not, in one sentence, for the empty state. Null when available.</summary>
         string? Unavailable { get; }
 
+        /// <summary>
+        /// What the last press could not do, in the check's own words. Empty when it did it all.
+        ///
+        /// Cleared when a run or a read starts, so it always describes the most recent press and
+        /// never a stale one. It is here rather than on each check because the screens that press
+        /// the buttons hold an <see cref="ICheck"/>: a run that stops writes a specific reason —
+        /// "resolved to no surface to measure from", "gave no triangles within 1 m of 0 m" — and
+        /// without this the set-up screen could report only that nothing was found.
+        /// </summary>
+        IReadOnlyList<string> Notes { get; }
+
         /// <summary>The per-result columns this check declares, beyond the standing ones.</summary>
         IReadOnlyList<ResultColumn> Columns { get; }
 

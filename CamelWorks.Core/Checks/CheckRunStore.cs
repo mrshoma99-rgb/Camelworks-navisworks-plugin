@@ -73,6 +73,34 @@ namespace CamelWorks.Core.Checks
                 if (!string.IsNullOrWhiteSpace(note)) Notes.Add(note);
         }
 
+        /// <summary>
+        /// The same run under a new id and name, for a second corridor or the next storey.
+        ///
+        /// Most of a second test is the first one: ten corridors on ten levels differ by a name, a
+        /// zone and sometimes a height, and without this each of them is the whole form again.
+        ///
+        /// What is not copied is what the copy has not earned. The last-run time is cleared, so the
+        /// copy reads as saved and never run rather than as already answered; the notes go, because
+        /// they describe a run that happened to the original; and the caller names the derived keys
+        /// its own check writes — the record of what a run last read, and any list of results
+        /// somebody dropped — because those are keyed to findings this copy has not produced.
+        /// </summary>
+        /// <param name="id">The copy's id, unique within the check.</param>
+        /// <param name="name">What the copy is called.</param>
+        /// <param name="without">Settings keys the copy must not inherit, or null for none.</param>
+        public CheckRunSpec CopyAs(string id, string name, IEnumerable<string>? without = null)
+        {
+            var copy = new CheckRunSpec(CheckKey, id, name) { Folder = Folder };
+
+            var dropped = new HashSet<string>(without ?? Array.Empty<string>(),
+                                              StringComparer.OrdinalIgnoreCase);
+
+            foreach (var setting in Settings)
+                if (!dropped.Contains(setting.Key)) copy.Settings[setting.Key] = setting.Value;
+
+            return copy;
+        }
+
         /// <summary>Serialise.</summary>
         public JsonValue ToJson()
         {
