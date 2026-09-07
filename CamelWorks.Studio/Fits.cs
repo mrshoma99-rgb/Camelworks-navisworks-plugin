@@ -73,16 +73,22 @@ namespace CamelWorks.Studio
             page.Children.Add(overlapping);
 
             // Wider than the slot it is given, and it neither trims nor wraps, so it is cut off.
-            page.Children.Add(new Border
+            //
+            // A grid column, not a fixed-width Border. In a Border the text came out at its own
+            // full width and the reader was right to report no fault — the canary was not
+            // clipping anything. A column arranges its child to the column.
+            var slot = new Grid();
+
+            slot.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
+
+            slot.Children.Add(new TextBlock
             {
-                Width = 60,
-                Child = new TextBlock
-                {
-                    Text = "a line of text far wider than sixty pixels",
-                    TextTrimming = TextTrimming.None,
-                    TextWrapping = TextWrapping.NoWrap,
-                },
+                Text = "a line of text far wider than sixty pixels",
+                TextTrimming = TextTrimming.None,
+                TextWrapping = TextWrapping.NoWrap,
             });
+
+            page.Children.Add(slot);
 
             return page;
         }

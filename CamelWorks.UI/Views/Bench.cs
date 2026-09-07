@@ -252,6 +252,13 @@ namespace CamelWorks.UI.Views
             body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 320 });
 
+            // Collapsed, not merely narrow. A pane given no width still measures and arranges
+            // everything in it, which is the cost of a list nobody can see and, on the layout
+            // reader, fifteen of its own children reported as overlapping in a column zero
+            // pixels wide.
+            if (leftShut && left is FrameworkElement folded)
+                folded.Visibility = Visibility.Collapsed;
+
             body.Children.Add(left);
 
             var grip = new GridSplitter
