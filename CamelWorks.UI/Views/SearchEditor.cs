@@ -199,10 +199,19 @@ namespace CamelWorks.UI.Views
 
             titles.Add(ByProperty);
 
+            // A field this check does not offer is named as itself rather than shown as the first
+            // entry in the list. A condition written against another check's column, or against a
+            // check that is not on this seat, must not read as a condition about something else.
+            var stranger = !property && known == null ? Strange(term.Field) : null;
+
+            if (stranger != null) titles.Insert(0, stranger);
+
             row.Children.Add(Spaced(Ui.Choice(titles,
-                property ? ByProperty : known?.Title ?? titles[0],
+                stranger ?? (property ? ByProperty : known!.Title),
                 picked =>
                 {
+                    if (picked == stranger) return;
+
                     if (picked == ByProperty)
                     {
                         term.Field = ResultFields.Property(string.Empty, name);
@@ -321,6 +330,23 @@ namespace CamelWorks.UI.Views
             row.Children.Add(Spaced(remove));
 
             return row;
+        }
+
+        /// <summary>
+        /// A field this check does not declare, named as itself.
+        ///
+        /// It is still run: the search is over findings and one list can hold conditions about
+        /// results of several checks, so a condition about a column only one of them declares
+        /// simply finds nothing among the others.
+        /// </summary>
+        /// <param name="field">The field id.</param>
+        private static string Strange(string field)
+        {
+            var column = ResultFields.ReadColumn(field);
+
+            return column != null
+                ? column + " (another check's)"
+                : field + " (not offered here)";
         }
 
         /// <summary>The nearest depth the picker offers to one held.</summary>
