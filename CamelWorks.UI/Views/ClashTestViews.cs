@@ -287,17 +287,24 @@ namespace CamelWorks.UI.Views
                 var list = Ui.Stack();
                 var find = Ui.Text(string.Empty, "part of a name", null, 200);
 
+                // Whether the document offers anything of this kind at all, so the line under the
+                // list does not say "nothing picked yet" under a list that says there is nothing
+                // to pick.
+                var offers = false;
+
                 void Fill()
                 {
                     list.Children.Clear();
 
                     var query = (find.Text ?? string.Empty).Trim();
 
-                    var lines = string.Equals(side.From, FromModels, StringComparison.Ordinal)
+                    List<Line> lines = string.Equals(side.From, FromModels, StringComparison.Ordinal)
                         ? models.Select(one => new Line(one, one, null)).ToList()
                         : sets.Select(one => new Line(Full(one), one.Name,
                             (one.IsSearch ? "search set" : "selection set")
                             + ", " + Ui.Count(one.Members, "element"))).ToList();
+
+                    offers = lines.Count > 0;
 
                     var shown = lines
                         .Where(one => query.Length == 0
@@ -338,7 +345,7 @@ namespace CamelWorks.UI.Views
                     var count = side.Picked.Count;
 
                     says.Text = count == 0
-                        ? "Nothing picked yet."
+                        ? offers ? "Nothing picked yet." : string.Empty
                         : count == 1
                             ? side.Picked[0]
                             : Ui.Count(count, "of them") + ": " + string.Join(", ", side.Picked);
@@ -386,12 +393,17 @@ namespace CamelWorks.UI.Views
             /// <param name="blocked">Why the document cannot be read, or null.</param>
             private static UIElement Framed(Panel held, string? blocked)
             {
+                // Capped like every other field on this form. Left to stretch, a side ran the
+                // width of whatever pane it was put in while the fields above it stopped at 380,
+                // so the two sides read as a different kind of thing from the rest of the form.
                 var card = new Border
                 {
                     Margin = new Thickness(0, 0, 0, 8),
                     Padding = new Thickness(10, 9, 10, 10),
                     CornerRadius = new CornerRadius(8),
                     BorderThickness = new Thickness(1),
+                    MaxWidth = 520,
+                    HorizontalAlignment = HorizontalAlignment.Left,
                     Child = held,
                 };
 
