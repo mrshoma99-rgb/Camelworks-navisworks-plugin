@@ -112,26 +112,30 @@ namespace CamelWorks.Studio
             // a filter narrowing them and a split that writes a pack per trade. Drawn from the
             // project file rather than a document, so the table and the filter chips can be
             // looked at rather than described from a licensed seat.
-            Page("app-clash-exchange", "Clash Manager · Exchange", 560,
-                 () => new Border
+            Page("app-clash-exchange", "Clash Manager · Exchange", 620,
+                 () => Deck("clash", "exchange", new Border
                  {
                      // Bounded, because the tab is. The surface is a two-pane bench whose body row
                      // is a star, and a star row measured against an unbounded height draws the
                      // whole screen again below itself.
                      Height = 500,
                      Child = ClashExchangeViews.Drawn(Filed(), "Riverside", Sent()),
-                 }),
+                 })),
 
             // The other half of the round with nothing chosen, which is the state it opens in and
             // the one an empty screen has to explain rather than merely be blank in. Short,
             // because that state is one card.
-            Page("app-clash-exchange-import", "Clash Manager · Exchange, import", 360,
-                 () => new Border
+            //
+            // Decked, like every other tab page. Drawn as a bare panel this state lost the title
+            // bar and the tab row - 80 pixels of orientation, missing exactly where the user has
+            // least context - and the review recorded that as a defect in the product.
+            Page("app-clash-exchange-import", "Clash Manager · Exchange, import", 420,
+                 () => Deck("clash", "exchange", new Border
                  {
                      Height = 300,
                      Child = ClashExchangeViews.Drawn(Filed(), "Riverside", Sent(),
                                                       importing: true),
-                 }),
+                 })),
 
             // The import mode in the state it is used in: two parties' packs read against the
             // board, one clash answered differently by each. The conflict row, the verb that

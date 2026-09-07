@@ -630,13 +630,13 @@ the reason is bound to the button's own tooltip so the two cannot drift.
 show is the one that wastes the most space. The footer is drawn at full weight
 for a screen with no content, and the disabled primary — a bordered ghost 136px
 wide — is more prominent than the enabled action inside the card. The page header
-and tab row are missing in this state, removing 80px of orientation exactly when
-the user has least context.
+and tab row are absent from the render; that is the harness drawing the panel
+alone, not the product (fault 12).
 
 **Prescription.** `[DS]` one empty-state block, vertically centred, with one
 primary; `[DS]` when the only footer action is disabled and the screen is empty,
 suppress the footer and promote the empty state's action; `[DS]` a disabled
-primary that never out-weighs an available action; `[SCREEN]` keep the header.
+primary that never out-weighs an available action.
 
 ### app-clash-exchange-import-read — returned packs read and merged
 
@@ -964,7 +964,7 @@ These are not judgment calls. Each was verified in source.
    they sum to the result count — so it may be printing member counts under a
    distance heading. To be verified against a licensed read before it is changed.
 
-Two defects in the review instrument itself:
+Three defects in the review instrument itself:
 
 10. **The harness rebuilds the walkable-surfaces panel by hand** and omits a
     field the real screen has, so the field most likely to be misread has never
@@ -972,6 +972,9 @@ Two defects in the review instrument itself:
 11. **The new-clash page renders the form's body without its footer**, so
     `Make the test` — the press the whole form exists for — has never been in a
     render.
+12. **Two of the three Exchange pages are drawn without the deck**, so the title
+    bar and the tab row are missing from them while every other tab page has
+    both. The absence was read as a product defect on the import empty state.
 
 ---
 
