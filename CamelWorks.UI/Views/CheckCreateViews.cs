@@ -98,6 +98,9 @@ namespace CamelWorks.UI.Views
 
         private sealed class Screen
         {
+            /// <summary>The band a test in no folder sits under.</summary>
+            private const string Unfiled = "Not filed";
+
             private readonly ISeat _seat;
 
             private readonly StackPanel _log = Ui.Stack();
@@ -281,8 +284,11 @@ namespace CamelWorks.UI.Views
                     ? _all
                     : _all.Where(one => Matches(one, query)).ToList();
 
-                return kept.OrderBy(one => one.Run.Folder ?? string.Empty,
-                                    StringComparer.OrdinalIgnoreCase)
+                // Filed first, unfiled last, and by name within each. The list is drawn in bands
+                // and a band is a run of adjacent rows, so this order is what makes the folders.
+                return kept.OrderBy(one => string.IsNullOrEmpty(one.Run.Folder) ? 1 : 0)
+                           .ThenBy(one => one.Run.Folder ?? string.Empty,
+                                   StringComparer.OrdinalIgnoreCase)
                            .ThenBy(one => one.Run.Name, StringComparer.OrdinalIgnoreCase)
                            .ToList();
             }
@@ -340,12 +346,13 @@ namespace CamelWorks.UI.Views
                 {
                     var folder = one.Run.Folder ?? string.Empty;
 
-                    // The folder is printed on every row. Printing it once per group and leaving
-                    // the rows under it blank read as "this test is in no folder", which is a
-                    // state the same column has to be able to show.
-                    rows.Add(new TableRow(one, one.Run.Name, one.Check.Name,
-                                          folder.Length == 0 ? "Not filed" : folder, Found(one))
+                    rows.Add(new TableRow(one, one.Run.Name, one.Check.Name, Found(one))
                     {
+                        // The folder is the band the row sits under, not a cell. It was a column,
+                        // which printed one folder's name once per test in it and left the filing
+                        // to be read back out of the repetition.
+                        Filed = folder.Length == 0 ? Unfiled : folder,
+
                         Tone = one.Is(PickedCheck, PickedRun) ? Tone.Good : Tone.Plain,
 
                         // The check's own symbol, beside its own name. The list mixes kinds and
@@ -354,7 +361,7 @@ namespace CamelWorks.UI.Views
                     });
                 }
 
-                // The name takes what is left and the other three ask for what their longest
+                // The name takes what is left and the other two ask for what their longest
                 // ordinary value needs, so nothing in this table is drawn with an ellipsis at the
                 // pane's own width.
                 //
@@ -365,8 +372,8 @@ namespace CamelWorks.UI.Views
                 // Kind is column 1, and it is the one column whose value is a kind rather than a
                 // measurement, so it is the one that carries the symbol.
                 var table = Ui.Table(rows,
-                                     ("Test", 0), ("Kind", 118), ("Folder", 120),
-                                     ("Last run", 160)).Multi().Symbolled(1);
+                                     ("Test", 0), ("Kind", 118),
+                                     ("Last run", 160)).Multi().Symbolled(1).Filed();
 
                 _filling = true;
 

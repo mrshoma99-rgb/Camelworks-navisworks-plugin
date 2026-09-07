@@ -101,6 +101,63 @@ namespace CamelWorks.UI.Views
             Binding.DoNothing;
     }
 
+    /// <summary>
+    /// The heading over one band of a table's rows: what they are filed under, and how many.
+    ///
+    /// Built as a visual rather than a factory tree with the values bound, for the reason
+    /// <see cref="SymbolCell"/> is: the folder mark is a path on its own canvas inside a Viewbox
+    /// and <c>Ui.Glyph</c> already assembles that.
+    /// </summary>
+    internal sealed class BandHead : IValueConverter
+    {
+        /// <inheritdoc />
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (!(value is CollectionViewGroup group)) return string.Empty;
+
+            var line = new DockPanel { LastChildFill = true };
+
+            var tally = new TextBlock
+            {
+                Text = group.ItemCount.ToString(CultureInfo.CurrentCulture),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            tally.Wearing("Hint");
+            DockPanel.SetDock(tally, Dock.Right);
+            line.Children.Add(tally);
+
+            line.Children.Add(Ui.Glyph(Glyphs.Folder, 13, "Muted", new Thickness(0, 0, 7, 0)));
+
+            var name = new TextBlock
+            {
+                Text = group.Name as string ?? string.Empty,
+                FontWeight = FontWeights.SemiBold,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            name.Wearing("Hint");
+            line.Children.Add(name);
+
+            var band = new Border
+            {
+                Padding = new Thickness(10, 6, 12, 5),
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                Child = line,
+            };
+
+            band.Tint(Border.BackgroundProperty, "Card2");
+            band.Tint(Border.BorderBrushProperty, "Bd");
+
+            return band;
+        }
+
+        /// <inheritdoc />
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
+            Binding.DoNothing;
+    }
+
     /// <summary>What a path field is asking for, and therefore which dialog it opens.</summary>
     public enum PathKind
     {
@@ -166,6 +223,14 @@ namespace CamelWorks.UI.Views
         /// table's, not the row's: see <c>Symbolled</c>.
         /// </summary>
         public string? Symbol { get; set; }
+
+        /// <summary>
+        /// The band this row belongs under, or null when the table is not banded.
+        ///
+        /// Read by <c>Filed</c>, which groups the rows on it. Rows carrying the same text sit
+        /// under one heading, so the value is not also worth a column of its own.
+        /// </summary>
+        public string? Filed { get; set; }
 
         /// <summary>Cell text by column. Out-of-range is empty rather than an exception.</summary>
         /// <param name="index">Column index.</param>
@@ -3348,6 +3413,41 @@ namespace CamelWorks.UI.Views
             });
 
             grid.Columns[column].CellTemplate = new DataTemplate { VisualTree = cell };
+
+            return table;
+        }
+
+        /// <summary>
+        /// Put the rows in bands, one per <see cref="TableRow.Filed"/> value, with a heading over
+        /// each saying what it is and how many rows it holds.
+        ///
+        /// A folder printed in a cell is a column, not a folder: on forty tests filed into six
+        /// folders the same six words are printed forty times and the filing has to be read back
+        /// out of them. The caller sorts the rows into band order first — a band is a run of
+        /// adjacent rows, not a query.
+        /// </summary>
+        /// <param name="table">The table.</param>
+        public static ListView Filed(this ListView table)
+        {
+            var grouped = new CollectionViewSource { Source = table.ItemsSource };
+
+            grouped.GroupDescriptions.Add(new PropertyGroupDescription(nameof(TableRow.Filed)));
+
+            table.ItemsSource = grouped.View;
+
+            // Grouping turns virtualisation off unless this says otherwise, and a federation with
+            // six hundred tests is a list that has to stay virtualised.
+            VirtualizingPanel.SetIsVirtualizingWhenGrouping(table, true);
+
+            var head = new FrameworkElementFactory(typeof(ContentPresenter));
+
+            head.SetBinding(ContentPresenter.ContentProperty,
+                            new Binding(".") { Converter = new BandHead() });
+
+            table.GroupStyle.Add(new GroupStyle
+            {
+                HeaderTemplate = new DataTemplate { VisualTree = head },
+            });
 
             return table;
         }
