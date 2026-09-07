@@ -41,6 +41,18 @@ namespace CamelWorks.Core.Search
         /// <summary>The unit its numbers are in, where saying so helps. Null when it does not.</summary>
         public string? Unit { get; set; }
 
+        /// <summary>
+        /// Whether the field is a measurement across the two elements rather than a reading off
+        /// one.
+        ///
+        /// It has no value on a single element, so it is asked in one scope only — between them —
+        /// and it takes the number operators there rather than "is the same on both".
+        /// </summary>
+        public bool Across { get; set; }
+
+        /// <summary>One line under the picker, where the field needs one. Null when it does not.</summary>
+        public string? Hint { get; set; }
+
         /// <inheritdoc />
         public override string ToString() => Title;
     }
@@ -105,6 +117,21 @@ namespace CamelWorks.Core.Search
 
         /// <summary>Anywhere in an element's tree path.</summary>
         public const string TreePath = "path";
+
+        /// <summary>Whether an element runs up and down or along the plan.</summary>
+        public const string Orientation = "orientation";
+
+        /// <summary>How far from horizontal an element runs, in degrees.</summary>
+        public const string Tilt = "tilt";
+
+        /// <summary>The clear distance between the two elements' boxes.</summary>
+        public const string Gap = "between:gap";
+
+        /// <summary>The distance between the two elements' centres.</summary>
+        public const string Centres = "between:centres";
+
+        /// <summary>The angle between the ways the two elements run.</summary>
+        public const string Angle = "between:angle";
 
         /// <summary>The prefix of a field read from a check's declared column.</summary>
         public const string ColumnPrefix = "column:";
@@ -182,6 +209,54 @@ namespace CamelWorks.Core.Search
             new QueryField(TypeName, "Type", QueryValue.Text, true),
             new QueryField(Model, "Model", QueryValue.Text, true),
             new QueryField(TreePath, "Anywhere in the tree path", QueryValue.Text, true),
+
+            new QueryField(Orientation, "Orientation", QueryValue.Text, true)
+            {
+                Hint = "Vertical or Horizontal, from the element's box. An element that is not "
+                       + "clearly longer one way than the other two has no orientation and no "
+                       + "clause about it holds.",
+            },
+
+            new QueryField(Tilt, "Angle from horizontal", QueryValue.Number, true)
+            {
+                Unit = "\u00b0",
+                Hint = "Zero along the plan, ninety up and down.",
+            },
+        };
+
+        /// <summary>
+        /// What is measured across the two elements rather than read off either.
+        ///
+        /// From the elements themselves, not from a column: no check declares an angle, and the
+        /// question a coordinator asks about a pair — how far apart, at what angle — is about the
+        /// pair rather than about what the check happened to measure. The elements are on the
+        /// result, so the search measures them.
+        /// </summary>
+        public static IReadOnlyList<QueryField> Measured { get; } = new[]
+        {
+            new QueryField(Gap, "Distance between them", QueryValue.Number, true)
+            {
+                Across = true,
+                Unit = "m",
+                Hint = "The clear distance between the two elements' boxes, zero when they touch "
+                       + "or overlap. A check that measures the solids declares a column for it, "
+                       + "and that column is the closer answer.",
+            },
+
+            new QueryField(Centres, "Distance between their centres", QueryValue.Number, true)
+            {
+                Across = true,
+                Unit = "m",
+            },
+
+            new QueryField(Angle, "Angle between them", QueryValue.Number, true)
+            {
+                Across = true,
+                Unit = "\u00b0",
+                Hint = "Zero when they run the same way, ninety when they cross square. Either "
+                       + "element that is not clearly longer one way than the other two has no "
+                       + "direction, and no clause about the angle holds for it.",
+            },
         };
 
         /// <summary>
@@ -213,6 +288,7 @@ namespace CamelWorks.Core.Search
             }
 
             found.AddRange(OnElements);
+            found.AddRange(Measured);
 
             return found;
         }
@@ -237,6 +313,27 @@ namespace CamelWorks.Core.Search
                     QueryOp.StartsWith, QueryOp.EndsWith, QueryOp.IsEmpty, QueryOp.IsNotEmpty,
                 };
         }
+
+        /// <summary>
+        /// The operators one field takes in one scope.
+        ///
+        /// A measurement across the pair is compared with a number even in the scope that
+        /// otherwise offers "is the same on both": there is one reading, not two to compare.
+        /// </summary>
+        /// <param name="field">The field, or null when it is not one this file knows.</param>
+        /// <param name="value">Text or number, for a field this file does not know.</param>
+        /// <param name="where">The scope the clause is asked in.</param>
+        public static IReadOnlyList<QueryOp> Operators(QueryField? field, QueryValue value,
+                                                       QueryWhere where) =>
+            Operators(field?.Value ?? value,
+                      where == QueryWhere.BetweenElements && field?.Across != true);
+
+        /// <summary>The scopes one field can be asked of.</summary>
+        /// <param name="field">The field, or null when it is not one this file knows.</param>
+        public static IReadOnlyList<QueryWhere> ScopesFor(QueryField? field) =>
+            field?.Across == true
+                ? new[] { QueryWhere.BetweenElements }
+                : Scopes;
 
         /// <summary>How an operator reads in a sentence.</summary>
         /// <param name="op">The operator.</param>

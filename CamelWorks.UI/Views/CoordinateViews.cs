@@ -2127,6 +2127,9 @@ namespace CamelWorks.UI.Views
             /// <inheritdoc />
             public IModelItem? Element(ElementKey key) => _session.Model.Resolve(key);
 
+            /// <inheritdoc />
+            public double MetresPerUnit => _session.MetresPerUnit;
+
             /// <summary>
             /// The columns of the check that produced a result, held per check.
             ///

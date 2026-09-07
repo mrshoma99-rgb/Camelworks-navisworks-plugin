@@ -83,6 +83,8 @@ namespace CamelWorks.Core.Tests
             public string? IssueOf(Finding finding) =>
                 Written != null && Written.Raised.TryGetValue(finding.Id, out var said) ? said : null;
 
+            public double MetresPerUnit => 1.0;
+
             /// <summary>The writer whose attachments this world reports, or null for none.</summary>
             internal Written? Written { get; set; }
         }

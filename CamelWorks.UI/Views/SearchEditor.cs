@@ -421,15 +421,17 @@ namespace CamelWorks.UI.Views
                             string.Equals(one.Title, picked, StringComparison.Ordinal));
 
                         term.Field = chosen.Id;
-                        term.Where = chosen.OnElement ? QueryWhere.AnyElement : QueryWhere.Result;
+
+                        term.Where = chosen.Across ? QueryWhere.BetweenElements
+                            : chosen.OnElement ? QueryWhere.AnyElement
+                            : QueryWhere.Result;
                     }
 
                     // The operator has to be one the new field takes: a text field cannot be
                     // "between", and a number field cannot "start with".
                     var offered = ResultFields.Operators(
-                        property ? QueryValue.Text
-                                 : _fields.FirstOrDefault(one => one.Id == term.Field)?.Value ?? QueryValue.Text,
-                        term.Where == QueryWhere.BetweenElements);
+                        property ? null : _fields.FirstOrDefault(one => one.Id == term.Field),
+                        QueryValue.Text, term.Where);
 
                     if (!offered.Contains(term.Op)) term.Op = offered[0];
 
@@ -462,25 +464,31 @@ namespace CamelWorks.UI.Views
             }
 
             // Which element, for the fields that are read from one.
-            if (elemental)
+            // Which element, for the fields that are read from one. A measurement across the
+            // pair offers the one scope it has, rather than a picker with a single entry that
+            // cannot be changed.
+            var scopes = ResultFields.ScopesFor(known);
+
+            if (elemental && scopes.Count > 1)
                 row.Children.Add(Spaced(Ui.Choice(
-                    ResultFields.Scopes.Select(ResultFields.Worded).ToList(),
+                    scopes.Select(ResultFields.Worded).ToList(),
                     ResultFields.Worded(term.Where == QueryWhere.Result
                                         ? QueryWhere.AnyElement : term.Where),
                     picked =>
                     {
-                        term.Where = ResultFields.Scopes.First(one =>
-                            ResultFields.Worded(one) == picked);
+                        term.Where = scopes.First(one => ResultFields.Worded(one) == picked);
 
-                        var offered = ResultFields.Operators(kind, term.IsBetween);
+                        var offered = ResultFields.Operators(known, kind, term.Where);
 
                         if (!offered.Contains(term.Op)) term.Op = offered[0];
 
                         Touched();
                     }, 150)));
+            else if (elemental)
+                row.Children.Add(Spaced(Ui.Line(ResultFields.Worded(scopes[0]), 0.7)));
 
             // How it is compared.
-            var operators = ResultFields.Operators(kind, term.IsBetween);
+            var operators = ResultFields.Operators(known, kind, term.Where);
 
             row.Children.Add(Spaced(Ui.Choice(
                 operators.Select(ResultFields.Worded).ToList(),
@@ -521,7 +529,17 @@ namespace CamelWorks.UI.Views
 
             row.Children.Add(Spaced(Dropping(group, node, "Remove this condition")));
 
-            return row;
+            // What the field means, where it needs saying. A measurement taken off the elements
+            // rather than read off a column has limits, and they belong beside the condition
+            // rather than in a manual.
+            if (string.IsNullOrEmpty(known?.Hint)) return row;
+
+            var says = Ui.Small(known!.Hint!);
+
+            says.Margin = new Thickness(30, 0, 0, 6);
+            says.MaxWidth = 460;
+
+            return Ui.Stack(row, says);
         }
 
         /// <summary>Take a condition or a bracket out of its group.</summary>
