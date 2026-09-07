@@ -2780,8 +2780,18 @@ namespace CamelWorks.UI.Views
 
                 if (Check?.Runner != null)
                 {
-                    verbs.Children.Add(Ui.Icon(Glyphs.Play, "Run all tests",
-                        () => RunTests(read.Cast<object>().ToList(), _log)));
+                    // Worded, not a play triangle. This runs every test on the rail, which is
+                    // the longest-running thing on the tab, and the picture said neither "run"
+                    // nor "all" - it was the one control on this screen whose whole meaning was
+                    // in a tooltip nobody hovers a corner for.
+                    var all = Ui.Button("Run all", () => RunTests(read.Cast<object>().ToList(), _log));
+
+                    all.MinWidth = 0;
+                    all.Padding = new Thickness(9, 3, 9, 4);
+                    all.Margin = new Thickness(0, 0, 4, 0);
+                    all.ToolTip = "Run every test on this rail";
+
+                    verbs.Children.Add(all);
 
                     verbs.Children.Add(Parts.MoreMenu(Glyphs.More,
                         "More actions", TestMenu(entry), up: true));
@@ -3435,9 +3445,6 @@ namespace CamelWorks.UI.Views
                     verbs.Children.Add(Ui.Icon(Glyphs.Play, "Run this test",
                         () => RunTests(One(entry), _log)));
 
-                verbs.Children.Add(Ui.Icon(Glyphs.Columns, "Which columns the board shows",
-                    () => Configure("columns")));
-
                 // Up here with the rest of the controls that open something, rather than beside
                 // the search box where it read as a button that did something to the board.
                 // One control, not two.
@@ -3450,8 +3457,20 @@ namespace CamelWorks.UI.Views
                 // one menu, and it says the whole answer in its tooltip.
                 verbs.Children.Add(Ui.Loose(_view));
 
-                verbs.Children.Add(Ui.Icon(Glyphs.Tune, "This board",
-                    () => Configure("source")));
+                // Two symbols became one menu with two words in it. They opened the two halves
+                // of the same window - which columns show, and where the results come from - and
+                // as pictures they said neither: a grid and a slider beside a play and a funnel
+                // is four drawings and no sentence. The controls used continuously keep their
+                // place on the row; setting the board up is not one of them.
+                verbs.Children.Add(Parts.MoreMenu(Glyphs.Tune, "Set this board up",
+                    new List<Parts.Entry>
+                    {
+                        Parts.Entry.Heading("Set this board up"),
+                        Parts.Entry.Act("Which columns the board shows", Glyphs.Columns,
+                                        () => Configure("columns")),
+                        Parts.Entry.Act("Where the results come from", Glyphs.Tune,
+                                        () => Configure("source")),
+                    }));
 
                 DockPanel.SetDock(verbs, Dock.Right);
                 row.Children.Add(verbs);

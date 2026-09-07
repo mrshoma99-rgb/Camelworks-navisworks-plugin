@@ -296,7 +296,9 @@ touches, read before the next step starts.
 
 ## What was built, and where it departed from this plan
 
-Item 5 (the unlabelled icon clusters) is the only one still outstanding.
+Every item is built. Item 5 was applied by the plan's own rule - only clusters go into menus, and
+a control used constantly keeps its place - so three of the named clusters became menus and two
+symbols became labelled buttons rather than all of them going behind a glyph.
 
 **Item 1, the status picker.** Built. One defect the plan did not foresee: the picker handed the
 board row to `Mark`, which takes results and filters a board row out, so it changed nothing and
@@ -313,6 +315,12 @@ and left out the one they do. The render is what said so.
 lives in `FindingStatusKeys` in Core, where a unit test covers it directly, and a test that runs the
 code is a better guard than a check that reads it. The Help window's Keys chapter listed eight keys
 belonging to a Review mode retired with the old board; it is drawn from `BoardKeys.All` now.
+
+**Item 5, the unlabelled clusters.** The results row's Columns and Tune symbols opened the two
+halves of one window and are now one menu with those two words in it; the row keeps its run and its
+table menu. The rail foot's play reads "Run all". Each rule's row on the Filter tab had a play, a
+copier and a bin, repeated down the list; they are one menu with three labelled entries, and the
+run on it asks first where the rule deletes - it did not before.
 
 **Item 6, the Filter tab.** Option 2, as offered. The Remove action reads "Delete from the
 document", its note is a problem rather than a hint, its run button is red and asks first, "Run all

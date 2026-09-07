@@ -1144,38 +1144,49 @@ namespace CamelWorks.UI.Views
             /// Run, copy and delete, on the row rather than only in the panel beside it. Opening a
             /// rule to delete it is two presses and a read to check it is the one meant; the row
             /// already says which rule it is.
+            ///
+            /// One menu with three words in it, not three symbols. A play, a copier and a bin
+            /// repeated down a list of rules is a column of pictures a reader has to decode on
+            /// every row, and one of the three deletes - and where the rule itself deletes from
+            /// the document, the play did too, with nothing on the row saying so.
             /// </summary>
             /// <param name="card">The rule.</param>
             private UIElement Verbs(ClashCard card)
             {
-                var verbs = new StackPanel
+                var deletes = card.Action == ClashActionKind.Remove;
+
+                var items = new List<Parts.Entry>
                 {
-                    Orientation = Orientation.Horizontal,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(8, 0, 0, 0),
+                    _live == null
+                        ? Parts.Entry.Barred("Run this rule on its own", Glyphs.Play,
+                                             "Running a rule reads and writes the clash results, "
+                                             + "so it needs an open model.")
+                        : Parts.Entry.Act(
+                            deletes ? "Run this rule and delete" : "Run this rule on its own",
+                            Glyphs.Play,
+                            () =>
+                            {
+                                if (deletes && !Asked()) return;
+
+                                Ui.Run(_preview, job => Play(_live, job, card));
+                            }),
+
+                    Parts.Entry.Act("Make another rule like this one", Glyphs.Copy,
+                                    () => Clone(card)),
+
+                    Parts.Entry.Rule(),
+                    Parts.Entry.Danger("Delete this rule", Glyphs.Bin, () => Forget(card)),
                 };
 
-                if (_live == null)
-                {
-                    var stopped = Ui.Icon(Glyphs.Play, "Running a rule reads and writes the clash "
-                                                       + "results, so it needs an open model",
-                                          () => { });
+                var menu = Parts.MoreMenu(Glyphs.More, "What to do with this rule", items);
 
-                    stopped.IsEnabled = false;
-                    verbs.Children.Add(stopped);
-                }
-                else
+                if (menu is FrameworkElement placed)
                 {
-                    verbs.Children.Add(Ui.Icon(Glyphs.Play, "Run this rule on its own",
-                        () => Ui.Run(_preview, job => Play(_live, job, card))));
+                    placed.Margin = new Thickness(8, 0, 0, 0);
+                    placed.VerticalAlignment = VerticalAlignment.Center;
                 }
 
-                verbs.Children.Add(Ui.Icon(Glyphs.Copy, "Make another rule like this one",
-                    () => Clone(card)));
-
-                verbs.Children.Add(Ui.Icon(Glyphs.Bin, "Delete this rule", () => Forget(card)));
-
-                return verbs;
+                return menu;
             }
 
             /// <summary>Copy a rule in under the one it came from, and open the copy.</summary>
