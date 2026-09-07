@@ -2053,9 +2053,29 @@ namespace CamelWorks.UI.Views
                 Grid.SetIsSharedSizeScope(_list, true);
 
                 _by = new SpecEditor("Band by", GroupingSpec.Kinds, null);
-                _by.View.Margin = new Thickness(0, 6, 0, 6);
+                _by.View.Margin = new Thickness(0, 0, 0, 8);
 
-                View = Ui.Stack(_list, _by.View, Ui.Actions(Ui.Button("Add band", Add)), _said);
+                // The composer inside its own frame, with its action in it. Bare in the pane's
+                // field slot, "Band by: Model pair" read as the board's current setting - and the
+                // sentence above it says the board divides by model pair, so the pane stated the
+                // same thing twice while the stack was in fact empty. A coordinator could read it,
+                // press Save, and have changed nothing.
+                var making = new Border
+                {
+                    Padding = new Thickness(12, 10, 12, 12),
+                    CornerRadius = new CornerRadius(8),
+                    BorderThickness = new Thickness(1),
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    MaxWidth = 440,
+                    Margin = new Thickness(0, 12, 0, 0),
+                    Child = Ui.Stack(Ui.Grouping("Add a band"), _by.View,
+                                     Ui.Actions(Ui.Button("Add band", Add))),
+                };
+
+                making.Tint(Border.BackgroundProperty, "Nav");
+                making.Tint(Border.BorderBrushProperty, "Bd");
+
+                View = Ui.Stack(_list, making, _said);
 
                 Redraw();
             }
@@ -2070,9 +2090,25 @@ namespace CamelWorks.UI.Views
 
                 if (_stack.Count == 0)
                 {
-                    _list.Children.Add(Ui.Small(
-                        "No bands. The board divides by model pair, then level, then results "
-                        + "within " + Metres(_proximity) + " of each other."));
+                    // The default drawn as the table it would be, rather than as a sentence. What
+                    // the board actually does with no bands is a three-step stack, and stating it
+                    // in prose beside a composer holding "Model pair" is how the pane came to say
+                    // the same thing twice and mean two different things.
+                    var standing = Ui.Table(new List<TableRow>
+                    {
+                        new TableRow(null, "1", "Model pair", "The whole board"),
+                        new TableRow(null, "2", "Level", "Each band from model pair"),
+                        new TableRow(null, "3", "Within " + Metres(_proximity),
+                                     "Each band from level"),
+                    }, ("#", 34), ("Band by", 220), ("Divides", 0));
+
+                    standing.IsHitTestVisible = false;
+                    standing.Opacity = 0.7;
+
+                    _list.Children.Add(Ui.Small("No bands of this project's own. The board divides "
+                        + "like this until one is added:"));
+
+                    _list.Children.Add(standing);
 
                     return;
                 }
