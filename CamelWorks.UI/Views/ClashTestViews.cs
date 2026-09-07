@@ -113,7 +113,16 @@ namespace CamelWorks.UI.Views
             {
                 Redraw();
 
-                var make = Ui.Primary("Make the test", Make);
+                // Blocked when the form cannot succeed, which it already knew: the same reason
+                // it draws in the notice above was computed and then not asked. A form that
+                // states "No document is open" and offers its primary as available lets somebody
+                // fill in six fields to be told at the press.
+                var blocked = Blocked;
+
+                var make = blocked == null
+                    ? (System.Windows.Controls.Button)Ui.Primary("Make the test", Make)
+                    : Ui.Cannot("Make the test", blocked);
+
                 var drop = Ui.Quiet("Cancel", () => Ui.Safely(_onDropped));
 
                 var foot = Ui.Actions(make, drop);

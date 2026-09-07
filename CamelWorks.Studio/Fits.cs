@@ -170,8 +170,8 @@ namespace CamelWorks.Studio
                 scrollsTall |= scroller.VerticalScrollBarVisibility != ScrollBarVisibility.Disabled;
             }
 
-            if (element is FrameworkElement here && here.IsVisible) Cut(here, path, found,
-                                                                       scrollsWide, scrollsTall);
+            if (element is FrameworkElement here && Shown(here)) Cut(here, path, found,
+                                                                     scrollsWide, scrollsTall);
 
             var children = Under(element);
 
@@ -233,7 +233,7 @@ namespace CamelWorks.Studio
 
             foreach (var child in children)
             {
-                if (!(child is FrameworkElement one) || !one.IsVisible) continue;
+                if (!(child is FrameworkElement one) || !Shown(one)) continue;
                 if (one.RenderSize.Width <= Slack || one.RenderSize.Height <= Slack) continue;
 
                 Point at;
@@ -266,6 +266,19 @@ namespace CamelWorks.Studio
                         path));
                 }
         }
+
+        /// <summary>
+        /// Whether an element takes part in the layout.
+        ///
+        /// Its own Visibility, not IsVisible. IsVisible is false for anything not connected to a
+        /// rendered window, and both the pages this reads are detached: the canary is measured on
+        /// its own, and the shoot takes the page off its window before it photographs it. So the
+        /// reader skipped every element of every page and reported twenty-six surfaces clean,
+        /// including the one built to be broken.
+        /// </summary>
+        /// <param name="element">The element.</param>
+        private static bool Shown(UIElement element) =>
+            element.Visibility == Visibility.Visible;
 
         /// <summary>Every visual child of an element.</summary>
         /// <param name="element">The parent.</param>

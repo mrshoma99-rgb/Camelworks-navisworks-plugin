@@ -1732,6 +1732,30 @@ namespace CamelWorks.UI.Views
             {
                 var body = Ui.Stack();
 
+                // A heading and a way out. This card is drawn over the rows it filters, so it
+                // hides the list whose count it is changing, and it had no close: the only way
+                // back was the funnel it was opened from, four inches away and unmarked.
+                var head = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 6) };
+
+                var shut = Ui.Icon(Glyphs.Close, "Close the filters", () =>
+                {
+                    _panel = false;
+                    RedrawRail();
+                });
+
+                DockPanel.SetDock(shut, Dock.Right);
+                head.Children.Add(shut);
+
+                var said = new TextBlock
+                {
+                    Text = "Narrow the list",
+                    VerticalAlignment = VerticalAlignment.Center,
+                }.Wearing("Section");
+
+                head.Children.Add(said);
+
+                body.Children.Add(head);
+
                 body.Children.Add(Titling("Discipline"));
 
                 var parties = new WrapPanel();
