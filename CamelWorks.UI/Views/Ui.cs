@@ -4989,9 +4989,13 @@ namespace CamelWorks.UI.Views
         /// Whether this is the card's main action. False for a second long-running button on a
         /// card: two primary buttons give the reader no indication which one is intended.
         /// </param>
-        public static Panel Runner(string caption, Panel output, Action<Job> work, bool primary = true)
+        /// <param name="danger">True where the work cannot be undone, so the button is red.</param>
+        /// <param name="confirm">Asked on the press; the work runs only when it answers true.</param>
+        public static Panel Runner(string caption, Panel output, Action<Job> work,
+                                   bool primary = true, bool danger = false,
+                                   Func<bool>? confirm = null)
         {
-            var parts = RunParts(caption, output, work, primary);
+            var parts = RunParts(caption, output, work, primary, danger, confirm);
 
             // The gap belongs to the runner as a whole, not to its button row. It used to sit on
             // the row, which meant a runner placed beside ordinary buttons stood eight pixels
@@ -5019,9 +5023,12 @@ namespace CamelWorks.UI.Views
         /// <param name="output">Where the work writes its result.</param>
         /// <param name="work">The work.</param>
         /// <param name="primary">Whether the button is the screen's main press.</param>
+        /// <param name="danger">True where the work cannot be undone, so the button is red.</param>
+        /// <param name="confirm">Asked on the press; the work runs only when it answers true.</param>
         /// <returns>The button row, and the progress block that folds away when nothing runs.</returns>
         public static RunPair RunParts(string caption, Panel output, Action<Job> work,
-                                   bool primary = true)
+                                   bool primary = true, bool danger = false,
+                                   Func<bool>? confirm = null)
         {
             var status = new TextBlock
             {
@@ -5039,7 +5046,7 @@ namespace CamelWorks.UI.Views
             stop.Wearing("Btn");
 
             var go = new System.Windows.Controls.Button { Content = caption };
-            go.Wearing(primary ? "PrimaryBtn" : "Btn");
+            go.Wearing(danger ? "DangerBtn" : primary ? "PrimaryBtn" : "Btn");
 
             Job? running = null;
             stop.Click += (s, e) =>
@@ -5074,6 +5081,10 @@ namespace CamelWorks.UI.Views
                         + "the moment it finishes."));
                     return;
                 }
+
+                // Asked before anything is cleared or disabled, so a "no" leaves the screen
+                // exactly as it was rather than blanking the last run's result.
+                if (confirm != null && !confirm()) return;
 
                 output.Children.Clear();
 

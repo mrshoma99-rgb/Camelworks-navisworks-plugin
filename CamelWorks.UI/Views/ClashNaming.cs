@@ -136,7 +136,7 @@ namespace CamelWorks.UI.Views
                                           NamingPane start, FrameworkElement? near,
                                           Action? onTouched,
                                           IReadOnlyList<string>? issued = null) =>
-            Body(book, Held(tests), rename, start, near, onTouched, null, issued);
+            Body(book, Held(tests), rename, start, near, onTouched, null, issued, writes: false);
 
         /// <summary>The tests as lines this window can rename in place.</summary>
         private static List<Line> Held(IReadOnlyList<(string Id, string Name)>? tests) =>
@@ -149,9 +149,15 @@ namespace CamelWorks.UI.Views
         private static UIElement Body(NamingBook book, List<Line> tests,
                                       Func<string, string, bool> rename, NamingPane start,
                                       FrameworkElement? near, Action? onTouched, Action? onDone,
-                                      IReadOnlyList<string>? issued = null)
+                                      IReadOnlyList<string>? issued = null, bool writes = true)
         {
-            var pane = start;
+            // The renumber writes to the Navisworks document the moment it is pressed. Where this
+            // is drawn as a window that is what its own button says it does; where it is drawn as
+            // a section of a Settings tab whose footer says "Save the settings", it is a host
+            // write behind a button promising the opposite. So the Settings tab gets the naming
+            // without it, and the renumber keeps its home on the Manage tab's test menu, beside
+            // the run and the compact - the other two verbs that write to the document at once.
+            var pane = !writes && start == NamingPane.Write ? NamingPane.Tests : start;
 
             // Which pattern card carries the token palette. Held here rather than inside the
             // pane, because the pane is rebuilt on every edit and would put it back on the first.
@@ -194,7 +200,7 @@ namespace CamelWorks.UI.Views
             void Redraw()
             {
                 head.Children.Clear();
-                head.Children.Add(Switcher(pane, said =>
+                head.Children.Add(Switcher(pane, writes, said =>
                 {
                     pane = said == PatternsPane ? NamingPane.Patterns
                         : said == FieldsPane ? NamingPane.Fields
@@ -282,21 +288,27 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>The four panes, as one control.</summary>
-        private static UIElement Switcher(NamingPane pane, Action<string> onChanged)
+        /// <param name="pane">The pane being shown.</param>
+        /// <param name="writes">False where the renumber is not offered.</param>
+        /// <param name="onChanged">Called with the pane picked.</param>
+        private static UIElement Switcher(NamingPane pane, bool writes, Action<string> onChanged)
         {
             var chosen = pane switch
             {
                 NamingPane.Patterns => PatternsPane,
                 NamingPane.Fields => FieldsPane,
-                NamingPane.Write => WritePane,
+                NamingPane.Write when writes => WritePane,
                 _ => TestsPane,
             };
 
             // Fields, then patterns, then which pattern reads which test, then the renumber the
             // other three make possible. The Tests pane shows nothing to assign until a pattern
             // exists, so leading with it opened the window on an empty list.
-            var pick = Ui.Segmented(new[] { FieldsPane, PatternsPane, TestsPane, WritePane },
-                                    chosen, onChanged);
+            var panes = writes
+                ? new[] { FieldsPane, PatternsPane, TestsPane, WritePane }
+                : new[] { FieldsPane, PatternsPane, TestsPane };
+
+            var pick = Ui.Segmented(panes, chosen, onChanged);
 
             if (pick is FrameworkElement held) held.HorizontalAlignment = HorizontalAlignment.Left;
 

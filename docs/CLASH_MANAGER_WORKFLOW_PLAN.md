@@ -291,3 +291,38 @@ overstated.
 
 Each step is verified the same way: the full local battery, then a render of the surfaces it
 touches, read before the next step starts.
+
+---
+
+## What was built, and where it departed from this plan
+
+Item 5 (the unlabelled icon clusters) is the only one still outstanding.
+
+**Item 1, the status picker.** Built. One defect the plan did not foresee: the picker handed the
+board row to `Mark`, which takes results and filters a board row out, so it changed nothing and
+reported that nothing was selected. It passes the row's results now.
+
+**Item 4, the harness gap.** The board's menus and the shortcuts sheet have pages. The five
+`Ui.Configure` dialogs and the two pickers do not yet.
+
+The first draft of the menus page listed `SortMenu` and `FilterMenu` as two menus. They are halves
+of `TableMenu`, which is what the funnel opens, so the page drew two menus a coordinator never sees
+and left out the one they do. The render is what said so.
+
+**Item 2, keyboard triage.** Built as planned. `validate-shortcuts.py` was not written: the key map
+lives in `FindingStatusKeys` in Core, where a unit test covers it directly, and a test that runs the
+code is a better guard than a check that reads it. The Help window's Keys chapter listed eight keys
+belonging to a Review mode retired with the old board; it is drawn from `BoardKeys.All` now.
+
+**Item 6, the Filter tab.** Option 2, as offered. The Remove action reads "Delete from the
+document", its note is a problem rather than a hint, its run button is red and asks first, "Run all
+rules" asks where any enabled rule deletes, and the tab's opening line says the rules write. The
+name of the tab is unchanged and remains yours to decide.
+
+**Item 8, renumber.** Departed. The plan said to move the tool to the Create tab's test list. It
+turned out already to be a top-level verb on the Manage tab's test menu, beside the run and the
+compact - the two other verbs that write to the document at once - so "three levels deep" was true
+only of the Settings route. The fault the plan actually names is a host write inside a tab whose
+footer promises "Save the settings", and that is fixed by taking the Renumber pane off the Settings
+tab, which is what was done. A third entry point on Create would have been a third place to look for
+one tool. The Settings section says where the renumber went.

@@ -3,7 +3,7 @@
 
 CamelWorks.UI/Views/ClashExchangeViews.cs 1
 
-# The Bands section's empty state draws the board's default stack as the table the configured
+# The Board grouping section's empty state draws the board's default stack as the table the configured
 # state uses, so the two are read the same way. It is a picture of behaviour nobody owns yet:
 # there are no rows to pick and nothing to act on them with.
 CamelWorks.UI/Views/CoordinateViews.cs 1

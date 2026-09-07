@@ -216,7 +216,7 @@ namespace CamelWorks.UI.Views
                 // Team — subjects — and "Per tab" held Create and Manage, which are screens. A
                 // reader had to know which scheme a row was using before they could scan it, and
                 // two of the six rows named a tab rather than what they held: "Create" opened a
-                // pane headed "Test naming", "Manage" one headed "Bands".
+                // pane headed "Test naming", "Manage" one headed "Board grouping".
                 //
                 // Naming was filed under Create because that is where tests are made. It is read
                 // by the board's banding, its filtering and its sorting, by the renumber and by
@@ -273,7 +273,7 @@ namespace CamelWorks.UI.Views
                 Part.Disciplines => "Disciplines",
                 Part.Team => "Team",
                 Part.Naming => "Test naming",
-                Part.Board => "Bands",
+                Part.Board => "Board grouping",
                 _ => "Units and distances",
             };
 
@@ -557,8 +557,12 @@ namespace CamelWorks.UI.Views
             {
                 var held = Ui.Stack();
 
+                // "Board grouping", not "Bands". Three things on this screen group results -
+                // the host's folders, the host's clash groups, and this, which is ours and is
+                // about how the board draws them - and only this one gets to say which it is in
+                // its own heading. Its subtitle already said "the board divides".
                 held.Children.Add(Head(
-                    "Bands",
+                    "Board grouping",
                     "How the board divides the results it is given into headings.",
                     "A band decides which heading a result is drawn under and changes nothing "
                     + "about the result itself, which is why it is a setting rather than a rule "
@@ -771,9 +775,25 @@ namespace CamelWorks.UI.Views
             // Test naming
             // ---------------------------------------------------------------------------------
 
-            /// <summary>The fields, the patterns, which pattern reads which test, and renumber.</summary>
-            private UIElement NamingPart() =>
-                ClashNaming.Section(Book, Tests(), Rename, Opening(), _pane, Touched);
+            /// <summary>The fields, the patterns, and which pattern reads which test.</summary>
+            private UIElement NamingPart()
+            {
+                var held = Ui.Stack();
+
+                held.Children.Add(
+                    ClashNaming.Section(Book, Tests(), Rename, Opening(), _pane, Touched));
+
+                // Where the renumber went, said here rather than left to be looked for. It used
+                // to be a fourth pane on this section, and it writes the new names into the
+                // Navisworks document the moment it is pressed - under a tab whose footer says
+                // the settings are saved when you press Save.
+                held.Children.Add(Ui.Note(
+                    "Renumbering the tests is on the Manage tab, under the test's own menu, "
+                    + "beside the run and the compact. It writes the new names into the model "
+                    + "when you press it, so it is not one of the settings this tab holds."));
+
+                return held;
+            }
 
             /// <summary>The project's naming, read once and edited in place.</summary>
             private NamingBook Book => _book ??= _bookGiven ?? NamingBook.FromJson(

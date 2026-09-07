@@ -943,7 +943,8 @@ namespace CamelWorks.UI.Views
 
                 var run = _live == null
                     ? (UIElement)Stopped("Run all rules", primary: true)
-                    : Ui.Runner("Run all rules", _preview, job => Play(_live, job, null));
+                    : Ui.Runner("Run all rules", _preview, job => Play(_live, job, null),
+                                confirm: AskedAll);
 
                 // Half the window to the rule being edited. The list says what the rules are and
                 // what order they run in; the panel is where a rule is actually written, and on a
@@ -990,7 +991,11 @@ namespace CamelWorks.UI.Views
                     _marks,
                     _preview,
                     Head("Rules"),
-                    Say("They run top to bottom. A rule that takes results off the board or "
+                    Say("A rule finds results and does one thing to them: assigns them, sets a "
+                        + "status, groups them, takes them off the board, or deletes them from "
+                        + "the Navisworks document. They write, and nothing runs until you press "
+                        + "a run button.\n\n"
+                        + "They run top to bottom. A rule that takes results off the board or "
                         + "deletes them hides those results from the rules under it, so the order "
                         + "is part of what they do. Drag a rule to move it; press one to open it."),
                     _list,
@@ -1322,11 +1327,13 @@ namespace CamelWorks.UI.Views
 
                 var said = Ui.Stack();
 
-                if (card.Action == ClashActionKind.Remove)
-                    said.Children.Add(Ui.Note(
-                        "Remove deletes the results it finds from the Navisworks document. They "
-                        + "go from the native clash window too, and running the clash test again "
-                        + "is the only way to get them back."));
+                var deletes = card.Action == ClashActionKind.Remove;
+
+                if (deletes)
+                    said.Children.Add(Ui.Problem(
+                        "This rule deletes the results it finds from the Navisworks document. "
+                        + "They go from the native clash window too, and running the clash test "
+                        + "again is the only way to get them back."));
 
                 if (card.When.IsEverything
                     && (card.Action == ClashActionKind.Suppress
@@ -1340,10 +1347,16 @@ namespace CamelWorks.UI.Views
                         + "was turned off. It was saved by a newer build; running it as it stands "
                         + "would act on more results than it was written for."));
 
+                // A rule that deletes gets the red button and is asked about. Every other action
+                // on this list is undone by another rule or by a re-run; this one is not, and it
+                // looked exactly like the ten that are.
                 var one = _live == null
-                    ? (UIElement)Stopped("Run this rule", primary: false)
-                    : Ui.Runner("Run this rule", _preview, job => Play(_live, job, card),
-                                primary: false);
+                    ? (UIElement)Stopped(deletes ? "Run this rule and delete" : "Run this rule",
+                                         primary: false)
+                    : Ui.Runner(deletes ? "Run this rule and delete" : "Run this rule",
+                                _preview, job => Play(_live, job, card),
+                                primary: false, danger: deletes,
+                                confirm: deletes ? Asked : (Func<bool>?)null);
 
                 _pane.Children.Add(Bench.Group("Criteria",
                     Ui.Field("Rule name", name),
@@ -1358,6 +1371,52 @@ namespace CamelWorks.UI.Views
                     value,
                     said,
                     Ui.Actions(one, Ui.Danger("Delete rule", () => Forget(card)))));
+            }
+
+            /// <summary>
+            /// Ask before the whole list runs, where any rule on it deletes.
+            ///
+            /// Asked here and not only on the rule itself: "Run all rules" is the footer's filled
+            /// button and it runs the delete without ever opening the card that carries it.
+            /// </summary>
+            /// <returns>True to go ahead.</returns>
+            private bool AskedAll()
+            {
+                var deleting = _rules.Cards
+                    .Count(one => one.IsEnabled && one.Action == ClashActionKind.Remove);
+
+                if (deleting == 0) return true;
+
+                var said = false;
+
+                Parts.Sure(_list,
+                           Ui.Count(deleting, "rule") + " on this list "
+                           + (deleting == 1 ? "deletes" : "delete")
+                           + " the results found from the Navisworks document. Running the clash "
+                           + "test again is the only way to get them back.",
+                           "Run them all", () => said = true);
+
+                return said;
+            }
+
+            /// <summary>
+            /// Ask before a rule deletes from the document.
+            ///
+            /// Modal, so the answer is in hand before the runner starts: the question has to be
+            /// put on the press rather than inside the job, which is already off the UI thread
+            /// and past the point where "no" means anything.
+            /// </summary>
+            /// <returns>True to go ahead.</returns>
+            private bool Asked()
+            {
+                var said = false;
+
+                Parts.Sure(_list,
+                           "This rule deletes the results it finds from the Navisworks document. "
+                           + "Running the clash test again is the only way to get them back.",
+                           "Run it and delete", () => said = true);
+
+                return said;
             }
 
             /// <summary>The one value field this action takes, or an empty panel where it takes none.</summary>
@@ -1562,7 +1621,7 @@ namespace CamelWorks.UI.Views
                     ClashActionKind.Comment => "Write a remark",
                     ClashActionKind.Issue => "Attach to an issue",
                     ClashActionKind.Markers => "Write markers to a file",
-                    ClashActionKind.Remove => "Remove",
+                    ClashActionKind.Remove => "Delete from the document",
                     _ => action.ToString(),
                 };
 
