@@ -285,7 +285,23 @@ namespace CamelWorks.Studio
             // shoot has been getting: manage cut at x=1030 and y=774, header columns and footer
             // buttons sliced, transparent pixels beyond. Detached, the page is its own layout root
             // and these are the only measure and arrange it gets.
-            if (host.Parent is Window frame) frame.Content = null;
+            if (host.Parent is Window frame)
+            {
+                frame.Content = null;
+
+                // The skin goes onto the page itself before it is cut loose. Styles are resolved by
+                // walking up from the element, and off the window that walk ends at the page: the
+                // second and third pages of a shoot came back in Windows' default controls, which
+                // looks enough like a deliberate design to be reviewed as one.
+                Skin.Apply(host);
+            }
+
+            // Detaching is not enough on its own. Measure and arrange are skipped for a subtree
+            // that is not dirty, so the elements inside the page keep the layout clip the window's
+            // clamped arrange put on them and the picture comes back the size asked for with the
+            // page cut off inside it. Every element is marked dirty here so the passes below reach
+            // all of them.
+            Dirty(host);
 
             // Measured, laid out, and measured again, because laying it out realises rows a
             // virtualising list did not have before and those rows change how tall the page is.
@@ -313,6 +329,26 @@ namespace CamelWorks.Studio
             encoder.Frames.Add(BitmapFrame.Create(bitmap));
 
             using (var file = File.Create(path)) encoder.Save(file);
+        }
+
+        /// <summary>
+        /// Mark every element of a page for measure and arrange.
+        ///
+        /// Depth first over the visual tree, because a clip sits on whichever element was given
+        /// less room than it asked for and that is rarely the root.
+        /// </summary>
+        /// <param name="element">The page, or one element of it.</param>
+        private static void Dirty(DependencyObject element)
+        {
+            if (element is UIElement one)
+            {
+                one.InvalidateMeasure();
+                one.InvalidateArrange();
+            }
+
+            var children = VisualTreeHelper.GetChildrenCount(element);
+
+            for (var at = 0; at < children; at++) Dirty(VisualTreeHelper.GetChild(element, at));
         }
 
         private static readonly List<string> _log = new List<string>();
