@@ -118,7 +118,23 @@ namespace CamelWorks.UI.Views
 
                 Redraw();
 
+                var stairs = Ui.Check("Leave stairs out",
+                                      settings.ExcludeStairs,
+                                      on => { _keep(one => one.ExcludeStairs = on); Stale(); });
+
+                stairs.ToolTip = "Detection makes one surface per tread, so the flight above "
+                                 + "reads as low headroom over the treads below it.";
+
                 return Bench.Group(ClearanceSettings.Detected,
+                    // The orientation is one sentence, over the list rather than under it: it says
+                    // what the list is before it is read, and the rest of what used to stand here
+                    // - what dropping a surface keeps, and why both ticks start off - was answering
+                    // a question nobody had yet asked.
+                    Ui.Small("Detection reads triangles and keeps every up-facing surface over "
+                             + _units.Area(settings.MinPatchAreaSquareMetres)
+                             + ", which is a floor, and is also a desk top, a worktop, a window "
+                             + "sill and the top of a wide duct: read the list and drop what is "
+                             + "not a floor."),
                     Ui.Field("Smallest surface kept",
                              Ui.Choice(Areas.Select(one => _units.Area(one)).ToList(),
                                        _units.Area(settings.MinPatchAreaSquareMetres),
@@ -132,28 +148,14 @@ namespace CamelWorks.UI.Views
 
                                            _keep(one => one.MinPatchAreaSquareMetres = chosen);
                                            Stale();
-                                       }, 160),
-                             "detection keeps nothing smaller"),
+                                       }, 160)),
                     Ui.Check("Prefer elements whose category names a floor",
                              settings.PreferFloorCategories,
                              on => { _keep(one => one.PreferFloorCategories = on); Stale(); }),
-                    Ui.Check("Leave stairs out — detection makes one surface per tread, and the "
-                             + "flight above then reads as low headroom over the treads below it",
-                             settings.ExcludeStairs,
-                             on => { _keep(one => one.ExcludeStairs = on); Stale(); }),
+                    stairs,
                     Ui.Runner("Find the surfaces", _log, primary: false, work: Find),
                     _log,
-                    _list,
-                    Ui.Small("Detection reads triangles: it keeps every up-facing surface over "
-                             + _units.Area(settings.MinPatchAreaSquareMetres)
-                             + ", which is a floor, and is also a desk top, a worktop, a window "
-                             + "sill and the top of a wide duct. Read the list before running "
-                             + "the check and drop what is not a floor."),
-                    Ui.Small("What is dropped is kept in the run's own settings, so the same desk "
-                             + "tops are not dropped again next time."),
-                    Ui.Small("Both ticks are off to start with: the geometric answer is the "
-                             + "default, and a stair with a soffit too low over it is still "
-                             + "worth reporting."));
+                    _list);
             }
 
             /// <summary>What was detected no longer answers what is being asked for.</summary>

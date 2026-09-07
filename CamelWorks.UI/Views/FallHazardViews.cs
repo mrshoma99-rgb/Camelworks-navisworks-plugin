@@ -77,14 +77,15 @@ namespace CamelWorks.UI.Views
 
                 sides.AddRange(sets);
 
-                var optional = new List<string> { FallSettings.Nothing };
+                var optional = new List<string> { None };
 
                 optional.AddRange(sides);
 
                 return Ui.Stack(
                     _log,
-                    blocked == null ? null : Ui.Note(blocked),
-                    Bench.Group("Test",
+                    // No heading over the name and the folder: the tab is called Create and the
+                    // list beside this has a Test column.
+                    Bench.Group(string.Empty,
                         Ui.Across(
                             Sized(Ui.Field("Name", Ui.Settled(_run.Name, string.Empty,
                                 name => Keep(_ => _run.Name = name), 190)), 200),
@@ -94,18 +95,20 @@ namespace CamelWorks.UI.Views
                                     string.IsNullOrWhiteSpace(folder) ? null : folder),
                                 160)), 170))),
                     Bench.Group("What to read",
-                        Ui.Field("Floor from",
+                        Sized(Ui.Field("Floor from",
                                  Reading(Ui.Choice(Offered(sides, settings.Floors), settings.Floors,
-                                                   pick => Keep(one => one.Floors = pick), 380))),
+                                                   pick => Keep(one => one.Floors = pick), 380))), 380),
                         Ui.Across(
                             Sized(Ui.Field("Handrails from",
-                                Reading(Ui.Choice(Offered(optional, settings.Handrails),
-                                                  settings.Handrails,
-                                                  pick => Keep(one => one.Handrails = pick), 180))), 190),
+                                Reading(Ui.Choice(Offered(optional, Said(settings.Handrails)),
+                                                  Said(settings.Handrails),
+                                                  pick => Keep(one => one.Handrails = Meant(pick)),
+                                                  180))), 190),
                             Sized(Ui.Field("Obstructions from",
-                                Reading(Ui.Choice(Offered(optional, settings.Obstructions),
-                                                  settings.Obstructions,
-                                                  pick => Keep(one => one.Obstructions = pick), 180))), 190)),
+                                Reading(Ui.Choice(Offered(optional, Said(settings.Obstructions)),
+                                                  Said(settings.Obstructions),
+                                                  pick => Keep(one => one.Obstructions = Meant(pick)),
+                                                  180))), 190)),
                         Ui.Across(
                             Sized(Number("Cut elevation", settings.LevelMetres,
                                          metres => true,
@@ -126,17 +129,49 @@ namespace CamelWorks.UI.Views
                                          settings.HandrailToleranceMetres,
                                          metres => metres >= 0,
                                          (one, metres) => one.HandrailToleranceMetres = metres), 190),
-                            Sized(Number("Minimum reportable gap in protection",
-                                         settings.MinPassageMetres,
+                            Sized(Number("Ignore gaps under", settings.MinPassageMetres,
                                          metres => metres >= 0,
                                          (one, metres) => one.MinPassageMetres = metres), 190)),
                         Coarse(settings), Open(settings)),
-                    blocked == null && sets.Count == 0
-                        ? Ui.Note("This document holds no saved sets yet. Build one in Set Builder "
-                                  + "and it appears in all three lists.")
-                        : null,
+                    Notices(blocked, sets.Count),
                     Ui.Link("How the plan is drawn", Explain));
             }
+
+            /// <summary>What a side with nothing named is called on screen.</summary>
+            private const string None = "None";
+
+            /// <summary>
+            /// A side, as the picker prints it.
+            ///
+            /// The stored value for a side with nothing named is <see cref="FallSettings.Nothing"/>
+            /// and stays that way — it is in every saved project — but "Obstructions from: Nothing"
+            /// reads as a sentence that has gone wrong. A set of this document's actually called
+            /// "None" is shown and stored as the empty side; there is no third name to give it.
+            /// </summary>
+            /// <param name="stored">What the settings hold.</param>
+            private static string Said(string stored) =>
+                string.Equals(stored, FallSettings.Nothing, StringComparison.OrdinalIgnoreCase)
+                    ? None : stored;
+
+            /// <summary>The stored value for what the picker shows.</summary>
+            /// <param name="shown">What was picked.</param>
+            private static string Meant(string shown) =>
+                string.Equals(shown, None, StringComparison.OrdinalIgnoreCase)
+                    ? FallSettings.Nothing : shown;
+
+            /// <summary>
+            /// One notice region for what this panel's surroundings are missing.
+            ///
+            /// The seat's own reason is not repeated here. It is on the footer beside the greyed
+            /// Run, and on each control it disables.
+            /// </summary>
+            /// <param name="blocked">Why the document cannot be read, or null.</param>
+            /// <param name="sets">How many saved sets the document holds.</param>
+            private static UIElement? Notices(string? blocked, int sets) =>
+                blocked == null && sets == 0
+                    ? Ui.Note("This document holds no saved sets yet. Build one in Set Builder and "
+                              + "it appears in all three lists.")
+                    : null;
 
             /// <summary>
             /// The grid warning, shown only when the grid cannot resolve the gap being judged.
@@ -158,7 +193,7 @@ namespace CamelWorks.UI.Views
             private static UIElement? Open(FallSettings settings) =>
                 settings.MinPassageMetres > 0
                     ? null
-                    : Ui.Note("Every break in the protection is reported, however short.");
+                    : Ui.Note("Every gap in the protection is reported, however narrow.");
 
             /// <summary>
             /// The reference matter, behind one link rather than standing under the fields.
@@ -191,9 +226,9 @@ namespace CamelWorks.UI.Views
                         Bench.Group("The two protection figures",
                             Ui.Small("Handrail coverage distance is how close a rail has to be to "
                                      + "count as protecting an edge."),
-                            Ui.Small("The minimum reportable gap in protection is the width of a "
-                                     + "person, not of the void: a 300 mm break between two "
-                                     + "handrails is too narrow to fall through.")))));
+                            Ui.Small("\"Ignore gaps under\" is the width of a person, not of the "
+                                     + "void: a 300 mm gap between two handrails is too narrow to "
+                                     + "fall through.")))));
 
             /// <summary>A short number field, with its unit in the label.</summary>
             /// <param name="label">What the number is, without its unit.</param>
@@ -215,6 +250,11 @@ namespace CamelWorks.UI.Views
             private static UIElement Sized(Panel field, double width)
             {
                 field.Width = width;
+
+                // Left, not the default stretch. A stretched element given a fixed width is
+                // centred in what is left over, so a full-width field under a row of two started
+                // half a column in from the margin.
+                field.HorizontalAlignment = HorizontalAlignment.Left;
 
                 return field;
             }

@@ -116,8 +116,9 @@ namespace CamelWorks.UI.Views
 
                 return Ui.Stack(
                     _log,
-                    blocked == null ? null : Ui.Note(blocked),
-                    Bench.Group("Test",
+                    // No heading over the name and the folder: the tab is called Create and the
+                    // list beside this has a Test column.
+                    Bench.Group(string.Empty,
                         Ui.Across(
                             Sized(Ui.Field("Name", Ui.Settled(_run.Name, string.Empty,
                                 name => Keep(_ => _run.Name = name), 190)), 200),
@@ -137,14 +138,16 @@ namespace CamelWorks.UI.Views
                         settings.ToleranceMetres > 0
                             ? null
                             : Ui.Note("Every shortfall is reported, however small."),
-                        Ui.Field("Measure up from",
+                        Sized(Ui.Field("Measure up from",
                                  Reading(Ui.Choice(from, chosen,
                                      pick => Keep(one => one.Surfaces =
                                          pick == said ? ClearanceSettings.Detected : pick), 380))),
+                              380),
                         settings.IsDetecting ? Detected() : null,
-                        Ui.Field("Measure up to",
+                        Sized(Ui.Field("Measure up to",
                                  Reading(Ui.Choice(to, settings.Targets,
-                                                   pick => Keep(one => one.Targets = pick), 230)))),
+                                                   pick => Keep(one => one.Targets = pick), 230))),
+                              380)),
                     Bench.Group("Scope",
                         Ui.Across(
                             Sized(Ui.Field("Level", Ui.Choice(
@@ -166,24 +169,47 @@ namespace CamelWorks.UI.Views
 
                                                if (!string.IsNullOrWhiteSpace(pick))
                                                    one.Ignore.Add(pick);
-                                           }), 220))), 380),
-                        storeys.Count == 0
-                            ? Ui.Note("This project declares no storeys yet. Levels & Zones works "
-                                      + "them out from the geometry and they appear here.")
-                            : null),
+                                           }), 220))), 380)),
                     Bench.Group("What to report",
                         Ui.Check("One row per surface — its worst obstruction only",
                                  settings.WorstPerPatch,
                                  on => Keep(one => one.WorstPerPatch = on))),
-                    blocked == null && sets.Count == 0
-                        ? Ui.Note("This document holds no saved sets yet. Build one in Set Builder "
-                                  + "and it appears in the two lists above.")
-                        : null,
+                    Notices(blocked, storeys.Count, sets.Count),
                     Ui.Link("How clearance is measured", Explain));
             }
 
             /// <summary>What the level list calls no level filter at all.</summary>
             private const string EveryLevel = "Every level";
+
+            /// <summary>
+            /// One notice region for everything this panel's surroundings are missing.
+            ///
+            /// One banner per missing thing stacked: with no document open the panel drew a banner
+            /// saying so, a second saying the project declares no storeys and a third saying the
+            /// document holds no sets, all of which are the same fact said three times.
+            ///
+            /// The seat's own reason is not repeated here. It is on the footer beside the greyed
+            /// Run, which is where the reader is when it matters, and on each control it disables.
+            /// </summary>
+            /// <param name="blocked">Why the document cannot be read, or null.</param>
+            /// <param name="storeys">How many storeys the project declares.</param>
+            /// <param name="sets">How many saved sets the document holds.</param>
+            private static UIElement? Notices(string? blocked, int storeys, int sets)
+            {
+                if (blocked != null) return null;
+
+                var said = new List<string>();
+
+                if (storeys == 0)
+                    said.Add("This project declares no storeys yet. Levels & Zones works them out "
+                             + "from the geometry and they appear in Level.");
+
+                if (sets == 0)
+                    said.Add("This document holds no saved sets yet. Build one in Set Builder and "
+                             + "it appears in the two surface lists.");
+
+                return said.Count == 0 ? null : Ui.Note(string.Join(Environment.NewLine, said));
+            }
 
             /// <summary>
             /// The way into the detected surfaces, shown only while the test is detecting them.
@@ -269,6 +295,11 @@ namespace CamelWorks.UI.Views
             private static UIElement Sized(Panel field, double width)
             {
                 field.Width = width;
+
+                // Left, not the default stretch. A stretched element given a fixed width is
+                // centred in what is left over, so Ignore category started under Zone with an
+                // empty cell to its left.
+                field.HorizontalAlignment = HorizontalAlignment.Left;
 
                 return field;
             }

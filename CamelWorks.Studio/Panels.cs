@@ -748,11 +748,23 @@ namespace CamelWorks.Studio
 
             var table = Ui.Table(rows, ("Level", 0), ("Area", 90), ("Top", 90), ("In the check", 90));
 
+            var stairs = Ui.Check("Leave stairs out", false, null);
+
+            stairs.ToolTip = "Detection makes one surface per tread, so the flight above reads as "
+                             + "low headroom over the treads below it.";
+
+            // The same order the screen builds: the one orientation sentence, the settings, the
+            // button, then what it found.
             var detected = Bench.Group("Detected walkable surfaces",
+                Ui.Small("Detection reads triangles and keeps every up-facing surface over "
+                         + "0.05 m², which is a floor, and is also a desk top, a worktop, a window "
+                         + "sill and the top of a wide duct: read the list and drop what is not a "
+                         + "floor."),
+                Ui.Field("Smallest surface kept",
+                         Ui.Choice(new[] { "0.05 m²", "0.25 m²", "1.0 m²", "4.0 m²", "10.0 m²" },
+                                   "0.05 m²", null, 160)),
                 Ui.Check("Prefer elements whose category names a floor", false, null),
-                Ui.Check("Leave stairs out — detection makes one surface per tread, and the "
-                         + "flight above then reads as low headroom over the treads below it",
-                         false, null),
+                stairs,
                 Ui.Runner("Find the surfaces", Ui.Stack(), _ => { }, primary: false),
                 Ui.Line("412 surfaces, 8,940 m², 31 elements refused", 1, true),
                 Ui.Small("31 elements would not give triangles; their bounding-box tops were used "
@@ -761,11 +773,7 @@ namespace CamelWorks.Studio
                 Ui.Picking(table,
                     new Ui.OnPicked("Drop these {n}", (picked, panel) => { }),
                     new Ui.OnPicked("Include these {n}", (picked, panel) => { })),
-                Ui.Small("406 surfaces in the check, 2 dropped"),
-                Ui.Small("Detection reads triangles: it keeps every up-facing surface over "
-                         + "0.05 m², which is a floor, and is also a desk top, a worktop, a window "
-                         + "sill and the top of a wide duct. Read the list before running the test "
-                         + "and drop what is not a floor."));
+                Ui.Small("410 surfaces in the check, 2 dropped"));
 
             // No footer: this is a window off the settings panel, not a tab, so it has no Run of
             // its own. Edits here apply as they are made, as they do in every configure window.

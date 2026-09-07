@@ -189,7 +189,10 @@ namespace CamelWorks.UI.Views
                 var left = Bench.Pane("Tests", null, Ui.Stack(_log, _list), null);
                 var right = Bench.Pane("Settings", null, _panel, null);
 
-                return Bench.Split(Strip(), left, right, _foot, 470);
+                // The list pane holds four columns of names; the settings pane holds fields
+                // capped at 380. Splitting the window evenly starved the columns and left the
+                // fields with white space they had no use for.
+                return Bench.Split(Strip(), left, right, _foot, 620);
             }
 
             /// <summary>
@@ -321,32 +324,32 @@ namespace CamelWorks.UI.Views
                 }
 
                 var rows = new List<TableRow>();
-                string? band = null;
 
                 foreach (var one in shown)
                 {
                     var folder = one.Run.Folder ?? string.Empty;
 
-                    // The folder is printed once per group and blank on the rows under it, which
-                    // is the grouping. One table rather than a table per folder, because a
-                    // selection has to be able to span folders and a picking bar can only serve
-                    // one table.
-                    var head = string.Equals(folder, band, StringComparison.OrdinalIgnoreCase)
-                        ? string.Empty
-                        : folder.Length == 0 ? "Not filed" : folder;
-
-                    band = folder;
-
-                    rows.Add(new TableRow(one, head, one.Run.Name, one.Check.Name,
-                                          one.Run.Between, Found(one))
+                    // The folder is printed on every row. Printing it once per group and leaving
+                    // the rows under it blank read as "this test is in no folder", which is a
+                    // state the same column has to be able to show.
+                    rows.Add(new TableRow(one, one.Run.Name, one.Check.Name,
+                                          folder.Length == 0 ? "Not filed" : folder, Found(one))
                     {
                         Tone = one.Is(PickedCheck, PickedRun) ? Tone.Good : Tone.Plain,
                     });
                 }
 
+                // The name takes what is left and the other three ask for what their longest
+                // ordinary value needs, so nothing in this table is drawn with an ellipsis at the
+                // pane's own width.
+                //
+                // What a test covers is not a column: it is a whole sentence - "Level 03 Floors
+                // under everything except the surfaces, in Level 03" - and no width this pane can
+                // give it is enough. It is on the settings panel beside the list, and the search
+                // still reads it.
                 var table = Ui.Table(rows,
-                                     ("Folder", 120), ("Test", 0), ("Kind", 120),
-                                     ("What it covers", 210), ("Last run", 150)).Multi();
+                                     ("Test", 0), ("Kind", 100), ("Folder", 120),
+                                     ("Last run", 160)).Multi();
 
                 _filling = true;
 
@@ -531,13 +534,12 @@ namespace CamelWorks.UI.Views
 
                 if (picked == null)
                 {
-                    _panel.Content = _all.Count == 0
-                        ? Ui.Empty("Nothing to set up yet.",
-                                   "Make a test on the left and its settings appear here.",
-                                   "New test", () => Parts.PopMenu(_make, Kinds()))
-                        : Ui.Empty("No test picked.",
-                                   "Pick one on the left to change what it covers and what it "
-                                   + "reports.");
+                    // One line rather than a card with a button in it. The list pane already
+                    // carries the statement that there are no tests and the verb that fixes it;
+                    // a second card here said the same thing again and offered the same action.
+                    _panel.Content = Waiting(_all.Count == 0
+                        ? "A test's settings appear here."
+                        : "Pick a test on the left to change what it covers and what it reports.");
 
                     return;
                 }
@@ -569,6 +571,17 @@ namespace CamelWorks.UI.Views
                             + "wherever it was defined.");
                         break;
                 }
+            }
+
+            /// <summary>What the settings pane says while it has no test to draw.</summary>
+            /// <param name="text">The line.</param>
+            private static UIElement Waiting(string text)
+            {
+                var line = Ui.Line(text, 0.85);
+
+                line.Margin = new Thickness(0, 4, 0, 0);
+
+                return line;
             }
 
             /// <summary>What the panel says when the list holds a test the project file does not.</summary>
@@ -636,7 +649,10 @@ namespace CamelWorks.UI.Views
                                      () => Ui.Told(Shell.AppWindow.Show("clash", "matrix")));
 
                 return Ui.Stack(
-                    Bench.Group("Test",
+                    // No heading over the name and the folder. The tab is called Create, the list
+                    // beside it has a Test column, and "TEST" over the first two boxes named
+                    // nothing the reader did not already have.
+                    Bench.Group(string.Empty,
                         Ui.Across(Sized(Ui.Field("Name", name), 210),
                                   Sized(Ui.Field("Folder", folder), 170)),
                         Sized(Ui.Field("Tolerance (" + Units.LengthUnit + ")", tolerance), 170)),
@@ -667,6 +683,11 @@ namespace CamelWorks.UI.Views
             private static UIElement Sized(Panel field, double width)
             {
                 field.Width = width;
+
+                // Left, not the default stretch. A stretched element given a fixed width is
+                // centred in what is left over, so a full-width field under a row of two started
+                // half a column in from the margin.
+                field.HorizontalAlignment = HorizontalAlignment.Left;
 
                 return field;
             }
