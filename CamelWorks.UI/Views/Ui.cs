@@ -198,6 +198,27 @@ namespace CamelWorks.UI.Views
     }
 
     /// <summary>
+    /// The state a screen is in, when it is in one worth saying.
+    ///
+    /// Four states, and each has one tone. A screen that cannot do its job because the seat will
+    /// not let it is not in the same state as a screen whose results are older than the model.
+    /// </summary>
+    public enum Stand
+    {
+        /// <summary>Something outside this screen has to happen first: a model opened, a pack chosen.</summary>
+        Blocked = 0,
+
+        /// <summary>This edition or licence does not carry part of what the screen does.</summary>
+        Limited = 1,
+
+        /// <summary>Something failed. The screen says what, and what state the data is in.</summary>
+        Wrong = 2,
+
+        /// <summary>What is shown predates what it was read from.</summary>
+        Stale = 3,
+    }
+
+    /// <summary>
     /// What a field asks of the person filling it in.
     ///
     /// Three states rather than two, because "the app fills this in" is a different promise from
@@ -2970,6 +2991,39 @@ namespace CamelWorks.UI.Views
         /// <param name="message">The note.</param>
         public static UIElement Info(string message) =>
             Banner(message, Glyphs.Info, "BlueBg", "BlueBd", "BlueTx");
+
+        /// <summary>
+        /// The state a screen is in, said the same way on every screen that is in it.
+        ///
+        /// "No model is open" was rendered five ways across the clash manager: an empty-state card
+        /// on Report, a footer sentence on Create, a yellow strip on the new-clash form, a body
+        /// paragraph on Filter and a red strip at the top of the matrix. Four of the five were
+        /// choosing their own tone, and one of them was an empty-collection component carrying an
+        /// error condition.
+        ///
+        /// The tone comes from the state rather than from the screen, so a licence limit cannot be
+        /// drawn as a failure and a stale board cannot be drawn as a note.
+        /// </summary>
+        /// <param name="stand">Which state the screen is in.</param>
+        /// <param name="says">What is true, in one sentence.</param>
+        /// <param name="caption">What the one thing to do about it is called, or null.</param>
+        /// <param name="onClick">What that thing does.</param>
+        public static UIElement Standing(Stand stand, string says, string? caption = null,
+                                         Action? onClick = null)
+        {
+            var glyph = stand == Stand.Wrong ? Glyphs.Warn
+                      : stand == Stand.Stale ? Glyphs.Clock
+                      : stand == Stand.Limited ? Glyphs.Warn
+                      : Glyphs.Info;
+
+            var bg = stand == Stand.Wrong ? "RedBg" : stand == Stand.Blocked ? "BlueBg" : "AmberBg";
+            var bd = stand == Stand.Wrong ? "RedBd" : stand == Stand.Blocked ? "BlueBd" : "AmberBd";
+            var tx = stand == Stand.Wrong ? "RedTx" : stand == Stand.Blocked ? "BlueTx" : "AmberTx";
+
+            return caption == null || onClick == null
+                ? Banner(says, glyph, bg, bd, tx)
+                : Banner(says, glyph, bg, bd, tx, caption, onClick);
+        }
 
         /// <summary>Background worth having, with the one thing you can do about it.</summary>
         /// <param name="message">The note.</param>

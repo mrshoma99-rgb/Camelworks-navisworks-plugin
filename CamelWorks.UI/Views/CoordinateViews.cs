@@ -981,9 +981,10 @@ namespace CamelWorks.UI.Views
                 Ui.Stack(
                     Bench.Scope(Scope()),
                     _live == null
-                        ? Say("No model is open. Rules can be written and saved from here; "
-                              + "reviewing and running them reads the clash results, which needs "
-                              + "the model open.")
+                        ? Ui.Standing(Stand.Blocked,
+                                      "No model is open. Rules can be written and saved from "
+                                      + "here; reviewing and running them reads the clash "
+                                      + "results, which needs the model open.")
                         : null,
                     _saved,
                     _marks,
@@ -3071,10 +3072,14 @@ namespace CamelWorks.UI.Views
                 // a runner clears its output panel on every press, so anything put there is gone
                 // the first time the button is used and never comes back.
                 var stage = Ui.Stack(
+                    // A state banner, not an empty state. Ui.Empty says a collection holds
+                    // nothing; this screen's collection is fine and the seat is what will not
+                    // let it be read, which is a different thing and was drawn as the same one.
                     _live == null
-                        ? Ui.Empty("No model is open.",
-                                   "The report is written from the clash board, which is built "
-                                   + "from the results in the open model.")
+                        ? Ui.Standing(Stand.Blocked,
+                                      "No model is open. The report is written from the clash "
+                                      + "board, which is built from the results in the open "
+                                      + "model.")
                         : BoardState("Writing builds it fresh from the tests and the saved rules."),
                     Say(Covers()),
                     _shape,
