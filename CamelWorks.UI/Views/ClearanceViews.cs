@@ -262,16 +262,17 @@ namespace CamelWorks.UI.Views
                                            Keep(one => add(one, pick));
                                        }, 230);
 
-                var stack = Ui.Stack(Ui.Field(label, Reading(picker), hint));
+                // Picker, then what is chosen, then the line that says what the list does. The chips
+                // are the answer and belong next to the control that adds to it.
+                var stack = Ui.Stack(Ui.Field(label, Reading(picker)));
 
-                if (chosen.Count == 0) return Sized(stack, 380);
+                if (chosen.Count > 0)
+                    stack.Children.Add(Ui.Across(chosen
+                        .Select(one => (UIElement)Parts.FilterChip(string.Empty, one,
+                                                                   () => Keep(two => drop(two, one))))
+                        .ToArray()));
 
-                var chips = Ui.Across(chosen
-                    .Select(one => (UIElement)Parts.FilterChip(label, one,
-                                                               () => Keep(two => drop(two, one))))
-                    .ToArray());
-
-                stack.Children.Add(chips);
+                stack.Children.Add(Ui.Small(hint));
 
                 return Sized(stack, 380);
             }

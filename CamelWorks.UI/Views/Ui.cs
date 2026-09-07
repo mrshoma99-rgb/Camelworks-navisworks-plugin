@@ -3945,7 +3945,8 @@ namespace CamelWorks.UI.Views
                 case "show": return Glyphs.EyeOff;
                 case "select":
                 case "pick": return Glyphs.Boxed;
-                case "copy": return Glyphs.Copy;
+                case "copy":
+                case "duplicate": return Glyphs.Copy;
                 case "delete":
                 case "remove":
                 case "drop":

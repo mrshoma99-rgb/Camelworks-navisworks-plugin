@@ -137,15 +137,23 @@ namespace CamelWorks.UI.Views
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
-            var kind = new TextBlock
-            {
-                Text = label ?? string.Empty,
-                VerticalAlignment = VerticalAlignment.Center,
-                FontSize = 12,
-            };
+            // No label block at all when there is no label, rather than an empty one. A chip under
+            // a field already headed "Levels" does not need to say Levels again, and an empty
+            // TextBlock still takes the gap after it.
+            var named = !string.IsNullOrWhiteSpace(label);
 
-            kind.Tint(TextBlock.ForegroundProperty, "Muted");
-            row.Children.Add(kind);
+            if (named)
+            {
+                var kind = new TextBlock
+                {
+                    Text = label!,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    FontSize = 12,
+                };
+
+                kind.Tint(TextBlock.ForegroundProperty, "Muted");
+                row.Children.Add(kind);
+            }
 
             var what = new TextBlock
             {
@@ -153,7 +161,7 @@ namespace CamelWorks.UI.Views
                 VerticalAlignment = VerticalAlignment.Center,
                 FontSize = 12,
                 FontWeight = FontWeights.SemiBold,
-                Margin = new Thickness(6, 0, 0, 0),
+                Margin = new Thickness(named ? 6 : 0, 0, 0, 0),
             };
 
             what.Tint(TextBlock.ForegroundProperty, "Text");
@@ -184,7 +192,7 @@ namespace CamelWorks.UI.Views
                 Background = Brushes.Transparent,
                 VerticalAlignment = VerticalAlignment.Center,
                 Cursor = Cursors.Hand,
-                ToolTip = "Remove " + label + " " + value,
+                ToolTip = named ? "Remove " + label + " " + value : "Remove " + value,
                 Child = Ui.Glyph(Glyphs.Close, 11, "Muted"),
             };
 
