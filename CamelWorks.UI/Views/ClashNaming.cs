@@ -1230,7 +1230,10 @@ namespace CamelWorks.UI.Views
                 Cell(step.Why != NamingRefusal.None
                          ? NamingWrite.Said(step.Why)
                          : step.Changes ? step.Now ?? string.Empty : "unchanged",
-                     step.Why != NamingRefusal.None ? "RedTx"
+                     // Muted, not red. A step this run leaves alone is a row the plan skipped,
+                     // and red is what the product uses for something that went wrong; a preview
+                     // of forty skipped tests read as forty errors.
+                     step.Why != NamingRefusal.None ? "Muted"
                      : step.Changes ? "Accent" : "Muted"));
 
             row.Margin = new Thickness(0, 0, 0, 4);
@@ -1409,7 +1412,7 @@ namespace CamelWorks.UI.Views
             return Ui.Across(Ui.Field("Count in", kinds, null),
                              Ui.Field("Start at", start, null),
                              Ui.Field("Step", step, null),
-                             Ui.Field("Digits", pad, null));
+                             Ui.Field("Least digits", pad, null));
         }
 
         /// <summary>The one box a same-on-all write needs.</summary>

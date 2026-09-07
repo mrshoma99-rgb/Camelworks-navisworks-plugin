@@ -1,329 +1,256 @@
 # Findings and issues
 
-> **Status: proposal.** No code has been written to this. It exists to be corrected before any is.
+The record layer every check in CamelWorks writes to. This describes what is built, not what is
+proposed.
 
-## What this is for
+## What it is for
 
 Every tool in CamelWorks that checks the model produces the same shape of thing: a problem, at a
 place, that somebody has to decide about. Clash results. Clearance breaches. IDS failures. Model
-health faults. Differences between two revisions.
+health faults. Set drift. Differences between two revisions.
 
-Today each of those is its own subsystem, with its own record, its own status, its own storage —
-or no storage at all. This proposes one record for all of them, one place to keep it, and one way
-to group them into the things people actually assign and close.
+Each of those was heading for its own record, its own status field, its own board columns and its
+own export path — six near-identical subsystems and six places for the same bug. They converge on
+one record, `Finding`, kept in one file, exported by one BCF writer, and grouped by one thing
+people actually assign and close, `Issue`.
 
-## Where we actually are
+## The three types
 
-The interesting part: **most of this was already designed and then not wired up.**
+### `Finding` — the unit of decision
 
-`CamelWorks.Core/Findings/Finding.cs` is the record. It has:
+What a check produced. Identified by what makes it that finding rather than by an allocated id:
+`Finding.Create` hashes the source, the rule (or the identity string that stands in for it), the
+discriminator and the elements, sorted, so two producers listing a pair the other way round get
+the same id and the same problem in next week's run keeps last week's sign-off.
 
-- `FindingSource` — `Clash`, `Manual`, `Health`, `Headroom`, `Ids`, `SetDrift`, `Compare`. All
-  seven producers, already named.
-- Status, assignee, due date, priority.
-- **Parent and child.** One rule failing 400 elements is one decision and 400 locations. A parent
-  carries the triage; children carry the places and are never separately triaged. `AddChild`
-  actively refuses a child that has been given a status of its own.
-- **Derived identity.** `Finding.Create` hashes source + rule + discriminator + the elements,
-  *sorted*, so two producers listing a pair the other way round get the same id. A parent's id
-  ignores its children, so a rule that fails 401 elements next week instead of 400 is still the
-  same finding and keeps its sign-off.
-- `MergeFrom`, with `FindingStatusLattice` — status promotes and never regresses on a merge;
-  assignee, due date and priority are latest-wins; `IsDemotion` exists so a caller can surface a
-  regression as a conflict rather than apply it silently.
+Findings are kept in `.camelworks/<model>.findings.json` beside the project file, not inside it.
+The project file is rewritten whenever any tool remembers a setting, and an eighteen-thousand-clash
+job is about 3.6 MB of findings; remembering a textbox should not rewrite that.
 
-It has tests. It is used by exactly one of the seven producers — `CompareIssues` — and it is
-**never persisted anywhere.**
+### `FindingLocation` — where it is
 
-| Producer | Persists across sessions | Uses `Finding` | Attachable to an issue |
+One place a finding is: an id, its elements, an optional point, its own facts, and notes somebody
+wrote against that one place.
+
+A location carries **no decision**. There is no per-location status, assignee, due date or sign-off,
+and there will not be one. A location carrying triage state is a register entry under another name,
+and its id would then have to be derived from its own element — so one element moving, splitting or
+being renamed would re-identify it and lose whatever had been decided about it. That is the
+identity problem this shape exists to avoid.
+
+What it may carry is a **note**: free text with an author and a time, which records "this one is a
+false positive, the wall is a void former" without claiming the location was decided.
+
+The load-bearing consequence: **a finding's id ignores its locations.** A specification failing 400
+elements this week and 1,000 next week is the same finding, with the same status, assignee and
+comment trail. `ReplaceLocations` records this run's places over last run's, because keeping the
+old ones would leave "show me all of them" pointing at a set that has moved on. `Observe` carries
+notes across the swap, matching on location id, so a note on a place the run still reports survives
+the re-read; a note on a place the run stops reporting goes with it.
+
+A location id must be unique across every finding, not only within one. Every producer in Core
+writes its finding's id, a slash and the element key: three specifications failing the same wall are
+three places, and an id that was only the element key made them one and handed back whichever
+finding sorted first.
+
+Locations are not counted in `FindingRegister.Count` or `Open`, are not attachable to an issue, and
+are not written as their own BCF topics. `FindingRegister.Find(locationId)` returns null;
+`FindLocation` and `OwnerOfLocation` answer instead, off a lazy index dropped whenever the register
+changes. `LocationCount` sums each finding's locations rather than counting that index, so it is
+right whatever the producers do with ids. It exists so a screen can say "37 rules, 1,204 locations"
+rather than implying 37 problems are 1,204.
+
+### `Issue` — a finding-set somebody raised
+
+What somebody decided to do about one or several findings. It can exist with no finding at all
+("no access to this valve"), which is why it is not collapsed into `Finding`: collapsing them would
+mean either inventing machine findings for things no machine found, or giving every one of eighteen
+thousand clashes a conversation nobody will have.
+
+It gains nothing a finding does not have:
+
+- **Status** is `FindingStatus`, the same five-rung lattice.
+- **Comments** are `FindingComment`, the same type.
+- **Priority** comes from `ProjectProfile.Priorities`, the same project-configured list a finding
+  draws from, seeded from `Priorities.All`. An issue over three findings must not offer a different
+  vocabulary from the findings it covers.
+- **`DueDayNumber`** is whole days since `DateTime.MinValue`, the same unit as
+  `Finding.DueDayNumber`.
+- **`Facts`** is the open bag. Level, zone and the file a topic arrived in live there; nothing
+  coordination-specific is a field, so a check can carry its own facts onto an issue.
+
+`Provenance` is where the issue came from — `"Hand"`, `"Bcf"`, or a check's key — set at creation
+and never derived. An imported topic arrives with no findings attached, so the number of attached
+findings cannot tell an imported issue from a hand-typed one, and the list screens filter on exactly
+that distinction. `Sources(register)` derives which checks the attached findings came from, falling
+back to `Provenance` when none are attached.
+
+**An issue may only be attached to findings that already exist.** The attach and raise verbs sit on
+a results board, which is downstream of a read. There is no deferred-attachment path and no
+key-shaped placeholder: a holding pen keyed on anything other than a finding id has to be swapped
+for one later, and that swap is what the deleted clash-key list was.
+
+## Identity per source
+
+A finding survives a re-run only if its derived id is stable across runs. Get it wrong and every
+check duplicates its findings each time it runs, and every status, assignee, comment and issue
+attachment detaches at once.
+
+| Source | Identity string | `elements` | `discriminator` |
 |---|---|---|---|
-| Clash | yes, via its own `ClashSnapshot` | no | yes, clash-only |
-| Clearance (`Headroom`) | no — a static that dies with the session | no | no |
-| IDS (`IdsReport`) | no | no | no |
-| Health (`FederationReview`) | no | no | no |
-| Compare | no | **yes** | no |
-| Manual | — | no | it *is* the issue today |
+| `Clash` | the host's own id for the test, not its name | the two clashing elements | the quantised clash cell |
+| `Headroom` | the check's name | floor + obstruction | the quantised position cell |
+| `Ids` | the specification's own identifier | none — the locations carry the elements | the specification |
+| `Health` | the rule's stable id | none | the rule's id |
+| `Compare` | `"Model compare"` | none | model + kind of change |
+| `SetDrift` | `"Set drift"` | none | the set's name |
 
-`Issue.Clashes` is `IList<ClashKey>`. An issue can hold clashes and nothing else.
+Two rows deserve their reasoning written down.
 
-### The clash section is not a junk drawer — a correction
+**Clash identity is the whole key, including where the clash is.** An earlier design used the
+element pair alone so that a conflict shifting a few millimetres would not resurrect as new. That
+was a defect: a duct crossing one beam twice is two results and would have been one BCF topic — two
+`markup.bcf` entries at one path, a malformed archive whose second topic most readers silently
+drop. Tolerance belongs at match time instead, where the sync looks through the twenty-six
+neighbouring cells for the few topics that matched nothing exactly. The general rule: **identity is
+exact and matching is tolerant.**
 
-An earlier draft of this document said the clash section held thirteen keys, eleven of them written
-by "the Board, which was retired", and proposed deleting them. **That was wrong, and it is recorded
-here rather than quietly fixed, because a decision was taken on it.**
+The rule the identity is hashed from is the host's test **id**, not the test name, because renaming
+a clash test is a first-class feature of this product. The name stays on `Finding.Rule`, where it
+is read.
 
-Two mistakes. `CoordinateViews` is not the retired surface: it backs five tabs that are live in the
-app registry today — **Filter Clashes, Report, BCF, Merge and Penetrations** — plus the review
-window. And the keys are written through a local variable (`section.Set("snapshot", …)`), so a
-search for `ClashSection).Set(` found almost none of the writers and made live keys look
-write-only.
+**The `Headroom` discriminator is the position cell, and that is not enough for more than one
+clearance run.** Two runs at different minimums over the same soffit produce the same id today,
+which is deliberate — re-running at 2.4 m after 2.1 m finds the same low soffit and calling it new
+would throw a decision away on a settings change. It stops being right the moment clearance has
+named, saved runs, and the row changes with the code that gives it them.
 
-The real picture. Every one of these is written and read by live code:
+## Source is a string
 
-| Key | What it holds |
-|---|---|
-| `snapshot` | last run's results — what carry-over compares the next run against |
-| `previous`, `previousParties`, `previousTaken` | the run before that, for the change columns |
-| `parties`, `taken` | per-party open counts at the moment of the run, kept rather than re-derived |
-| `pinned` | groups made by hand, which must never be re-derived |
-| `decisions`, `issued`, `bcfGroups`, `sheetIssues` | grouping decisions, what has been issued, BCF and sheet state |
-| `rules`, `issues`, `freeze` | the rule set, hand-raised issues, the freeze record |
+`FindingSource` is a table of constants, not an enum: `Clash`, `Manual`, `Health`, `Headroom`,
+`Ids`, `SetDrift`, `Compare`, `FallHazard`. The values are the names the enum it replaced was
+written and hashed by, so no finding was re-identified by the change.
 
-**Nothing here is dead. No key is being deleted.** The lesson for the migration is the larger one:
-`ClashSnapshot` is not merely "where clash results are kept" — it is the input to carry-over, to
-the previous-run comparison and to the party history. Replacing it means findings taking on all
-four jobs, not one.
+Three rules keep a sign-off attached, each pinned by a test in `Core.Tests`:
 
-## The model
+- **The source gate is strict.** A record with a missing or blank source is counted unreadable and
+  dropped. It must never become a finding with an empty source: that finding's id would be derived
+  from the empty string and would collide with every other record that lost its source.
+- **An unknown but non-empty source reads through.** A finding written by a check this build does
+  not have survives a round trip and is drawn by its own key rather than refused.
+- **The clash identity branch in `FindingJson.Read` is ordinal and case-sensitive.** Matched
+  loosely, or with a producer emitting `"clash"` rather than `"Clash"`, every clash finding in the
+  project takes a different branch, re-identifies at once, and detaches everything recorded against
+  it.
 
-### Finding
+A check's key is simultaneously the finding source hashed into every id under it and the register
+slice for that check, so it is never renamed once findings exist.
 
-The result of any check. Owned by the check that produced it, identified by what makes it that
-finding rather than by an allocated id.
+## The producers
 
-Findings live in the project file beside the model, so opening the same model next week shows last
-week's findings with their statuses intact.
+All six machine sources emit `Finding`, all persist through `FindingStore`, and any of them can be
+attached to an issue.
 
-**Identity per source.** This is the load-bearing decision of the whole design: a finding survives
-a re-run only if its derived id is stable across runs. Get it wrong and every check duplicates its
-findings each time it runs.
-
-| Source | `rule` | `elements` | `discriminator` |
+| Producer | Persisted | Shape | Attachable to an issue |
 |---|---|---|---|
-| Clash | test name | the two clashing elements | *nothing* — see below |
-| Headroom | the check's name | floor + obstruction | none; the pair is unique per check |
-| Ids | specification + facet | the failing element | the requirement that failed |
-| Health | the rule's name | the element, or none for a model-wide fault | none |
-| Compare | as `CompareIssues` already does | the changed element | the baseline it was compared against |
-| SetDrift | the set's name | none (a parent) | none |
+| Clash | yes | one finding per result — a clash *is* the unit of decision | yes |
+| Clearance (`Headroom`) | yes | one finding per breach | yes |
+| IDS | yes | one finding per specification, a location per failing element | yes |
+| Health | yes | one finding per rule, a location per element it names | yes |
+| Compare | yes | one finding per model and kind of change, a location per element | yes |
+| Set drift | yes | one finding per drifted set, a location per departed element | yes |
 
-The clash row deserves its reasoning written down, because an earlier draft of this document got
-it wrong and the mistake is instructive.
+`FindingSource.Manual` has no producer. Anything a person raises by hand is an `Issue` with
+`Provenance = "Hand"`; findings are only ever produced by a check.
 
-That draft argued for the element pair alone, excluding `ClashKey`'s quantised cell, so that a
-conflict shifting a few millimetres between runs would not resurrect as new. The BCF topic id was
-built that way — and it was a defect. A duct that crosses one beam twice is two Navisworks results
-and would have been **one** topic: two `markup.bcf` entries at one path, a malformed archive whose
-second topic most readers silently drop. Coarsely decomposed models, where a whole system is one
-item, make that ordinary rather than exotic.
+The caps are on the locations, not the findings: `IdsFindings.DefaultCap` is 1,000, and health and
+set drift cap at 500. A rule that fails ninety thousand elements is one decision, and the finding
+still records how many there were.
 
-**Uniqueness wins. A clash finding's identity is the whole key, including where the clash is.**
-Tolerance for a conflict that moved belongs at match time instead: the sync looks through the
-twenty-six neighbouring cells for a topic that matched nothing exactly, and only for the few that
-did not. That index is twenty-seven times the size and is never built on an ordinary sync.
+## The cascade
 
-The general rule this yields: **identity is exact and matching is tolerant.** Where a source has
-the same ambiguity — two headroom breaches under one slab, one element failing one IDS rule at two
-places — it resolves the same way.
+`IssueCascade.Plan(issue, to, register)` works out what marking an issue does to the findings
+attached to it, and `Apply` writes it.
 
-### Issue
+1. **The issue's own status is a direct edit.** A person deciding about an issue may demote it;
+   `FindingStatusLattice.IsDemotion` is what a screen confirms on.
+2. **Every attached finding takes `FindingStatusLattice.Merge(f.Status, to)`**, never a direct
+   assignment. Assignment is what pulled an already-Approved finding back to Reviewed when the issue
+   over it was answered.
+3. **Every status cascades.** With the issue on the lattice there is no mapping table left to be
+   incomplete.
+4. **Locations follow their finding** and are never written.
+5. **It is applied, not offered.** The offer existed because the mapping was partial and could
+   demote; both reasons are gone. The plan is shown — how many move, how many are already at or
+   above the target, how many attached ids the register no longer holds — and `Apply` is one write
+   with one activity entry.
+6. **One finding on two issues takes the higher of the two cascades.** The lattice does that
+   without a rule.
+7. **The reverse cascade is offered, not applied.** When every attached finding is Approved,
+   Resolved or absent, the issue reads as ready to close. Closing is an act between parties.
 
-A thing somebody is asked to do. Raised by hand, or from one or more findings.
-
-- An issue attaches **any number of findings, of any source**. "This riser is a mess" can hold
-  eleven clashes, two clearance breaches and an IDS failure.
-- A finding can be attached to more than one issue. That is real — the same clash can be evidence
-  in two conversations — and it is why cascade is a decision rather than a rule.
-- Issues also live in the project file. They already do.
-
-### What the model gets told
+## What the model gets told
 
 **The database is authoritative; the Navisworks write is a projection of it.** One direction,
 always.
 
 Where the host has a field — a clash result's status, assignee, group and comments — the projection
 writes it, so the native clash window and every other tool agree with us. Where the host has no
-field, or refuses the write because the document is a published NWD, the projection simply does
-less, and the database is unaffected.
+field, or refuses the write because the document is a published NWD, the projection does less and
+the database is unaffected. `Finding.Pending` names which fields are waiting, as a set rather than
+a flag, so a sync offers exactly those and never writes the same comment twice.
 
 Reading back from the model is not the reverse of that. It is a **new observation**, merged by
-derived id through `MergeFrom`: a re-run of the clash test produces findings, they merge with what
-is stored, statuses promote, and nothing anybody decided is lost. That is what keeps the database
-from disagreeing with the model without making the model the owner of decisions it cannot hold.
+derived id: `FindingRegister.Observe` promotes status through the lattice and skips any field that
+is waiting, because a published NWD keeps reporting the value it had before anybody touched it and
+a read allowed to win would revert the afternoon's work on every press of "Read the results".
 
-### A finding that is gone from the latest run
+A closed finding that a run reports present again is listed in `FindingIntake.Reopened`. The
+register does not demote it — the lattice promotes only — so that list is the only place the fact
+exists, and it is what the board's Regressed line reads.
 
-Kept, and marked as absent from the latest run — not deleted.
+## A finding the latest run no longer reports
 
-It is the record of the thing having been fixed, an issue may point at it, and a check that is
-re-run with a narrower scope should not silently destroy history. A board that hides them by
-default and can show them is the right surface.
+Kept and marked absent, not deleted. It is the record of the thing having been fixed, an issue may
+point at it, and a check re-run over a narrower scope must not silently destroy history. The board
+hides them by default and can show them.
 
-## Behaviours
+## Import and export
 
-### Attaching
+Findings and issues go out as BCF and come back as BCF, through the reader and writer that already
+exist.
 
-Every findings window — clash results, clearance, IDS, health, compare — carries the same two
-verbs on its selection: **attach to an issue** and **raise a new issue from these**. Both act on
-however many rows are picked, both are on the right-click menu, like every other verb in the
-product.
+- A finding exports as a topic; an issue with attached findings exports as a topic per finding plus
+  the issue's own, related by BCF's `RelatedTopic` both ways round, so a reader who opened the clash
+  first can reach the conversation and not only the other way about.
+- The return leg matches on the topic guid, which is a function of the finding's identity and is the
+  only thing that survives somebody else's tool. The guid is stamped onto the finding when it goes
+  out and kept, because a file that went out under a name the register does not know cannot come
+  home.
+- **The two clash writers agree on that guid.** `ClashFindings.From` stamps
+  `ClashBcf.TopicGuidFor(key)` onto the finding and `FindingBcf.TopicGuidFor` prefers the stamped
+  value over one derived from the id. The agreement is one line on each side and a test pins it;
+  dropping either half gives one clash two guids and a returning file matches neither.
+- A topic nothing here answers to stays a stranger and becomes an issue. Inventing a machine finding
+  for a thing no machine found would put a row on a board no re-run can confirm or clear.
+- The status comes home through the lattice, so a file that sat in an inbox for a fortnight cannot
+  undo a decision taken since it left.
 
-### Cascade
+Verified against the vendored `markup21`, `markup30`, `visinfo21` and `visinfo30` schemas with
+`xmllint`, on a real archive carrying an issue, its finding, the relation both ways and a viewpoint.
 
-**Changing an issue's status asks, at that moment, whether to carry it to the attached findings.**
+## Not done, and why
 
-Not an automatic invariant. A finding can sit on two issues, and closing one of them must not
-quietly close a finding the other still needs open. Asking makes the ambiguity visible at the one
-moment somebody can resolve it, and the activity log records what was chosen rather than what was
-inferred.
-
-The prompt names the number and the direction: *"Also mark the 6 attached findings Resolved?"* —
-and where the projection can reach the host, the findings' own write follows.
-
-### Import and export
-
-Both findings and issues go out as BCF and come back as BCF, through the reader and writer that
-already exist.
-
-- A finding exports as a topic; an issue with attached findings exports as a topic per finding
-  plus the issue's own, related by BCF's `RelatedTopic`. ✅ **Done.**
-- On import, a topic that matches a known finding by topic id merges into it. A topic that matches
-  nothing becomes an issue, which is what already happens today. ✅ **Done.**
-- What BCF carries that the host cannot hold — priority, due date, stage, tags — is stored on the
-  finding rather than being mashed into a comment. `ClashAside` is the shape this generalises from
-  — now a message read out of one markup and laid onto a finding, rather than a register of its own.
-
-## Decisions taken
-
-- **Clash findings replace `ClashSnapshot`**, migrating existing data on first open: read the
-  snapshot once, write findings from it, stop writing the snapshot. One store, nothing to disagree.
-- **`HeldEdits` and `ClashAsides` fold onto `Finding`.** ✅ **Done.** "What the host refused" and
-  "what the host has no field for" are things every source will want — a clearance finding on a
-  published NWD has the same problem — not clash quirks. Both registers are gone. The refusal is
-  now `Finding.Pending`, a set of field names rather than a flag, so a sync offers exactly the
-  fields that are waiting and never writes the same comment twice; the reviewer's fields are
-  ordinary `Finding` properties. What was in the old keys is read back by `ClashLegacy` on every
-  read, which is idempotent, so nothing is thrown away and the old keys stay on disk.
-- **Anything a person raises by hand is an issue, not a finding.** Findings are only ever produced
-  by a check. `FindingSource.Manual` stays unused. An issue raised by hand can still attach
-  machine findings, so "no access to this valve" can carry the clashes that explain it.
-- **Findings live in their own file**, `.camelworks/<model>.findings.json`, beside the project
-  file. Not inside it: the project file is rewritten every time any tool remembers a setting, and
-  an eighteen-thousand-clash job is about 3.6 MB of findings. Remembering a textbox should not
-  rewrite that.
-- **Status cascade asks at the moment of the edit**, naming the count, rather than being an
-  automatic invariant. A finding can sit on two issues.
-- ~~**The eleven Board-era keys in the clash section are deleted** during the migration.~~
-  **Withdrawn.** The analysis behind this was wrong — see the correction above. Every key is live.
-  Nothing is deleted.
-
-## Open questions
-
-1. **Scale.** Measured: about 209 bytes a finding, so 18,000 clashes is roughly 3.6 MB and
-   100,000 is 20 MB. Fine for a file of its own; the reason it is not in the project file is write
-   amplification rather than size. If a job ever outgrows one file, the fallback is one file per
-   source.
-2. **Does a parent finding project to the host at all?** A health rule failing 400 elements has no
-   clash result to write to. Probably the projection is per-source and some sources project
-   nothing, which is fine — but it should be stated per source rather than discovered.
-
-## Order of work
-
-Each step ships working and verifiable on its own.
-
-1. ~~**The store.**~~ **Done.** `Finding` gained JSON and the fields the fold-in needs; a register
-   that reconciles a run against what is held; a `.findings.json` file beside the project file. No
-   producer writes to it yet.
-2. ~~**Clash emits findings, alongside the snapshot.**~~ **Done.** Every clash run writes findings,
-   and the Manage board reads its triage state from them: `Restored` carries only the custom column
-   values now, and everything a coordinator decided is laid over the row from the finding after the
-   read has been taken into the register. `HeldEdits` and `ClashAsides` folded in. The snapshot
-   keeps doing its four jobs untouched, so nothing that works today broke.
-
-   One rule fell out of the fold and is worth stating: **a run may not overwrite a field that is
-   waiting.** A published NWD keeps reporting the status it had before anybody touched it, so a
-   read that was allowed to win would revert the afternoon's work on every press of "Read the
-   results" — the exact failure the hold exists to prevent. `MergeFrom` and `Observe` skip a field
-   in `Pending`; everything else the run is still free to correct.
-3. ~~**Issues attach findings.**~~ **Done.** `Issue.Findings` holds finding ids of any source — a
-   clash, a clearance breach and a health failure can sit on one issue. `Issue.Clashes` is kept and
-   still read, because a clash key names two elements and a place but not the test that found them,
-   so nothing can turn one into a finding id on its own: the swap happens on the next read of the
-   results, where both are in hand at once, and is idempotent so a key this run did not report
-   waits for a wider one rather than being dropped.
-
-   Raising an issue from the grid attaches findings; **Attach to an issue** puts picked results
-   onto one that already exists, which is what stops a coordinator ending up with forty issues
-   about one duct run. The issue's detail carries a findings card with **Take {n} off**, and a
-   status change that implies something — closed means resolved, answered means reviewed — *offers*
-   the cascade with its count. The middle states (draft, pending, in dispute) map to nothing: they
-   are about the conversation, and mapping them would invent a claim about the building out of a
-   note about a meeting.
-
-   One finding may sit on two issues; one clash may not sit on two issues. The asymmetry is
-   deliberate — the same duct through the same beam can be both a coordination issue and an RFI,
-   but two issues each claiming one *conflict* is two people each believing the other is dealing
-   with it.
-4. **The snapshot's other jobs move across, one at a time** — carry-over, then the previous-run
-   comparison, then the party history. Only when the last one has moved does the snapshot stop
-   being written. Splitting this out is the correction: replacing it in one step was proposed on
-   the belief that it held results and nothing else.
-5. ~~**Clearance, IDS, health, set drift, compare.**~~ **Done, except set drift.** One per step, as
-   planned:
-
-   - **Clearance** kept its judgement on the row and carried it between runs *in memory*, so
-     closing Navisworks reopened everything anybody had closed. Identity is the floor, what is over
-     it, and where, quantised into a two-metre cell — wider than a clash's, because a clash is a
-     point where two solids meet and a low soffit is an area somebody walks under. The minimum is
-     deliberately not part of it: re-running at 2.4 m after 2.1 m finds the same low soffit, and
-     calling it new would throw away a decision on the strength of a settings change.
-   - **Health** had no persistence at all — it said what it found and forgot it. It is the first
-     producer to use the parent and child `Finding` was shaped for: one parent per rule carrying
-     the decision, one child per element carrying the location. Identity had to move off the prose
-     first, because review headlines read "37 elements sit on top of each other" with the count in
-     the words; `ReviewFinding` gained a stable rule id, set at every call site.
-   - **IDS** could select failures and write a workbook and remember nothing. One finding per
-     specification, identified by the file's own identifier so rewording it does not lose an
-     agreement. A specification that applied to nothing stays reported as its own kind of failure:
-     a requirement that quietly stops being checked is worse than one that fails, and a green tick
-     is where it would go to hide.
-   - **Compare** already produced findings through `CompareIssues` and never kept them, so an issue
-     pointed at a record the button invented and dropped. Now they are observed into the register
-     first and attached.
-
-   `IssueOrigin` gained `Compare`, `Health` and `Ids`. It is written and read by name, so appending
-   leaves every issue anybody has already raised reading exactly as it did.
-
-6. ~~**Findings and issues as BCF.**~~ **Done.** Export gained "Send the findings each issue is
-   about": each goes out as its own topic, related to its issue *both ways round* so a reader who
-   opened the clash first can get to the conversation and not only the other way about. Without it
-   a file is half a story — eleven clashes arriving as one line with no geometry to look at.
-
-   The return leg matches on the topic guid, which is a function of the finding's identity and is
-   the only thing that survives somebody else's tool: a markup carries a guid, a status and a
-   conversation, and none of the source, rule, elements or discriminator the identity is derived
-   from. So the guid is stamped onto the finding when it goes out and kept, because a file that
-   went out under a name the register does not know is a file that cannot come home.
-
-   A topic nothing here answers to stays a stranger and becomes an issue. Inventing a machine
-   finding for a thing no machine found would put a row on a board that no re-run can ever confirm
-   or clear.
-
-   The status comes home through the lattice, so a file that sat in somebody's inbox for a
-   fortnight cannot undo a decision taken since it left. This writer's own two labels are not read
-   back as a reviewer's tags, or the file would grow a label a cycle for ever.
-
-   Verified against the vendored `markup21`, `markup30`, `visinfo21` and `visinfo30` schemas with
-   `xmllint`, on a real archive carrying an issue, its finding, the relation both ways and a
-   viewpoint.
-
-7. ~~**Set drift.** Nothing to move.~~ **Built.** The slot was reserved and empty; the check has
-   since been written, so `FindingSource.SetDrift` now has a producer like the other six.
-
-   It turned out to be the most valuable of them, because it is the one that catches the others
-   failing silently. A saved set is a query, and what it returns moves whenever the model does. When
-   it goes quiet nothing errors: the clash test whose side it is finds no clashes, the clearance
-   check over it finds nothing too low, the scoped rule reports "not applicable". Every one reads as
-   green, which is the failure this whole product exists to prevent arriving through the side door.
-
-   Graded rather than diffed — a live model changes daily, and a check that reported every change
-   would be a check nobody reads. A set that emptied, or that the document no longer has, is a
-   fault; a set that lost a quarter is a watch; growth and small losses are ordinary and silent.
-
-   Each finding names what was pointed at the set — clash tests and scoped rules, the two the
-   product can read for itself — because that is what turns "a set changed" into "these checks are
-   disarmed". Identity is the set's **name**, not its membership: a decision about a set has to
-   survive the thing that moves.
-6. **BCF for both.** Findings and issues out and back, with the relation between them.
-
-Step 2 is next. Steps 4 and 5 are independent of each other.
+- **Per-location triage.** A location carries a note and never a status, assignee or sign-off.
+  Giving it one makes it a register entry under another name and brings back the identity problem
+  this shape exists to avoid.
+- **Deferred issue attachment.** Nothing replaces the deleted clash-key list. The attach and raise
+  verbs are unavailable before a read, which is where they are offered anyway.
+- **Moving the `issues` section out of the project file.** The write-amplification argument that
+  moved findings to a sidecar does not reach issue volumes.
+- **A `TooNew` refusal on `FindingStore`.** `VersionedDocument` has one and the sidecar does not.
+  There is no newer build to refuse yet, so it is a robustness item for the first release that has
+  a predecessor.
+- **`ClashSnapshot`.** It still holds carry-over, the previous-run comparison and the party history,
+  and is still written. Those jobs move to the run journal and the register one at a time; deleting
+  it is a phase of its own.

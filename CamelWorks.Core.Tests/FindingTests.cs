@@ -148,75 +148,102 @@ namespace CamelWorks.Core.Tests
         }
 
         // ---------------------------------------------------------------------------------
-        // Parent and child — one decision, many locations
+        // One finding, many locations
         // ---------------------------------------------------------------------------------
 
         [Fact]
         public void A_rule_failing_many_elements_is_one_decision_and_many_locations()
         {
-            var parent = Finding.CreateParent(FindingSource.Ids, "IDS: fire rating required", "400 walls missing FireRating");
+            var finding = Finding.CreateParent(FindingSource.Ids, "IDS: fire rating required", "400 walls missing FireRating");
             foreach (var n in new[] { "Wall 1", "Wall 2", "Wall 3" })
-                parent.AddChild(Finding.Create(FindingSource.Ids, "IDS: fire rating required", n, new[] { E(n) }));
+                finding.AddLocation(new FindingLocation(n, new[] { E(n) }));
 
-            Assert.True(parent.IsParent);
-            Assert.Equal(3, parent.Children.Count);
-            Assert.Equal(3, parent.AllElements().Count);
+            Assert.True(finding.HasLocations);
+            Assert.Equal(3, finding.Locations.Count);
+            Assert.Equal(3, finding.AllElements().Count);
         }
 
         [Fact]
-        public void A_parents_identity_does_not_depend_on_how_many_children_it_has()
+        public void A_findings_identity_does_not_depend_on_how_many_locations_it_has()
         {
             // 400 failures this week and 401 next week is the same rule still failing — it keeps
             // its assignee and its sign-off.
             var week1 = Finding.CreateParent(FindingSource.Ids, "IDS: fire rating", "t");
-            week1.AddChild(Finding.Create(FindingSource.Ids, "IDS: fire rating", "a", new[] { E("Wall 1") }));
+            week1.AddLocation(new FindingLocation("a", new[] { E("Wall 1") }));
 
             var week2 = Finding.CreateParent(FindingSource.Ids, "IDS: fire rating", "t");
-            week2.AddChild(Finding.Create(FindingSource.Ids, "IDS: fire rating", "a", new[] { E("Wall 1") }));
-            week2.AddChild(Finding.Create(FindingSource.Ids, "IDS: fire rating", "b", new[] { E("Wall 2") }));
+            week2.AddLocation(new FindingLocation("a", new[] { E("Wall 1") }));
+            week2.AddLocation(new FindingLocation("b", new[] { E("Wall 2") }));
 
             Assert.Equal(week1.Id, week2.Id);
         }
 
         [Fact]
-        public void A_child_may_not_carry_triage_state_of_its_own()
+        public void Four_hundred_locations_and_a_thousand_are_the_same_finding()
         {
-            var parent = Finding.CreateParent(FindingSource.Health, "R", "t");
-            var child = Finding.Create(FindingSource.Health, "R", "c", new[] { E("Wall 1") });
-            child.Status = FindingStatus.Approved;
+            // The number the plan reasons about. A specification failing 400 elements and the same
+            // specification failing 1,000 is one thing to decide about, and re-deriving the id from
+            // the locations would throw the decision away every run.
+            Finding Made(int howMany)
+            {
+                var finding = Finding.CreateParent(FindingSource.Ids, "IDS: fire rating", "t", "spec-1");
 
-            // Two places to set a status is two places for them to disagree, and the board would
-            // have to show both.
-            Assert.Throws<ArgumentException>(() => parent.AddChild(child));
+                for (var n = 0; n < howMany; n++)
+                    finding.AddLocation(new FindingLocation("wall-" + n, new[] { E("Wall " + n) }));
+
+                return finding;
+            }
+
+            var small = Made(400);
+            var large = Made(1000);
+
+            Assert.Equal(small.Id, large.Id);
+            Assert.Equal(1000, large.Locations.Count);
         }
 
         [Fact]
-        public void Nesting_beyond_one_level_is_refused()
+        public void A_location_replaces_rather_than_accumulates()
         {
-            var a = Finding.CreateParent(FindingSource.Health, "R", "a");
-            a.AddChild(Finding.Create(FindingSource.Health, "R", "c", new[] { E("W1") }));
+            var finding = Finding.CreateParent(FindingSource.Health, "R", "t");
+            finding.AddLocation(new FindingLocation("a", new[] { E("Wall 1") }));
 
-            var top = Finding.CreateParent(FindingSource.Health, "R", "top");
+            finding.ReplaceLocations(new[] { new FindingLocation("b", new[] { E("Wall 2") }) });
 
-            // A tree deeper than parent/child is a tree nobody reads at 8am in a meeting.
-            Assert.Throws<ArgumentException>(() => top.AddChild(a));
+            Assert.Equal("b", Assert.Single(finding.Locations).Id);
+
+            finding.ReplaceLocations(null);
+
+            Assert.False(finding.HasLocations);
         }
 
         [Fact]
-        public void A_finding_cannot_be_its_own_child()
+        public void A_location_with_no_id_cannot_be_made()
         {
-            var f = Finding.CreateParent(FindingSource.Health, "R", "t");
-            Assert.Throws<ArgumentException>(() => f.AddChild(f));
+            // A location nothing can name is a location nothing can send anybody to, and an id
+            // invented here would collide with every other one that lost its own.
+            Assert.Throws<ArgumentException>(() => new FindingLocation(" ", new[] { E("Wall 1") }));
         }
 
         [Fact]
-        public void All_elements_deduplicates_across_children()
+        public void A_location_carries_a_note_but_no_decision()
         {
-            var parent = Finding.CreateParent(FindingSource.Headroom, "Headroom 2.1m", "t");
-            parent.AddChild(Finding.Create(FindingSource.Headroom, "Headroom 2.1m", "a", new[] { E("Duct"), E("Slab") }));
-            parent.AddChild(Finding.Create(FindingSource.Headroom, "Headroom 2.1m", "b", new[] { E("Duct"), E("Beam") }));
+            // A note records "this one is a false positive" without claiming the location was
+            // decided. There is no status, assignee or due date on it to set.
+            var location = new FindingLocation("a", new[] { E("Wall 1") });
 
-            Assert.Equal(3, parent.AllElements().Count);   // Duct once
+            location.Notes.Add(new FindingComment("A Coordinator", 1, "void former, not a wall"));
+
+            Assert.Equal("void former, not a wall", Assert.Single(location.Notes).Body);
+        }
+
+        [Fact]
+        public void All_elements_deduplicates_across_locations()
+        {
+            var finding = Finding.CreateParent(FindingSource.Headroom, "Headroom 2.1m", "t");
+            finding.AddLocation(new FindingLocation("a", new[] { E("Duct"), E("Slab") }));
+            finding.AddLocation(new FindingLocation("b", new[] { E("Duct"), E("Beam") }));
+
+            Assert.Equal(3, finding.AllElements().Count);   // Duct once
         }
 
         // ---------------------------------------------------------------------------------
@@ -276,10 +303,10 @@ namespace CamelWorks.Core.Tests
         public void Every_producer_emits_the_same_shape()
         {
             // Counted rather than listed, so adding a producer is a decision somebody makes here
-            // rather than something that slips in. Seven: clash, manual, health, headroom, IDS,
-            // set drift and compare.
-            var sources = (FindingSource[])Enum.GetValues(typeof(FindingSource));
-            Assert.Equal(7, sources.Length);
+            // rather than something that slips in. Eight: clash, manual, health, headroom, IDS,
+            // set drift, compare and fall hazard.
+            var sources = FindingSource.Known;
+            Assert.Equal(8, sources.Count);
 
             var findings = sources
                 .Select(s => Finding.Create(s, "rule", "title", new[] { E("Wall 1") }))
@@ -287,7 +314,7 @@ namespace CamelWorks.Core.Tests
 
             // Same record, same triage vocabulary — one board, one report, one exporter.
             Assert.All(findings, f => Assert.Equal(FindingStatus.New, f.Status));
-            Assert.Equal(7, findings.Select(f => f.Id).Distinct().Count());   // provenance separates them
+            Assert.Equal(8, findings.Select(f => f.Id).Distinct().Count());   // provenance separates them
         }
 
         [Fact]

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using CamelWorks.Core.Checks;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
 
@@ -13,10 +14,14 @@ namespace CamelWorks.Core.Data
     /// close a breach, close Navisworks, and it is open again the next day. That is the behaviour
     /// that makes a check nobody re-runs, and it is what the findings store ends.
     ///
-    /// Identity: the floor surface, what is over it, and where — the same shape as a clash, for the
-    /// same reason. Two short spots under one slab-and-duct pair are two problems and two decisions;
-    /// a spot that shifts a little as the model moves is still itself, because the position is
-    /// quantised into a cell rather than compared exactly.
+    /// Identity: the run, the floor surface, what is over it, and where — the same shape as a clash,
+    /// for the same reason. Two short spots under one slab-and-duct pair are two problems and two
+    /// decisions; a spot that shifts a little as the model moves is still itself, because the
+    /// position is quantised into a cell rather than compared exactly.
+    ///
+    /// The run is in the identity and its name is not. Two runs over different corridors that meet
+    /// at the same place are two findings and two decisions; renaming a run leaves its findings
+    /// where they are.
     ///
     /// The minimum asked for is not part of the identity. Re-running at 2.4 m after running at 2.1 m
     /// finds the same low soffit and must not present it as a new one with the earlier decision lost;
@@ -31,6 +36,9 @@ namespace CamelWorks.Core.Data
         /// finding a different finding the moment somebody changed the minimum.
         /// </summary>
         public const string Rule = "Clear height";
+
+        /// <summary>Where the surface that was measured up from is kept.</summary>
+        public const string Surface = "Surface";
 
         /// <summary>Where what is over the floor is kept.</summary>
         public const string Obstruction = "Obstruction";
@@ -76,9 +84,19 @@ namespace CamelWorks.Core.Data
         /// <param name="minimum">The least height this run asked for, in metres.</param>
         /// <param name="title">How the board names the row.</param>
         /// <param name="cell">The cell size the position is quantised into, in metres.</param>
+        /// <param name="runId">
+        /// The run's stable id, which is the finding's identity. Two runs over different corridors
+        /// that meet at the same place would otherwise report one finding between them, and closing
+        /// it on one board would close it on the other.
+        /// </param>
+        /// <param name="runName">
+        /// What the run is called, which is the finding's rule. The name is not in the identity, so
+        /// renaming a run does not re-derive its findings.
+        /// </param>
         public static Finding From(HeadroomSpan span, ElementKey floor, ElementKey over,
                                    double minimum, string? title = null,
-                                   double cell = DefaultCell)
+                                   double cell = DefaultCell,
+                                   string? runId = null, string? runName = null)
         {
             if (span == null) throw new ArgumentNullException(nameof(span));
 
@@ -88,9 +106,13 @@ namespace CamelWorks.Core.Data
             if (!over.IsEmpty) elements.Add(over);
 
             var finding = Finding.Create(
-                FindingSource.Headroom, Rule,
+                FindingSource.Headroom,
+                string.IsNullOrWhiteSpace(runName) ? Rule : runName!,
                 string.IsNullOrWhiteSpace(title) ? Name(span) : title!,
-                elements, CellOf(span.X, span.Y, cell));
+                elements, CellOf(span.X, span.Y, cell),
+                identity: string.IsNullOrWhiteSpace(runId) ? null : runId);
+
+            if (!string.IsNullOrWhiteSpace(runId)) CheckFacts.SetRuns(finding, new[] { runId! });
 
             finding.X = span.X;
             finding.Y = span.Y;
@@ -101,13 +123,17 @@ namespace CamelWorks.Core.Data
 
             finding.Detail = Detail(span, minimum);
 
+            // Both sides are written as facts. The board's element columns read a fact rather
+            // than the element list: a finding's elements are keys, and a key resolves to a name
+            // only by walking the document, which the board must not do per cell.
+            Fact(finding, Surface, span.Floor.Name);
             Fact(finding, Obstruction, span.Obstruction.Name);
-            Fact(finding, Measured, Metres(span.Clear));
-            Fact(finding, Wanted, Metres(minimum));
+            Fact(finding, Measured, Written(span.Clear));
+            Fact(finding, Wanted, Written(minimum));
 
             var shortBy = Math.Max(0, minimum - span.Clear);
 
-            if (shortBy > 0) finding.Facts[Shortfall] = Metres(shortBy);
+            if (shortBy > 0) finding.Facts[Shortfall] = Written(shortBy);
 
             return finding;
         }
@@ -116,9 +142,12 @@ namespace CamelWorks.Core.Data
         /// <param name="result">What the check measured.</param>
         /// <param name="keyOf">The element key for one of the check's boxes, by its id.</param>
         /// <param name="cell">The cell size the position is quantised into, in metres.</param>
+        /// <param name="runId">The run's stable id, which is the findings' identity.</param>
+        /// <param name="runName">What the run is called, which is the findings' rule.</param>
         public static IReadOnlyList<Finding> For(HeadroomResult? result,
                                                  Func<string, ElementKey>? keyOf,
-                                                 double cell = DefaultCell)
+                                                 double cell = DefaultCell,
+                                                 string? runId = null, string? runName = null)
         {
             var found = new List<Finding>();
 
@@ -131,7 +160,7 @@ namespace CamelWorks.Core.Data
                 var floor = keyOf == null ? default : keyOf(span.Floor.Id);
                 var over = keyOf == null ? default : keyOf(span.Obstruction.Id);
 
-                found.Add(From(span, floor, over, result.Minimum, null, cell));
+                found.Add(From(span, floor, over, result.Minimum, null, cell, runId, runName));
             }
 
             return found;
@@ -142,14 +171,46 @@ namespace CamelWorks.Core.Data
         public static string Name(HeadroomSpan span) =>
             span == null
                 ? Rule
-                : Metres(span.Clear) + " m under " + Short(span.Obstruction.Name);
+                : Printed(span.Clear) + " m under " + Short(span.Obstruction.Name);
 
         private static string Detail(HeadroomSpan span, double minimum) =>
-            Metres(span.Clear) + " m clear where " + Metres(minimum) + " m was asked for, over "
+            Printed(span.Clear) + " m clear where " + Printed(minimum) + " m was asked for, over "
             + Short(span.Floor.Name);
 
-        private static string Metres(double value) =>
-            value.ToString("0.###", CultureInfo.InvariantCulture);
+        /// <summary>
+        /// A length as the fact carries it: metres, to the micrometre.
+        ///
+        /// The facts used to be written at the resolution the sentences are printed at, three
+        /// decimal places, so a column reading one back could not tell 2.0994 m from 2.0996 m.
+        /// The number is the record; the rounding belongs to whatever prints it.
+        /// </summary>
+        /// <param name="metres">The length.</param>
+        public static string Written(double metres) =>
+            metres.ToString("0.######", CultureInfo.InvariantCulture);
+
+        /// <summary>
+        /// A length as a sentence prints it, to the millimetre.
+        /// </summary>
+        /// <param name="metres">The length.</param>
+        public static string Printed(double metres) =>
+            metres.ToString("0.###", CultureInfo.InvariantCulture);
+
+        /// <summary>
+        /// A length a fact carries, back as a number, or null when there is none.
+        ///
+        /// The typed accessor a column reads, so nothing above this parses the string for itself.
+        /// </summary>
+        /// <param name="finding">The finding.</param>
+        /// <param name="key">Which fact.</param>
+        public static double? MetresOf(Finding? finding, string key) =>
+            finding != null
+            && key != null
+            && finding.Facts.TryGetValue(key, out var written)
+            && !string.IsNullOrWhiteSpace(written)
+            && double.TryParse(written, NumberStyles.Float, CultureInfo.InvariantCulture,
+                               out var metres)
+                ? metres
+                : (double?)null;
 
         private static string Short(string? name) =>
             string.IsNullOrWhiteSpace(name) ? "something unnamed" : name!;

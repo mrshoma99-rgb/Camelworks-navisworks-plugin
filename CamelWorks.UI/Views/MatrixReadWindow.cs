@@ -213,7 +213,9 @@ namespace CamelWorks.UI.Views
 
             var says = Ui.Small("A pattern is run over every test name and the result is shown "
                                 + "against each test as a proposal. Change any of them: what you "
-                                + "set is what reads the test.");
+                                + "set is what reads the test. Reading replaces the matrix on "
+                                + "screen; the one in the project file is untouched until it is "
+                                + "saved.");
 
             says.TextWrapping = TextWrapping.Wrap;
             says.Margin = new Thickness(0, 2, 0, 8);

@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using CamelWorks.Core.Abstractions;
+using CamelWorks.Core.Checks;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Data;
 using CamelWorks.Core.Findings;
@@ -160,7 +161,95 @@ namespace CamelWorks.Studio
             // this seat holds none.
             Page("app-clash-matrix-priority", "Clash Manager · Matrix, priority", 820,
                  () => MatrixWindow.Surface(Seated(), Drawn(), MatrixWindow.Showing.Priority)),
+
+            // The clearance tab's floor side. The whole point of the page is the sentence the
+            // detected option is offered under and the list under it: detection cannot tell a floor
+            // from a desk top, and a screen that says "detected walkable surfaces" and stops there
+            // reads as though it could. Not in the render's default list; named on dispatch.
+            Page("app-clash-clearance-surfaces", "Clash Manager · Clearance, what to measure", 760,
+                 Walkable),
+
+            // The Checks tab itself, over a seat with nothing in it: the check picker, the run
+            // list and the empty state a project with no runs saved opens on. The shipping screen
+            // rather than a drawing of it, which is what Check(ISeat) buys — before the widening
+            // this tab took a Session and could only be looked at on a licensed seat.
+            // Not in the render's default list; named on dispatch.
+            Page("app-clash-checks", "Clash Manager · Checks", 760,
+                 () => ClearanceViews.Check(Seated())),
+
+            // The Manage board's check picker, opened. A menu lives in a popup and a popup needs
+            // a screen to open on, so the greyed entry and its reason — the state this control
+            // exists for — had never been drawn.
+            Page("app-clash-picker", "Clash Manager · The check picker", 420, Picker),
+
+            // The fall-hazard set-up, which is nine settings in two windows off the action row.
+            // The windows are what the page is for: the tab's own frame is the same shape as
+            // app-clash-checks, and a window needs a screen to open on that this harness has not.
+            // Not in the render's default list; named on dispatch.
+            Page("app-clash-fall", "Clash Manager · Fall hazard set-up", 900, Falling),
         };
+
+        /// <summary>
+        /// Fall hazard ▸ what to read and how to judge it, over a saved run.
+        ///
+        /// A run is saved into the scratch project first, because the settings belong to a run and
+        /// the pages say so rather than drawing controls over nothing.
+        /// </summary>
+        private static UIElement Falling()
+        {
+            var seat = Seated();
+            var check = seat.Checks.All.OfType<FallCheck>().First();
+
+            var spec = new CheckRunSpec(check.Key, "level3-openings", "Level 3 openings");
+
+            new FallSettings
+            {
+                Floors = "Level 03 Floors",
+                Handrails = "Level 03 Handrails",
+                Obstructions = FallSettings.Nothing,
+                LevelMetres = 10.5,
+                BandMetres = 1.0,
+                CellMetres = 0.1,
+                LimitMetres = 0.2,
+                HandrailToleranceMetres = 0.3,
+                MinPassageMetres = 0.5,
+            }.Write(spec);
+
+            check.Put(spec);
+
+            return Deck("clash", "checks",
+                        Bench.Surface(null, Ui.Runner("Run", Ui.Stack(), _ => { }),
+                                      FallHazardViews.Drawn(seat, spec)));
+        }
+
+        /// <summary>
+        /// The check picker's own menu, with an unavailable check in it.
+        ///
+        /// The state worth drawing is the greyed line: a Simulate seat has no clash engine, and
+        /// the picker lists the check with its reason rather than leaving it out, so the seat can
+        /// say why the check is not there.
+        /// </summary>
+        private static UIElement Picker()
+        {
+            var seat = Seated();
+
+            // The board's own list: this document's clash data first, then whatever else the
+            // session registered. On a seat with no document neither is available, which is the
+            // state the reasons are written for.
+            var offered = new List<ICheck>
+            {
+                new ClashCheck(Host.WithoutClash(), 1.0,
+                               "This Navisworks edition has no clash engine."),
+            };
+
+            offered.AddRange(seat.Checks.All);
+
+            return Ui.Stack(
+                CheckPicker.Draw(offered, offered[0], seat.Findings.Findings, _ => { }),
+                new Border { Height = 10 },
+                Parts.Drawn(CheckPicker.Entries(offered, offered[0],
+                                                seat.Findings.Findings, _ => { })));
+        }
 
         /// <summary>
         /// A seat with nothing in it, and a scratch project beside the images.
@@ -433,8 +522,10 @@ namespace CamelWorks.Studio
             {
                 at++;
 
-                if (board.IsSelfPair(cell.Row, cell.Column)) continue;
-
+                // Diagonal cells included. Cells() only yields written ones, and a written
+                // diagonal is a real test in the product - a duct against its own discipline -
+                // so a harness that skipped them could not draw one.
+                //
                 // A third of the pairs have no test at all, so the view has to draw "nobody has
                 // checked this" beside "checked, nothing left".
                 if (at % 3 == 0) continue;
@@ -585,6 +676,79 @@ namespace CamelWorks.Studio
             {
                 code, name.Replace(" ", "_").ToUpperInvariant(), "REV21", "ISSUED",
             });
+
+        /// <summary>
+        /// Clearance ▸ What to measure, with the detected surfaces listed.
+        ///
+        /// Drawn rather than shown: the tab is built from a Session, which needs a document, so
+        /// until this page existed nothing about this window had been looked at away from a
+        /// licensed seat.
+        /// </summary>
+        private static UIElement Walkable()
+        {
+            // The option's own sentence, as the tab builds it from the minimum area in force.
+            var said = "Detected walkable surfaces — every up-facing surface over 0.05 m², "
+                     + "which includes desk tops and duct tops.";
+
+            var sources = new[]
+            {
+                said,
+                "Walking surfaces (a guess)",
+                "Current selection",
+                "Everything loaded",
+                "Level 03 Floors",
+            };
+
+            var measure = Bench.Group("What to measure",
+                Ui.Field("Clear height", Ui.Text("2.100", null, 90), "the minimum, in m"),
+                Ui.Field("Report under", Ui.Text("0.050", null, 90),
+                         "how far under the minimum is worth reporting"),
+                Ui.Field("Measure up from", Ui.Choice(sources, said, null, 420),
+                         "the walking surface"),
+                Ui.Field("Measure up to", Ui.Choice(
+                    new[] { "Everything except the surfaces", "Current selection", "MEP" },
+                    "Everything except the surfaces", null, 210),
+                    "what might be too low over it"));
+
+            var rows = new[]
+            {
+                new TableRow(null, "Level 03", "412.0 m²", "9.600 m", string.Empty),
+                new TableRow(null, "Level 03", "88.4 m²", "9.600 m", string.Empty),
+                new TableRow(null, "Level 03", "12.6 m²", "10.050 m", string.Empty),
+                new TableRow(null, "Level 03", "1.4 m²", "9.900 m", "dropped") { Tone = Tone.Warn },
+                new TableRow(null, "Level 03", "0.9 m²", "10.700 m", "dropped") { Tone = Tone.Warn },
+                new TableRow(null, "Level 02", "398.2 m²", "6.000 m", string.Empty),
+            };
+
+            var table = Ui.Table(rows, ("Level", 0), ("Area", 90), ("Top", 90), ("In the check", 90));
+
+            var detected = Bench.Group("Detected walkable surfaces",
+                Ui.Check("Prefer elements whose category names a floor", false, null),
+                Ui.Check("Leave stairs out — detection makes one surface per tread, and the "
+                         + "flight above then reads as low headroom over the treads below it",
+                         false, null),
+                Ui.Runner("Find the surfaces", Ui.Stack(), _ => { }, primary: false),
+                Ui.Line("412 surfaces, 8,940 m², 31 elements refused", 1, true),
+                Ui.Small("31 elements would not give triangles; their bounding-box tops were used "
+                         + "instead."),
+                table,
+                Ui.Picking(table,
+                    new Ui.OnPicked("Drop these {n}", (picked, panel) => { }),
+                    new Ui.OnPicked("Put these {n} back", (picked, panel) => { })),
+                Ui.Small("406 surfaces in the check, 2 dropped"),
+                Ui.Small("What is dropped is kept in the run's own settings, so the same desk "
+                         + "tops do not have to be dropped again next time."),
+                Ui.Small("Detection reads triangles: it keeps every up-facing surface over 0.05 m², "
+                         + "which is a floor, and is also a desk top, a worktop, a window sill and "
+                         + "the top of a wide duct. Read the list before running the check and drop "
+                         + "what is not a floor."),
+                Ui.Small("Both ticks are off to start with: the geometric answer is the default, "
+                         + "and a stair with a soffit too low over it is still worth reporting."));
+
+            return Deck("clash", "checks",
+                        Bench.Surface(null, Ui.Runner("Run", Ui.Stack(), _ => { }),
+                                      Ui.Stack(measure, detected)));
+        }
 
         private static Sheet Page(string id, string title, int height, Func<UIElement> build) =>
             new Sheet { Id = id, Title = title, Height = height, Builder = _ => build(), Widths = new[] { 1180 } };
@@ -837,7 +1001,7 @@ namespace CamelWorks.Studio
             {
                 Padding = new Thickness(14, 10, 14, 10),
                 BorderThickness = new Thickness(0, 0, 0, 1),
-                Child = panel ? Ui.Stack(top, Narrowing()) : Ui.Stack(top),
+                Child = Ui.Stack(top),
             };
 
             head.Tint(Border.BorderBrushProperty, "Bd");
@@ -862,6 +1026,24 @@ namespace CamelWorks.Studio
             Grid.SetRow(list, 1);
             grid.Children.Add(list);
 
+            // Over the rows, not above them. Inside the head it pushed the test list down by its
+            // own height, and the rail's column headings stopped lining up with the board's.
+            if (panel)
+            {
+                var over = Narrowing();
+
+                if (over is FrameworkElement floating)
+                {
+                    floating.Margin = new Thickness(10, 0, 10, 0);
+                    floating.VerticalAlignment = VerticalAlignment.Top;
+                    floating.HorizontalAlignment = HorizontalAlignment.Stretch;
+                }
+
+                Grid.SetRow(over, 1);
+                Panel.SetZIndex(over, 2);
+                grid.Children.Add(over);
+            }
+
             var verbs = new StackPanel { Orientation = Orientation.Horizontal };
             verbs.Children.Add(Ui.Icon(Glyphs.Play, "Run all the tests again", () => { }));
 
@@ -882,7 +1064,9 @@ namespace CamelWorks.Studio
 
             dot.Tint(System.Windows.Shapes.Shape.FillProperty, "RedTx");
 
-            var held = Ui.Link("14 waiting", () => { });            // harness: data
+            // Names what is queued rather than a bare figure. "14 waiting" said nothing about
+            // what was waiting or on what, and the surface itself now says it in the export menu.
+            var held = Ui.Link("14 changes the document has not taken", () => { });  // harness: data
             held.Margin = new Thickness(0);
             held.VerticalAlignment = VerticalAlignment.Center;
 
@@ -924,22 +1108,33 @@ namespace CamelWorks.Studio
         /// <summary>The rail's filter panel, which is where a filter is made and taken off.</summary>
         private static UIElement Narrowing()
         {
-            var body = Ui.Stack(Ui.Eyebrow("Discipline"));
+            // Every facet the product offers, at the width a real job produces. Reviewers read
+            // four chips off this panel and reported that multi-select filtering did not exist.
+            var body = Ui.Stack();
 
-            var parties = new WrapPanel();
+            void Facet(string named, string[] values, string? chosen)
+            {
+                body.Children.Add(Ui.Eyebrow(named));
 
-            foreach (var party in new[] { "Mechanical", "Structures", "Electrical", "Architecture" })
-                parties.Children.Add(Parts.Pick(party, party == "Mechanical", () => { }));
+                var wrap = new WrapPanel();
 
-            body.Children.Add(parties);
-            body.Children.Add(Ui.Eyebrow("Folder"));
+                foreach (var value in values)
+                    wrap.Children.Add(Parts.Pick(
+                        value, string.Equals(value, chosen, StringComparison.Ordinal), () => { }));
 
-            var folders = new WrapPanel();
+                body.Children.Add(wrap);
+            }
 
-            foreach (var folder in new[] { "Week 33", "Week 32" })
-                folders.Children.Add(Parts.Pick(folder, false, () => { }));
+            Facet("Assigned to", new[] { "J. Okonkwo", "R. Patel", "S. Aziz", "M. Lindqvist",
+                                         "Unassigned" }, "J. Okonkwo");
+            Facet("Discipline", new[] { "Mechanical", "Structures", "Electrical", "Architecture",
+                                        "Fire", "Public health" }, "Mechanical");
+            Facet("Level", new[] { "B1", "L01", "L02", "L03", "L04", "Roof" }, null);
+            Facet("Folder", new[] { "Week 33", "Week 32", "Handover" }, null);
+            Facet("Zone", new[] { "Core A", "Core B", "Podium" }, null);
+            Facet("System", new[] { "CHW Supply", "CHW Return", "Small Power", "Wet Riser" }, null);
+            Facet("Since last run", new[] { "New", "Regressed", "Unchanged" }, null);
 
-            body.Children.Add(folders);
             body.Children.Add(Ui.Check("Only tests with something open", false, null));
             body.Children.Add(Ui.Link("Clear all", () => { }));
 
@@ -952,8 +1147,16 @@ namespace CamelWorks.Studio
                 Child = body,
             };
 
-            panel.Tint(Border.BackgroundProperty, "Bg");
+            panel.Tint(Border.BackgroundProperty, "Card");
             panel.Tint(Border.BorderBrushProperty, "Bd");
+
+            panel.Effect = new System.Windows.Media.Effects.DropShadowEffect
+            {
+                BlurRadius = 12,
+                ShadowDepth = 2,
+                Direction = 270,
+                Opacity = 0.18,
+            };
 
             return panel;
         }
@@ -1056,7 +1259,7 @@ namespace CamelWorks.Studio
             var head = new Border
             {
                 Padding = new Thickness(16, 10, 16, 0),
-                Child = Ui.Stack(BoardTitle(), BoardStrip()),
+                Child = Ui.Stack(BoardTitle(), BoardStanding(), BoardStrip()),
             };
 
             grid.Children.Add(head);
@@ -1141,6 +1344,23 @@ namespace CamelWorks.Studio
             words.Children.Add(said.Wearing("Hint"));
 
             row.Children.Add(words);
+
+            return row;
+        }
+
+        /// <summary>
+        /// What the carry-over did, in one line under the title.
+        ///
+        /// It runs on every board build and never said so, which is why reviewers read these
+        /// screens as a product with no memory across runs.
+        /// </summary>
+        private static UIElement BoardStanding()
+        {
+            var row = new WrapPanel { Margin = new Thickness(0, 2, 0, 0) };
+
+            row.Children.Add(Ui.Small(
+                "150 results kept their statuses from the last run, 18 new, "
+                + "3 are back after being resolved, 9 gone from the model."));   // harness: data
 
             return row;
         }
@@ -1240,13 +1460,14 @@ namespace CamelWorks.Studio
                     MinWidth = least,
                 });
 
+            // No Clashes column. A group's member count is beside its name, and the width goes
+            // to the two items and the property column.
             Fixed(26);
             Flexible(2, 110);
-            Flexible(1, 58);
-            Flexible(1, 58);
-            Fixed(44);
+            Flexible(1, 74);
+            Flexible(1, 74);
             Fixed(60);
-            Flexible(1, 60);    // one property column, as somebody's own column would be
+            Flexible(1, 76);    // one property column, as somebody's own column would be
             Fixed(104);
             Fixed(104);
             Fixed(120);
@@ -1267,7 +1488,14 @@ namespace CamelWorks.Studio
         }
 
         /// <summary>A column header: pressable to sort, with a handle to resize it.</summary>
-        private static UIElement Head(string column, bool right, bool on)
+        /// <param name="column">Which column, which is also what it says.</param>
+        /// <param name="right">True for a figure, whose label sits over its digits.</param>
+        /// <param name="on">True when the board is sorted by it.</param>
+        /// <param name="unit">
+        /// What the figures under it are in, for the tooltip. A declared column states its unit
+        /// there rather than in the heading, which has no room for it.
+        /// </param>
+        private static UIElement Head(string column, bool right, bool on, string? unit = null)
         {
             var label = new TextBlock
             {
@@ -1300,8 +1528,11 @@ namespace CamelWorks.Studio
             {
                 Background = Brushes.Transparent,
                 Cursor = System.Windows.Input.Cursors.Hand,
-                ToolTip = on ? "Sorted by " + column + ". Press again to turn it round."
-                             : "Sort by " + column,
+                ToolTip = (on ? "Sorted by " + column + ". Press again to turn it round."
+                              : "Sort by " + column)
+                          + (string.IsNullOrWhiteSpace(unit)
+                                 ? string.Empty
+                                 : " Figures are in " + unit + "."),
                 Child = words,
             };
         }
@@ -1324,22 +1555,33 @@ namespace CamelWorks.Studio
         {
             var body = Ui.Stack(TableHead());
 
+            // Assigned to people, not to disciplines. TeamRoster holds people, roles, companies
+            // and teams, and a fixture that wrote "Mechanical" in the assignee column had three
+            // reviewers report that assignment to a person was missing.
             body.Children.Add(GroupRow("Corridor C — duct against beams", 7, "-48 mm", true, true));
             body.Children.Add(ClashRow("Clash 121", "Duct 400×250", "Beam 610UB", "-48 mm",
-                                       "New", Tone.Bad, "Structures", "CHW Supply", true, false));
+                                       "New", Tone.Bad, "R. Patel · Structures", "CHW Supply",
+                                       true, false));
             body.Children.Add(ClashRow("Clash 122", "Duct 600×300", "Beam 460UB", "-31 mm",
-                                       "Active", Tone.Plain, "Mechanical", "CHW Supply", true, false));
+                                       "Active", Tone.Plain, "J. Okonkwo · Mechanical",
+                                       "CHW Supply", true, false));
+            body.Children.Add(ClashRow("Clash 123", "Duct 600×300", "Beam 460UB", "-18 mm",
+                                       "Approved", Tone.Good, "J. Okonkwo · Mechanical",
+                                       "CHW Supply", true, false));
             body.Children.Add(GroupRow("Riser 2 — pipework against slab edge", 5, "-22 mm", false, false));
 
-            body.Children.Add(Parts.ViewBand(Glyphs.Clash, "Not grouped", "143 loose results",
-                                             "of 143 — tick two or more and press Group", () => { }));
+            body.Children.Add(Parts.ViewBand(Glyphs.Clash, "In no group", "143 results",
+                                             "of 143 — tick two or more to group them, or run "
+                                             + "the rules on the Coordinate tab", () => { }));
 
             body.Children.Add(ClashRow("Clash 208", "Pipe CHW-31", "Wall PC-200", "-52 mm",
                                        "New", Tone.Bad, string.Empty, "CHW Return", false, true));
             body.Children.Add(ClashRow("Clash 209", "Tray CT-9", "Bracing BR-3", "-14 mm",
-                                       "Reviewed", Tone.Warn, "Electrical", "Small Power", false, true));
+                                       "Reviewed", Tone.Warn, "S. Aziz · Electrical",
+                                       "Small Power", false, true));
             body.Children.Add(ClashRow("Clash 210", "Sprinkler SP-88", "Slab L03", "-9 mm",
-                                       "Resolved", Tone.Good, "Fire", "Wet Riser", false, false));
+                                       "Resolved", Tone.Good, "M. Lindqvist · Fire", "Wet Riser",
+                                       false, false));
 
             var card = new Border
             {
@@ -1381,11 +1623,10 @@ namespace CamelWorks.Studio
             Put(grid, Head("Group or result", false, false), 1);
             Put(grid, Head("Item 1", false, false), 2);
             Put(grid, Head("Item 2", false, false), 3);
-            Put(grid, Head("Clashes", true, false), 4);
-            Put(grid, Head("Worst", true, true), 5);
-            Put(grid, Head("System Name", false, false), 6);
-            Put(grid, Head("Status", false, false), 7);
-            Put(grid, Head("Assigned", false, false), 8);
+            Put(grid, Head("Worst", true, true, "mm"), 4);
+            Put(grid, Head("System Name", false, false), 5);
+            Put(grid, Head("Status", false, false), 6);
+            Put(grid, Head("Assigned", false, false), 7);
 
             var band = new Border
             {
@@ -1425,17 +1666,34 @@ namespace CamelWorks.Studio
 
             if (made) words.Children.Add(Parts.Note("grouped by you"));
 
-            Put(grid, words, 1);
+            // The member count, at the right of the name's own cell. The figure alone, with the
+            // word on its tooltip: spelt out it left the group's name showing one letter.
+            var many = new TextBlock
+            {
+                Text = count.ToString(CultureInfo.InvariantCulture),  // harness: data
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(8, 0, 0, 0),
+                TextAlignment = TextAlignment.Right,
+                TextWrapping = TextWrapping.NoWrap,
+                ToolTip = Ui.Count(count, "clash") + " in this group",
+            };
+
+            var named = new DockPanel { LastChildFill = true };
+
+            DockPanel.SetDock(many, Dock.Right);
+            named.Children.Add(many.Wearing("Hint"));
+            named.Children.Add(words);
+
+            Put(grid, named, 1);
             Put(grid, Right(Hint("—")), 2);
             Put(grid, Right(Hint("—")), 3);
-            Put(grid, Figure(count.ToString(CultureInfo.InvariantCulture), false), 4);
-            Put(grid, Figure(worst, true), 5);
+            Put(grid, Figure(worst, true), 4);
 
-            Put(grid, Hint("—"), 6);
-            Put(grid, Parts.InlineChip("New", new[] { "New" }, _ => { }, Tone.Bad, "Set status"), 7);
-            Put(grid, Parts.InlineChip("Structures", new[] { "Structures" }, _ => { }, Tone.Plain, "Assign"), 8);
+            Put(grid, Hint("—"), 5);
+            Put(grid, Parts.InlineChip("New", new[] { "New" }, _ => { }, Tone.Bad, "Set status"), 6);
+            Put(grid, Parts.InlineChip("Structures", new[] { "Structures" }, _ => { }, Tone.Plain, "Assign"), 7);
             var groupVerbs = Verbs();
-            Put(grid, groupVerbs, 9);
+            Put(grid, groupVerbs, 8);
             groupVerbs.Margin = new Thickness(0);
 
             var tone = new Border
@@ -1477,17 +1735,16 @@ namespace CamelWorks.Studio
             Put(grid, Item(a), 2);
             Put(grid, Item(b), 3);
 
-            Put(grid, Right(Hint("—")), 4);
             Put(grid, Figure(worst, worst.StartsWith("-4", StringComparison.Ordinal)
-                                    || worst.StartsWith("-5", StringComparison.Ordinal)), 5);
+                                    || worst.StartsWith("-5", StringComparison.Ordinal)), 4);
 
-            Put(grid, Item(system), 6);
-            Put(grid, Parts.InlineChip(status, new[] { status }, _ => { }, tone, "Set status"), 7);
-            Put(grid, Parts.InlineChip(who, new[] { "Mechanical" }, _ => { }, Tone.Plain, "Assign"), 8);
+            Put(grid, Item(system), 5);
+            Put(grid, Parts.InlineChip(status, new[] { status }, _ => { }, tone, "Set status"), 6);
+            Put(grid, Parts.InlineChip(who, new[] { "Mechanical" }, _ => { }, Tone.Plain, "Assign"), 7);
 
             var verbs = Verbs();
             verbs.Visibility = picked ? Visibility.Visible : Visibility.Hidden;
-            Put(grid, verbs, 9);
+            Put(grid, verbs, 8);
             verbs.Margin = new Thickness(0);
 
             var edge = status == "New" ? Skin.Of("RedTx")

@@ -90,6 +90,9 @@ namespace CamelWorks.Core.Clash
         /// <summary>Which folder inside that test, or null.</summary>
         public string? Group { get; }
 
+        /// <summary>The folder the test itself sits in, when the file said one.</summary>
+        public string? Folder { get; internal set; }
+
         /// <summary>Where it stands.</summary>
         public FindingStatus Status { get; }
 

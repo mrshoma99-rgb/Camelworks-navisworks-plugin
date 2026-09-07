@@ -166,7 +166,11 @@ namespace CamelWorks.Core.Clash
         /// and two captures of different things that happen to be the same size are a warning
         /// somebody can read and dismiss.
         /// </summary>
-        public string Fingerprint() => Kind switch
+        public string Fingerprint() => _fingerprint ??= Printed();
+
+        private string? _fingerprint;
+
+        private string Printed() => Kind switch
         {
             MatrixSourceKind.SelectionSet => "set:" + Named(),
             MatrixSourceKind.SearchSet => "set:" + Named(),

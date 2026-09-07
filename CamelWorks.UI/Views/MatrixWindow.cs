@@ -158,7 +158,7 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>Which slot of the project file the matrix is kept in.</summary>
-        private const string Slot = "clashmatrix";
+        private const string Slot = ClashKeys.Matrix;
 
         /// <summary>One editing session over the matrix.</summary>
         private sealed class Editor
@@ -397,6 +397,12 @@ namespace CamelWorks.UI.Views
 
             /// <summary>What came back, when it has been read. Empty until somebody asks.</summary>
             private MatrixCounts _counts = MatrixCounts.None;
+
+            /// <summary>The count this one replaced, so a cell can say how it has moved.</summary>
+            private MatrixCounts? _before;
+
+            /// <summary>Whether the baseline has already moved this session.</summary>
+            private bool _rotated;
             private MatrixSymbol? _pickedSymbol;
 
             /// <summary>
@@ -2449,7 +2455,7 @@ namespace CamelWorks.UI.Views
                 ways.Children.Add(Ui.Row(
                     "The tests this model already has",
                     "Every clash test says what it is between, so the matrix is already there - "
-                    + "read it back and see it whole.",
+                    + "read it back and see it whole. It replaces the matrix on screen.",
                     "Read the tests",
                     FromModel));
 
@@ -4024,12 +4030,14 @@ namespace CamelWorks.UI.Views
                     cell.BorderBrush = Painted(_style.SpineColour, "SpineBd");
                 else cell.Tint(Border.BorderBrushProperty, spine ? "SpineBd" : "Bd");
 
-                if (_board.IsSelfPair(row, column))
+                // A cell on the diagonal that carries a symbol is a test somebody asked for, so
+                // it counts like any other. Only an empty one is drawn as the spine.
+                if (_board.IsSelfPair(row, column) && _board.At(row, column) == null)
                 {
                     Ground(cell, spine ? _style.SpineColour : string.Empty, spine ? "Spine" : "Nav");
 
                     cell.Child = null;
-                    cell.ToolTip = at + " — a discipline against itself";
+                    cell.ToolTip = at + " — a discipline against itself, with no test on it";
                     return;
                 }
 
@@ -4082,9 +4090,19 @@ namespace CamelWorks.UI.Views
 
                 cell.Background = ground;
 
-                cell.Child = new TextBlock
+                // How the pair has moved since the count this one replaced, in the same text block
+                // as the figure. A horizontal stack measures its children with unbounded width in
+                // the stacking direction, so neither part trimmed and a four-digit count spilled
+                // across the cells beside it.
+                var moved = _counts.Moved(_before, row, column);
+
+                var figure = new TextBlock
                 {
-                    Text = open.ToString(CultureInfo.InvariantCulture),
+                    Text = open.ToString(CultureInfo.InvariantCulture)
+                           + (moved == null || moved == 0
+                               ? string.Empty
+                               : "  " + (moved > 0 ? "+" : "\u2212")
+                                 + Math.Abs(moved.Value).ToString(CultureInfo.InvariantCulture)),
                     FontSize = Math.Max(10, Lettering - 1),
                     FontWeight = open == 0 ? FontWeights.Normal : FontWeights.SemiBold,
                     HorizontalAlignment = HorizontalAlignment.Center,
@@ -4094,13 +4112,22 @@ namespace CamelWorks.UI.Views
                     Foreground = Ui.InkOn(ground),
                 };
 
+                cell.Child = figure;
+
                 cell.ToolTip = at + " — " + row.Titled + " against " + column.Titled + ". "
                                + (open == 0
                                    ? "Tested, nothing open"
                                    : Ui.Count(open, "clash") + " still open")
                                + (ever > open
                                    ? " of " + ever.ToString(CultureInfo.InvariantCulture) + " found."
-                                   : ".");
+                                   : ".")
+                               + (moved == null
+                                   ? string.Empty
+                                   : moved == 0
+                                       ? " Unchanged since the last count."
+                                       : " " + Math.Abs(moved.Value).ToString(CultureInfo.InvariantCulture)
+                                         + (moved > 0 ? " more" : " fewer")
+                                         + " than the last count.");
 
                 Named(cell);
             }
@@ -6050,7 +6077,11 @@ namespace CamelWorks.UI.Views
                 foreach (var column in _board.Columns)
                 {
                     if (!_board.IsKeptHalf(row, column)) continue;
-                    if (_board.IsSelfPair(row, column)) continue;
+
+                    // A diagonal cell somebody has written a symbol in is a real test - a duct
+                    // against its own discipline - and the cell draws its count. Skipped here
+                    // outright, it was drawn with a number and left out of the bar above it.
+                    if (_board.IsSelfPair(row, column) && _board.At(row, column) == null) continue;
 
                     var open = _counts.OpenBetween(row, column);
 
@@ -6123,16 +6154,19 @@ namespace CamelWorks.UI.Views
                 foreach (var column in _board.Columns)
                 {
                     if (!_board.IsKeptHalf(row, column)) continue;
-                    if (_board.IsSelfPair(row, column)) continue;
 
                     var held = _board.At(row, column);
 
+                    // An empty diagonal is not a pair; a written one is, the same as in the bar
+                    // above and in the cell itself.
                     if (held == null || MatrixBoard.IsNotRequired(held)) continue;
 
                     live++;
                 }
 
-                var done = _board.Ranks().Count(one => !_board.IsSelfPair(one.Row, one.Column));
+                var done = _board.Ranks().Count(
+                    one => !_board.IsSelfPair(one.Row, one.Column)
+                           || _board.At(one.Row, one.Column) != null);
 
                 _progress.Children.Add(Ui.Eyebrow("Ranked"));
 
@@ -6337,16 +6371,14 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private void CountKeys()
             {
-                var worst = Math.Max(1, _counts.Worst);
+                var worst = _counts.Worst;
 
                 Keyed(Skin.Of("OkBg"), "0", "Nothing open",
                       "tested, and everything on it is decided");
 
-                Keyed(Heat((worst + 1) / 2), "\u2026", "Some open",
-                      "the wash runs to the worst on this board");
-
-                Keyed(Heat(worst), worst.ToString(CultureInfo.InvariantCulture), "The worst pair",
-                      "which is where a meeting goes first");
+                // A ramp rather than two samples off it, so the key states where the scale runs
+                // from and to.
+                if (worst > 0) Ramp(worst);
 
                 Keyed(System.Windows.Media.Brushes.Transparent, string.Empty, "No test covers it",
                       "a hole in the coordination, not a clean pair");
@@ -6355,6 +6387,57 @@ namespace CamelWorks.UI.Views
 
                 says.TextWrapping = TextWrapping.Wrap;
                 says.Margin = new Thickness(4, 6, 4, 4);
+
+                _palette.Children.Add(says);
+            }
+
+            /// <summary>A left-to-right sweep between two brushes, or a flat fill if either is not solid.</summary>
+            /// <param name="from">The colour at one open clash.</param>
+            /// <param name="to">The colour at the worst pair.</param>
+            private static System.Windows.Media.Brush Sweep(System.Windows.Media.Brush from,
+                                                            System.Windows.Media.Brush to) =>
+                from is System.Windows.Media.SolidColorBrush least
+                && to is System.Windows.Media.SolidColorBrush most
+                    ? new System.Windows.Media.LinearGradientBrush(least.Color, most.Color, 0)
+                    : to;
+
+            /// <summary>
+            /// The heat scale, as a bar from one open clash to the worst pair on the board.
+            /// </summary>
+            /// <param name="worst">The most open clashes on any one pair.</param>
+            private void Ramp(int worst)
+            {
+                var bar = new Border
+                {
+                    Height = 12,
+                    CornerRadius = new CornerRadius(4),
+                    BorderThickness = new Thickness(1),
+                    Margin = new Thickness(5, 4, 6, 2),
+                    Background = Sweep(Heat(1), Heat(worst)),
+                };
+
+                bar.Tint(Border.BorderBrushProperty, "Bd");
+
+                var ends = new DockPanel
+                {
+                    LastChildFill = false,
+                    Margin = new Thickness(5, 0, 6, 4),
+                };
+
+                var most = Ui.Small(worst.ToString(CultureInfo.InvariantCulture) + " open");
+
+                DockPanel.SetDock(most, Dock.Right);
+                ends.Children.Add(most);
+                ends.Children.Add(Ui.Small("1 open"));
+
+                _palette.Children.Add(bar);
+                _palette.Children.Add(ends);
+
+                var says = Ui.Small("The wash runs to the worst pair on this board, which is where "
+                                    + "a meeting goes first.");
+
+                says.TextWrapping = TextWrapping.Wrap;
+                says.Margin = new Thickness(5, 0, 6, 4);
 
                 _palette.Children.Add(says);
             }
@@ -9201,7 +9284,7 @@ namespace CamelWorks.UI.Views
                     FromSets),
 
                 Parts.Entry.Saying("From existing clash tests", Glyphs.Model,
-                    "Every test says what it is between, so the matrix is already there",
+                    "Every test says what it is between - replaces the matrix on screen",
                     FromModel),
 
                 Parts.Entry.Saying("From a spreadsheet", Glyphs.Table,
@@ -9415,6 +9498,28 @@ namespace CamelWorks.UI.Views
                     Touched();
                     Recount();
                 }),
+
+                // One storey for the whole board, which is what {level} fills from. A level cuts
+                // across every discipline on the grid, so it is not a row's field: the same grid
+                // is built again for the next floor.
+                Parts.Entry.Saying(
+                    _board.Level.Length == 0
+                        ? "Which storey these tests are about"
+                        : "Storey: " + _board.Level,
+                    Glyphs.Model,
+                    "Fills {level} in the pattern. Leave it empty for a board that is not per-storey",
+                    () => Parts.Ask(_grid,
+                        "Which storey are these tests about? \u201CL03\u201D, \u201CLevel 3\u201D. "
+                        + "Leave it empty for a board covering the whole building.",
+                        _board.Level, "Use it", typed =>
+                        {
+                            Remember(what: "naming the storey the board is about");
+
+                            _board.Level = (typed ?? string.Empty).Trim();
+
+                            Touched();
+                            Recount();
+                        })),
 
                 Parts.Entry.Rule(),
                 Parts.Entry.Heading("Destination"),
@@ -9700,6 +9805,7 @@ namespace CamelWorks.UI.Views
                     // moment, and a stale one silently redrawn ten minutes later is worse than
                     // counting again.
                     _counts = MatrixCounts.None;
+                    _before = null;
 
                     RedrawCells();
                     RedrawStrip();
@@ -9744,6 +9850,31 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
+                // Keep this count, and the one it replaces, so the grid can say how each pair has
+                // moved. Runs were already kept as week folders and MatrixDiff already compared
+                // two plans; nothing compared two counts.
+                //
+                // The baseline moves once per session. Counting twice in an afternoon must not
+                // make the second count its own baseline and throw last week's away, which is the
+                // only figure the delta is worth reading against.
+                var section = _session.Store.Section(ProjectStore.ClashSection);
+
+                if (!_rotated)
+                {
+                    if (MatrixCounts.FromJson(section[ClashKeys.MatrixCounts]) != null)
+                        section.Set(ClashKeys.MatrixCountsBefore, section[ClashKeys.MatrixCounts]);
+
+                    _rotated = true;
+                }
+
+                _before = MatrixCounts.FromJson(section[ClashKeys.MatrixCountsBefore]);
+
+                section.Set(ClashKeys.MatrixCounts, counted.ToJson(DateTimeOffset.UtcNow));
+
+                if (!_session.Store.Save())
+                    Warned(Ui.Note("The count is on the grid but could not be written down, so "
+                                   + "the next one has nothing to compare against."));
+
                 _counts = counted;
                 _shown = Showing.Results;
 
@@ -9757,6 +9888,26 @@ namespace CamelWorks.UI.Views
 
             /// <summary>Read the matrix the document is already carrying in its tests.</summary>
             private void FromModel()
+            {
+                // A read builds the whole grid from the document's tests, so it discards whatever
+                // is on screen. The menu entry says so; a board with work in it is asked as well,
+                // because "From existing clash tests" reads as adding to what is there.
+                if (_board.Rows.Count + _board.Columns.Count > 0)
+                {
+                    Parts.Sure(_grid,
+                        "Reading the tests builds the matrix again from what the document holds. "
+                        + "The rows, columns and symbols on screen are replaced. Nothing in the "
+                        + "document changes, and Undo brings this matrix back.",
+                        "Read the tests", ReadFromModel);
+
+                    return;
+                }
+
+                ReadFromModel();
+            }
+
+            /// <summary>Build the matrix out of the document's clash tests.</summary>
+            private void ReadFromModel()
             {
                 if (!_session.Clash.IsAvailable)
                 {

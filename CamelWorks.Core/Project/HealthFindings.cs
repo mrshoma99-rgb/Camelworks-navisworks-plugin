@@ -13,9 +13,9 @@ namespace CamelWorks.Core.Project
     /// elements, and discarded everything on leaving the tab. Nothing could be marked accepted,
     /// assigned, or raised as an issue. Emitting findings supplies all three.
     ///
-    /// Parent and child. One rule failing four hundred elements is one thing to decide about and
-    /// four hundred things to look at, so the rule emits a parent carrying the decision and a child
-    /// per element carrying the location, which is what <see cref="Finding"/> was shaped for.
+    /// One finding, many locations. One rule failing four hundred elements is one thing to decide
+    /// about and four hundred places to look at, so the rule emits one finding carrying the decision
+    /// and a location per element carrying the place.
     ///
     /// Identity is the rule rather than the headline. A review headline reads "37 elements sit on
     /// top of each other", with the count in the words, so identifying off one would give every
@@ -34,13 +34,13 @@ namespace CamelWorks.Core.Project
         public const string Counted = "Elements";
 
         /// <summary>
-        /// One review finding, as a finding with a child per element it names.
+        /// One review finding, as a finding with a location per element it names.
         /// </summary>
         /// <param name="finding">What the review said.</param>
         /// <param name="cap">
-        /// How many children to make at most. A rule that fails ninety thousand elements is one
-        /// decision and ninety thousand rows nobody scrolls, and the file it would write is worse
-        /// than useless. The parent still says how many there were.
+        /// How many locations to make at most. A rule that fails ninety thousand elements is one
+        /// decision and ninety thousand places nobody scrolls, and the file it would write is worse
+        /// than useless. The finding still says how many there were.
         /// </param>
         public static Finding From(ReviewFinding finding, int cap = DefaultCap)
         {
@@ -66,9 +66,8 @@ namespace CamelWorks.Core.Project
             {
                 if (element.IsEmpty || made >= Math.Max(0, cap)) continue;
 
-                parent.AddChild(Finding.Create(FindingSource.Health, finding.Check,
-                                               finding.Headline, new[] { element },
-                                               finding.Named));
+                parent.AddLocation(new FindingLocation(parent.Id + "/" + element, new[] { element },
+                                                       Held(element)));
                 made++;
             }
 
@@ -76,7 +75,23 @@ namespace CamelWorks.Core.Project
         }
 
         /// <summary>
-        /// How many children one rule may make.
+        /// How firmly one element is identified, for the per-place line.
+        ///
+        /// The review has no per-element text — every element it names failed the same rule for the
+        /// same reason, and that reason is the finding's own headline. Repeating the headline on
+        /// every place says nothing about the place. What does differ per place is the rung its key
+        /// rests on, which is what decides whether the coordinator can trust being sent there.
+        /// </summary>
+        /// <param name="element">The element at this place.</param>
+        private static string Held(ElementKey element) => element.Rung switch
+        {
+            KeyRung.InstanceGuid => "Identified by instance GUID.",
+            KeyRung.TreePath => "Identified by tree path; a re-organised tree breaks it.",
+            _ => "Identified by category and size only; treat the match as a proposal.",
+        };
+
+        /// <summary>
+        /// How many locations one rule may make.
         ///
         /// Five hundred: enough that "show me all of them" is still the whole answer on any
         /// federation somebody actually coordinates, and few enough that a pathological rule
@@ -86,7 +101,7 @@ namespace CamelWorks.Core.Project
 
         /// <summary>A whole review, as findings. Clean checks say nothing, so they make none.</summary>
         /// <param name="review">The review.</param>
-        /// <param name="cap">How many children each rule may make.</param>
+        /// <param name="cap">How many locations each rule may make.</param>
         public static IReadOnlyList<Finding> For(FederationReview? review, int cap = DefaultCap)
         {
             var found = new List<Finding>();

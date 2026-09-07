@@ -15,13 +15,17 @@ namespace CamelWorks.Core.Testing
     /// writing, that it did not write twice, that it re-resolved after a generation bump instead of
     /// reusing a handle. Those are the failures that survive state-only tests.
     /// </summary>
-    public sealed class FakeDocument : IModelDocument
+    public sealed class FakeDocument : IModelDocument, ITriangleSource
     {
         private readonly List<FakeItem> _items = new List<FakeItem>();
         private readonly List<FakeSource> _models = new List<FakeSource>();
         private readonly List<string> _log = new List<string>();
         private readonly Dictionary<string, List<ElementKey>> _sets =
             new Dictionary<string, List<ElementKey>>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<ElementKey, TriangleMesh?> _meshes =
+            new Dictionary<ElementKey, TriangleMesh?>();
+        private int _refusalsInARow;
+        private bool _somethingRead;
         private List<ElementKey> _selection = new List<ElementKey>();
 
         /// <inheritdoc />
@@ -137,6 +141,166 @@ namespace CamelWorks.Core.Testing
         public IModelWriteTransaction BeginWrite(string description) => new FakeWriteTransaction(this, description);
 
         internal FakeItem? Find(ElementKey key) => _items.FirstOrDefault(i => i.Key == key);
+
+        // ---- Triangles ------------------------------------------------------------------
+        //
+        // The seam's far side is a COM callback that cannot run here, so everything the walkable
+        // surface detector and the fall-hazard raster are asserted on is asserted against these.
+
+        /// <summary>
+        /// Whether this seat can produce triangles at all. Settable, so the path a caller takes
+        /// when it cannot — element boxes instead of surfaces — is tested rather than assumed.
+        /// </summary>
+        public bool CanReadTriangles { get; set; } = true;
+
+        /// <inheritdoc />
+        public string? Unavailable { get; set; }
+
+        /// <summary>
+        /// Whether a mesh is welded on the way out, as the host adapter welds.
+        ///
+        /// Settable so a test can watch what happens without it: the host emits a fresh vertex per
+        /// triangle corner, the detector's flood fill walks shared vertex indices, and unwelded
+        /// input therefore produces one cluster per triangle and no surfaces at all.
+        /// </summary>
+        public bool WeldsOnRead { get; set; } = true;
+
+        /// <summary>Give an element triangles, exactly as supplied.</summary>
+        /// <param name="key">Which element.</param>
+        /// <param name="positions">Vertex positions, three doubles each, in metres.</param>
+        /// <param name="indices">Triangle indices, three per triangle.</param>
+        public void SetMesh(ElementKey key, IReadOnlyList<double> positions, IReadOnlyList<int> indices)
+        {
+            _meshes[key] = new TriangleMesh(positions, indices);
+            Record("mesh.set " + key + " t=" + (indices?.Count ?? 0) / 3);
+        }
+
+        /// <summary>Give an element a horizontal slab, one that can be walked on.</summary>
+        /// <param name="key">Which element.</param>
+        /// <param name="x">Low corner, X, in metres.</param>
+        /// <param name="y">Low corner, Y, in metres.</param>
+        /// <param name="z">Underside, in metres.</param>
+        /// <param name="width">Size along X, in metres.</param>
+        /// <param name="depth">Size along Y, in metres.</param>
+        /// <param name="thickness">Size along Z, in metres.</param>
+        public void SetSlab(ElementKey key, double x, double y, double z,
+                            double width, double depth, double thickness) =>
+            SetBox(key, new BoundingBox(x, y, z, x + width, y + depth, z + thickness));
+
+        /// <summary>
+        /// Give an element a box, as twelve triangles wound outwards — so its top face is
+        /// up-facing and its underside is not, which is what separates a slab from its own soffit.
+        /// </summary>
+        /// <param name="key">Which element.</param>
+        /// <param name="box">The box, in metres.</param>
+        public void SetBox(ElementKey key, BoundingBox box)
+        {
+            var positions = new[]
+            {
+                box.MinX, box.MinY, box.MinZ,
+                box.MaxX, box.MinY, box.MinZ,
+                box.MaxX, box.MaxY, box.MinZ,
+                box.MinX, box.MaxY, box.MinZ,
+                box.MinX, box.MinY, box.MaxZ,
+                box.MaxX, box.MinY, box.MaxZ,
+                box.MaxX, box.MaxY, box.MaxZ,
+                box.MinX, box.MaxY, box.MaxZ,
+            };
+
+            var indices = new[]
+            {
+                4, 5, 6, 4, 6, 7,   // top, facing up
+                0, 2, 1, 0, 3, 2,   // underside, facing down
+                0, 1, 5, 0, 5, 4,
+                1, 2, 6, 1, 6, 5,
+                2, 3, 7, 2, 7, 6,
+                3, 0, 4, 3, 4, 7,
+            };
+
+            _meshes[key] = new TriangleMesh(positions, indices);
+            Record("mesh.box " + key);
+        }
+
+        /// <summary>Have the host refuse this element's triangles, as a COM failure does.</summary>
+        /// <param name="key">Which element.</param>
+        public void RefuseTriangles(ElementKey key)
+        {
+            _meshes[key] = null;
+            Record("mesh.refuse " + key);
+        }
+
+        /// <summary>
+        /// How many refusals in a row, with nothing ever read, before this seat calls itself
+        /// unable — as a host source does when its primitive reader is missing.
+        ///
+        /// Zero never does, which is the ordinary seat. Settable so the caller's whole-seat path is
+        /// reached from a seat that starts out saying it can read, which is how the real one
+        /// behaves: nothing can know the reader is missing until something has been refused.
+        /// </summary>
+        public int RefusalsBeforeTheSeatIsUnable { get; set; }
+
+        /// <inheritdoc />
+        public bool TryRead(ElementKey key, out TriangleMesh? mesh)
+        {
+            mesh = null;
+
+            if (!CanReadTriangles) return false;
+
+            // An element nobody gave triangles to was read and has none, which is not a refusal:
+            // a grouping node and an annotation both read that way.
+            if (!_meshes.TryGetValue(key, out var held)) { mesh = TriangleMesh.Empty; Kept(); return true; }
+
+            if (held == null)
+            {
+                Refused();
+
+                return false;
+            }
+
+            mesh = WeldsOnRead ? held.Weld() : held;
+            Kept();
+
+            return true;
+        }
+
+        /// <summary>An element that read, which clears any run of refusals.</summary>
+        private void Kept()
+        {
+            _somethingRead = true;
+            _refusalsInARow = 0;
+        }
+
+        /// <summary>An element the seat refused, which can be the seat itself refusing.</summary>
+        private void Refused()
+        {
+            _refusalsInARow++;
+
+            if (_somethingRead || RefusalsBeforeTheSeatIsUnable <= 0
+                || _refusalsInARow < RefusalsBeforeTheSeatIsUnable)
+                return;
+
+            CanReadTriangles = false;
+            Unavailable = "the primitive reader on this seat refused the first "
+                + _refusalsInARow.ToString(CultureInfo.InvariantCulture)
+                + " elements it was asked for and has read none.";
+        }
+
+        /// <inheritdoc />
+        public IEnumerable<KeyValuePair<ElementKey, TriangleMesh>> Read(TraversalScope scope,
+                                                                       Func<int, bool>? onProgress)
+        {
+            var read = 0;
+
+            foreach (var item in Traverse(scope))
+            {
+                if (onProgress != null && !onProgress(read)) yield break;
+
+                read++;
+
+                if (TryRead(item.Key, out var mesh) && mesh != null)
+                    yield return new KeyValuePair<ElementKey, TriangleMesh>(item.Key, mesh);
+            }
+        }
     }
 
     /// <summary>A model in a <see cref="FakeDocument"/>.</summary>

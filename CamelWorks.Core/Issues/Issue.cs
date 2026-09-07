@@ -2,145 +2,94 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Store;
 
 namespace CamelWorks.Core.Issues
 {
     /// <summary>
-    /// Where an issue came from. The one fact about an issue nobody may edit.
+    /// A finding-set somebody raised.
     ///
-    /// Written and read back by name rather than by number, so a member appended here leaves
-    /// every issue anybody has already raised reading exactly as it did.
-    /// </summary>
-    public enum IssueOrigin
-    {
-        /// <summary>Somebody wrote it.</summary>
-        Manual = 0,
-
-        /// <summary>Made from one or more clash results.</summary>
-        Clash = 1,
-
-        /// <summary>Made from a clearance finding.</summary>
-        Clearance = 2,
-
-        /// <summary>Read out of a BCF file somebody sent.</summary>
-        Imported = 3,
-
-        /// <summary>Made from a difference between two revisions of the model.</summary>
-        Compare = 4,
-
-        /// <summary>Made from a model or data health rule.</summary>
-        Health = 5,
-
-        /// <summary>Made from a specification the model failed.</summary>
-        Ids = 6,
-    }
-
-    /// <summary>One thing somebody said on an issue, and when.</summary>
-    public sealed class IssueComment
-    {
-        /// <summary>Create a comment.</summary>
-        /// <param name="author">Who said it.</param>
-        /// <param name="whenTicks">When, in UTC ticks.</param>
-        /// <param name="body">What they said.</param>
-        public IssueComment(string author, long whenTicks, string body)
-        {
-            Author = string.IsNullOrWhiteSpace(author) ? "unknown" : author.Trim();
-            WhenTicks = whenTicks;
-            Body = body ?? string.Empty;
-        }
-
-        /// <summary>Who said it.</summary>
-        public string Author { get; }
-
-        /// <summary>When, in UTC ticks.</summary>
-        public long WhenTicks { get; }
-
-        /// <summary>What they said.</summary>
-        public string Body { get; }
-
-        /// <summary>Serialise.</summary>
-        public JsonValue ToJson() =>
-            JsonValue.Object()
-                .Set("author", Author)
-                .Set("when", WhenTicks)
-                .Set("body", Body);
-
-        /// <summary>Read one back, or null when the record cannot be read.</summary>
-        /// <param name="json">One saved comment.</param>
-        public static IssueComment? FromJson(JsonValue? json)
-        {
-            if (json == null || json.Kind != JsonKind.Object) return null;
-
-            var body = json["body"].AsString();
-            if (body == null) return null;
-
-            return new IssueComment(json["author"].AsString() ?? "unknown",
-                                    json["when"].AsLong(), body);
-        }
-
-        /// <inheritdoc />
-        public override string ToString() => Author + ": " + Body;
-    }
-
-    /// <summary>
-    /// One coordination issue, whatever found it.
+    /// A finding is what a check produced — a clash, a clearance breach, a rule the model failed.
+    /// An issue is what somebody decided to do about one or several of them, and it can exist with
+    /// no finding at all ("no access to this valve"). Collapsing the two would mean either inventing
+    /// machine findings for things no machine found, or giving every one of eighteen thousand
+    /// clashes a conversation nobody will have.
     ///
-    /// Separate from the clash result because a clash result is what an engine measured and an issue
-    /// is what somebody decided to do about something. Most of what goes wrong in a federation is
-    /// not an intersection — a door swings into a corridor, a valve has nowhere to be pulled to, the
-    /// clear height under a duct is short, a reviewer sent a BCF file of their own — and none of
-    /// those fits a record whose identity is "two elements that touch". So the issue is its own
-    /// record, and the clash result, the clearance finding and the imported topic are three of the
-    /// four ways one gets raised.
+    /// It gains nothing a finding does not have. The status is the same five-rung lattice, the
+    /// comment is the same type, the priority comes from the same project-configured list, and the
+    /// due date is the same day number. An issue over three findings offering a different
+    /// vocabulary from the findings it covers is how two records that describe one problem drift.
     ///
-    /// The origin is never edited. Everything else about an issue is judgement and can be changed by
-    /// the next person; where it came from is a fact, and an issue that could be re-labelled as
-    /// manual after being imported could not be reconciled with the file it came from.
+    /// An issue may only be attached to findings that already exist. There is no holding pen for a
+    /// result the register has not seen: a placeholder keyed on something other than a finding id
+    /// has to be swapped for one later, and that swap is what the deleted clash-key list was.
     /// </summary>
     public sealed class Issue
     {
-        /// <summary>The statuses an issue moves through, in the order they read.</summary>
-        public static readonly string[] Statuses =
-            { "Draft", "Open", "Answered", "Pending", "In dispute", "Closed" };
+        /// <summary>What <see cref="Provenance"/> says for an issue somebody typed.</summary>
+        public const string ByHand = "Hand";
+
+        /// <summary>What <see cref="Provenance"/> says for an issue read out of a BCF file.</summary>
+        public const string ByImport = "Bcf";
+
+        /// <summary>The <see cref="Facts"/> key holding which level it is on.</summary>
+        public const string LevelFact = "level";
+
+        /// <summary>The <see cref="Facts"/> key holding which zone or room it is in.</summary>
+        public const string ZoneFact = "zone";
+
+        /// <summary>The <see cref="Facts"/> key holding where it came from — a test name, a file name.</summary>
+        public const string SourceFact = "source";
+
+        /// <summary>The <see cref="Facts"/> key holding a typed resolution, as JSON.</summary>
+        public const string InstructionFact = "instruction";
+
+        /// <summary>
+        /// The <see cref="Facts"/> key holding this issue's board identity, as a clash key.
+        ///
+        /// Written once and read back thereafter. A clash key is quantised around a point, so
+        /// re-deriving it every board build would move it the moment somebody nudged an element,
+        /// and the group decision, the pinned group and the per-key assignment recorded against the
+        /// old key would all be left behind. A clash-pipeline concept and not a field every issue
+        /// needs, so it rides here rather than on the record. See <c>IssueItems.KeyFor</c>.
+        /// </summary>
+        public const string KeyFact = "key";
 
         /// <summary>The kinds an issue is, offered rather than imposed — the field takes any text.</summary>
         public static readonly string[] Types =
             { "Coordination", "Clash", "Clearance", "Design", "Safety", "Quality", "RFI", "Snag" };
 
-        /// <summary>How urgent, in the order they read.</summary>
-        public static readonly string[] Priorities = { "Low", "Normal", "High", "Critical" };
-
         /// <summary>Why it happened, offered for the ones that repeat.</summary>
         public static readonly string[] RootCauses =
             { "Design", "Coordination", "Information", "Fabrication", "Site", "Change", "Unknown" };
 
-        /// <summary>The status an issue nobody has closed is in.</summary>
-        public const string OpenStatus = "Open";
-
-        /// <summary>The status that takes an issue off the open count.</summary>
-        public const string ClosedStatus = "Closed";
-
         /// <summary>Create an issue.</summary>
         /// <param name="id">Stable id, unique on this project.</param>
         /// <param name="title">What it is called.</param>
-        /// <param name="origin">What raised it. Never changes afterwards.</param>
-        public Issue(string id, string title, IssueOrigin origin = IssueOrigin.Manual)
+        /// <param name="provenance">Where it came from. See <see cref="Provenance"/>.</param>
+        public Issue(string id, string title, string? provenance = ByHand)
         {
             Id = string.IsNullOrWhiteSpace(id)
                 ? throw new ArgumentException("id is required", nameof(id))
                 : id.Trim();
 
             Title = string.IsNullOrWhiteSpace(title) ? "Untitled issue" : title.Trim();
-            Origin = origin;
+            Provenance = string.IsNullOrWhiteSpace(provenance) ? ByHand : provenance!.Trim();
         }
 
         /// <summary>Stable id, unique on this project.</summary>
         public string Id { get; }
 
-        /// <summary>What raised it. A fact about the past, so it is set once.</summary>
-        public IssueOrigin Origin { get; }
+        /// <summary>
+        /// Where this issue came from — <see cref="ByHand"/>, <see cref="ByImport"/>, a check's key.
+        ///
+        /// Set at creation and never derived. An imported topic arrives with no findings attached,
+        /// so the number of attached findings cannot tell an imported issue from a hand-typed one,
+        /// and the list screens filter on exactly that distinction.
+        /// </summary>
+        public string Provenance { get; set; }
 
         /// <summary>What it is called.</summary>
         public string Title { get; set; }
@@ -148,32 +97,28 @@ namespace CamelWorks.Core.Issues
         /// <summary>What is wrong, in the words of whoever saw it.</summary>
         public string? Description { get; set; }
 
-        /// <summary>What kind of issue it is.</summary>
-        public string Type { get; set; } = "Coordination";
+        /// <summary>What kind of issue it is. A BCF round-trip field.</summary>
+        public string? Type { get; set; } = "Coordination";
 
-        /// <summary>Where it stands.</summary>
-        public string Status { get; set; } = OpenStatus;
+        /// <summary>
+        /// Where it stands, on the same lattice as a finding.
+        ///
+        /// A person deciding about an issue may demote it; that is a direct edit, not a merge, and
+        /// <see cref="FindingStatusLattice.IsDemotion"/> is what a screen confirms on.
+        /// </summary>
+        public FindingStatus Status { get; set; } = FindingStatus.Active;
 
-        /// <summary>How urgent.</summary>
-        public string Priority { get; set; } = "Normal";
+        /// <summary>How urgent, from the project's configurable list. Null until somebody sets one.</summary>
+        public string? Priority { get; set; }
 
         /// <summary>Who has to do something about it.</summary>
         public string? AssignedTo { get; set; }
 
-        /// <summary>Who raised it.</summary>
+        /// <summary>Who raised it. A BCF round-trip field.</summary>
         public string? Author { get; set; }
 
         /// <summary>Why it happened, when somebody has said.</summary>
         public string? RootCause { get; set; }
-
-        /// <summary>Which level it is on, when one is known.</summary>
-        public string? Level { get; set; }
-
-        /// <summary>Which zone or room, when one is known.</summary>
-        public string? Zone { get; set; }
-
-        /// <summary>Where it came from, said in one line — a test name, a file name.</summary>
-        public string? Source { get; set; }
 
         /// <summary>When it was raised, in UTC ticks.</summary>
         public long CreatedTicks { get; set; }
@@ -181,8 +126,14 @@ namespace CamelWorks.Core.Issues
         /// <summary>When it was last edited, in UTC ticks.</summary>
         public long ModifiedTicks { get; set; }
 
-        /// <summary>When it is due, in UTC ticks, or zero for no date.</summary>
-        public long DueTicks { get; set; }
+        /// <summary>
+        /// When it is due, as a day number, or null for no date.
+        ///
+        /// Whole days since <see cref="DateTime.MinValue"/>, the same unit as
+        /// <see cref="Finding.DueDayNumber"/>. Not ticks: a due date is a day somebody named and
+        /// not an instant anybody observed, and a tick value read as a day number lands in year 1.
+        /// </summary>
+        public int? DueDayNumber { get; set; }
 
         /// <summary>Whether it has a place in the model.</summary>
         public bool HasPoint { get; set; }
@@ -200,19 +151,8 @@ namespace CamelWorks.Core.Issues
         public IList<ElementKey> Elements { get; } = new List<ElementKey>();
 
         /// <summary>
-        /// The clash results it covers, when it was raised from any.
-        ///
-        /// Superseded by <see cref="Findings"/> and kept for reading only. An issue could previously
-        /// hold clash results and nothing else, so this is what older projects have. A clash key
-        /// names two elements and a place but not the test that found them, so nothing can turn one
-        /// into a finding id on its own; the swap happens on the next read of the results, where
-        /// both are in hand. Until then the issue still records which clashes it is about.
-        /// </summary>
-        public IList<ClashKey> Clashes { get; } = new List<ClashKey>();
-
-        /// <summary>
-        /// The findings it covers, by id — one clash, a whole test's worth, a clearance breach, a
-        /// health rule's failures. Any check's, and any mixture.
+        /// The findings it covers, by id — one clash, a whole specification, a clearance breach.
+        /// Any check's, and any mixture.
         ///
         /// Ids rather than the findings themselves. A finding's id is derived from what makes it
         /// that finding, so it survives a re-run that renumbers everything the host issued. An issue
@@ -223,39 +163,60 @@ namespace CamelWorks.Core.Issues
         /// <summary>Labels, free text, as BCF carries them.</summary>
         public IList<string> Labels { get; } = new List<string>();
 
-        /// <summary>The conversation, oldest first.</summary>
-        public IList<IssueComment> Comments { get; } = new List<IssueComment>();
+        /// <summary>The conversation, oldest first. The same comment type a finding carries.</summary>
+        public IList<FindingComment> Comments { get; } = new List<FindingComment>();
+
+        /// <summary>
+        /// The producer's own values, by name — level, zone, the file a topic arrived in.
+        ///
+        /// The open bag that stops this record growing a field per check. Nothing
+        /// coordination-specific is a field here, so a check can carry its own facts onto an issue.
+        /// </summary>
+        public IDictionary<string, string?> Facts { get; } =
+            new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>Its GUID in the BCF file it came from or went out in, when it has one.</summary>
         public string? BcfGuid { get; set; }
 
-        /// <summary>True when it is not closed.</summary>
-        public bool IsOpen =>
-            !string.Equals(Status, ClosedStatus, StringComparison.OrdinalIgnoreCase);
+        /// <summary>True when it is still somebody's to deal with.</summary>
+        public bool IsOpen => FindingStatusLattice.IsOpen(Status);
 
-        /// <summary>True when it is due and the day has passed.</summary>
-        /// <param name="nowTicks">Now, in UTC ticks.</param>
-        public bool IsOverdue(long nowTicks) => IsOpen && DueTicks > 0 && DueTicks < nowTicks;
+        /// <summary>True when it is open, due, and the day has passed.</summary>
+        /// <param name="today">Today, as a day number.</param>
+        public bool IsOverdue(int today) =>
+            IsOpen && DueDayNumber != null && DueDayNumber.Value < today;
 
         /// <summary>The latest thing anybody said, or null.</summary>
-        public IssueComment? LastComment =>
+        public FindingComment? LastComment =>
             Comments.Count == 0 ? null : Comments[Comments.Count - 1];
 
-        /// <summary>Say something on it, and stamp it as edited.</summary>
-        /// <param name="author">Who is speaking.</param>
-        /// <param name="body">What they say.</param>
-        /// <param name="whenTicks">When, in UTC ticks.</param>
-        public void Say(string author, string body, long whenTicks)
+        /// <summary>
+        /// Which checks this issue's findings came from, in the order they read.
+        ///
+        /// Derived from the findings, falling back to <see cref="Provenance"/> when none are
+        /// attached — which is the ordinary state of an imported or hand-typed issue.
+        /// </summary>
+        /// <param name="register">Where the findings are.</param>
+        public IReadOnlyList<string> Sources(FindingRegister? register)
         {
-            if (string.IsNullOrWhiteSpace(body)) return;
+            var sources = new List<string>();
 
-            Comments.Add(new IssueComment(author, whenTicks, body.Trim()));
-            ModifiedTicks = whenTicks;
+            foreach (var id in Findings)
+            {
+                var finding = register?.Find(id);
+
+                if (finding != null && !sources.Contains(finding.Source, StringComparer.Ordinal))
+                    sources.Add(finding.Source);
+            }
+
+            if (sources.Count == 0) sources.Add(Provenance);
+
+            return sources;
         }
 
         /// <summary>How it reads where only one line fits.</summary>
         public string Describe() =>
-            Id + " · " + Title + " (" + Status
+            Id + " · " + Title + " (" + FindingStatusLattice.ToName(Status)
             + (string.IsNullOrEmpty(AssignedTo) ? ", unassigned" : ", " + AssignedTo) + ")";
 
         /// <summary>Serialise.</summary>
@@ -264,23 +225,20 @@ namespace CamelWorks.Core.Issues
             var json = JsonValue.Object()
                 .Set("id", Id)
                 .Set("title", Title)
-                .Set("origin", Origin.ToString())
-                .Set("type", Type)
-                .Set("status", Status)
-                .Set("priority", Priority);
+                .Set("provenance", Provenance)
+                .Set("status", FindingStatusLattice.ToName(Status));
 
+            if (!string.IsNullOrEmpty(Type)) json.Set("type", Type);
+            if (!string.IsNullOrEmpty(Priority)) json.Set("priority", Priority);
             if (!string.IsNullOrEmpty(Description)) json.Set("description", Description);
             if (!string.IsNullOrEmpty(AssignedTo)) json.Set("assigned", AssignedTo);
             if (!string.IsNullOrEmpty(Author)) json.Set("author", Author);
             if (!string.IsNullOrEmpty(RootCause)) json.Set("cause", RootCause);
-            if (!string.IsNullOrEmpty(Level)) json.Set("level", Level);
-            if (!string.IsNullOrEmpty(Zone)) json.Set("zone", Zone);
-            if (!string.IsNullOrEmpty(Source)) json.Set("source", Source);
             if (!string.IsNullOrEmpty(BcfGuid)) json.Set("bcf", BcfGuid);
 
             if (CreatedTicks > 0) json.Set("created", CreatedTicks);
             if (ModifiedTicks > 0) json.Set("modified", ModifiedTicks);
-            if (DueTicks > 0) json.Set("due", DueTicks);
+            if (DueDayNumber != null) json.Set("due", DueDayNumber.Value);
 
             if (HasPoint)
             {
@@ -291,9 +249,6 @@ namespace CamelWorks.Core.Issues
             if (Elements.Count > 0)
                 json.Set("elements", JsonValue.Array(Elements.Select(e => JsonValue.String(e.ToString()))));
 
-            if (Clashes.Count > 0)
-                json.Set("clashes", JsonValue.Array(Clashes.Select(k => JsonValue.String(k.ToString()))));
-
             if (Findings.Count > 0)
                 json.Set("findings", JsonValue.Array(Findings.Select(JsonValue.String)));
 
@@ -301,7 +256,21 @@ namespace CamelWorks.Core.Issues
                 json.Set("labels", JsonValue.Array(Labels.Select(JsonValue.String)));
 
             if (Comments.Count > 0)
-                json.Set("comments", JsonValue.Array(Comments.Select(c => c.ToJson())));
+                json.Set("comments", JsonValue.Array(Comments.Select(c =>
+                    JsonValue.Object()
+                        .Set("author", c.Author)
+                        .Set("when", c.WhenTicks)
+                        .Set("body", c.Body))));
+
+            if (Facts.Count > 0)
+            {
+                var facts = JsonValue.Object();
+
+                foreach (var pair in Facts.OrderBy(f => f.Key, StringComparer.Ordinal))
+                    facts.Set(pair.Key, pair.Value);
+
+                json.Set("facts", facts);
+            }
 
             return json;
         }
@@ -315,40 +284,31 @@ namespace CamelWorks.Core.Issues
             var id = json["id"].AsString();
             if (string.IsNullOrWhiteSpace(id)) return null;
 
-            var origin = Enum.TryParse<IssueOrigin>(json["origin"].AsString(), true, out var parsed)
-                ? parsed
-                : IssueOrigin.Manual;
-
-            var issue = new Issue(id!, json["title"].AsString() ?? "Untitled issue", origin)
+            var issue = new Issue(id!, json["title"].AsString() ?? "Untitled issue",
+                                  json["provenance"].AsString())
             {
                 Description = json["description"].AsString(),
-                Type = json["type"].AsString() ?? "Coordination",
-                Status = json["status"].AsString() ?? OpenStatus,
-                Priority = json["priority"].AsString() ?? "Normal",
+                Type = json["type"].AsString(),
+                Status = FindingStatusLattice.TryParse(json["status"].AsString(), out var status)
+                    ? status
+                    : FindingStatus.Active,
+                Priority = json["priority"].AsString(),
                 AssignedTo = json["assigned"].AsString(),
                 Author = json["author"].AsString(),
                 RootCause = json["cause"].AsString(),
-                Level = json["level"].AsString(),
-                Zone = json["zone"].AsString(),
-                Source = json["source"].AsString(),
                 BcfGuid = json["bcf"].AsString(),
                 CreatedTicks = json["created"].AsLong(),
                 ModifiedTicks = json["modified"].AsLong(),
-                DueTicks = json["due"].AsLong(),
                 HasPoint = json["point"].AsBool(),
                 X = json["x"].AsDouble(),
                 Y = json["y"].AsDouble(),
                 Z = json["z"].AsDouble(),
             };
 
+            if (json.Has("due")) issue.DueDayNumber = (int)json["due"].AsLong();
+
             foreach (var element in json["elements"].Items)
                 if (ElementKey.TryParse(element.AsString(), out var key)) issue.Elements.Add(key);
-
-            // A key that will not parse is dropped rather than failing the issue: the sentence
-            // somebody wrote is the valuable half, and losing it over one unreadable attachment
-            // would be the record punishing the reader for a bug in the writer.
-            foreach (var clash in json["clashes"].Items)
-                if (ClashKey.TryParse(clash.AsString(), out var key)) issue.Clashes.Add(key);
 
             foreach (var finding in json["findings"].Items)
                 if (finding.AsString() is string attached && attached.Length > 0
@@ -362,10 +322,13 @@ namespace CamelWorks.Core.Issues
             }
 
             foreach (var comment in json["comments"].Items)
-            {
-                var read = IssueComment.FromJson(comment);
-                if (read != null) issue.Comments.Add(read);
-            }
+                if (comment["body"].AsString() is string body)
+                    issue.Comments.Add(new FindingComment(comment["author"].AsString(),
+                                                          comment["when"].AsLong(), body));
+
+            var facts = json["facts"];
+
+            foreach (var field in facts.Keys) issue.Facts[field] = facts[field].AsString();
 
             return issue;
         }
@@ -388,23 +351,25 @@ namespace CamelWorks.Core.Issues
         /// <summary>What ids look like before the number.</summary>
         public const string Prefix = "CW-";
 
+        /// <summary>The shape's version, so a later change can be told apart.</summary>
+        public const int Version = 1;
+
         /// <summary>The issues, in the order they were raised.</summary>
         public IReadOnlyList<Issue> Issues => _issues;
 
         /// <summary>How many records could not be read back.</summary>
         public int Unreadable { get; private set; }
 
-        /// <summary>How many are not closed.</summary>
+        /// <summary>How many are still somebody's to deal with.</summary>
         public int Open => _issues.Count(i => i.IsOpen);
 
         /// <summary>How many are in one status.</summary>
         /// <param name="status">The status.</param>
-        public int Of(string status) =>
-            _issues.Count(i => string.Equals(i.Status, status, StringComparison.OrdinalIgnoreCase));
+        public int Of(FindingStatus status) => _issues.Count(i => i.Status == status);
 
         /// <summary>How many are open and past their date.</summary>
-        /// <param name="nowTicks">Now, in UTC ticks.</param>
-        public int Overdue(long nowTicks) => _issues.Count(i => i.IsOverdue(nowTicks));
+        /// <param name="today">Today, as a day number.</param>
+        public int Overdue(int today) => _issues.Count(i => i.IsOverdue(today));
 
         /// <summary>Add or replace by id.</summary>
         /// <param name="issue">The issue.</param>
@@ -434,23 +399,10 @@ namespace CamelWorks.Core.Issues
                 : _issues.FirstOrDefault(i => string.Equals(i.BcfGuid, guid, StringComparison.OrdinalIgnoreCase));
 
         /// <summary>
-        /// The issue covering this clash result, or null.
-        ///
-        /// One clash, at most one issue: two issues both claiming the same conflict is two people
-        /// each believing the other is dealing with it.
-        /// </summary>
-        /// <param name="key">The clash result.</param>
-        public Issue? Holding(ClashKey key) =>
-            key.IsEmpty ? null : _issues.FirstOrDefault(i => i.Clashes.Contains(key));
-
-        /// <summary>
         /// The issues covering a finding, in register order.
         ///
-        /// A list, unlike <see cref="Holding(ClashKey)"/>: a clash may sit on at most one issue,
-        /// because two issues claiming one conflict is two people each believing the other is
-        /// dealing with it. A finding is not so lucky - the same duct through the same beam can
-        /// be both a coordination issue and an RFI, and refusing the second would be refusing to
-        /// describe the job.
+        /// A list rather than one: the same duct through the same beam can be both a coordination
+        /// issue and an RFI, and refusing the second would be refusing to describe the job.
         /// </summary>
         /// <param name="findingId">The finding's id.</param>
         public IReadOnlyList<Issue> Holding(string? findingId) =>
@@ -469,17 +421,27 @@ namespace CamelWorks.Core.Issues
         }
 
         /// <summary>Serialise.</summary>
-        public JsonValue ToJson() => JsonValue.Array(_issues.Select(i => i.ToJson()));
+        public JsonValue ToJson() =>
+            JsonValue.Object()
+                .Set("version", Version)
+                .Set("issues", JsonValue.Array(_issues.Select(i => i.ToJson())));
 
         /// <summary>Read a register back. An unreadable record is counted, never thrown.</summary>
-        /// <param name="json">The saved array.</param>
-        public static IssueRegister FromJson(JsonValue? json)
+        /// <param name="json">What was saved, or null.</param>
+        /// <param name="notes">Anything worth saying about what was read.</param>
+        public static IssueRegister FromJson(JsonValue? json, IList<string>? notes = null)
         {
             var register = new IssueRegister();
 
-            if (json == null) return register;
+            if (json == null || json.Kind != JsonKind.Object) return register;
 
-            foreach (var entry in json.Items)
+            // The version is written, so it is read. A file from a later build is read for what this
+            // build understands rather than refused, and the reader is told that is what happened.
+            if ((int)json["version"].AsLong(Version) > Version)
+                notes?.Add("These issues were written by a newer version of CamelWorks. What this "
+                           + "one understands has been read.");
+
+            foreach (var entry in json["issues"].Items)
             {
                 var issue = Issue.FromJson(entry);
 

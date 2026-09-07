@@ -244,8 +244,8 @@ namespace CamelWorks.Core.Tests
 
             var removed = findings.Single(f => f.Title.Contains("removed"));
 
-            Assert.True(removed.IsParent);
-            Assert.Equal(2, removed.Children.Count);
+            Assert.True(removed.HasLocations);
+            Assert.Equal(2, removed.Locations.Count);
             Assert.Equal(FindingSource.Compare, removed.Source);
         }
 
@@ -288,7 +288,7 @@ namespace CamelWorks.Core.Tests
 
             var parent = CompareIssues.Raise(result).Single();
 
-            Assert.Equal(3, parent.Children.Count);
+            Assert.Equal(3, parent.Locations.Count);
             Assert.Contains("20 removed", parent.Title);
         }
 

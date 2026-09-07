@@ -66,10 +66,10 @@ namespace CamelWorks.Core.Sets
         public const string Sampled = "Named elements";
 
         /// <summary>
-        /// How many of the departed elements to name as children.
+        /// How many of the departed elements to name as locations.
         ///
         /// A set that lost nine thousand elements is one thing to decide about and nine thousand
-        /// rows nobody scrolls. The parent still says how many there were.
+        /// places nobody scrolls. The finding still says how many there were.
         /// </summary>
         public const int DefaultCap = 500;
 
@@ -109,13 +109,29 @@ namespace CamelWorks.Core.Sets
             {
                 if (element.IsEmpty || made >= Math.Max(0, cap)) continue;
 
-                parent.AddChild(Finding.Create(FindingSource.SetDrift, Rule,
-                                               drift.Explain(), new[] { element }, drift.Name));
+                parent.AddLocation(new FindingLocation(parent.Id + "/" + element, new[] { element },
+                                                       Departed(element)));
                 made++;
             }
 
             return parent;
         }
+
+        /// <summary>
+        /// What the per-place line says about one departed element.
+        ///
+        /// The drift result has no per-element text: every element in the list left the same set for
+        /// the same reason, and that reason is the finding's own title. What differs per place is the
+        /// rung the element's key rests on, which is what decides whether the coordinator can trust
+        /// being sent there — a rung-3 key cannot separate two identical parts.
+        /// </summary>
+        /// <param name="element">The element that left.</param>
+        private static string Departed(ElementKey element) => "Left the set. " + (element.Rung switch
+        {
+            KeyRung.InstanceGuid => "Identified by instance GUID.",
+            KeyRung.TreePath => "Identified by tree path; a re-organised tree breaks it.",
+            _ => "Identified by category and size only; treat the match as a proposal.",
+        });
 
         /// <summary>A whole run's drift, as findings. A set holding steady makes none.</summary>
         /// <param name="drifted">What every set did.</param>

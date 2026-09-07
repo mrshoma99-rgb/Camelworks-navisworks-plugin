@@ -1558,7 +1558,10 @@ namespace CamelWorks.UI.Views
                     Bench.Group("Make one for each element",
                         Ui.Field("Name them", pattern, "{n} is the number, {name} is the element's own name."),
                         Ui.Field("Start at", start),
-                        Ui.Field("Digits", padding),
+                        // "Least digits", not "Digits": the field is a minimum width, so 3
+                        // gives 001 and leaves 200 as 200. Labelled "Digits" it read as a
+                        // truncation the preview then contradicted.
+                        Ui.Field("Least digits", padding),
                         Ui.Field("Look from", from),
                         Ui.Field("Room around (m)", margin),
                         Ui.Field("Put them in folder", folder),

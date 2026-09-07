@@ -64,7 +64,7 @@ namespace CamelWorks.UI.Shell
             ["matrix"] = (new[] { "clash matrix", "discipline grid", "test matrix" },
                 new[] { "they sent me their clash matrix", "forty tests by hand" }),
 
-            ["headroom"] = (new[] { "headroom", "ceiling height", "soffit", "head height", "clear height" },
+            ["checks"] = (new[] { "headroom", "ceiling height", "soffit", "head height", "clear height" },
                 new[] { "not enough headroom", "the ceiling is too low under that duct",
                         "will a person fit under that" }),
 

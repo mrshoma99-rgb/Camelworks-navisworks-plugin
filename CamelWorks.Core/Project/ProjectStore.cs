@@ -146,6 +146,20 @@ namespace CamelWorks.Core.Project
         /// </summary>
         public bool MaySaveSettings => Lease == null || Lease.Outcome != LeaseOutcome.HeldByAnother;
 
+        /// <summary>
+        /// Why a save would be refused, worked out without writing anything, or null when it
+        /// would go ahead.
+        ///
+        /// Asked before the write rather than after it, so a caller saving two files together can
+        /// refuse both before it has written either. <see cref="Save"/> reads the same property,
+        /// so the two cannot drift.
+        /// </summary>
+        public string? WhySaveRefused =>
+            IsMemoryOnly ? "there is nowhere to save to — " + Where
+            : IsReadOnly ? ReadOnlyReason ?? "this project file was written by a newer build"
+            : !MaySaveSettings ? Refusal()
+            : null;
+
         /// <summary>A named section, created on first use.</summary>
         /// <param name="name">One of the section constants on this class.</param>
         public JsonValue Section(string name) => _document.Section(name);
@@ -223,25 +237,9 @@ namespace CamelWorks.Core.Project
         /// </summary>
         public bool Save()
         {
-            LastSaveProblem = null;
+            LastSaveProblem = WhySaveRefused;
 
-            if (IsMemoryOnly)
-            {
-                LastSaveProblem = "there is nowhere to save to — " + Where;
-                return false;
-            }
-
-            if (IsReadOnly)
-            {
-                LastSaveProblem = ReadOnlyReason;
-                return false;
-            }
-
-            if (!MaySaveSettings)
-            {
-                LastSaveProblem = Refusal();
-                return false;
-            }
+            if (LastSaveProblem != null) return false;
 
             _document.Root.Set(ActivitySection, Activity.ToJson());
 

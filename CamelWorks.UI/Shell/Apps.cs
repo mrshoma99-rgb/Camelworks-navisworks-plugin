@@ -81,7 +81,7 @@ namespace CamelWorks.UI.Shell
                 "Find what fights, and decide it.", "Coordinate",
                 new AppTab("Manage", "manage"),
                 new AppTab("Clash matrix", "matrix"),
-                new AppTab("Clearance Check", "headroom"),
+                new AppTab("Checks", "checks"),
                 new AppTab("Filter Clashes", "rules"),
                 new AppTab("Report", "clashreport"),
                 new AppTab("Exchange", "exchange")),

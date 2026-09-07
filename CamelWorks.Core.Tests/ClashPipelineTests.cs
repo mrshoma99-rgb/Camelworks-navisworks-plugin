@@ -32,6 +32,61 @@ namespace CamelWorks.Core.Tests
 
         internal static ClashPipelineOptions Stack(params IGroupingRule[] rules) =>
             new ClashPipelineOptions { Grouping = rules };
+
+        /// <summary>
+        /// A board item as the finding behind it, so a test can write one through the one writer.
+        ///
+        /// The board is a projection of the register and the pack is written from findings, so a
+        /// test that starts from an item has to make the finding it would have been projected
+        /// from. What the projection derives per document — the level, the grid, the zone — goes
+        /// back as the facts those labels travel under.
+        /// </summary>
+        /// <param name="item">The board item.</param>
+        internal static Finding Found(ClashItem item)
+        {
+            var finding = Finding.Create(FindingSource.Clash, item.TestName,
+                                         item.Name ?? "Clash",
+                                         new[] { item.Key.A, item.Key.B },
+                                         ClashFindings.CellOf(item.Key));
+
+            finding.TopicGuid = item.TopicGuid ?? ClashBcf.TopicGuidFor(item.Key);
+            finding.X = item.X;
+            finding.Y = item.Y;
+            finding.Z = item.Z;
+            finding.Status = item.Status;
+            finding.AssignedTo = item.AssignedTo;
+            finding.Group = item.CarriedGroup;
+
+            Fact(finding, "Level", item.Level);
+            Fact(finding, "Grid", item.Grid);
+            Fact(finding, "Zone", item.Zone);
+            Fact(finding, "Folder", item.TestFolder);
+            Fact(finding, ClashFindings.CategoryA, item.CategoryA);
+            Fact(finding, ClashFindings.CategoryB, item.CategoryB);
+
+            if (item.Distance != null)
+                finding.Facts[ClashFindings.Distance] = ClashFindings.Written(item.Distance.Value);
+
+            foreach (var comment in item.Comments)
+                finding.Comments.Add(new FindingComment(comment.Author, comment.WhenTicks,
+                                                        comment.Body));
+
+            // What a reviewer set that the host has no field for. It lives on the finding, and
+            // the writer reads it from there.
+            item.Review?.ApplyTo(finding);
+
+            return finding;
+        }
+
+        /// <summary>Those items, written as a pack the way the tabs write one.</summary>
+        /// <param name="items">The board items.</param>
+        internal static FindingBcfDocument Written(params ClashItem[] items) =>
+            FindingBcf.Write(items.Select(Found).ToList());
+
+        private static void Fact(Finding finding, string name, string? value)
+        {
+            if (!string.IsNullOrWhiteSpace(value)) finding.Facts[name] = value!;
+        }
     }
 
     public class ClashPipelineTests
@@ -360,6 +415,35 @@ namespace CamelWorks.Core.Tests
             Assert.True(riser.IsPinned);
             Assert.Single(riser.Items);
             Assert.False(result.Groups.Single(g => g.Name == "L03").IsPinned);
+        }
+
+        [Fact]
+        public void A_derived_group_name_colliding_with_a_pinned_one_does_not_pin_its_members()
+        {
+            // Groups are keyed by name, so a result the level rule sends to "L03" joins a group
+            // somebody pinned under that same name. The group is pinned, because a member was put
+            // there by hand; the result the rules sent there is not, or the rules could never move
+            // it again.
+            var byHand = Item("a");
+            var byRule = Item("b");
+
+            var result = ClashPipeline.Run(new[] { byHand, byRule }, new ClashPipelineOptions
+            {
+                Grouping = new[] { GroupingRules.ByLevel() },
+                PinnedGroups = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+                {
+                    ["L03"] = new[] { byHand.Key.ToString() },
+                },
+            });
+
+            var group = Assert.Single(result.Groups);
+
+            Assert.Equal("L03", group.Name);
+            Assert.True(group.IsPinned);
+            Assert.Equal(2, group.Items.Count);
+
+            Assert.True(byHand.GroupedByHand);
+            Assert.False(byRule.GroupedByHand);
         }
 
         [Fact]

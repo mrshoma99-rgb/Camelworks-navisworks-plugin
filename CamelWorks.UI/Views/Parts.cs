@@ -1046,6 +1046,20 @@ namespace CamelWorks.UI.Views
             return menu;
         }
 
+        /// <summary>
+        /// The same lines, laid out as the menu lays them, for a screen or the render harness to
+        /// draw where a popup cannot open.
+        ///
+        /// A menu lives in a popup and a popup needs a screen to open on, so no menu in this
+        /// product had ever been rendered for review. A greyed line whose reason is clipped, a
+        /// heading with no room under it and a count that runs into the glyph are all layout
+        /// faults no compiler reports.
+        /// </summary>
+        /// <param name="items">The lines, in reading order.</param>
+        /// <param name="worded">True for the wider layout the worded button opens.</param>
+        public static UIElement Drawn(IReadOnlyList<Entry> items, bool worded = true) =>
+            Floating(Menu(items, worded), worded ? 260 : 210);
+
         /// <summary>The lines of a menu, as one stack.</summary>
         /// <param name="items">The lines.</param>
         /// <param name="worded">True when a line may carry a second, quieter line under it.</param>

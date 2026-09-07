@@ -7,7 +7,9 @@ using System.Windows;
 using System.Windows.Controls;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Data;
+using CamelWorks.Core.Identity;
 using CamelWorks.Core.Findings;
+using CamelWorks.Core.OpenBim;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Store;
 using CamelWorks.UI.Shell;
@@ -39,17 +41,52 @@ namespace CamelWorks.UI.Views
         public const string Extension = ".cwexport";
 
         /// <summary>
-        /// Test ids the clash manager asked to send, applied to the next desk once.
+        /// What the Manage tab asked to send: which check, and which of its runs.
+        ///
+        /// A pair rather than a list of run ids, because the runs mean nothing without the check
+        /// that owns them: two checks can name a run the same thing, and a request that carried
+        /// only the ids would tick whichever check's runs the tab happened to be showing.
+        /// </summary>
+        internal sealed class ExchangeRequest
+        {
+            /// <summary>Ask for these runs of this check.</summary>
+            /// <param name="checkKey">The check, as <see cref="FindingSource"/> spells it.</param>
+            /// <param name="runIds">The runs to tick, by the check's own id for each.</param>
+            internal ExchangeRequest(string checkKey, IReadOnlyList<string> runIds)
+            {
+                CheckKey = string.IsNullOrWhiteSpace(checkKey) ? FindingSource.Clash : checkKey;
+                RunIds = runIds ?? Array.Empty<string>();
+            }
+
+            /// <summary>Which check's results are being sent.</summary>
+            internal string CheckKey { get; }
+
+            /// <summary>Which of its runs, by id.</summary>
+            internal IReadOnlyList<string> RunIds { get; }
+        }
+
+        /// <summary>
+        /// What the clash manager asked to send, applied to the next desk once.
         ///
         /// The hand-off from the Manage tab: "export these three tests" should arrive with those
         /// three ticked, not with a memory test about which three they were.
         /// </summary>
-        internal static IReadOnlyList<string>? Preferred { get; set; }
+        internal static ExchangeRequest? Preferred { get; set; }
+
+        /// <summary>
+        /// Which check this tab exchanges. The Manage tab owns the choice.
+        ///
+        /// Not a second picker. Two pickers that can disagree is a coordinator exporting one
+        /// check's findings while reading another check's board, so this tab says which check is
+        /// selected and links back to Manage to change it.
+        /// </summary>
+        internal static string CheckKey { get; set; } = FindingSource.Clash;
 
         /// <summary>The surface, for a desk to bench.</summary>
         /// <param name="session">The open document.</param>
         public static UIElement Surface(Session session) =>
-            Drawn(session.Store, session.Profile.ProjectName);
+            Drawn(session.Store, session.Profile.ProjectName, findings: session.Findings,
+                  session: session);
 
         /// <summary>
         /// The same surface from the project file alone, so it can be drawn without a document.
@@ -62,10 +99,21 @@ namespace CamelWorks.UI.Views
         /// <param name="projectName">The project's name, for the packs it writes.</param>
         /// <param name="board">The board to send, or null to take the last clash run's.</param>
         /// <param name="importing">True to open on the import half rather than the export half.</param>
+        /// <param name="findings">
+        /// Where an applied answer is written to last. Null draws the screen without one, which is
+        /// what the harness does; applying then reaches the live board and says so.
+        /// </param>
+        /// <param name="session">
+        /// The open document, for the parts of a pack only a document can supply: the IFC ids a
+        /// receiving tool selects by, where each element sits, and the rendered pictures. Null
+        /// writes the pack without them and the tab says what that costs.
+        /// </param>
         public static UIElement Drawn(ProjectStore store, string? projectName = null,
                                       IReadOnlyList<ClashGroup>? board = null,
-                                      bool importing = false) =>
-            new Desk(store, projectName ?? "Untitled project", board, importing).View;
+                                      bool importing = false, FindingStore? findings = null,
+                                      Session? session = null) =>
+            new Desk(store, projectName ?? "Untitled project", board, importing, findings,
+                     session).View;
 
         /// <summary>The two halves of a round.</summary>
         private const string SendOut = "Export";
@@ -122,18 +170,32 @@ namespace CamelWorks.UI.Views
 
             private ExchangeReading? _reading;
 
+            /// <summary>The primary of the import half, kept so reading a pack can turn it on.</summary>
+            private FrameworkElement? _apply;
+
             private UIElement? _out;
             private UIElement? _in;
 
             private readonly IReadOnlyList<ClashGroup>? _board;
 
+            private readonly FindingStore? _findings;
+
+            /// <summary>The open document, or null when the desk was drawn from the project file.</summary>
+            private readonly Session? _session;
+
+            /// <summary>Whether each topic carries a rendered picture. Needs a document.</summary>
+            private bool _pictures;
+
             internal Desk(ProjectStore store, string projectName,
-                          IReadOnlyList<ClashGroup>? board = null, bool importing = false)
+                          IReadOnlyList<ClashGroup>? board = null, bool importing = false,
+                          FindingStore? findings = null, Session? session = null)
             {
                 _store = store;
                 _projectName = projectName;
                 _board = board;
                 _importing = importing;
+                _findings = findings;
+                _session = session;
 
                 Load();
 
@@ -152,8 +214,35 @@ namespace CamelWorks.UI.Views
             private IReadOnlyList<ClashGroup> Board() =>
                 _board ?? CoordinateViews.LastBoard?.Groups ?? Array.Empty<ClashGroup>();
 
-            private IReadOnlyList<ClashItem> Results() =>
-                Board().SelectMany(one => one.Items).Where(one => one != null).ToList();
+            /// <summary>
+            /// Every clash on the board, flattened once.
+            ///
+            /// Drawing the export half asks for this a dozen times over — the facets, the values
+            /// behind each filter chip, the counts, the selection — and each ask walked every
+            /// group of an eighteen-thousand-result board and built a new list.
+            /// </summary>
+            private IReadOnlyList<ClashItem> Results()
+            {
+                var board = Board();
+
+                if (_flattened != null && ReferenceEquals(_resultsFrom, board)) return _flattened;
+
+                _flattened = board.SelectMany(one => one.Items).Where(one => one != null).ToList();
+                _resultsFrom = board;
+
+                return _flattened;
+            }
+
+            private IReadOnlyList<ClashItem>? _flattened;
+            private IReadOnlyList<ClashGroup>? _resultsFrom;
+
+            /// <summary>
+            /// What has already gone out, read once and kept for the life of the desk.
+            /// </summary>
+            private ClashIssueLog Issued() => _issued ??= ClashIssueLog.FromJson(
+                _store.Section(ProjectStore.ClashSection)[ClashIssueLog.Key]);
+
+            private ClashIssueLog? _issued;
 
             /// <summary>The project's storeys, so a filter can name one.</summary>
             private LevelPlan Storeys() => LevelPlan.FromJson(
@@ -213,6 +302,7 @@ namespace CamelWorks.UI.Views
             {
                 var strip = Ui.Across(
                     Ui.Field("Half", Switch(SendOut)),
+                    Ui.Field("Check", Selected()),
                     Ui.Field("Export profile", Saved()),
                     Ui.Field("Find a test", _find),
                     Ui.Field("One file per", Splitting()),
@@ -220,8 +310,19 @@ namespace CamelWorks.UI.Views
 
                 var foot = new WrapPanel();
 
-                foot.Children.Add(Ui.Icon(Glyphs.Filter, "Export scope", () => Configure("in")));
-                foot.Children.Add(Ui.Icon(Glyphs.Save, "Export profile", () => Configure("profile")));
+                // Labelled. Two symbols beside a primary say nothing about what they open, and
+                // the funnel is the same picture the results filter uses a few inches away.
+                var scope = Ui.Quiet("Export scope\u2026", () => Configure("in"));
+                var saved = Ui.Quiet("Save as a profile\u2026", () => Configure("profile"));
+
+                scope.ToolTip = "Which statuses go out, and whether folders travel with them.";
+                saved.ToolTip = "Keep these settings under a name, so the next round is one press.";
+                scope.VerticalAlignment = VerticalAlignment.Center;
+                saved.VerticalAlignment = VerticalAlignment.Center;
+                saved.Margin = new Thickness(6, 0, 0, 0);
+
+                foot.Children.Add(scope);
+                foot.Children.Add(saved);
                 foot.Children.Add(new Border { Width = 12 });
 
                 foot.Children.Add(Ui.Commit("Preview the export", "Write", "pack",
@@ -252,6 +353,46 @@ namespace CamelWorks.UI.Views
                                               scrolls: false),
                                    Ui.Stack(foot, _sending),
                                    leftWidth: 460);
+            }
+
+            /// <summary>
+            /// Which check is being exchanged, and the way to change it.
+            ///
+            /// Read-only here on purpose: see <see cref="CheckKey"/>.
+            /// </summary>
+            private UIElement Selected()
+            {
+                var named = Named(CheckKey);
+
+                var link = Ui.Quiet(named + " \u2014 change on Manage",
+                                    () => Ui.Told(Shell.AppWindow.Show("clash", "manage")));
+
+                link.ToolTip = "The Manage tab holds the check. This tab exchanges whatever it "
+                             + "has selected, so the two cannot disagree.";
+
+                return link;
+            }
+
+            /// <summary>
+            /// What a check is called on screen.
+            ///
+            /// The tab holds a check key and not the check itself — the check over a document is
+            /// built by the Manage tab and this desk draws without one — so the key is worded here
+            /// rather than shown raw. "FallHazard" is a constant in a persisted format and not a
+            /// name anybody wrote.
+            /// </summary>
+            /// <param name="checkKey">The check's key, as <see cref="FindingSource"/> spells it.</param>
+            private static string Named(string checkKey)
+            {
+                switch (checkKey)
+                {
+                    case FindingSource.Clash: return "Clash detection";
+                    case FindingSource.Headroom: return "Clearance";
+                    case FindingSource.SetDrift: return "Set drift";
+                    case FindingSource.FallHazard: return "Fall hazard";
+                    case FindingSource.Ids: return "IDS";
+                    default: return string.IsNullOrWhiteSpace(checkKey) ? "Clash detection" : checkKey;
+                }
             }
 
             /// <summary>The saved profiles, as a chooser for the strip.</summary>
@@ -368,7 +509,7 @@ namespace CamelWorks.UI.Views
                     : all.Where(one => Holds(one.Name) || Holds(one.Folder)).ToList();
 
                 var rows = showing.Select(one => new TableRow(one,
-                    Sending(one.Name) ? "✓" : string.Empty,
+                    string.Empty,
                     one.Name,
                     one.Folder ?? string.Empty,
                     one.Count.ToString("N0", CultureInfo.InvariantCulture),
@@ -377,11 +518,12 @@ namespace CamelWorks.UI.Views
                                               StringComparison.OrdinalIgnoreCase))))
                 {
                     Tone = Tone.Plain,
-                }).ToList();
+                }.Ticking(Sending(one.Name), on => Included(new object[] { one }, null, on, rebuild: false)))
+                    .ToList();
 
                 var table = Ui.Table(rows,
-                    ("In", 30), ("Test", 0), ("Folder", 100), ("Results", 62),
-                    ("Last sent", 76)).Multi();
+                    ("In", 34), ("Test", 0), ("Folder", 100), ("Results", 62),
+                    ("Last sent", 76)).Multi().Ticking(0);
 
                 Ui.SetFills(_tests, true);
 
@@ -393,6 +535,17 @@ namespace CamelWorks.UI.Views
                     new Ui.OnPicked("Exclude these {n}", (picked, said) =>
                         Included(picked, said, on: false))));
 
+                DrawTestsSaid();
+            }
+
+            /// <summary>
+            /// How much of the board is going, without rebuilding the table under it.
+            /// </summary>
+            private void DrawTestsSaid()
+            {
+                _testsSaid.Children.Clear();
+
+                var all = Tests();
                 var chosen = all.Count(one => Sending(one.Name));
 
                 _testsSaid.Children.Add(Ui.Small(
@@ -405,22 +558,35 @@ namespace CamelWorks.UI.Views
             /// <param name="picked">The rows picked.</param>
             /// <param name="said">Where the bar says what it did.</param>
             /// <param name="on">Whether they go.</param>
-            private void Included(IReadOnlyList<object> picked, Panel said, bool on)
+            /// <summary>Put tests in the export, or take them out.</summary>
+            /// <param name="picked">The tests.</param>
+            /// <param name="said">Where the picking bar says what it did, or null for a tick box
+            /// on a single row, which says it by moving.</param>
+            /// <param name="on">True to include them.</param>
+            /// <param name="rebuild">
+            /// False for a tick box, which is inside the table this would tear down and rebuild:
+            /// the box is mid-click, and rebuilding from inside its own binding update throws
+            /// away the selection and the scroll position and re-flattens the whole board. The
+            /// box has already moved, so only what depends on it needs redrawing.
+            /// </param>
+            private void Included(IReadOnlyList<object> picked, Panel? said, bool on,
+                                  bool rebuild = true)
             {
                 var tests = picked.OfType<BoardTest>().ToList();
 
                 if (tests.Count == 0)
                 {
-                    said.Children.Add(Ui.Note("Select at least one test."));
+                    said?.Children.Add(Ui.Note("Select at least one test."));
                     return;
                 }
 
                 foreach (var test in tests) Send(test.Name, on);
 
-                said.Children.Add(Ui.Note(
+                said?.Children.Add(Ui.Note(
                     Ui.Count(tests.Count, "test") + (on ? " included." : " excluded.")));
 
-                Redraw();
+                if (rebuild) Redraw();
+                else { DrawTestsSaid(); DrawResults(); }
             }
 
             // -------------------------------------------------------------------------------
@@ -430,7 +596,7 @@ namespace CamelWorks.UI.Views
             /// <summary>What the tests and the filter between them let through.</summary>
             private IReadOnlyList<ClashItem> Scope()
             {
-                var kept = _profile.Choose(Results(), Board(), Storeys()).Items;
+                var kept = _profile.Choose(Results(), Board(), Storeys(), Issued()).Items;
 
                 return _dropped.Count == 0
                     ? kept
@@ -499,6 +665,13 @@ namespace CamelWorks.UI.Views
                     + Ui.Count(Results().Count, "result") + " · "
                     + Ui.Count(rounds.Count, "pack")));
 
+                // What the pack carries beyond the list. The writer puts a camera and a snapshot
+                // on every topic and never said so, which is why the export read as a file of
+                // titles a reviewer would have to find in the model themselves.
+                _resultsSaid.Children.Add(Ui.Small(
+                    "Each clash goes out as a topic with a viewpoint: a camera on the clash "
+                    + "point, both elements highlighted, and a snapshot."));
+
                 if (_dropped.Count > 0)
                     _results.Children.Add(Ui.Across(
                         Ui.Small(Ui.Count(_dropped.Count, "clash") + " left out by hand."),
@@ -528,7 +701,7 @@ namespace CamelWorks.UI.Views
 
                 foreach (var key in new[] { "status", "assignee", "storey", "level" })
                 {
-                    var found = ClashFacets.Of(key, Results(), Storeys());
+                    var found = ClashFacets.Of(key, Results(), Storeys(), Issued());
 
                     if (found != null) facets.Add(found);
                 }
@@ -541,7 +714,7 @@ namespace CamelWorks.UI.Views
                                                         StringComparison.OrdinalIgnoreCase)))
                         continue;
 
-                    var found = ClashFacets.Of(clause.Facet, Results(), Storeys());
+                    var found = ClashFacets.Of(clause.Facet, Results(), Storeys(), Issued());
 
                     if (found != null) facets.Add(found);
                 }
@@ -555,6 +728,22 @@ namespace CamelWorks.UI.Views
                 add.VerticalAlignment = VerticalAlignment.Center;
 
                 bar.Children.Add(add);
+
+                // What the filters are keeping out. A bar of chips says what is let through and
+                // never how much of the board that leaves behind, which is the number a
+                // coordinator is actually deciding on.
+                var held = Results().Count;
+                var kept = _profile.Pick.Take(Results(), Storeys(), Issued()).Count;
+
+                if (kept < held)
+                {
+                    var left = Ui.Small(Ui.Count(held - kept, "result") + " left out");
+
+                    left.VerticalAlignment = VerticalAlignment.Center;
+                    left.Margin = new Thickness(10, 2, 0, 2);
+
+                    bar.Children.Add(left);
+                }
 
                 return bar;
             }
@@ -580,10 +769,38 @@ namespace CamelWorks.UI.Views
 
                 // A set filter is tinted, so the bar reads at a glance as which parameters are
                 // narrowing the export and which are letting everything through.
-                if (clause != null) button.Tint(System.Windows.Controls.Control.ForegroundProperty,
-                                                "Accent");
+                if (clause == null)
+                {
+                    button.Margin = new Thickness(0, 2, 6, 2);
 
-                return button;
+                    return button;
+                }
+
+                button.Tint(System.Windows.Controls.Control.ForegroundProperty, "Accent");
+                button.Margin = new Thickness(0, 2, 0, 2);
+
+                // A filter in force is a chip you can take off. Every one of them was a link that
+                // reopened the value list, so clearing one meant opening it and unticking whatever
+                // was in there.
+                var off = Ui.Icon(Glyphs.Close, "Stop filtering on " + here.Title, () => Ui.Safely(() =>
+                {
+                    _profile.Pick.Clauses.Remove(clause);
+                    Rebuild();
+                }));
+
+                off.VerticalAlignment = VerticalAlignment.Center;
+                off.Margin = new Thickness(0, 2, 6, 2);
+
+                var chip = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+
+                chip.Children.Add(button);
+                chip.Children.Add(off);
+
+                return chip;
             }
 
             /// <summary>The values a clause names, short enough for a chip.</summary>
@@ -629,7 +846,7 @@ namespace CamelWorks.UI.Views
             {
                 var items = new List<Parts.Entry> { Parts.Entry.Heading("Filter by") };
 
-                foreach (var facet in ClashFacets.Every(Results(), Storeys()))
+                foreach (var facet in ClashFacets.Every(Results(), Storeys(), Issued()))
                 {
                     var here = facet;
 
@@ -703,7 +920,7 @@ namespace CamelWorks.UI.Views
             {
                 var offered = new List<string> { Whole };
 
-                offered.AddRange(ClashFacets.Every(Results(), Storeys()).Select(one => one.Title));
+                offered.AddRange(ClashFacets.Every(Results(), Storeys(), Issued()).Select(one => one.Title));
 
                 var here = _profile.SplitBy == null ? Whole : Titled(_profile.SplitBy);
 
@@ -726,7 +943,7 @@ namespace CamelWorks.UI.Views
             {
                 var offered = new List<string> { AsFound };
 
-                offered.AddRange(ClashFacets.Every(Results(), Storeys()).Select(one => one.Title));
+                offered.AddRange(ClashFacets.Every(Results(), Storeys(), Issued()).Select(one => one.Title));
 
                 var here = _profile.Pick.Sort == null ? AsFound : Titled(_profile.Pick.Sort);
 
@@ -763,7 +980,7 @@ namespace CamelWorks.UI.Views
             /// <summary>The saved key behind a parameter's on-screen title.</summary>
             /// <param name="title">What it is called on screen.</param>
             private string? Keyed(string? title) =>
-                ClashFacets.Every(Results(), Storeys())
+                ClashFacets.Every(Results(), Storeys(), Issued())
                     .FirstOrDefault(one => string.Equals(one.Title, title,
                                                          StringComparison.OrdinalIgnoreCase))?.Key;
 
@@ -780,7 +997,7 @@ namespace CamelWorks.UI.Views
             }
 
             private string Titled(string? key) =>
-                ClashFacets.Of(key, Results(), Storeys())?.Title ?? key ?? "nothing";
+                ClashFacets.Of(key, Results(), Storeys(), Issued())?.Title ?? key ?? "nothing";
 
             // -------------------------------------------------------------------------------
             // Writing the packs
@@ -816,15 +1033,188 @@ namespace CamelWorks.UI.Views
                 into.Children.Add(Ui.Table(rows,
                     ("Recipient", 0), ("File", 240), ("Clashes", 100)));
 
+                // Which split was used, when it is not the one that was asked for. A profile that
+                // splits by discipline over a check with no trade sides would otherwise produce
+                // one unexplained pack.
+                var fell = rounds.FirstOrDefault(one => one.Asked != null);
+
+                if (fell != null)
+                    into.Children.Add(Ui.Note(
+                        "Nothing here carries " + fell.Asked + ", which is what this profile "
+                        + "splits on, so "
+                        + (fell.SplitBy == ExportProfile.OnePack
+                            ? "everything went in one pack: nothing here is assigned either."
+                            : "the split fell back to " + fell.SplitBy + ".")));
+
+                into.Children.Add(Ui.Small(Framing(going.Count)));
+
                 _ = job;
 
                 return rounds.Count;
             }
 
+            /// <summary>
+            /// What each topic will carry, and what that will cost.
+            ///
+            /// Said before the press rather than discovered as a tab that appears to hang, and
+            /// said from what this desk actually has. Without an open document a pack carries its
+            /// camera and its facts and nothing else: no IFC ids to select by, no route to each
+            /// element, no pictures.
+            /// </summary>
+            /// <param name="results">How many results are going out.</param>
+            private string Framing(int results)
+            {
+                if (_session == null)
+                    return "No model is open, so these topics go out with a camera and the facts "
+                         + "the register holds: no IFC ids for the receiving tool to select by, "
+                         + "no route to the elements for a reviewing seat, and no pictures.";
+
+                if (!_pictures)
+                    return "Each topic carries its elements' IFC ids and a camera on the finding. "
+                         + "Pictures are off.";
+
+                if (CheckKey == FindingSource.Clash)
+                    return "Pictures are framed by the clash engine where the result still has "
+                         + "the host ids it was read under, the way the native clash window "
+                         + "frames it, and by a camera otherwise. Each topic carries its "
+                         + "elements' IFC ids.";
+
+                // A camera move and a capture each, which measures at about a fifth of a second
+                // on a federation of any size. Rounded up to the minute, because a number to the
+                // second reads as a promise.
+                var minutes = Math.Max(1, (int)Math.Ceiling(results * 0.2 / 60.0));
+
+                return "This check has no result geometry of its own, so each picture is framed "
+                     + "by backing a camera off the finding's elements. That is slower and frames "
+                     + "worse than a clash: allow about "
+                     + Ui.Count(minutes, "minute") + " for the pictures.";
+            }
+
+            /// <summary>
+            /// Which host test and result a finding was read from, when it carries both.
+            ///
+            /// The clash engine can draw a result the way the native clash window does, and it
+            /// needs the host's two ids to do it. A finding read from a file or produced by any
+            /// other check carries neither, and the camera route draws that one.
+            /// </summary>
+            /// <param name="finding">The finding going out.</param>
+            private static (string Test, string Result)? Drawn(Finding finding) =>
+                finding.Facts.TryGetValue(ClashFindings.HostTest, out var test)
+                && !string.IsNullOrEmpty(test)
+                && finding.Facts.TryGetValue(ClashFindings.HostId, out var result)
+                && !string.IsNullOrEmpty(result)
+                    ? (test!, result!)
+                    : ((string Test, string Result)?)null;
+
+            /// <summary>
+            /// The findings behind the rows going out, for a read that is made once for the run.
+            /// </summary>
+            /// <param name="going">The rows going out.</param>
+            private IReadOnlyList<Finding> Findings(IReadOnlyList<ClashItem> going)
+            {
+                var register = _findings?.Findings;
+                var found = new List<Finding>();
+
+                if (register == null) return found;
+
+                foreach (var item in going)
+                {
+                    var finding = item?.FindingId == null ? null : register.Find(item.FindingId);
+
+                    if (finding != null) found.Add(finding);
+                }
+
+                return found;
+            }
+
             /// <summary>The packs this profile would write, from the rows going out.</summary>
             /// <param name="going">The rows going out.</param>
             private IReadOnlyList<ExportRound> Rounds(IReadOnlyList<ClashItem> going) =>
-                _profile.Rounds(going, Board(), Storeys());
+                _profile.Rounds(going, Board(), Storeys(), Issued());
+
+            /// <summary>
+            /// One round's findings, and the pack's own folders and place words.
+            ///
+            /// The board is a projection of the register, so what goes in the file is the finding
+            /// behind each row rather than the row: a pack written from the projection carries no
+            /// facts, no locations and no identity the return leg can match on.
+            ///
+            /// What the board derives per document rather than the producer writing it — the level
+            /// a height falls on, the grid it is nearest, the zone it is in, and the property
+            /// columns read off the clashing elements — travels as facts of this pack. Handed to
+            /// the writer rather than written onto the finding: a finding belongs to the register,
+            /// and an export that edited it changed rows for findings it did not send. The pack's
+            /// folder goes the same way, because a board folder is made by the grouping rules and
+            /// is not the group the host filed the result under.
+            /// </summary>
+            /// <param name="round">The round.</param>
+            /// <param name="how">The writer's settings, which this fills the folder and fact maps into.</param>
+            private IReadOnlyList<Finding> Pack(ExportRound round, FindingBcfOptions how)
+            {
+                var register = _findings?.Findings;
+                var folders = new Dictionary<string, string>(StringComparer.Ordinal);
+
+                foreach (var group in round.Selection.Groups)
+                    foreach (var member in group.Items)
+                        if (member?.FindingId != null) folders[member.FindingId] = group.Name;
+
+                var pack = new List<Finding>();
+                var said = new Dictionary<string, IReadOnlyDictionary<string, string?>>(
+                    StringComparer.Ordinal);
+
+                foreach (var item in round.Selection.Items)
+                {
+                    var finding = item?.FindingId == null || register == null
+                        ? null
+                        : register.Find(item.FindingId);
+
+                    if (finding == null) continue;
+
+                    said[finding.Id] = Derived(item!);
+                    pack.Add(finding);
+                }
+
+                how.GroupOf = finding =>
+                    folders.TryGetValue(finding.Id, out var named) ? named : null;
+
+                how.FactsOf = finding =>
+                    said.TryGetValue(finding.Id, out var facts) ? facts : null;
+
+                return pack;
+            }
+
+            /// <summary>
+            /// What the board worked out about a result and the register does not hold.
+            ///
+            /// The three place words travel as labels by the declared fact-to-label mapping; the
+            /// property columns travel in the sidecar, which is where a board reading the pack
+            /// looks for them. An empty value removes the finding's own fact for this pack, so a
+            /// board that derived no level does not send last week's.
+            /// </summary>
+            /// <param name="item">The row going out.</param>
+            private static IReadOnlyDictionary<string, string?> Derived(ClashItem item)
+            {
+                var facts = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["Level"] = item.Level ?? string.Empty,
+                    ["Grid"] = item.Grid ?? string.Empty,
+                    ["Zone"] = item.Zone ?? string.Empty,
+                };
+
+                foreach (var pair in item.Properties)
+                {
+                    // The board draws these two off the producer's own facts. Sending them again
+                    // under the board's column names would put the same value in the topic's
+                    // description twice.
+                    if (pair.Key == ClashItem.HostStatusProperty
+                        || pair.Key == ClashItem.HostAssigneeProperty)
+                        continue;
+
+                    if (!facts.ContainsKey(pair.Key)) facts[pair.Key] = pair.Value;
+                }
+
+                return facts;
+            }
 
             /// <summary>Write the packs.</summary>
             /// <param name="job">The run.</param>
@@ -853,6 +1243,18 @@ namespace CamelWorks.UI.Views
 
                 _sending.Children.Clear();
 
+                // The GlobalIds a receiving tool selects by and the route to each element, read
+                // once for everything going out rather than once per pack: the first read after a
+                // model change pays for the federation index, and a split by assignee writes
+                // thirty packs off the same elements.
+                var ids = new ClashIdentity.Ids(null, Findings(going), null);
+
+                if (_session != null)
+                {
+                    job.Say("Reading IFC ids for the export...");
+                    ids = new ClashIdentity.Ids(_session, Findings(going), job);
+                }
+
                 foreach (var round in rounds)
                 {
                     job.Say("Writing " + round.Recipient + "...");
@@ -861,8 +1263,27 @@ namespace CamelWorks.UI.Views
                         ? path
                         : Path.Combine(folder, round.FileStem() + ClashFile.Extension);
 
-                    var written = ClashBcf.Write(round.Selection.Items, round.Selection.Groups,
-                                                 _profile.BcfOptions(_projectName, when));
+                    var how = _profile.BcfOptions(_projectName, when);
+
+                    how.IfcGuidOf = ids.Of;
+                    how.LocatorOf = ids.At;
+                    how.Author = Environment.UserName ?? "CamelWorks";
+
+                    if (_pictures && _session != null)
+                        how.Snapshot = ClashIdentity.Pictures(_session, 1280, 720, Drawn, job);
+
+                    var pack = Pack(round, how);
+
+                    if (pack.Count == 0)
+                    {
+                        _sending.Children.Add(Ui.Problem(
+                            round.Recipient + "'s pack holds no result the register knows, so "
+                            + "nothing was written for them."));
+
+                        continue;
+                    }
+
+                    var written = FindingBcf.Write(pack, null, how);
 
                     try
                     {
@@ -878,6 +1299,16 @@ namespace CamelWorks.UI.Views
 
                     wrote++;
 
+                    // Which clashes went out, to whom, and where each stood when it went. The
+                    // per-test stamp below answers "have I sent this test" and nothing else.
+                    //
+                    // A round's name is only a party when the profile splits by one. Unsplit, it
+                    // is the profile's own name, and stamping that put "Weekly MEP" under the
+                    // facet titled "Last sent to".
+                    var to = string.IsNullOrWhiteSpace(_profile.SplitBy) ? null : round.Recipient;
+
+                    Issued().Stamp(round.Selection.Items, to, when);
+
                     _sending.Children.Add(Ui.Note(
                         Path.GetFileName(file) + " - " + round.Selection.Explain()));
                 }
@@ -886,6 +1317,8 @@ namespace CamelWorks.UI.Views
                 // gone at all.
                 _profile.Stamp(going.Select(one => one.TestName).Distinct(StringComparer.OrdinalIgnoreCase),
                                when);
+
+                _store.Section(ProjectStore.ClashSection).Set(ClashIssueLog.Key, Issued().ToJson());
 
                 Keep(quiet: true);
 
@@ -921,7 +1354,13 @@ namespace CamelWorks.UI.Views
 
                 var foot = new WrapPanel();
 
-                foot.Children.Add(Ui.Runner("Apply to the board", _applied, Apply));
+                // Off until there is something to apply. A primary that is always live on a
+                // screen whose left half is empty is a press that does nothing and says nothing.
+                _apply = Ui.Runner("Apply to the board", _applied, Apply);
+                _apply.IsEnabled = false;
+                _apply.ToolTip = "Read the returned packs first.";
+
+                foot.Children.Add(Ui.Loose(_apply));
 
                 DrawPacks();
                 DrawReading();
@@ -971,11 +1410,27 @@ namespace CamelWorks.UI.Views
 
                 // The reading is thrown away, because it was about the packs that were chosen
                 // before. Leaving it would show rows from a pack that is no longer in the list.
+                // What was decided on those rows is kept for the next read.
+                Keeping();
+
                 _reading = null;
 
                 DrawPacks();
                 DrawReading();
             }
+
+            /// <summary>
+            /// Who a pack is from: what somebody typed, or the file's own name.
+            /// </summary>
+            /// <param name="file">The pack's path.</param>
+            private string Party(string file) =>
+                _parties.TryGetValue(file, out var said) && said.Trim().Length > 0
+                    ? said.Trim()
+                    : Path.GetFileNameWithoutExtension(file);
+
+            /// <summary>Parties named by hand, by the pack's path.</summary>
+            private readonly Dictionary<string, string> _parties =
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
             /// <summary>The packs chosen, with what each one turned out to hold.</summary>
             private void DrawPacks()
@@ -986,8 +1441,8 @@ namespace CamelWorks.UI.Views
                 if (_returns.Count == 0)
                 {
                     _files.Children.Add(Ui.Empty("No packs chosen.",
-                        "Choose the .bcfzip files the parties returned. The party is taken from "
-                        + "the file name, so Mechanical.bcfzip is read as Mechanical's response."));
+                        "Choose the .bcfzip files the parties returned. The party is read from "
+                        + "the file name, and can be corrected on the row once they are listed."));
 
                     return;
                 }
@@ -1000,11 +1455,11 @@ namespace CamelWorks.UI.Views
 
                     var answered = _reading?.Rows.Count(
                         row => row.Answers.Any(say => string.Equals(
-                            say.Party, Path.GetFileNameWithoutExtension(one),
+                            say.Party, Party(one),
                             StringComparison.OrdinalIgnoreCase))) ?? 0;
 
                     return new TableRow(one,
-                        Path.GetFileNameWithoutExtension(one),
+                        Party(one),
                         Path.GetFileName(one),
                         read == null ? string.Empty
                             : read.Results.ToString("N0", CultureInfo.InvariantCulture),
@@ -1024,6 +1479,38 @@ namespace CamelWorks.UI.Views
                 _files.Children.Add(Ui.Loose(table));
 
                 _files.Children.Add(Ui.Picking(table,
+                    new Ui.OnPicked("Say who these {n} are from", (picked, said) =>
+                    {
+                        var held = picked.OfType<string>().ToList();
+
+                        if (held.Count == 0)
+                        {
+                            said.Children.Add(Ui.Note("Select at least one pack."));
+                            return;
+                        }
+
+                        Parts.Ask(_files, "Who is this from", Party(held[0]), "Use this name",
+                                  named => Ui.Safely(() =>
+                        {
+                            foreach (var one in held) _parties[one] = named;
+
+                            // The reading carries the old names on every answer, so it is read
+                            // again rather than relabelled in place. What was decided on those
+                            // rows is kept and put back on the next read: correcting a pack's
+                            // party is what somebody does after working through the disputes, and
+                            // dropping the reading dropped every one of those answers with it.
+                            Keeping();
+
+                            _reading = null;
+
+                            DrawPacks();
+                            DrawReading();
+
+                            _rowsSaid.Children.Add(Ui.Note(
+                                "Read the packs again to see them under the new name. What has "
+                                + "been decided is kept."));
+                        }));
+                    }, primary: true),
                     new Ui.OnPicked("Take out these {n}", (picked, said) =>
                     {
                         var held = picked.OfType<string>().ToList();
@@ -1035,6 +1522,8 @@ namespace CamelWorks.UI.Views
                         }
 
                         foreach (var one in held) _returns.Remove(one);
+
+                        Keeping();
 
                         said.Children.Add(Ui.Note(Ui.Count(held.Count, "pack") + " taken out."));
 
@@ -1081,9 +1570,10 @@ namespace CamelWorks.UI.Views
                         return;
                     }
 
-                    // The party is the file's own name. Asking somebody to type "Mechanical"
-                    // beside a file called Mechanical.bcfzip is asking them to do the tool's job.
-                    packs.Add(new ExchangePack(Path.GetFileNameWithoutExtension(file),
+                    // The party is the file's own name unless somebody has said otherwise. A
+                    // returned file is often named after the thread it came from rather than the
+                    // trade that sent it, so the name is a default and not a fact.
+                    packs.Add(new ExchangePack(Party(file),
                                                ClashFile.Read(bytes), Path.GetFileName(file)));
                 }
 
@@ -1097,10 +1587,57 @@ namespace CamelWorks.UI.Views
 
                 _reading = ClashExchange.Read(packs, Results());
 
+                Restore();
+
                 _back.Children.Add(Ui.Line(_reading.Explain(), 1, true));
 
                 DrawPacks();
                 DrawReading();
+            }
+
+            /// <summary>
+            /// What has been decided on the rows, keyed by clash, so a re-read can put it back.
+            ///
+            /// Kept across a re-read rather than on the rows, because the rows are rebuilt from
+            /// the packs and the decisions are the coordinator's, not the packs'.
+            /// </summary>
+            private readonly Dictionary<ClashKey, (string? Chosen, string? Note, bool Take)>
+                _decided = new Dictionary<ClashKey, (string?, string?, bool)>();
+
+            /// <summary>Take a copy of every decision on the reading.</summary>
+            private void Keeping()
+            {
+                if (_reading == null) return;
+
+                foreach (var row in _reading.Rows)
+                {
+                    if (row.Chosen == null && string.IsNullOrWhiteSpace(row.Note) && !row.Take)
+                        continue;
+
+                    _decided[row.Item.Key] = (row.Chosen, row.Note, row.Take);
+                }
+            }
+
+            /// <summary>Put the kept decisions back onto a reading that has just been built.</summary>
+            private void Restore()
+            {
+                if (_reading == null || _decided.Count == 0) return;
+
+                foreach (var row in _reading.Rows)
+                {
+                    if (!_decided.TryGetValue(row.Item.Key, out var had)) continue;
+
+                    // The chosen party is only put back when a pack still answers under that
+                    // name. After a rename it does not, and forcing it would settle the row on a
+                    // party that is no longer in the reading.
+                    if (had.Chosen != null
+                        && row.Answers.Any(say => string.Equals(say.Party, had.Chosen,
+                                                                StringComparison.OrdinalIgnoreCase)))
+                        row.Chosen = had.Chosen;
+
+                    row.Note = had.Note;
+                    row.Take = had.Take && row.Settled != null;
+                }
             }
 
             /// <summary>The rows that came back, and what each would do.</summary>
@@ -1108,6 +1645,18 @@ namespace CamelWorks.UI.Views
             {
                 _rows.Children.Clear();
                 _rowsSaid.Children.Clear();
+
+                if (_apply != null)
+                {
+                    var ready = _reading != null && _reading.Rows.Count > 0;
+
+                    _apply.IsEnabled = ready;
+                    _apply.ToolTip = ready
+                        ? null
+                        : _reading == null
+                            ? "Read the returned packs first."
+                            : "These packs answer no clash on this board.";
+                }
 
                 if (_reading == null)
                 {
@@ -1143,8 +1692,13 @@ namespace CamelWorks.UI.Views
                     one.Item.Name ?? one.Item.Key.ToString(),
                     one.Item.TestName,
                     one.Current.ToString(),
-                    one.IsDisputed && one.Chosen == null ? "Conflict" : one.Would.ToString(),
-                    string.Join(", ", one.Answers.Select(say => say.Party)),
+                    one.IsDisputed && one.Chosen == null
+                        ? (one.IsThreeWay
+                            ? Ui.Count(one.Parties, "way") + " conflict"
+                            : "Conflict")
+                        : one.Would.ToString(),
+                    string.Join(", ", one.Answers.Select(say => say.Party))
+                    + (string.IsNullOrWhiteSpace(one.Note) ? string.Empty : " · noted"),
                     one.Take ? "Yes" : "No")
                 {
                     Tone = one.IsDisputed && one.Chosen == null ? Tone.Warn
@@ -1175,7 +1729,54 @@ namespace CamelWorks.UI.Views
                     Parts.PopMenu(settling, Sides(picked));
                 });
 
-                _rows.Children.Add(Ui.Picking(table, settling,
+                var noting = Ui.Link("Say why…", () => { });
+
+                noting.Click += (s, e) => Ui.Safely(() =>
+                {
+                    var picked = table.PickedMany().OfType<ExchangeRow>().ToList();
+
+                    if (picked.Count == 0)
+                    {
+                        Ui.Told("Select the rows the note is about first.");
+                        return;
+                    }
+
+                    // What the coordinator decided, in their own words. The note travels onto
+                    // the finding with the answer.
+                    //
+                    // One note goes onto every picked row, so the prompt says when that replaces
+                    // notes already typed on the others rather than seeding from the first row
+                    // and overwriting the rest in silence.
+                    var written = picked
+                        .Select(one => (one.Note ?? string.Empty).Trim())
+                        .Where(one => one.Length > 0)
+                        .Distinct(StringComparer.Ordinal)
+                        .Count();
+
+                    var asking = written > 1
+                        ? "What was decided - replaces " + Ui.Count(written, "different note")
+                          + " already on these rows"
+                        : "What was decided";
+
+                    Parts.Ask(_rows, asking, picked[0].Note, "Keep this note",
+                              said => Ui.Safely(() =>
+                              {
+                                  foreach (var row in picked) row.Note = said;
+
+                                  DrawReading();
+                              }));
+                });
+
+                var says = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+
+                says.Children.Add(settling);
+                says.Children.Add(noting);
+
+                _rows.Children.Add(Ui.Picking(table, says,
                     new Ui.OnPicked("Accept these {n}", (picked, said) =>
                         Decide(picked, said, row =>
                         {
@@ -1190,6 +1791,8 @@ namespace CamelWorks.UI.Views
                         + " reference elements this federation does not hold, which usually "
                         + "means a party worked against an earlier model issue."));
 
+                DrawStatusMapping();
+
                 _rowsSaid.Children.Add(Ui.Small(
                     showing.Count.ToString("N0", CultureInfo.InvariantCulture) + " shown · "
                     + Ui.Count(_reading.Changes, "change") + " to apply"
@@ -1198,6 +1801,40 @@ namespace CamelWorks.UI.Views
                           + " unresolved"
                         : string.Empty)));
             }
+
+            /// <summary>
+            /// Say what the returned status words become, before anything is applied.
+            ///
+            /// BCF does not fix its status list, so a trade returning forty topics marked
+            /// "Rejected" is ordinary. The mapping used to be applied silently, which left no way
+            /// to see that forty answers had become Active.
+            /// </summary>
+            private void DrawStatusMapping()
+            {
+                var words = _reading?.StatusWords;
+
+                if (words == null || words.Count == 0) return;
+
+                _rows.Children.Add(Ui.Small("Returned statuses become "
+                    + string.Join(", ", words.Select(Said)) + "."));
+
+                var guessed = _reading!.Guessed;
+
+                if (guessed.Count == 0) return;
+
+                _rows.Children.Add(Ui.Note(
+                    "This project's vocabulary does not hold "
+                    + string.Join(", ", guessed.Select(one => "\"" + one.Word + "\"")) + ". "
+                    + (guessed.Count == 1 ? "It is read" : "They are read")
+                    + " as shown above; change the answer on the row to override it."));
+            }
+
+            /// <summary>One status word, as the mapping line reads it.</summary>
+            /// <param name="word">The word and where it lands.</param>
+            private static string Said(ClashStatusWord word) =>
+                (word.Word.Length == 0 ? "(no status)" : word.Word)
+                + " \u00d7" + word.Count.ToString(CultureInfo.InvariantCulture)
+                + " \u2192 " + word.Lands;
 
             /// <summary>Do something to the picked rows, then draw them again.</summary>
             /// <param name="picked">The rows picked.</param>
@@ -1238,7 +1875,24 @@ namespace CamelWorks.UI.Views
                 {
                     var here = party;
 
-                    items.Add(Parts.Entry.Act(here, null, () =>
+                    // What this party actually said, on the entry that takes their answer. The
+                    // menu listed names alone, so the choice was between three labels with the
+                    // answers behind them on a table the menu covers.
+                    var said = picked
+                        .SelectMany(one => one.Answers)
+                        .Where(say => string.Equals(say.Party, here,
+                                                    StringComparison.OrdinalIgnoreCase))
+                        .Select(say => say.Incoming.ToString()
+                                       + (say.AssignedTo == null
+                                          ? string.Empty : ", to " + say.AssignedTo))
+                        .Distinct(StringComparer.Ordinal)
+                        .ToList();
+
+                    var says = said.Count == 1 ? said[0]
+                             : said.Count > 1 ? Ui.Count(said.Count, "different answer")
+                             : "Their answer";
+
+                    items.Add(Parts.Entry.Saying(here, null, says, () =>
                     {
                         foreach (var row in picked)
                         {
@@ -1275,18 +1929,28 @@ namespace CamelWorks.UI.Views
 
                 job.Say("Applying...");
 
-                var applied = ClashExchange.Apply(_reading);
+                var applied = ClashExchange.Apply(_reading, _findings?.Findings);
+
+                // The register is written here rather than left to the Manage tab: the Manage tab
+                // works on findings and never sees these items, so a status, an assignee or a
+                // comment left on the board alone was gone when the tab was left.
+                var kept = _findings == null || _findings.Save();
 
                 _applied.Children.Add(Ui.Line(applied.Explain(), 1, true));
 
                 if (applied.Moved == 0 && applied.Assigned == 0 && applied.Comments == 0) return;
 
-                // The board's own save is what carries this into the project database and, on a
-                // Manage seat with an .nwf open, back into Navisworks. Written here would be a
-                // second path to the same place that could disagree with the first.
-                _applied.Children.Add(Ui.Note(
-                    "Save on the Manage tab to write this to the project database. It reaches "
-                    + "Navisworks when the open model is an .nwf and the edition is Manage."));
+                if (!kept)
+                    _applied.Children.Add(Ui.Problem(
+                        "This is on the board but not written down: " + _findings!.LastSaveProblem));
+                else if (_findings == null)
+                    _applied.Children.Add(Ui.Note(
+                        "This screen was opened without a project file, so the answers are on the "
+                        + "board for this session only."));
+                else
+                    _applied.Children.Add(Ui.Note(
+                        "Written to the project database. It reaches Navisworks when the open "
+                        + "model is an .nwf and the edition is Manage."));
 
                 DrawReading();
             }
@@ -1330,6 +1994,76 @@ namespace CamelWorks.UI.Views
                 box.Children.Add(Ui.Check("Keep the folder structure", _profile.KeepGroups,
                                           on => _profile.KeepGroups = on));
 
+                box.Children.Add(Ui.Eyebrow("The viewpoint on each topic"));
+
+                // Said in words rather than as the enum's own names. "North" alone is read as
+                // both "looking north" and "the north elevation", which are opposite cameras.
+                var facing = Ui.Choice(
+                    ((BcfView[])Enum.GetValues(typeof(BcfView))).Select(Facing), Facing(_profile.View),
+                    said =>
+                    {
+                        foreach (BcfView view in Enum.GetValues(typeof(BcfView)))
+                            if (string.Equals(said, Facing(view), StringComparison.Ordinal))
+                                _profile.View = view;
+                    }, 190);
+
+                facing.ToolTip = "Where the camera stands. A reviewer works through a pack faster "
+                                 + "when every topic faces the same way.";
+
+                box.Children.Add(Ui.Field("Camera", facing));
+
+                box.Children.Add(Ui.Check("Colour the two clashing elements", _profile.Highlight,
+                                          on => _profile.Highlight = on));
+
+                var pictures = Ui.Check("Draw a picture of each finding", _pictures,
+                                        on => _pictures = on);
+
+                // Off and unavailable without a document: a picture is a render, and this desk
+                // draws from the project file alone when nothing is open.
+                if (_session == null)
+                {
+                    _pictures = false;
+                    pictures.IsEnabled = false;
+                    pictures.ToolTip = "No model is open, so there is nothing to render.";
+                }
+                else
+                {
+                    pictures.ToolTip = "Every coordination tool shows its issue list as "
+                                     + "thumbnails. They cost a render each.";
+                }
+
+                box.Children.Add(pictures);
+
+                box.Children.Add(Ui.Check("Cut a section box around the clash", _profile.Section,
+                                          on => _profile.Section = on));
+
+                var reach = Ui.Text(
+                    _profile.SectionMetres.ToString("0.##", CultureInfo.InvariantCulture),
+                    null, 70);
+
+                reach.TextChanged += (s, e) => Ui.Safely(() =>
+                {
+                    // A reach that is not a positive number left the profile on its previous value
+                    // while the box on screen read 0, so the pack came back sectioned at 2 m.
+                    var said = double.TryParse(reach.Text, NumberStyles.Any,
+                                               CultureInfo.InvariantCulture, out var metres);
+
+                    if (said && metres > 0)
+                    {
+                        _profile.SectionMetres = metres;
+                        reach.ToolTip = null;
+                        return;
+                    }
+
+                    reach.ToolTip = "The box reaches a positive number of metres each way from "
+                                    + "the clash. Still cutting at "
+                                    + _profile.SectionMetres.ToString("0.##",
+                                                                     CultureInfo.InvariantCulture)
+                                    + " m.";
+                });
+
+                box.Children.Add(Ui.Field("How far the box reaches (m)", reach));
+
                 return box;
             }
 
@@ -1352,6 +2086,24 @@ namespace CamelWorks.UI.Views
                     Ui.Small("A profile holds the tests, statuses, filter, order and split, so "
                              + "a recurring issue is configured once."));
             }
+
+
+            /// <summary>
+            /// Where a camera stands, in words.
+            ///
+            /// The enum's own names are compass points, and a compass point on its own reads as
+            /// both the place and the direction.
+            /// </summary>
+            /// <param name="view">The camera position.</param>
+            private static string Facing(BcfView view) => view switch
+            {
+                BcfView.Plan => "Above, looking down",
+                BcfView.North => "From the north",
+                BcfView.South => "From the south",
+                BcfView.East => "From the east",
+                BcfView.West => "From the west",
+                _ => "Standing, off to one side",
+            };
 
             /// <summary>Switch to a saved profile.</summary>
             /// <param name="name">Which one.</param>
@@ -1434,12 +2186,21 @@ namespace CamelWorks.UI.Views
 
                 // Whatever the Manage tab asked to send, ticked on arrival rather than left as a
                 // memory test about which three tests they were.
-                if (Preferred != null && Preferred.Count > 0)
+                if (Preferred != null)
                 {
-                    var wanted = new HashSet<string>(Preferred, StringComparer.OrdinalIgnoreCase);
+                    CheckKey = Preferred.CheckKey;
 
-                    foreach (var test in _profile.Tests)
-                        test.Chosen = wanted.Contains(test.Name);
+                    if (Preferred.RunIds.Count > 0)
+                    {
+                        var wanted = new HashSet<string>(Preferred.RunIds,
+                                                         StringComparer.OrdinalIgnoreCase);
+
+                        // By the run's id first. The hand-off has always sent ids and this
+                        // matched them against the test names, so a host that ids its tests by
+                        // anything but their name arrived with nothing ticked.
+                        foreach (var test in _profile.Tests)
+                            test.Chosen = wanted.Contains(test.Id ?? test.Name);
+                    }
 
                     Preferred = null;
                 }

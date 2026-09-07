@@ -62,6 +62,16 @@ namespace CamelWorks.Core.Clash
         /// <summary>Stable identity.</summary>
         public ClashKey Key { get; }
 
+        /// <summary>
+        /// The finding this item was projected from, or null when it has none.
+        ///
+        /// The board's items are derived from the findings register, and the register is keyed by
+        /// finding id, so the id is what a run comparison, a report filter and a write-back match
+        /// on. Null for a result raised by hand and for a board read out of a clash file, neither
+        /// of which has a finding behind it.
+        /// </summary>
+        public string? FindingId { get; set; }
+
         /// <summary>The clash test that produced it.</summary>
         public string TestName { get; }
 
@@ -79,12 +89,12 @@ namespace CamelWorks.Core.Clash
         public string? Name { get; set; }
 
         /// <summary>
-        /// Where this result stands, after carry-over has run.
+        /// Where this result stands.
         ///
-        /// Defaults to <see cref="FindingStatus.New"/>, which is the truth for a result no previous
-        /// run knew about. <see cref="ClashCarryOver"/> overwrites it for the ones a previous run
-        /// did know about — that, and nothing else, is what stops every re-export presenting last
-        /// month's reviewed clashes as brand new.
+        /// Defaults to <see cref="FindingStatus.New"/>, which is the truth for a result nothing has
+        /// ever recorded. <see cref="ClashProjection"/> fills it from the held finding for every
+        /// result the register knows, which is what stops a re-run presenting last month's reviewed
+        /// clashes as brand new.
         /// </summary>
         public FindingStatus Status { get; set; } = FindingStatus.New;
 
@@ -97,6 +107,17 @@ namespace CamelWorks.Core.Clash
         /// record, so it carries or it is lost.
         /// </summary>
         public string? CarriedGroup { get; set; }
+
+        /// <summary>
+        /// Whether this result was put in its group by hand, as against by the rules.
+        ///
+        /// Set by <see cref="ClashPipeline"/> on the way through and read by the write-back, which
+        /// is what makes the pin travel to a seat with no clash engine. Per result and not per
+        /// group: a derived group name can collide with a hand-made one, and the whole group
+        /// carrying the pin would mean the rules that put those results there could never move
+        /// them again.
+        /// </summary>
+        public bool GroupedByHand { get; set; }
 
         /// <summary>
         /// Who this result is assigned to, or null.
@@ -114,6 +135,17 @@ namespace CamelWorks.Core.Clash
         /// a conversation into whoever saved last.
         /// </summary>
         public IList<ClashComment> Comments { get; } = new List<ClashComment>();
+
+        /// <summary>
+        /// The rule that took this result off the board, or null when nothing did.
+        ///
+        /// Set by <see cref="ClashPipeline"/> on every run, cleared on the results it keeps: a
+        /// result the rules stopped suppressing must not go on carrying the name of the rule that
+        /// used to. It is recorded on the finding so a seat with no clash engine can rebuild a
+        /// board that still knows which results were suppressed, rather than presenting every one
+        /// of them as new.
+        /// </summary>
+        public string? SuppressedBy { get; set; }
 
         /// <summary>Level name, from the zoning pass. Null when the model has no usable levels.</summary>
         public string? Level { get; set; }
@@ -214,13 +246,13 @@ namespace CamelWorks.Core.Clash
         /// <summary>Category of item B.</summary>
         public string? CategoryB { get; set; }
 
-        /// <summary>Clash point, model units.</summary>
+        /// <summary>Clash point, metres. Scaled by the producer, not by anything downstream.</summary>
         public double X { get; set; }
 
-        /// <summary>Clash point, model units.</summary>
+        /// <summary>Clash point, metres. Scaled by the producer, not by anything downstream.</summary>
         public double Y { get; set; }
 
-        /// <summary>Clash point, model units.</summary>
+        /// <summary>Clash point, metres. Scaled by the producer, not by anything downstream.</summary>
         public double Z { get; set; }
 
         /// <summary>Overlap volume in cubic model units, where the engine reported one.</summary>
@@ -246,9 +278,30 @@ namespace CamelWorks.Core.Clash
         public IDictionary<string, string?> Properties { get; } =
             new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// The property the board draws the status the host last reported under.
+        ///
+        /// An observation and not the result's status, which is the register's. Named here because
+        /// two producers write it - the projection off a document and the reader off a file - and
+        /// a column drawn under two spellings is a column that is empty on one leg.
+        /// </summary>
+        public const string HostStatusProperty = "Host/Status";
+
+        /// <summary>The property the board draws the assignee the host last reported under.</summary>
+        public const string HostAssigneeProperty = "Host/AssignedTo";
+
         /// <summary>True when both participants are in the same model — usually a modelling artefact.</summary>
         public bool IsSameModel =>
             ModelA != null && string.Equals(ModelA, ModelB, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// What a pair facet reads when neither side is named.
+        ///
+        /// Named so the export split can tell a pack for both trades from a pack for nobody: a
+        /// check with no trade sides answers this for every result, and one pack called "? v ?" is
+        /// not a split.
+        /// </summary>
+        public const string UnknownPair = "? v ?";
 
         /// <summary>The two model names in a stable order, for pair grouping.</summary>
         public string ModelPair

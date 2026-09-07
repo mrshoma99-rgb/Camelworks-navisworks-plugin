@@ -99,12 +99,17 @@ namespace CamelWorks.Core.OpenBim
 
                 if (markups.Count == 0) warnings.Add("the archive contains no markup.bcf files, so it has no topics");
 
+                // Indexed once. Finding each viewpoint's .bcfv by scanning zip.Entries meant two
+                // passes over every entry per viewpoint: an 18,000-clash pack holds about 54,000
+                // entries, so one import was up to 2x10^9 string comparisons.
+                var files = new Files(zip);
+
                 foreach (var entry in markups)
                 {
                     var root = Parse(entry, warnings);
                     if (root == null) continue;
 
-                    var topic = ReadTopic(root, entry.FullName, warnings, zip);
+                    var topic = ReadTopic(root, entry.FullName, warnings, files);
                     if (topic != null) topics.Add(topic);
                 }
 
@@ -172,6 +177,55 @@ namespace CamelWorks.Core.OpenBim
             return found;
         }
 
+        /// <summary>
+        /// The archive's entries, indexed once.
+        ///
+        /// A .bcfv is named for its viewpoint's GUID and sits beside the markup that references it,
+        /// so the exact path answers almost every lookup. The looser tier is for tools that file
+        /// them elsewhere or prefix the name, and it is reached only when the exact path misses.
+        /// It walks the .bcfv entries in archive order rather than an index, because the answer
+        /// has to be the one the old two-pass scan gave: an archive holding two entries that both
+        /// end with the GUID must resolve to the same one it always did.
+        /// </summary>
+        private sealed class Files
+        {
+            private readonly Dictionary<string, ZipArchiveEntry> _byPath =
+                new Dictionary<string, ZipArchiveEntry>(StringComparer.OrdinalIgnoreCase);
+
+            private readonly List<ZipArchiveEntry> _visualisations = new List<ZipArchiveEntry>();
+
+            internal Files(ZipArchive zip)
+            {
+                foreach (var entry in zip.Entries)
+                {
+                    // First wins, so a duplicated path reads the same way every time.
+                    if (!_byPath.ContainsKey(entry.FullName)) _byPath[entry.FullName] = entry;
+
+                    if (!entry.FullName.EndsWith(".bcfv", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    _visualisations.Add(entry);
+                }
+            }
+
+            /// <summary>The .bcfv for one viewpoint, or null when the archive carries none.</summary>
+            /// <param name="folder">The folder the markup referencing it sits in.</param>
+            /// <param name="guid">The viewpoint's GUID.</param>
+            internal ZipArchiveEntry? Visualisation(string folder, string guid)
+            {
+                var wanted = guid + ".bcfv";
+
+                if (_byPath.TryGetValue(folder + wanted, out var exact)) return exact;
+
+                foreach (var entry in _visualisations)
+                    if (entry.FullName.StartsWith(folder, StringComparison.OrdinalIgnoreCase)
+                        && entry.FullName.EndsWith(wanted, StringComparison.OrdinalIgnoreCase))
+                        return entry;
+
+                return null;
+            }
+        }
+
         private static XElement? Parse(ZipArchiveEntry entry, List<string> warnings)
         {
             try
@@ -205,7 +259,7 @@ namespace CamelWorks.Core.OpenBim
         }
 
         private static BcfTopic? ReadTopic(XElement markup, string path, List<string> warnings,
-                                           ZipArchive zip)
+                                           Files files)
         {
             var element = markup.Element("Topic");
             if (element == null)
@@ -275,7 +329,7 @@ namespace CamelWorks.Core.OpenBim
                 // in the .bcfv beside it. Reading only the name was reading only half a viewpoint:
                 // an imported issue arrived with nothing to look at and no elements selected,
                 // which is most of what a viewpoint is for.
-                Visualisation(zip, folder, viewpoint, warnings);
+                Visualisation(files, folder, viewpoint, warnings);
 
                 topic.Viewpoints.Add(viewpoint);
             }
@@ -305,16 +359,10 @@ namespace CamelWorks.Core.OpenBim
         }
 
         /// <summary>Fill a viewpoint in from its .bcfv, when the archive carries one.</summary>
-        private static void Visualisation(ZipArchive zip, string folder, BcfViewpoint viewpoint,
+        private static void Visualisation(Files files, string folder, BcfViewpoint viewpoint,
                                           List<string> warnings)
         {
-            var wanted = folder + viewpoint.Guid + ".bcfv";
-
-            var entry = zip.Entries.FirstOrDefault(
-                            e => string.Equals(e.FullName, wanted, StringComparison.OrdinalIgnoreCase))
-                        ?? zip.Entries.FirstOrDefault(
-                            e => e.FullName.StartsWith(folder, StringComparison.OrdinalIgnoreCase)
-                                 && e.FullName.EndsWith(viewpoint.Guid + ".bcfv", StringComparison.OrdinalIgnoreCase));
+            var entry = files.Visualisation(folder, viewpoint.Guid);
 
             if (entry == null) return;
 
@@ -323,6 +371,24 @@ namespace CamelWorks.Core.OpenBim
             if (root == null) return;
 
             viewpoint.Camera = Camera(root);
+
+            // The section box. Without this a pack read in and written back out again lost every
+            // section it arrived with, and the round trip could not tell a malformed plane from
+            // none at all.
+            var planes = root.Element("ClippingPlanes");
+
+            if (planes != null)
+            {
+                foreach (var plane in planes.Elements("ClippingPlane"))
+                {
+                    var (x, y, z) = Vector(plane, "Location");
+                    var (dx, dy, dz) = Vector(plane, "Direction");
+
+                    if (dx == 0 && dy == 0 && dz == 0) continue;
+
+                    viewpoint.ClippingPlanes.Add(new BcfClippingPlane(x, y, z, dx, dy, dz));
+                }
+            }
 
             var components = root.Element("Components");
 

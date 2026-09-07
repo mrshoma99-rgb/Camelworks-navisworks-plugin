@@ -46,13 +46,16 @@ namespace CamelWorks.Core.OpenBim
         public const string Why = "Why";
 
         /// <summary>
-        /// How many children one specification may make.
+        /// How many locations one specification may make.
         ///
         /// The checker already caps the violations it collects, and this is the second cap: what
         /// reaches the register. A requirement nine thousand elements fail is one argument to have
-        /// with one person, and nine thousand rows is a file nobody opens twice.
+        /// with one person, and nine thousand places is a file nobody opens twice.
+        ///
+        /// A thousand: the number the owner's own example uses — one specification, one decision,
+        /// a thousand places to look — so the product produces the set the design reasons about.
         /// </summary>
-        public const int DefaultCap = 500;
+        public const int DefaultCap = 1000;
 
         /// <summary>
         /// One specification's result, as a finding, or null when the model satisfied it.
@@ -60,7 +63,7 @@ namespace CamelWorks.Core.OpenBim
         /// <param name="result">What the checker said about one specification.</param>
         /// <param name="document">What to record as where the specification came from.</param>
         /// <param name="keyOf">The element key for one of the checker's ids.</param>
-        /// <param name="cap">How many children to make at most.</param>
+        /// <param name="cap">How many locations to make at most.</param>
         public static Finding? From(IdsSpecificationResult result, string? document = null,
                                     Func<string, ElementKey>? keyOf = null,
                                     int cap = DefaultCap)
@@ -95,13 +98,12 @@ namespace CamelWorks.Core.OpenBim
 
                 if (key.IsEmpty) continue;
 
-                var child = Finding.Create(FindingSource.Ids, Rule, Headline(result),
-                                           new[] { key }, named);
+                var location = new FindingLocation(parent.Id + "/" + key, new[] { key },
+                                                   violation.Requirement?.Describe());
 
-                child.Detail = violation.Requirement?.Describe();
-                child.Facts[Why] = violation.Failure.ToString();
+                location.Facts[Why] = violation.Failure.ToString();
 
-                parent.AddChild(child);
+                parent.AddLocation(location);
                 made++;
             }
 
@@ -112,7 +114,7 @@ namespace CamelWorks.Core.OpenBim
         /// <param name="report">What the checker said.</param>
         /// <param name="document">What to record as where the specifications came from.</param>
         /// <param name="keyOf">The element key for one of the checker's ids.</param>
-        /// <param name="cap">How many children each specification may make.</param>
+        /// <param name="cap">How many locations each specification may make.</param>
         public static IReadOnlyList<Finding> For(IdsReport? report, string? document = null,
                                                  Func<string, ElementKey>? keyOf = null,
                                                  int cap = DefaultCap)

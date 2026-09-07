@@ -63,7 +63,7 @@ namespace CamelWorks.Core.Tests
             Assert.Equal("3", finding.Facts[IdsFindings.Applicable]);
             Assert.Equal("1", finding.Facts[IdsFindings.Passed]);
             Assert.Equal("2", finding.Facts[IdsFindings.Failed]);
-            Assert.Equal(2, finding.Children.Count);
+            Assert.Equal(2, finding.Locations.Count);
         }
 
         [Fact]
@@ -137,7 +137,7 @@ namespace CamelWorks.Core.Tests
 
             Assert.Contains("nothing in this model was checked by it", finding.Title);
             Assert.Contains("quietly stops being checked", finding.Facts[IdsFindings.Why]);
-            Assert.False(finding.IsParent);
+            Assert.False(finding.HasLocations);
         }
 
         [Fact]
@@ -151,7 +151,7 @@ namespace CamelWorks.Core.Tests
 
             var finding = IdsFindings.For(report, "riverside.ids", KeyOf).Single();
 
-            Assert.False(finding.IsParent);
+            Assert.False(finding.HasLocations);
             Assert.Equal("1", finding.Facts[IdsFindings.Failed]);
         }
 
@@ -160,7 +160,7 @@ namespace CamelWorks.Core.Tests
         {
             var finding = IdsFindings.For(Run(2), "riverside.ids").Single();
 
-            Assert.False(finding.IsParent);
+            Assert.False(finding.HasLocations);
             Assert.Equal("2", finding.Facts[IdsFindings.Failed]);
         }
 
@@ -206,7 +206,7 @@ namespace CamelWorks.Core.Tests
 
             Assert.Equal(FindingStatus.Approved, after.Status);
             Assert.Equal("9", after.Facts[IdsFindings.Failed]);
-            Assert.Equal(9, after.Children.Count);
+            Assert.Equal(9, after.Locations.Count);
         }
 
         /// <summary>An element the Level 3 Ductwork set claimed, carrying nothing else.</summary>

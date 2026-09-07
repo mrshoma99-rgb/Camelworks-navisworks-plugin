@@ -3,6 +3,7 @@ using System.Linq;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Measurement;
 using CamelWorks.Core.Identity;
+using CamelWorks.Core.Issues;
 using CamelWorks.Core.Store;
 using Xunit;
 
@@ -241,20 +242,19 @@ namespace CamelWorks.Core.Tests
         {
             // An issue somebody raised deserves the typed instruction more than a clash does:
             // nobody's engine is going to restate it next week.
-            var key = ClashKey.Create(ClashFixture.Mep("valve"), ClashFixture.Arch("wall"), 1, 2, 3);
+            var issue = new Issue("CW-1", "Door swings into the escape route");
 
-            var issue = new ManualIssue("issue-1", key, "Door swings into the escape route")
-            {
-                Instruction = new Resolution(ResolutionAction.Reroute, "the door swing"),
-            };
+            issue.Facts[Issue.InstructionFact] =
+                new Resolution(ResolutionAction.Reroute, "the door swing").ToJson().ToString();
 
-            var list = new ManualIssueList();
-            list.Put(issue);
+            var register = new IssueRegister();
+            register.Put(issue);
 
-            var back = ManualIssueList.FromJson(list.ToJson());
+            var back = IssueRegister.FromJson(JsonReader.Parse(register.ToJson().ToString()));
+            var said = IssueItems.Instruction(back.Issues.Single());
 
-            Assert.Equal(ResolutionAction.Reroute, back.Issues.Single().Instruction.Action);
-            Assert.Equal("the door swing", back.Issues.Single().Instruction.Subject);
+            Assert.Equal(ResolutionAction.Reroute, said.Action);
+            Assert.Equal("the door swing", said.Subject);
         }
     }
 }

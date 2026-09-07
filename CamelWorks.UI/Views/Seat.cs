@@ -1,8 +1,12 @@
 using System;
 using System.Collections.Generic;
 using CamelWorks.Core.Abstractions;
+using CamelWorks.Core.Checks;
+using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Project;
+using CamelWorks.Core.Store;
+using CamelWorks.Core.Testing;
 
 namespace CamelWorks.UI.Views
 {
@@ -68,6 +72,34 @@ namespace CamelWorks.UI.Views
         /// <summary>Where this project's own data is kept.</summary>
         ProjectStore Store { get; }
 
+        /// <summary>Every finding this project holds, whatever check produced it.</summary>
+        FindingStore Findings { get; }
+
+        /// <summary>Every check this seat can offer.</summary>
+        CheckCatalogue Checks { get; }
+
+        /// <summary>What CamelWorks derived about this project, with any overrides applied.</summary>
+        ProjectProfile Profile { get; }
+
+        /// <summary>
+        /// How many metres one model unit is.
+        ///
+        /// Every threshold in this product is stated in metres and the host reports geometry in
+        /// whatever unit the document was authored in, so a screen that states one has to be able
+        /// to convert at the boundary.
+        /// </summary>
+        double MetresPerUnit { get; }
+
+        /// <summary>
+        /// Colour, transparency, visibility, camera and the section box.
+        ///
+        /// The document itself is deliberately not here. A host document is a Navisworks type, and
+        /// putting one on this interface would drag Navisworks into the render harness, which is
+        /// what this interface exists to keep out. What a screen actually asks a document for is
+        /// its models, its sets, its selection and a traversal, and those are the members above.
+        /// </summary>
+        IViewSession View { get; }
+
         /// <summary>Write a line into the project's history.</summary>
         /// <param name="kind">What sort of act it was.</param>
         /// <param name="summary">One line saying what happened.</param>
@@ -104,6 +136,7 @@ namespace CamelWorks.UI.Views
     {
         private readonly ProjectStore _store;
         private readonly IClashSource _clash;
+        private readonly FakeDocument _document = new FakeDocument();
 
         /// <summary>Take a seat with nothing in it.</summary>
         /// <param name="store">Where to keep things. A scratch store is fine.</param>
@@ -113,7 +146,34 @@ namespace CamelWorks.UI.Views
         {
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _clash = clash ?? throw new ArgumentNullException(nameof(clash));
+
+            Findings = FindingStore.Open(PhysicalFileSystem.Instance, store);
+            Profile = ProjectProfile.Derive(null, store.Path);
+            View = new FakeViewSession(_document);
+            Checks = new CheckCatalogue();
+
+            // Registered on the empty seat too, so the picker on a seat with no document lists the
+            // checks and says why each is unavailable rather than leaving them out.
+            var runs = CheckRunStore.Read(store);
+
+            Checks.Add(new ClearanceCheck(Findings.Findings, runs, _document, project: store));
+            Checks.Add(new FallCheck(Findings.Findings, runs, _document, _document, project: store));
         }
+
+        /// <inheritdoc />
+        public FindingStore Findings { get; }
+
+        /// <inheritdoc />
+        public CheckCatalogue Checks { get; }
+
+        /// <inheritdoc />
+        public ProjectProfile Profile { get; }
+
+        /// <summary>One metre per unit: an empty seat has no document to have been authored in one.</summary>
+        public double MetresPerUnit => 1.0;
+
+        /// <summary>An in-memory view session, so a screen that colours or frames something answers.</summary>
+        public IViewSession View { get; }
 
         /// <inheritdoc />
         public IClashSource Clash => _clash;

@@ -40,7 +40,7 @@ namespace CamelWorks.UI.Views
 
         /// <summary>The freeze this project holds, or null.</summary>
         internal static Freeze? Frozen(Session session) =>
-            Freeze.FromJson(session.Store.Section(ProjectStore.ClashSection)["freeze"]);
+            Freeze.FromJson(session.Store.Section(ProjectStore.ClashSection)[ClashKeys.Freeze]);
 
         /// <summary>
         /// What is frozen right now, and the way back off it.
@@ -70,7 +70,7 @@ namespace CamelWorks.UI.Views
             {
                 state.Children.Clear();
 
-                session.Store.Section(ProjectStore.ClashSection).Remove("freeze");
+                session.Store.Section(ProjectStore.ClashSection).Remove(ClashKeys.Freeze);
 
                 state.Children.Add(session.Store.Save()
                     ? Ui.Done("Unfrozen. Nothing in the model changed - only the record that it "
@@ -237,7 +237,7 @@ namespace CamelWorks.UI.Views
             var record = Freeze.Of(name, Environment.UserName, DateTimeOffset.UtcNow, groups,
                                    elements, signatory.Text, release.Text);
 
-            session.Store.Section(ProjectStore.ClashSection).Set("freeze", record.ToJson());
+            session.Store.Section(ProjectStore.ClashSection).Set(ClashKeys.Freeze, record.ToJson());
 
             results.Children.Add(session.Store.Save()
                 ? Ui.Line(record.Describe(), 1, true)

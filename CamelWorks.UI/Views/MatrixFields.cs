@@ -317,19 +317,26 @@ namespace CamelWorks.UI.Views
             moves.Children.Add(up);
             moves.Children.Add(down);
 
-            if (!field.IsBuiltIn)
+            // The Remove slot is kept whether or not this field can be removed, so the two arrows
+            // sit at one position down the panel. Built-in fields left it out, and every card
+            // above one shifted sideways.
+            var drop = Ui.Quiet("Remove", () => Ui.Safely(() =>
             {
-                var drop = Ui.Quiet("Remove", () => Ui.Safely(() =>
-                {
-                    board.Scheme.Remove(field.Key, board.Rows.Concat(board.Columns));
-                    onChange();
-                }));
+                board.Scheme.Remove(field.Key, board.Rows.Concat(board.Columns));
+                onChange();
+            }));
 
-                drop.ToolTip = "Remove this field and every line's value for it. "
-                               + "The matrix's own undo takes it back.";
+            drop.ToolTip = "Remove this field and every line's value for it. "
+                           + "The matrix's own undo takes it back.";
 
-                moves.Children.Add(drop);
+            if (field.IsBuiltIn)
+            {
+                drop.Visibility = Visibility.Hidden;
+                drop.IsHitTestVisible = false;
+                drop.ToolTip = null;
             }
+
+            moves.Children.Add(drop);
 
             Grid.SetColumn(moves, 3);
             head.Children.Add(moves);
@@ -523,7 +530,7 @@ namespace CamelWorks.UI.Views
                 pad.ToolTip = "Leading zeros, so 1 reads as 01.";
 
                 row = Ui.Across(kinds, Ui.Field("Start at", start, null),
-                                Ui.Field("Step", step, null), Ui.Field("Digits", pad, null));
+                                Ui.Field("Step", step, null), Ui.Field("Least digits", pad, null));
             }
 
             row.Margin = new Thickness(0, 8, 0, 0);

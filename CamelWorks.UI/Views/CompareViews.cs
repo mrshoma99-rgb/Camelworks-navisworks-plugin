@@ -976,19 +976,18 @@ namespace CamelWorks.UI.Views
 
                     var against = _result.Between();
 
-                    // Kept before they are raised, so the issue attaches to a record that
-                    // survives rather than to one this button invented and dropped. A compare
-                    // finding already knew how to be a finding; nothing was ever keeping it.
+                    // Taken into the register before they are raised, so the issue attaches to a
+                    // record that survives rather than to one this button invented and dropped. A
+                    // compare finding already knew how to be a finding; nothing was ever keeping
+                    // it.
+                    //
+                    // Not saved here: the raise below writes the sidecar and the project file
+                    // through the one door, so an issue naming these findings cannot land while
+                    // the findings themselves went unwritten.
                     var register = _session.Findings.Findings;
 
                     register.Observe(FindingSource.Compare, findings, DateTime.UtcNow.Ticks,
                                      origin: against);
-
-                    if (!_session.Findings.Save())
-                        _output.Children.Add(Ui.Note(
-                            "These are on the board but could not be kept: "
-                            + (_session.Findings.LastSaveProblem
-                               ?? "there was nowhere to write.")));
 
                     var held = findings.Select(f => register.Find(f.Id) ?? f).ToList();
 
@@ -999,13 +998,14 @@ namespace CamelWorks.UI.Views
                         var finding = held[at++];
 
                         var issue = new Core.Issues.Issue(id, finding.Title,
-                                                          Core.Issues.IssueOrigin.Compare)
+                                                          FindingSource.Compare)
                         {
                             Type = "Coordination",
-                            Source = against,
-                            Description = Ui.Count(finding.Children.Count, "element")
+                            Description = Ui.Count(finding.Locations.Count, "element")
                                           + " — " + against,
                         };
+
+                        issue.Facts[Core.Issues.Issue.SourceFact] = against;
 
                         IssueFindings.Attach(issue, new[] { finding });
 

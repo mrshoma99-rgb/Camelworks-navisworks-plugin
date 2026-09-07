@@ -1025,6 +1025,16 @@ namespace CamelWorks.Core.Clash
         public bool UpperIsLive { get; set; } = true;
 
         /// <summary>
+        /// Which storey this board's tests are about, for the <c>{level}</c> naming token.
+        ///
+        /// One value for the whole board rather than one per line, because a matrix is a grid of
+        /// disciplines and a level cuts across all of them: a coordinator builds "L03 - Mech v
+        /// Struct" for level 3 and then the same grid again for level 4. Empty when the board is
+        /// not per-storey, and the token then fills as nothing.
+        /// </summary>
+        public string Level { get; set; } = string.Empty;
+
+        /// <summary>
         /// Whether this cell is the one of a mirrored pair that the matrix keeps.
         ///
         /// Always the earlier of the two, whichever half is drawn. This is what walks the cells,
@@ -1535,6 +1545,8 @@ namespace CamelWorks.Core.Clash
         {
             var json = JsonValue.Object();
 
+            if (Level.Length > 0) json.Set("level", Level);
+
             json.Set("rows", JsonValue.Array(_rows.Select(r => r.ToJson())));
             json.Set("columns", JsonValue.Array(_columns.Select(c => c.ToJson())));
 
@@ -1598,6 +1610,7 @@ namespace CamelWorks.Core.Clash
             board.UpperIsLive = !json["lower"].AsBool(false);
             board.Paired = !json["apart"].AsBool(false);
             board.Scheme = MatrixScheme.FromJson(json["fields"]);
+            board.Level = json["level"].AsString() ?? string.Empty;
 
             foreach (var held in json["rows"].Items)
             {

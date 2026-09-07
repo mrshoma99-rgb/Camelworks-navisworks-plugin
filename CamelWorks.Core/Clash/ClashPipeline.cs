@@ -211,6 +211,41 @@ namespace CamelWorks.Core.Clash
         /// <summary>Names of the rules that removed or marked anything.</summary>
         public IReadOnlyList<string> RulesApplied { get; }
 
+        /// <summary>
+        /// What the grouping did, for the line the board leads with.
+        ///
+        /// The board's loudest grouping message was "tick two or more and press Group", which
+        /// reads as though hand-grouping is the only mechanism. The rules group by level, grid,
+        /// zone, model pair, discipline, test, system, property, same item and proximity, and the
+        /// screen never said so.
+        /// </summary>
+        /// <param name="loose">How many results the rules left in no group.</param>
+        public string Grouped(int loose)
+        {
+            if (Groups == 0)
+                return loose == 0
+                    ? "The rules had nothing to group."
+                    : "The rules made no groups from "
+                      + (loose == 1
+                          ? "the one result there is."
+                          : "these " + loose.ToString("N0", CultureInfo.InvariantCulture)
+                            + " results.");
+
+            var line = "The rules made "
+                     + Groups.ToString("N0", CultureInfo.InvariantCulture)
+                     + (Groups == 1 ? " group" : " groups");
+
+            if (loose > 0)
+                line += ", and left " + loose.ToString("N0", CultureInfo.InvariantCulture)
+                      + (loose == 1 ? " result" : " results") + " in none";
+
+            if (Unassigned > 0)
+                line += ". " + Unassigned.ToString("N0", CultureInfo.InvariantCulture)
+                      + (Unassigned == 1 ? " group has" : " groups have") + " no responsible party";
+
+            return line + ".";
+        }
+
         /// <summary>The one-line readout.</summary>
         public override string ToString()
         {
@@ -280,21 +315,29 @@ namespace CamelWorks.Core.Clash
             var flagged = new List<ClashItem>();
             var rulesApplied = new List<string>();
 
+            // Parallel sets, so neither membership test walks a list that grows with the board.
+            // On 18,000 results with several flag rules, both of these were scans.
+            var isFlagged = new HashSet<ClashItem>();
+            var applied = new HashSet<string>(StringComparer.Ordinal);
+
             foreach (var item in all)
             {
-                var removed = false;
+                // Cleared before the rules run. The item carries the last run's answer, read back
+                // off its finding, and a result the rules no longer suppress would otherwise keep
+                // naming the rule that used to.
+                item.SuppressedBy = null;
 
                 foreach (var rule in options.Filters)
                 {
                     if (!rule.When.Matches(item)) continue;
 
-                    if (!rulesApplied.Contains(rule.Name)) rulesApplied.Add(rule.Name);
+                    if (applied.Add(rule.Name)) rulesApplied.Add(rule.Name);
 
-                    if (rule.Suppress) { removed = true; break; }
-                    if (!flagged.Contains(item)) flagged.Add(item);
+                    if (rule.Suppress) { item.SuppressedBy = rule.Name; break; }
+                    if (isFlagged.Add(item)) flagged.Add(item);
                 }
 
-                if (removed) suppressed.Add(item); else kept.Add(item);
+                if (item.SuppressedBy != null) suppressed.Add(item); else kept.Add(item);
             }
 
             // --- 2. Group -----------------------------------------------------------------
@@ -347,6 +390,11 @@ namespace CamelWorks.Core.Clash
                 }
 
                 if (pinned) pinnedNames.Add(name);
+
+                // On the result, not only on the group. The group is keyed by name and a derived
+                // name can collide with a hand-made one, so a group is pinned when any member was
+                // put there by hand while each member says for itself how it got there.
+                item.GroupedByHand = pinned;
 
                 if (!byName.TryGetValue(name, out var group))
                 {

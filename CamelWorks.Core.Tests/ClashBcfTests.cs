@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using CamelWorks.Core.Clash;
@@ -10,48 +11,79 @@ using Xunit;
 namespace CamelWorks.Core.Tests
 {
     /// <summary>
-    /// Clash results as BCF.
+    /// Clash results as BCF, through the one writer.
     ///
-    /// The point of the format change is that another tool can read the file. The point of these
-    /// tests is that changing format cost nothing: everything the Navisworks clash XML carried has
-    /// to survive the round trip, including the half of it BCF has no field for.
+    /// The point of the format is that another tool can read the file. The point of these tests is
+    /// that a clash loses nothing by being written the way every check is written: what goes out is
+    /// a finding, what comes back is read as clash results, and everything BCF has no field for
+    /// rides the sidecar.
     /// </summary>
     public class ClashBcfTests
     {
         private static ElementKey Key(string guid) =>
             ElementKey.FromInstanceGuid(ElementKey.ScopeOf("model.nwc"), Guid.Parse(guid));
 
-        private static ClashItem Item(string a, string b, string test = "MEP vs Structure")
+        /// <summary>One clash, as its producer makes it: keyed, celled and topic-stamped.</summary>
+        private static Finding Found(string a, string b, string test = "MEP vs Structure",
+                                     double x = 10, double y = 20, double z = 30)
         {
-            var first = Key(a);
-            var second = Key(b);
+            var key = ClashKey.Create(Key(a), Key(b), x, y, z);
 
-            return new ClashItem(ClashKey.Create(first, second, 10, 20, 30), test)
-            {
-                X = 10, Y = 20, Z = 30,
-            };
+            var finding = Finding.Create(FindingSource.Clash, test, "Clash",
+                                         new[] { key.A, key.B }, ClashFindings.CellOf(key));
+
+            finding.TopicGuid = ClashBcf.TopicGuidFor(key);
+            finding.X = x;
+            finding.Y = y;
+            finding.Z = z;
+
+            return finding;
         }
 
-        private static ClashPackRead RoundTrip(params ClashItem[] items) =>
-            RoundTrip(ClashBcf.Write(items));
+        private static ClashKey KeyOf(Finding finding) =>
+            ClashKey.Create(finding.Elements[0], finding.Elements[1],
+                            finding.X ?? 0, finding.Y ?? 0, finding.Z ?? 0);
 
-        private static ClashPackRead RoundTrip(ClashBcfDocument written)
+        private static FindingBcfDocument Written(params Finding[] findings) =>
+            FindingBcf.Write(findings);
+
+        private static ClashPackRead RoundTrip(params Finding[] findings) =>
+            RoundTrip(Written(findings));
+
+        private static ClashPackRead RoundTrip(FindingBcfDocument written)
         {
             using var stream = new MemoryStream(written.Bytes);
 
             return ClashBcf.Read(stream);
         }
 
+        /// <summary>The topics of a written pack, as any other tool would read them.</summary>
+        private static IReadOnlyList<BcfTopic> Topics(FindingBcfDocument written)
+        {
+            using var stream = new MemoryStream(written.Bytes);
+
+            return BcfReader.Read(stream).Topics;
+        }
+
+        /// <summary>A pack re-authored by somebody else's tool: our topics, none of our extras.</summary>
+        private static ClashPackRead Foreign(params BcfTopic[] topics)
+        {
+            using var theirs = new MemoryStream();
+
+            BcfWriter.Write(theirs, topics, BcfVersion.V21);
+            theirs.Position = 0;
+
+            return ClashBcf.Read(theirs);
+        }
+
         [Fact]
         public void EveryClashBecomesOneTopic()
         {
-            var written = ClashBcf.Write(new[]
-            {
-                Item("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
-                Item("33333333-3333-3333-3333-333333333333", "44444444-4444-4444-4444-444444444444"),
-            });
+            var written = Written(
+                Found("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
+                Found("33333333-3333-3333-3333-333333333333", "44444444-4444-4444-4444-444444444444"));
 
-            Assert.Equal(2, written.Results);
+            Assert.Equal(2, written.Findings);
 
             var read = RoundTrip(written);
 
@@ -63,34 +95,31 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void TheArchiveIsARealBcfAnyToolCanRead()
         {
-            var written = ClashBcf.Write(new[]
-            {
-                Item("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
-            });
+            var written = Written(
+                Found("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"));
 
             using var stream = new MemoryStream(written.Bytes);
 
             var bcf = BcfReader.Read(stream);
 
             Assert.Single(bcf.Topics);
-            Assert.Equal("Clash", bcf.Topics[0].TopicType);
-            Assert.Contains(ClashBcf.Sidecar, bcf.Extras.Keys);
+            Assert.Equal(FindingSource.Clash, bcf.Topics[0].TopicType);
+            Assert.Contains(FindingBcf.Sidecar, bcf.Extras.Keys);
         }
 
         [Fact]
         public void TheDecisionsSurvive()
         {
-            var item = Item("11111111-1111-1111-1111-111111111111",
-                            "22222222-2222-2222-2222-222222222222");
+            var finding = Found("11111111-1111-1111-1111-111111111111",
+                                "22222222-2222-2222-2222-222222222222");
 
-            item.Status = FindingStatus.Approved;
-            item.AssignedTo = "Sam";
-            item.CarriedGroup = "Level 3 ducts";
-            item.Comments.Add(new ClashComment("sam", new DateTime(2026, 3, 1).Ticks, "Raised with MEP."));
-            item.Comments.Add(new ClashComment("ada", new DateTime(2026, 3, 2).Ticks, "Rerouting."));
+            finding.Status = FindingStatus.Approved;
+            finding.AssignedTo = "Sam";
+            finding.Group = "Level 3 ducts";
+            finding.Comments.Add(new FindingComment("sam", new DateTime(2026, 3, 1).Ticks, "Raised with MEP."));
+            finding.Comments.Add(new FindingComment("ada", new DateTime(2026, 3, 2).Ticks, "Rerouting."));
 
-            var read = RoundTrip(item);
-            var result = read.Results.Single();
+            var result = RoundTrip(finding).Results.Single();
 
             Assert.Equal(FindingStatus.Approved, result.Status);
             Assert.Equal("Sam", result.AssignedTo);
@@ -101,68 +130,74 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void EverythingBcfHasNoFieldForSurvivesToo()
+        public void EveryFactTheProducerWroteSurvivesTheRoundTrip()
         {
-            var item = Item("11111111-1111-1111-1111-111111111111",
-                            "22222222-2222-2222-2222-222222222222");
+            // The generic sidecar. The clash writer's sheet named twenty-five clash fields, so a
+            // check with any other number to carry travelled with none of them; this dumps the
+            // finding's facts, whatever they are and whichever check wrote them.
+            var finding = Found("11111111-1111-1111-1111-111111111111",
+                                "22222222-2222-2222-2222-222222222222");
 
-            item.TestFolder = "Coordination";
-            item.Distance = 0.045;
-            item.OverlapVolume = 0.0031;
-            item.CrossingAngleDegrees = 87;
-            item.Level = "L03";
-            item.Grid = "C-4";
-            item.Zone = "Plant room";
-            item.ModelA = "MEP.nwc";
-            item.ModelB = "Structure.nwc";
-            item.CategoryA = "Duct";
-            item.CategoryB = "Beam";
-            item.DisciplineA = "M";
-            item.DisciplineB = "S";
-            item.SystemA = "Supply air";
-            item.SystemB = "Primary frame";
-            item.SetsA.Add("Level 3 MEP");
-            item.SetsB.Add("Level 3 frame");
-            item.Properties["Contractor"] = "Alpha";
+            finding.Facts["Folder"] = "Coordination";
+            finding.Facts[ClashFindings.Distance] = ClashFindings.Written(0.045);
+            finding.Facts[ClashFindings.CategoryA] = "Duct";
+            finding.Facts[ClashFindings.CategoryB] = "Beam";
+            finding.Facts["Level"] = "L03";
+            finding.Facts["Grid"] = "C-4";
+            finding.Facts["Zone"] = "Plant room";
+            finding.Facts["Contractor"] = "Alpha";
 
-            var back = RoundTrip(item).Items.Single();
+            var back = RoundTrip(finding).Items.Single();
 
             Assert.Equal("Coordination", back.TestFolder);
             Assert.Equal(0.045, back.Distance);
-            Assert.Equal(0.0031, back.OverlapVolume);
-            Assert.Equal(87, back.CrossingAngleDegrees);
+            Assert.Equal("Duct", back.CategoryA);
+            Assert.Equal("Beam", back.CategoryB);
             Assert.Equal("L03", back.Level);
             Assert.Equal("C-4", back.Grid);
             Assert.Equal("Plant room", back.Zone);
-            Assert.Equal("MEP.nwc", back.ModelA);
-            Assert.Equal("Structure.nwc", back.ModelB);
-            Assert.Equal("Duct", back.CategoryA);
-            Assert.Equal("Beam", back.CategoryB);
-            Assert.Equal("M", back.DisciplineA);
-            Assert.Equal("S", back.DisciplineB);
-            Assert.Equal("Supply air", back.SystemA);
-            Assert.Equal("Primary frame", back.SystemB);
-            Assert.Contains("Level 3 MEP", back.SetsA);
-            Assert.Contains("Level 3 frame", back.SetsB);
+
+            // A fact this reader has never heard of, which is the whole point of a generic
+            // sidecar: it comes back verbatim rather than being dropped for not being a clash
+            // field.
             Assert.Equal("Alpha", back.Properties["Contractor"]);
         }
 
         [Fact]
         public void TheKeyAndThePointComeBackExactly()
         {
-            var item = Item("11111111-1111-1111-1111-111111111111",
-                            "22222222-2222-2222-2222-222222222222");
+            var finding = Found("11111111-1111-1111-1111-111111111111",
+                                "22222222-2222-2222-2222-222222222222", "MEP vs Structure",
+                                12.345, -6.5, 3.25);
 
-            item.X = 12.345;
-            item.Y = -6.5;
-            item.Z = 3.25;
+            var back = RoundTrip(finding).Items.Single();
 
-            var back = RoundTrip(item).Items.Single();
-
-            Assert.Equal(item.Key, back.Key);
+            Assert.Equal(KeyOf(finding), back.Key);
             Assert.Equal(12.345, back.X);
             Assert.Equal(-6.5, back.Y);
             Assert.Equal(3.25, back.Z);
+        }
+
+        [Fact]
+        public void WhereTheWritingDocumentHadTheElementsTravelsWithThem()
+        {
+            // An element key is a hash. Without a route the reading seat has to key the whole
+            // federation to find one element, which is why selecting the elements of a clash read
+            // from a file used to do nothing at all.
+            var finding = Found("11111111-1111-1111-1111-111111111111",
+                                "22222222-2222-2222-2222-222222222222");
+
+            var written = FindingBcf.Write(new[] { finding }, null, new FindingBcfOptions
+            {
+                LocatorOf = key => new ElementLocator(key, "host:" + key.UnscopedValue,
+                                                      "Model/Level 3/Duct"),
+            });
+
+            var back = RoundTrip(written).Items.Single();
+
+            Assert.StartsWith("host:", back.PathIdA);
+            Assert.Equal("Model/Level 3/Duct", back.TreeA);
+            Assert.StartsWith("host:", back.PathIdB);
         }
 
         [Fact]
@@ -170,15 +205,11 @@ namespace CamelWorks.Core.Tests
         {
             // What makes a reviewer's tool merge this week's file into last week's rather than
             // doubling every issue.
-            var first = ClashBcf.Write(new[]
-            {
-                Item("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
-            });
+            var first = Written(
+                Found("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"));
 
-            var again = ClashBcf.Write(new[]
-            {
-                Item("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
-            });
+            var again = Written(
+                Found("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"));
 
             Assert.Equal(RoundTrip(first).Results.Single().FileGuid,
                          RoundTrip(again).Results.Single().FileGuid);
@@ -187,12 +218,13 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void TestsAndTheirFoldersSurvive()
         {
-            var a = Item("11111111-1111-1111-1111-111111111111",
-                         "22222222-2222-2222-2222-222222222222", "MEP vs Structure");
-            a.TestFolder = "Coordination";
+            var a = Found("11111111-1111-1111-1111-111111111111",
+                          "22222222-2222-2222-2222-222222222222", "MEP vs Structure");
 
-            var b = Item("33333333-3333-3333-3333-333333333333",
-                         "44444444-4444-4444-4444-444444444444", "Ducts vs Ceiling");
+            a.Facts["Folder"] = "Coordination";
+
+            var b = Found("33333333-3333-3333-3333-333333333333",
+                          "44444444-4444-4444-4444-444444444444", "Ducts vs Ceiling");
 
             var read = RoundTrip(a, b);
 
@@ -207,24 +239,65 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void GroupsTravelWhenTheyAreKept()
         {
-            var item = Item("11111111-1111-1111-1111-111111111111",
-                            "22222222-2222-2222-2222-222222222222");
-            item.CarriedGroup = "Level 3 ducts";
+            var finding = Found("11111111-1111-1111-1111-111111111111",
+                                "22222222-2222-2222-2222-222222222222");
 
-            Assert.Equal("Level 3 ducts", RoundTrip(item).Results.Single().Group);
+            finding.Group = "Level 3 ducts";
 
-            var flat = ClashBcf.Write(new[] { item }, null, new ClashBcfOptions { KeepGroups = false });
+            Assert.Equal("Level 3 ducts", RoundTrip(finding).Results.Single().Group);
+
+            var flat = FindingBcf.Write(new[] { finding }, null,
+                                        new FindingBcfOptions { KeepGroups = false });
 
             Assert.Null(RoundTrip(flat).Results.Single().Group);
         }
 
         [Fact]
-        public void AResultThatNamesNoElementIsLeftOutAndSaidSo()
+        public void ThePacksOwnFolderWinsOverTheOneTheHostFiledItUnder()
         {
-            var written = ClashBcf.Write(new[] { new ClashItem(default, "Nothing") });
+            // A board folder is made by the grouping rules; the finding's group is what the host
+            // filed the result under. A pack written from a board carries the board's.
+            var finding = Found("11111111-1111-1111-1111-111111111111",
+                                "22222222-2222-2222-2222-222222222222");
 
-            Assert.Equal(0, written.Results);
-            Assert.Contains(written.Warnings, w => w.Contains("names no element"));
+            finding.Group = "Test 1 group";
+
+            var written = FindingBcf.Write(new[] { finding }, null,
+                                           new FindingBcfOptions { GroupOf = _ => "Level 3 ducts" });
+
+            Assert.Equal("Level 3 ducts", RoundTrip(written).Results.Single().Group);
+        }
+
+        [Fact]
+        public void AFindingThatNamesNoElementIsStillATopic()
+        {
+            // Set drift's findings carry no elements at all, so a writer that skipped them would
+            // put the one check that never points at geometry outside exchange altogether. It is
+            // written, with no viewpoint to select nothing with.
+            var finding = Finding.CreateParent(FindingSource.SetDrift, "Level 3 MEP",
+                                               "The set returns 40 fewer elements");
+
+            var written = FindingBcf.Write(new[] { finding });
+
+            Assert.Equal(1, written.Findings);
+            Assert.Equal(0, written.Blind);
+
+            var topic = Topics(written).Single();
+
+            Assert.Empty(topic.Viewpoints);
+        }
+
+        [Fact]
+        public void TopicsNoToolCanSelectAreCountedAndSaidOut()
+        {
+            // The one thing a coordinator cannot see by opening the file they just wrote, and the
+            // thing the person they sent it to tells them about.
+            var written = Written(
+                Found("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"));
+
+            Assert.Equal(1, written.Blind);
+            Assert.Contains(written.Warnings, w => w.Contains("cannot find")
+                                                   || w.Contains("can find"));
         }
 
         [Fact]
@@ -232,24 +305,17 @@ namespace CamelWorks.Core.Tests
         {
             // What comes back from Solibri or BIMcollab: the topics, edited, and no sidecar. The
             // decisions have to survive that, because that round trip is the entire point of BCF.
-            var item = Item("11111111-1111-1111-1111-111111111111",
-                            "22222222-2222-2222-2222-222222222222");
+            var finding = Found("11111111-1111-1111-1111-111111111111",
+                                "22222222-2222-2222-2222-222222222222");
 
-            using var stream = new MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
-
-            var topic = BcfReader.Read(stream).Topics.Single();
+            var topic = Topics(Written(finding)).Single();
 
             topic.TopicStatus = "Closed";
             topic.AssignedTo = "Ada";
             topic.Comments.Add(new BcfComment(topic.Guid + "-x", DateTimeOffset.UtcNow, "ada",
                                               "Fixed in this week's issue."));
 
-            using var theirs = new MemoryStream();
-
-            BcfWriter.Write(theirs, new[] { topic }, BcfVersion.V21);
-            theirs.Position = 0;
-
-            var read = ClashBcf.Read(theirs);
+            var read = Foreign(topic);
             var result = read.Results.Single();
 
             Assert.Equal(FindingStatus.Resolved, result.Status);
@@ -259,15 +325,16 @@ namespace CamelWorks.Core.Tests
             // And it still lands back on the right elements, because BCF's own field for a tool's
             // native id is where the key was written.
             Assert.NotNull(result.Item);
-            Assert.Equal(item.Key.A, result.Item!.Key.A);
-            Assert.Equal(item.Key.B, result.Item.Key.B);
+            Assert.Equal(finding.Elements[0], result.Item!.Key.A);
+            Assert.Equal(finding.Elements[1], result.Item.Key.B);
 
             Assert.Contains(read.Warnings, w => w.Contains("another tool"));
         }
 
         [Theory]
-        [InlineData("Open", FindingStatus.New)]
+        [InlineData("Open", FindingStatus.Active)]
         [InlineData("In Progress", FindingStatus.Active)]
+        [InlineData("Awaiting client", ClashStatusMap.Unknown)]
         [InlineData("Closed", FindingStatus.Resolved)]
         [InlineData("Solved", FindingStatus.Resolved)]
         [InlineData("Verified", FindingStatus.Reviewed)]
@@ -277,20 +344,101 @@ namespace CamelWorks.Core.Tests
         [InlineData("Reviewed", FindingStatus.Reviewed)]
         public void AnotherToolsStatusWordIsReadForItsSense(string said, FindingStatus expected)
         {
-            var item = Item("11111111-1111-1111-1111-111111111111",
-                            "22222222-2222-2222-2222-222222222222");
+            var finding = Found("11111111-1111-1111-1111-111111111111",
+                                "22222222-2222-2222-2222-222222222222");
 
-            using var stream = new MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
+            var topic = Topics(Written(finding)).Single();
 
-            var topic = BcfReader.Read(stream).Topics.Single();
             topic.TopicStatus = said;
 
-            using var theirs = new MemoryStream();
+            Assert.Equal(expected, Foreign(topic).Results.Single().Status);
 
-            BcfWriter.Write(theirs, new[] { topic }, BcfVersion.V21);
-            theirs.Position = 0;
+            // The same word, through the issue register's leg of the same format. One vocabulary
+            // means one answer: a word the conventional list holds reads to the same status
+            // there, and a word outside it is left to the guess tier both legs share.
+            var issues = new Issues.IssueRegister();
 
-            Assert.Equal(expected, ClashBcf.Read(theirs).Results.Single().Status);
+            FindingBcf.MergeIssues(issues, new[] { topic }, "theirs.bcfzip");
+
+            Assert.Equal(expected, issues.Issues.Single().Status);
+
+            Assert.Equal(ClashStatusMap.IsConventional(said)
+                             ? expected
+                             : (FindingStatus?)null,
+                         BcfResponse.StatusOf(said));
+        }
+
+        [Theory]
+        [InlineData("Reviewed", FindingStatus.Reviewed)]
+        [InlineData("Open", FindingStatus.Active)]
+        [InlineData("Awaiting client", ClashStatusMap.Unknown)]
+        [InlineData("Closed out", FindingStatus.Resolved)]
+        public void OnePackReadByEveryLegLandsOnOneStatus(string said, FindingStatus expected)
+        {
+            // The readers over the same file. The clash leg went through ClashStatusMap, the
+            // finding leg parsed the name and the issue leg had a switch of its own, so a word
+            // outside the five landed in three places differently: the same pack gave the board,
+            // the register and the issue list three statuses. "Closed out" is the case only the
+            // guess tier maps.
+            var finding = Found("11111111-1111-1111-1111-111111111111",
+                                "22222222-2222-2222-2222-222222222222");
+
+            var topic = Topics(Written(finding)).Single();
+
+            topic.TopicStatus = said;
+
+            var held = Finding.Create(FindingSource.Clash, "MEP vs Structure",
+                                      "Duct through beam",
+                                      new[] { finding.Elements[0], finding.Elements[1] }, "10,20,30");
+
+            Assert.True(FindingBcf.Apply(topic, held));
+
+            var register = new CamelWorks.Core.Issues.IssueRegister();
+
+            FindingBcf.MergeIssues(register, new[] { topic }, "theirs.bcfzip");
+
+            Assert.Equal(expected, Foreign(topic).Results.Single().Status);
+            Assert.Equal(expected, held.Status);
+            Assert.Equal(expected, register.Issues.Single().Status);
+        }
+
+        [Fact]
+        public void ACallerThatMustNotGuessRefusesAWordOnlyTheSenseTierReads()
+        {
+            // The flag exists so an unattended merge can decline to promote a finding on a word
+            // the conventional vocabulary does not hold.
+            var finding = Found("11111111-1111-1111-1111-111111111111",
+                                "22222222-2222-2222-2222-222222222222");
+
+            var topic = Topics(Written(finding)).Single();
+
+            topic.TopicStatus = "Closed out";
+
+            var held = Finding.Create(FindingSource.Clash, "MEP vs Structure",
+                                      "Duct through beam",
+                                      new[] { finding.Elements[0], finding.Elements[1] }, "10,20,30");
+
+            FindingBcf.Apply(topic, held, null, guessStatus: false);
+
+            Assert.Equal(FindingStatus.New, held.Status);
+        }
+
+        [Fact]
+        public void AWordNobodyKnowsIsCountedRatherThanApplied()
+        {
+            var tally = ClashStatusMap.Tally(new[] { "Rejected", "rejected", "Closed", null });
+
+            Assert.Equal(3, tally.Count);
+
+            var rejected = tally[0];
+
+            Assert.Equal("Rejected", rejected.Word);
+            Assert.Equal(2, rejected.Count);
+            Assert.True(rejected.IsGuess);
+            Assert.Equal(ClashStatusMap.Unknown, rejected.Lands);
+
+            Assert.False(tally.Single(w => w.Word == "Closed").IsGuess);
+            Assert.Equal(ClashStatusMap.Unsaid, tally.Single(w => w.Word.Length == 0).Lands);
         }
 
         [Fact]
@@ -310,12 +458,9 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void BothElementsAreNamedInTheViewpointSoAReviewerCanSelectThem()
         {
-            var item = Item("11111111-1111-1111-1111-111111111111",
-                            "22222222-2222-2222-2222-222222222222");
-
-            using var stream = new MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
-
-            var viewpoint = BcfReader.Read(stream).Topics.Single().Viewpoints.Single();
+            var viewpoint = Topics(Written(
+                Found("11111111-1111-1111-1111-111111111111",
+                      "22222222-2222-2222-2222-222222222222"))).Single().Viewpoints.Single();
 
             Assert.Equal(2, viewpoint.Selection.Count);
             Assert.Equal(2, viewpoint.Colouring.Count);
@@ -324,53 +469,122 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void ASectionBoxIsSixPlanesFacingAwayFromTheFindingAndSurvivesTheRoundTrip()
+        {
+            var how = new FindingBcfOptions { Section = true, SectionMetres = 2 };
+
+            var written = FindingBcf.Write(new[]
+            {
+                Found("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
+            }, null, how);
+
+            var viewpoint = Topics(written).Single().Viewpoints.Single();
+
+            Assert.Equal(6, viewpoint.ClippingPlanes.Count);
+
+            // The six sit at the reach either side of the finding, so their mean is its point. A
+            // plane's normal names the side that is cut away, so each of the six points away from
+            // that centre: pointed inwards, the six between them cut away everything the topic is
+            // about.
+            var cx = viewpoint.ClippingPlanes.Average(one => one.X);
+            var cy = viewpoint.ClippingPlanes.Average(one => one.Y);
+            var cz = viewpoint.ClippingPlanes.Average(one => one.Z);
+
+            foreach (var plane in viewpoint.ClippingPlanes)
+            {
+                var away = (plane.X - cx) * plane.DirectionX
+                         + (plane.Y - cy) * plane.DirectionY
+                         + (plane.Z - cz) * plane.DirectionZ;
+
+                Assert.Equal(2, away, 6);
+            }
+        }
+
+        [Fact]
+        public void EachCheckIsSentInTheFramingItsResultsAreReadIn()
+        {
+            // A clearance breach is an area somebody walks under, so it goes out boxed; a fall
+            // hazard is an opening in a floor, which reads from above and nowhere else.
+            Assert.False(FindingBcfOptions.For(FindingSource.Clash).Section);
+            Assert.True(FindingBcfOptions.For(FindingSource.Headroom).Section);
+            Assert.Equal(BcfView.Plan, FindingBcfOptions.For(FindingSource.FallHazard).View);
+            Assert.Equal(BcfView.Standing, FindingBcfOptions.For(FindingSource.Clash).View);
+        }
+
+        [Fact]
         public void TheIfcGlobalIdReachesTheComponentSoAToolCanSelectTheElement()
         {
             // The whole point of carrying it: without an IfcGuid a receiving tool gets the camera
             // and an empty selection.
-            var item = Item("11111111-1111-1111-1111-111111111111",
-                            "22222222-2222-2222-2222-222222222222");
+            var finding = Found("11111111-1111-1111-1111-111111111111",
+                                "22222222-2222-2222-2222-222222222222");
 
-            item.IfcGuidA = "2O2Fr$t4X7Zf8NOew3FLOH";
-            item.IfcGuidB = "1kTvXnbbzCWw8lcMd1dR4o";
+            var written = FindingBcf.Write(new[] { finding }, null, new FindingBcfOptions
+            {
+                IfcGuidOf = key => key == finding.Elements[0]
+                    ? "2O2Fr$t4X7Zf8NOew3FLOH"
+                    : "1kTvXnbbzCWw8lcMd1dR4o",
+            });
 
-            using var stream = new MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
-
-            var selection = BcfReader.Read(stream).Topics.Single().Viewpoints.Single().Selection;
+            var selection = Topics(written).Single().Viewpoints.Single().Selection;
 
             Assert.Equal("2O2Fr$t4X7Zf8NOew3FLOH", selection[0].IfcGuid);
             Assert.Equal("1kTvXnbbzCWw8lcMd1dR4o", selection[1].IfcGuid);
 
             // And both are resolvable, which is what the writer counts and reports on.
             Assert.All(selection, c => Assert.True(c.IsResolvable));
+            Assert.Equal(0, written.Blind);
+            Assert.Equal(0, written.Partial);
+        }
+
+        [Fact]
+        public void AFindingOnlyOneOfWhoseElementsCanBeFoundIsCountedApart()
+        {
+            var finding = Found("11111111-1111-1111-1111-111111111111",
+                                "22222222-2222-2222-2222-222222222222");
+
+            var written = FindingBcf.Write(new[] { finding }, null, new FindingBcfOptions
+            {
+                IfcGuidOf = key => key == finding.Elements[0] ? "2O2Fr$t4X7Zf8NOew3FLOH" : null,
+            });
+
+            Assert.Equal(0, written.Blind);
+            Assert.Equal(1, written.Partial);
         }
 
         [Fact]
         public void AFullGuidIsCompressedOnItsWayIntoTheComponent()
         {
-            var item = Item("11111111-1111-1111-1111-111111111111",
-                            "22222222-2222-2222-2222-222222222222");
+            var finding = Found("11111111-1111-1111-1111-111111111111",
+                                "22222222-2222-2222-2222-222222222222");
 
-            item.IfcGuidA = "3b0a0b0c-0d0e-0f10-1112-131415161718";
+            var written = FindingBcf.Write(new[] { finding }, null, new FindingBcfOptions
+            {
+                IfcGuidOf = key => key == finding.Elements[0]
+                    ? "3b0a0b0c-0d0e-0f10-1112-131415161718"
+                    : null,
+            });
 
-            using var stream = new MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
-
-            var written = BcfReader.Read(stream).Topics.Single().Viewpoints.Single().Selection[0].IfcGuid;
+            var got = Topics(written).Single().Viewpoints.Single().Selection[0].IfcGuid;
 
             Assert.Equal(CamelWorks.Core.OpenBim.IfcGuid.Compress(
-                             Guid.Parse("3b0a0b0c-0d0e-0f10-1112-131415161718")), written);
+                             Guid.Parse("3b0a0b0c-0d0e-0f10-1112-131415161718")), got);
         }
 
         [Fact]
         public void TheGlobalIdsSurviveOurOwnRoundTrip()
         {
-            var item = Item("11111111-1111-1111-1111-111111111111",
-                            "22222222-2222-2222-2222-222222222222");
+            var finding = Found("11111111-1111-1111-1111-111111111111",
+                                "22222222-2222-2222-2222-222222222222");
 
-            item.IfcGuidA = "2O2Fr$t4X7Zf8NOew3FLOH";
-            item.IfcGuidB = "1kTvXnbbzCWw8lcMd1dR4o";
+            var written = FindingBcf.Write(new[] { finding }, null, new FindingBcfOptions
+            {
+                IfcGuidOf = key => key == finding.Elements[0]
+                    ? "2O2Fr$t4X7Zf8NOew3FLOH"
+                    : "1kTvXnbbzCWw8lcMd1dR4o",
+            });
 
-            var back = RoundTrip(item).Items.Single();
+            var back = RoundTrip(written).Items.Single();
 
             Assert.Equal("2O2Fr$t4X7Zf8NOew3FLOH", back.IfcGuidA);
             Assert.Equal("1kTvXnbbzCWw8lcMd1dR4o", back.IfcGuidB);
@@ -381,22 +595,17 @@ namespace CamelWorks.Core.Tests
         {
             // A file that went through somebody else's tool keeps its components, so the ids come
             // home off the topic and the next export can still select the elements.
-            var item = Item("11111111-1111-1111-1111-111111111111",
-                            "22222222-2222-2222-2222-222222222222");
+            var finding = Found("11111111-1111-1111-1111-111111111111",
+                                "22222222-2222-2222-2222-222222222222");
 
-            item.IfcGuidA = "2O2Fr$t4X7Zf8NOew3FLOH";
-            item.IfcGuidB = "1kTvXnbbzCWw8lcMd1dR4o";
+            var written = FindingBcf.Write(new[] { finding }, null, new FindingBcfOptions
+            {
+                IfcGuidOf = key => key == finding.Elements[0]
+                    ? "2O2Fr$t4X7Zf8NOew3FLOH"
+                    : "1kTvXnbbzCWw8lcMd1dR4o",
+            });
 
-            using var mine = new MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
-
-            var topic = BcfReader.Read(mine).Topics.Single();
-
-            using var theirs = new MemoryStream();
-
-            BcfWriter.Write(theirs, new[] { topic }, BcfVersion.V21);
-            theirs.Position = 0;
-
-            var back = ClashBcf.Read(theirs).Items.Single();
+            var back = Foreign(Topics(written).Single()).Items.Single();
 
             Assert.Equal("2O2Fr$t4X7Zf8NOew3FLOH", back.IfcGuidA);
             Assert.Equal("1kTvXnbbzCWw8lcMd1dR4o", back.IfcGuidB);
@@ -409,12 +618,12 @@ namespace CamelWorks.Core.Tests
             // arrives as rows of grey boxes.
             var png = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3 };
 
-            var written = ClashBcf.Write(new[]
+            var written = FindingBcf.Write(new[]
                 {
-                    Item("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
+                    Found("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
                 },
                 null,
-                new ClashBcfOptions { Snapshot = _ => png });
+                new FindingBcfOptions { Snapshot = _ => png });
 
             Assert.Equal(1, written.Snapshots);
 
@@ -444,29 +653,29 @@ namespace CamelWorks.Core.Tests
         {
             // A document that cannot render off-screen, or one clash the engine refuses: the
             // topic is written anyway. Never a failed export over a missing thumbnail.
-            var written = ClashBcf.Write(new[]
+            var written = FindingBcf.Write(new[]
                 {
-                    Item("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
+                    Found("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
                 },
                 null,
-                new ClashBcfOptions { Snapshot = _ => null });
+                new FindingBcfOptions { Snapshot = _ => null });
 
             Assert.Equal(0, written.Snapshots);
-            Assert.Equal(1, written.Results);
+            Assert.Equal(1, written.Findings);
         }
 
         [Fact]
         public void APictureThatThrowsDoesNotTakeTheExportWithIt()
         {
-            var written = ClashBcf.Write(new[]
+            var written = FindingBcf.Write(new[]
                 {
-                    Item("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
+                    Found("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
                 },
                 null,
-                new ClashBcfOptions { Snapshot = _ => throw new InvalidOperationException("no GPU") });
+                new FindingBcfOptions { Snapshot = _ => throw new InvalidOperationException("no GPU") });
 
             Assert.Equal(0, written.Snapshots);
-            Assert.Equal(1, written.Results);
+            Assert.Equal(1, written.Findings);
             Assert.True(RoundTrip(written).IsUsable);
         }
 
@@ -476,13 +685,11 @@ namespace CamelWorks.Core.Tests
             // The contract the whole round trip rests on. A markup that comes home stripped of
             // everything of ours still names its result, because the receiving side derives the
             // same GUID from the clash it already has.
-            var item = Item("11111111-1111-1111-1111-111111111111",
-                            "22222222-2222-2222-2222-222222222222");
+            var finding = Found("11111111-1111-1111-1111-111111111111",
+                                "22222222-2222-2222-2222-222222222222");
 
-            using var stream = new MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
-
-            Assert.Equal(ClashBcf.TopicGuidFor(item.Key),
-                         BcfReader.Read(stream).Topics.Single().Guid);
+            Assert.Equal(ClashBcf.TopicGuidFor(KeyOf(finding)),
+                         Topics(Written(finding)).Single().Guid);
         }
 
         [Fact]
@@ -505,16 +712,13 @@ namespace CamelWorks.Core.Tests
         public void AnArchiveNeverHasTwoEntriesAtOnePath()
         {
             // The invariant behind it: whatever the board holds, the file stays a valid archive.
-            var a = Key("11111111-1111-1111-1111-111111111111");
-            var b = Key("22222222-2222-2222-2222-222222222222");
+            var written = Written(
+                Found("11111111-1111-1111-1111-111111111111",
+                      "22222222-2222-2222-2222-222222222222", "T", 10, 20, 30),
+                Found("11111111-1111-1111-1111-111111111111",
+                      "22222222-2222-2222-2222-222222222222", "T", 90, 20, 30));
 
-            var written = ClashBcf.Write(new[]
-            {
-                new ClashItem(ClashKey.Create(a, b, 10, 20, 30), "T") { X = 10, Y = 20, Z = 30 },
-                new ClashItem(ClashKey.Create(a, b, 90, 20, 30), "T") { X = 90, Y = 20, Z = 30 },
-            });
-
-            Assert.Equal(2, written.Results);
+            Assert.Equal(2, written.Findings);
 
             using var stream = new MemoryStream(written.Bytes);
             using var zip = new System.IO.Compression.ZipArchive(stream,
@@ -554,19 +758,23 @@ namespace CamelWorks.Core.Tests
         {
             // Read a file and save it back: the topic keeps its identity rather than getting a
             // freshly derived one, so the seat syncing it can still place it.
-            var item = Item("11111111-1111-1111-1111-111111111111",
-                            "22222222-2222-2222-2222-222222222222");
+            var finding = Found("11111111-1111-1111-1111-111111111111",
+                                "22222222-2222-2222-2222-222222222222");
 
-            var sent = ClashBcf.Write(new[] { item });
+            var guid = ClashBcf.TopicGuidFor(KeyOf(finding));
+            var back = RoundTrip(Written(finding)).Items.Single();
 
-            var back = RoundTrip(sent).Items.Single();
+            Assert.Equal(guid, back.TopicGuid);
 
-            Assert.Equal(ClashBcf.TopicGuidFor(item.Key), back.TopicGuid);
+            // The finding rebuilt from what came back goes out under the same name, because the
+            // topic it arrived under is stamped on it.
+            var rebuilt = Finding.Create(FindingSource.Clash, back.TestName, back.Name ?? "Clash",
+                                         new[] { back.Key.A, back.Key.B },
+                                         ClashFindings.CellOf(back.Key));
 
-            using var again = new MemoryStream(ClashBcf.Write(new[] { back }).Bytes);
+            rebuilt.TopicGuid = back.TopicGuid;
 
-            Assert.Equal(ClashBcf.TopicGuidFor(item.Key),
-                         BcfReader.Read(again).Topics.Single().Guid);
+            Assert.Equal(guid, Topics(Written(rebuilt)).Single().Guid);
         }
 
         [Fact]
@@ -575,27 +783,20 @@ namespace CamelWorks.Core.Tests
             // Solibri, BIMcollab or Revizto: the sidecar is gone and the components have been
             // re-authored. The topic GUID is the one thing BCF will not let them change, and it
             // is enough.
-            var item = Item("11111111-1111-1111-1111-111111111111",
-                            "22222222-2222-2222-2222-222222222222");
+            var finding = Found("11111111-1111-1111-1111-111111111111",
+                                "22222222-2222-2222-2222-222222222222");
 
-            using var mine = new MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
-
-            var topic = BcfReader.Read(mine).Topics.Single();
+            var topic = Topics(Written(finding)).Single();
 
             topic.TopicStatus = "Closed";
             topic.AssignedTo = "Ada";
             topic.Viewpoints.Clear();          // their tool re-authored the viewpoint away
 
-            using var theirs = new MemoryStream();
-
-            BcfWriter.Write(theirs, new[] { topic }, BcfVersion.V21);
-            theirs.Position = 0;
-
-            var returned = ClashBcf.Read(theirs).Results.Single();
+            var returned = Foreign(topic).Results.Single();
 
             // Nothing of ours survived - and the topic still names the clash it came from.
             Assert.Null(returned.Item);
-            Assert.Equal(ClashBcf.TopicGuidFor(item.Key), returned.FileGuid);
+            Assert.Equal(ClashBcf.TopicGuidFor(KeyOf(finding)), returned.FileGuid);
             Assert.Equal(FindingStatus.Resolved, returned.Status);
             Assert.Equal("Ada", returned.AssignedTo);
         }
@@ -606,24 +807,16 @@ namespace CamelWorks.Core.Tests
             // A reviewer sets a priority and a due date in their tool. A Navisworks clash result
             // has neither field, and dropping them silently is what this round trip exists to
             // avoid - so they become a comment on the clash.
-            var item = Item("11111111-1111-1111-1111-111111111111",
-                            "22222222-2222-2222-2222-222222222222");
-
-            using var mine = new MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
-
-            var topic = BcfReader.Read(mine).Topics.Single();
+            var topic = Topics(Written(
+                Found("11111111-1111-1111-1111-111111111111",
+                      "22222222-2222-2222-2222-222222222222"))).Single();
 
             topic.Priority = "High";
             topic.Stage = "Construction";
             topic.DueDate = new DateTimeOffset(2026, 4, 15, 0, 0, 0, TimeSpan.Zero);
             topic.Labels.Add("Site query");
 
-            using var theirs = new MemoryStream();
-
-            BcfWriter.Write(theirs, new[] { topic }, BcfVersion.V21);
-            theirs.Position = 0;
-
-            var back = ClashBcf.Read(theirs).Results.Single();
+            var back = Foreign(topic).Results.Single();
             var aside = ClashBcf.Aside(back, back.Name);
 
             Assert.NotNull(aside);
@@ -638,10 +831,8 @@ namespace CamelWorks.Core.Tests
         {
             // Nothing set means nothing said. A note on every clash every week is noise nobody
             // reads, which is how a useful note stops being read.
-            var item = Item("11111111-1111-1111-1111-111111111111",
-                            "22222222-2222-2222-2222-222222222222");
-
-            var back = RoundTrip(item).Results.Single();
+            var back = RoundTrip(Found("11111111-1111-1111-1111-111111111111",
+                                       "22222222-2222-2222-2222-222222222222")).Results.Single();
 
             Assert.Null(ClashBcf.Aside(back, back.Name));
         }
@@ -649,32 +840,38 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void OurOwnLabelsAreNotReadBackAsTheReviewersTags()
         {
-            // Test, folder, group, level, grid and zone went out of this writer. Saying them back
-            // as something the reviewer set would be a note about nothing.
-            var item = Item("11111111-1111-1111-1111-111111111111",
-                            "22222222-2222-2222-2222-222222222222");
+            // Check, rule, folder, group, level, grid and zone all went out of this writer.
+            // Saying them back as something the reviewer set would grow the finding's tag list by
+            // seven on every round trip, and re-export them next cycle as though somebody had
+            // typed them.
+            var finding = Found("11111111-1111-1111-1111-111111111111",
+                                "22222222-2222-2222-2222-222222222222");
 
-            item.TestFolder = "Coordination";
-            item.CarriedGroup = "Level 3 ducts";
-            item.Level = "L03";
-            item.Grid = "C-4";
-            item.Zone = "Plant room";
+            finding.Group = "Level 3 ducts";
+            finding.Facts["Folder"] = "Coordination";
+            finding.Facts["Level"] = "L03";
+            finding.Facts["Grid"] = "C-4";
+            finding.Facts["Zone"] = "Plant room";
 
-            var back = RoundTrip(item).Results.Single();
+            var back = RoundTrip(finding).Results.Single();
 
             Assert.Empty(back.Labels);
             Assert.Null(ClashBcf.Aside(back, back.Name));
+
+            // And the same file read by the finding leg leaves the finding's own tags alone.
+            var topic = Topics(Written(finding)).Single();
+
+            FindingBcf.Apply(topic, finding);
+
+            Assert.Empty(finding.Labels);
         }
 
         [Fact]
         public void TheTopicsComeBackSoTheOnesWithNoClashCanBeRaised()
         {
-            var item = Item("11111111-1111-1111-1111-111111111111",
-                            "22222222-2222-2222-2222-222222222222");
-
-            using var mine = new MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
-
-            var topic = BcfReader.Read(mine).Topics.Single();
+            var topic = Topics(Written(
+                Found("11111111-1111-1111-1111-111111111111",
+                      "22222222-2222-2222-2222-222222222222"))).Single();
 
             // What a reviewer raises in their own tool: a problem with no clash behind it.
             var raised = new BcfTopic("their-own-finding", "Handrail missing on the east stair",
@@ -685,19 +882,14 @@ namespace CamelWorks.Core.Tests
                 Description = "No handrail shown between levels 2 and 3.",
             };
 
-            using var theirs = new MemoryStream();
-
-            BcfWriter.Write(theirs, new[] { topic, raised }, BcfVersion.V21);
-            theirs.Position = 0;
-
-            var read = ClashBcf.Read(theirs);
+            var read = Foreign(topic, raised);
 
             Assert.Equal(2, read.Topics.Count);
 
             // And it lands in the register through the path the Issue Manager already uses.
             var register = new CamelWorks.Core.Issues.IssueRegister();
 
-            var merged = CamelWorks.Core.Issues.IssueBcf.Merge(
+            var merged = FindingBcf.MergeIssues(
                 register,
                 read.Topics.Where(t => t.Guid == raised.Guid).ToList(),
                 "ada.bcfzip");
@@ -726,17 +918,15 @@ namespace CamelWorks.Core.Tests
             // parse as a GUID - is the shape most likely to throw rather than be skipped. Our
             // extra data is a file at the root instead, beside bcf.version and project.bcfp,
             // which is a shape every importer already handles.
-            var written = ClashBcf.Write(new[]
-            {
-                Item("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
-                Item("33333333-3333-3333-3333-333333333333", "44444444-4444-4444-4444-444444444444"),
-            });
+            var written = Written(
+                Found("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
+                Found("33333333-3333-3333-3333-333333333333", "44444444-4444-4444-4444-444444444444"));
 
             using var stream = new MemoryStream(written.Bytes);
             using var zip = new System.IO.Compression.ZipArchive(stream,
                 System.IO.Compression.ZipArchiveMode.Read);
 
-            var topics = new System.Collections.Generic.HashSet<string>(
+            var topics = new HashSet<string>(
                 zip.Entries.Where(e => e.FullName.EndsWith("markup.bcf", StringComparison.Ordinal))
                            .Select(e => e.FullName.Substring(0, e.FullName.IndexOf('/'))),
                 StringComparer.Ordinal);
@@ -752,49 +942,298 @@ namespace CamelWorks.Core.Tests
                 Assert.Contains(entry.FullName.Substring(0, slash), topics);
             }
 
-            Assert.Contains(ClashBcf.Sidecar, zip.Entries.Select(e => e.FullName));
-            Assert.DoesNotContain('/', ClashBcf.Sidecar);
+            Assert.Contains(FindingBcf.Sidecar, zip.Entries.Select(e => e.FullName));
+            Assert.DoesNotContain('/', FindingBcf.Sidecar);
+        }
+
+        // -----------------------------------------------------------------------------------
+        // What the file has to carry because the reading seat cannot work it out
+        // -----------------------------------------------------------------------------------
+
+        [Fact]
+        public void EachElementsRouteComesBackOnThatElement()
+        {
+            // The sidecar lists the elements in the order the host reported the pair; an item's A
+            // and B are that pair sorted. Reading the first locator as A put the route on the
+            // wrong element whenever the host's order was not the sorted one, which is about half
+            // of all clashes, and the reading seat then isolated the other element.
+            var a = Key("11111111-1111-1111-1111-111111111111");
+            var b = Key("22222222-2222-2222-2222-222222222222");
+            var key = ClashKey.Create(a, b, 10, 20, 30);
+
+            var reported = string.Equals(key.A.ToString(), a.ToString(), StringComparison.Ordinal)
+                ? new[] { b, a }
+                : new[] { a, b };
+
+            var finding = Finding.Create(FindingSource.Clash, "MEP vs Structure", "Clash",
+                                         reported, ClashFindings.CellOf(key));
+
+            finding.TopicGuid = ClashBcf.TopicGuidFor(key);
+            finding.X = 10;
+            finding.Y = 20;
+            finding.Z = 30;
+
+            // The fixture only says anything if the reported order is not the sorted one.
+            Assert.Equal(key.B.ToString(), finding.Elements[0].ToString());
+
+            var written = FindingBcf.Write(new[] { finding }, null, new FindingBcfOptions
+            {
+                LocatorOf = element => new ElementLocator(element, "path/" + element,
+                                                          "tree/" + element),
+            });
+
+            var item = RoundTrip(written).Items.Single()!;
+
+            Assert.Equal("path/" + key.A, item.PathIdA);
+            Assert.Equal("path/" + key.B, item.PathIdB);
+            Assert.Equal("tree/" + key.A, item.TreeA);
+            Assert.Equal("tree/" + key.B, item.TreeB);
         }
 
         [Fact]
-        public void AFileWrittenBeforeTheSidecarMovedStillReads()
+        public void AGlobalIdComesBackOnTheElementItBelongsTo()
         {
-            // The sidecar used to sit in a folder. Anything written then has to keep opening.
-            var item = Item("11111111-1111-1111-1111-111111111111",
-                            "22222222-2222-2222-2222-222222222222");
-            item.Distance = 0.045;
+            // A pair where only one side carries a GlobalId. Taking the ids in the order the
+            // components happened to be filtered into put B's id on A, and the receiving tool
+            // then selected the wrong element or nothing.
+            var finding = Found("11111111-1111-1111-1111-111111111111",
+                                "22222222-2222-2222-2222-222222222222");
 
-            var written = ClashBcf.Write(new[] { item });
+            var key = KeyOf(finding);
 
-            byte[] moved;
-
-            using (var source = new MemoryStream(written.Bytes))
-            using (var zip = new System.IO.Compression.ZipArchive(source,
-                       System.IO.Compression.ZipArchiveMode.Read))
-            using (var target = new MemoryStream())
+            var written = FindingBcf.Write(new[] { finding }, null, new FindingBcfOptions
             {
-                using (var rebuilt = new System.IO.Compression.ZipArchive(target,
-                           System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
-                {
-                    foreach (var entry in zip.Entries)
-                    {
-                        var name = entry.FullName == ClashBcf.Sidecar
-                            ? "camelworks/clash.json"
-                            : entry.FullName;
+                IfcGuidOf = element => element.Equals(key.B) ? "1kTvXnbbzCWw8lcMd1dR4o" : null,
+            });
 
-                        using var from = entry.Open();
-                        using var to = rebuilt.CreateEntry(name).Open();
+            var item = RoundTrip(written).Items.Single()!;
 
-                        from.CopyTo(to);
-                    }
-                }
+            Assert.Null(item.IfcGuidA);
+            Assert.Equal("1kTvXnbbzCWw8lcMd1dR4o", item.IfcGuidB);
+        }
 
-                moved = target.ToArray();
+        [Fact]
+        public void TheModelAndDisciplineOfEachSideTravelWithTheClash()
+        {
+            // The receiving seat has no federation to resolve either from, and the models,
+            // modelA, modelB and disciplines facets, the same-model test and the default export
+            // split are all read off these four.
+            var finding = Found("11111111-1111-1111-1111-111111111111",
+                                "22222222-2222-2222-2222-222222222222");
+
+            finding.Facts[ClashFindings.ModelA] = "ARCH.nwc";
+            finding.Facts[ClashFindings.ModelB] = "MEP.nwc";
+            finding.Facts[ClashFindings.DisciplineA] = "Architecture";
+            finding.Facts[ClashFindings.DisciplineB] = "Mechanical";
+
+            var item = RoundTrip(finding).Items.Single()!;
+
+            Assert.Equal("ARCH.nwc", item.ModelA);
+            Assert.Equal("MEP.nwc", item.ModelB);
+            Assert.Equal("Architecture", item.DisciplineA);
+            Assert.Equal("Mechanical", item.DisciplineB);
+            Assert.Equal("ARCH.nwc v MEP.nwc", item.ModelPair);
+            Assert.Equal("Architecture v Mechanical", item.DisciplinePair);
+            Assert.False(item.IsSameModel);
+        }
+
+        [Fact]
+        public void TheHostsOwnStatusAndAssigneeComeBackAsTheColumnsTheBoardDraws()
+        {
+            // The projection writes these two under the board's column names off the producer's
+            // facts. A file read has no projection, so the reader has to do it, or a file board
+            // draws two empty columns where a document board draws the host's answer.
+            var finding = Found("11111111-1111-1111-1111-111111111111",
+                                "22222222-2222-2222-2222-222222222222");
+
+            finding.Facts[ClashFindings.HostStatus] = "Active";
+            finding.Facts[ClashFindings.HostAssignee] = "Ada";
+
+            var item = RoundTrip(finding).Items.Single()!;
+
+            Assert.Equal("Active", item.Properties[ClashItem.HostStatusProperty]);
+            Assert.Equal("Ada", item.Properties[ClashItem.HostAssigneeProperty]);
+        }
+
+        // -----------------------------------------------------------------------------------
+        // One topic, one path
+        // -----------------------------------------------------------------------------------
+
+        [Fact]
+        public void TwoTestsReportingOneClashAreTwoTopicsAtTwoPaths()
+        {
+            // A clash's topic guid is derived from the element pair and the cell and not from the
+            // test, so two tests on one conflict derive one guid. BCF names a topic's folder with
+            // its guid, so writing both under it is two markup.bcf entries at one path — an
+            // archive whose second topic most readers drop.
+            var one = Found("11111111-1111-1111-1111-111111111111",
+                            "22222222-2222-2222-2222-222222222222", "MEP vs Structure");
+
+            var two = Found("11111111-1111-1111-1111-111111111111",
+                            "22222222-2222-2222-2222-222222222222", "Ducts vs Steel");
+
+            Assert.Equal(one.TopicGuid, two.TopicGuid);
+            Assert.NotEqual(one.Id, two.Id);
+
+            var written = Written(one, two);
+
+            Assert.Equal(2, written.Findings);
+            Assert.Contains(written.Warnings, w => w.Contains("shares a topic")
+                                                   || w.Contains("share a topic"));
+
+            using (var stream = new MemoryStream(written.Bytes))
+            using (var zip = new System.IO.Compression.ZipArchive(
+                       stream, System.IO.Compression.ZipArchiveMode.Read))
+            {
+                var markups = zip.Entries
+                                 .Where(e => e.FullName.EndsWith("markup.bcf",
+                                                                 StringComparison.Ordinal))
+                                 .Select(e => e.FullName)
+                                 .ToList();
+
+                Assert.Equal(2, markups.Count);
+                Assert.Equal(2, markups.Distinct(StringComparer.OrdinalIgnoreCase).Count());
             }
 
-            using var stream = new MemoryStream(moved);
+            // And both are answerable: the second went out under a topic of its own and the
+            // register indexes it under the same one.
+            var register = new FindingRegister();
 
-            Assert.Equal(0.045, ClashBcf.Read(stream).Items.Single().Distance);
+            register.Put(one);
+            register.Put(two);
+
+            var back = Read(written);
+
+            foreach (var topic in back.Topics) topic.TopicStatus = "Closed";
+
+            Assert.Equal(2, FindingBcf.Merge(register, back.Topics, "theirs.bcfzip").Answered);
+            Assert.All(register.All, f => Assert.Equal(FindingStatus.Resolved, f.Status));
+        }
+
+        [Fact]
+        public void TheSecondClaimantKeepsItsOwnTopicInTheNextPack()
+        {
+            // Stamped, so the guid does not depend on which findings were in the pack. Sent on
+            // its own next week it would otherwise take the derived guid and the answers already
+            // given against the other one.
+            var one = Found("11111111-1111-1111-1111-111111111111",
+                            "22222222-2222-2222-2222-222222222222", "MEP vs Structure");
+
+            var two = Found("11111111-1111-1111-1111-111111111111",
+                            "22222222-2222-2222-2222-222222222222", "Ducts vs Steel");
+
+            var derived = one.TopicGuid;
+
+            Written(one, two);
+
+            var moved = one.TopicGuid == derived ? two : one;
+            var kept = one.TopicGuid == derived ? one : two;
+
+            Assert.NotEqual(derived, moved.TopicGuid);
+            Assert.Equal(derived, kept.TopicGuid);
+            Assert.Equal(moved.TopicGuid, Topics(Written(moved)).Single().Guid);
+        }
+
+        // -----------------------------------------------------------------------------------
+        // The label vocabulary
+        // -----------------------------------------------------------------------------------
+
+        [Fact]
+        public void AReviewersOwnLevelTagIsTheirsAndOursIsStillRead()
+        {
+            // Seven of the eight prefixes are ordinary English words. Matching on the bare word
+            // meant "Level: 3" typed in Solibri was read as one of ours and dropped without a
+            // word, which is the original bug with the sign reversed.
+            var finding = Found("11111111-1111-1111-1111-111111111111",
+                                "22222222-2222-2222-2222-222222222222");
+
+            finding.Facts["Level"] = "L03";
+
+            var topic = Topics(Written(finding)).Single();
+
+            Assert.Contains(FindingLabels.Level + "L03", topic.Labels);
+
+            topic.Labels.Add("Level: 3");
+
+            Assert.Contains("Level: 3", Foreign(topic).Results.Single().Labels);
+            Assert.Equal("L03", FindingLabels.Value(topic, FindingLabels.Level));
+
+            FindingBcf.Apply(topic, finding);
+
+            Assert.Equal(new[] { "Level: 3" }, finding.Labels);
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void OnePrefixReadsTheSameWhicheverOrderTheTagsAreIn(bool reversed)
+        {
+            // A topic's label order is whatever the sending tool wrote it in. Two labels under
+            // one prefix answered by list order gave two seats reading one file two levels.
+            var topic = new BcfTopic("11111111-1111-1111-1111-111111111111", "Clash",
+                                     DateTimeOffset.UnixEpoch, "CamelWorks");
+
+            var labels = new[] { FindingLabels.Level + "L03", FindingLabels.Level + "L02" };
+
+            foreach (var label in reversed ? labels.Reverse() : labels) topic.Labels.Add(label);
+
+            Assert.Equal("L02", FindingLabels.Value(topic, FindingLabels.Level));
+        }
+
+        [Fact]
+        public void OurOwnVocabularyIsNeverWrittenTwiceOntoOneTopic()
+        {
+            // A finding that picked up a label in our own vocabulary - from an older file, or by
+            // hand - would otherwise put a second value under one prefix on the topic.
+            var finding = Found("11111111-1111-1111-1111-111111111111",
+                                "22222222-2222-2222-2222-222222222222");
+
+            finding.Facts["Level"] = "L03";
+            finding.Labels.Add(FindingLabels.Level + "L02");
+            finding.Labels.Add("Site query");
+
+            var labels = Topics(Written(finding)).Single().Labels;
+
+            Assert.Single(labels, one => one.StartsWith(FindingLabels.Level,
+                                                        StringComparison.Ordinal));
+
+            Assert.Contains(FindingLabels.Level + "L03", labels);
+            Assert.Contains("Site query", labels);
+        }
+
+        /// <summary>A written pack, read as a pack of findings.</summary>
+        /// <param name="written">What the writer produced.</param>
+        private static FindingPackRead Read(FindingBcfDocument written)
+        {
+            using var stream = new MemoryStream(written.Bytes);
+
+            return FindingBcf.Read(stream);
+        }
+
+
+        [Theory]
+        [InlineData(0.05, 0.02, MatrixTest.Clearance)]
+        [InlineData(0.05, -0.02, MatrixTest.Hard)]
+        public void WhatKindOfTestAPackCameFromIsReadFromItsDistances(double one, double two,
+                                                                     MatrixTest kind)
+        {
+            // The pack carries findings and their facts, not the settings the run was made with,
+            // so this is a reading of the results and nothing else. It used to turn on an overlap
+            // volume that nothing on this leg writes, which made the clause a constant.
+            var first = Found("11111111-1111-1111-1111-111111111111",
+                              "22222222-2222-2222-2222-222222222222");
+
+            var second = Found("33333333-3333-3333-3333-333333333333",
+                               "44444444-4444-4444-4444-444444444444");
+
+            first.Facts[ClashFindings.Distance] = ClashFindings.Written(one);
+            second.Facts[ClashFindings.Distance] = ClashFindings.Written(two);
+
+            var test = RoundTrip(first, second).Tests.Single();
+
+            Assert.Equal(kind, test.Kind);
+            Assert.Equal(kind == MatrixTest.Clearance ? Math.Min(one, two) : one, test.Tolerance,
+                         3);
         }
 
         [Fact]
@@ -803,7 +1242,7 @@ namespace CamelWorks.Core.Tests
             using var output = new MemoryStream();
 
             var written = BcfWriter.Write(output, Array.Empty<BcfTopic>(), BcfVersion.V21, null,
-                new System.Collections.Generic.Dictionary<string, string>
+                new Dictionary<string, string>
                 {
                     ["bcf.version"] = "not this",
                 });

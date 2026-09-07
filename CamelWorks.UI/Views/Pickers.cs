@@ -146,6 +146,62 @@ namespace CamelWorks.UI.Views
                               .OrderBy(n => n, StringComparer.OrdinalIgnoreCase);
             });
 
+        /// <summary>
+        /// A category picker, filled from the categories the model's own elements carry.
+        ///
+        /// Model-fed like every other picker here: the obstruction ignore list names categories,
+        /// and a bare text box there is a list that silently matches nothing because somebody
+        /// typed "Sprinklers" where the model says "Fire Protection".
+        /// </summary>
+        /// <param name="current">The value as it stands.</param>
+        /// <param name="onChanged">Called with every edit or pick.</param>
+        /// <param name="width">Minimum width.</param>
+        public static ComboBox Category(string? current, Action<string>? onChanged,
+                                        double width = 200) =>
+            Lazy(current, onChanged, width, report => Categories(report),
+                 onDemand: true, watching: "Reading what the elements are called");
+
+        /// <summary>
+        /// The categories a bounded walk of the model finds.
+        ///
+        /// Capped and settled on the same terms as the property scan, because this runs while
+        /// somebody is waiting for a list to open: a federation's category vocabulary repeats
+        /// within the first few hundred elements.
+        /// </summary>
+        /// <param name="report">Progress, returning false to stop.</param>
+        private static IEnumerable<string> Categories(Func<int, bool>? report)
+        {
+            var session = Host.Current;
+
+            if (session == null) return Array.Empty<string>();
+
+            var found = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var read = 0;
+            var quiet = 0;
+
+            foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
+            {
+                if (++read > ScanCap) break;
+                if (report != null && !report(read)) break;
+
+                var category = item.Category;
+
+                if (string.IsNullOrWhiteSpace(category)) continue;
+
+                if (seen.Add(category!))
+                {
+                    found.Add(category!);
+                    quiet = 0;
+                }
+                else if (++quiet > Settled) break;
+            }
+
+            found.Sort(StringComparer.OrdinalIgnoreCase);
+
+            return found;
+        }
+
         static Pickers() => Host.WhenDocumentChanges(Forget);
 
         /// <summary>

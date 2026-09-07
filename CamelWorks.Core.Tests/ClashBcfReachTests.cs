@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using CamelWorks.Core.Clash;
+using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
 using Xunit;
 
@@ -15,19 +17,35 @@ namespace CamelWorks.Core.Tests
     /// </summary>
     public class ClashBcfReachTests
     {
-        private static ClashItem Item(string a, string b, string? ifcA = null, string? ifcB = null)
+        private static Finding Found(string a, string b)
         {
             var scope = ElementKey.ScopeOf("Structure.rvt");
 
-            var first = ElementKey.FromInstanceGuid(scope, Guid.Parse(a));
-            var second = ElementKey.FromInstanceGuid(scope, Guid.Parse(b));
+            var key = ClashKey.Create(ElementKey.FromInstanceGuid(scope, Guid.Parse(a)),
+                                      ElementKey.FromInstanceGuid(scope, Guid.Parse(b)), 1, 2, 3);
 
-            return new ClashItem(ClashKey.Create(first, second, 1, 2, 3), "MEP vs Structure")
-            {
-                IfcGuidA = ifcA,
-                IfcGuidB = ifcB,
-            };
+            var finding = Finding.Create(FindingSource.Clash, "MEP vs Structure", "Clash",
+                                         new[] { key.A, key.B }, ClashFindings.CellOf(key));
+
+            finding.TopicGuid = ClashBcf.TopicGuidFor(key);
+            finding.X = 1;
+            finding.Y = 2;
+            finding.Z = 3;
+
+            return finding;
         }
+
+        /// <summary>Write one clash, naming as many of its two elements as the caller says.</summary>
+        private static FindingBcfDocument Written(Finding finding, string? ifcA = null,
+                                                  string? ifcB = null,
+                                                  Func<ElementKey, ElementLocator>? at = null) =>
+            FindingBcf.Write(new[] { finding }, null, new FindingBcfOptions
+            {
+                IfcGuidOf = key => key == finding.Elements[0] ? ifcA
+                                 : key == finding.Elements[1] ? ifcB
+                                 : null,
+                LocatorOf = at,
+            });
 
         private const string A = "11111111-1111-1111-1111-111111111111";
         private const string B = "22222222-2222-2222-2222-222222222222";
@@ -39,9 +57,9 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void ATopicWithNoIfcIdsIsCountedBlind()
         {
-            var written = ClashBcf.Write(new[] { Item(A, B) });
+            var written = Written(Found(A, B));
 
-            Assert.Equal(1, written.Results);
+            Assert.Equal(1, written.Findings);
             Assert.Equal(1, written.Blind);
             Assert.Equal(0, written.Partial);
             Assert.Equal(0, written.Resolvable);
@@ -50,7 +68,7 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void OneSideNamedIsPartialNotBlind()
         {
-            var written = ClashBcf.Write(new[] { Item(A, B, GuidA) });
+            var written = Written(Found(A, B), GuidA);
 
             Assert.Equal(0, written.Blind);
             Assert.Equal(1, written.Partial);
@@ -60,7 +78,7 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void BothSidesNamedReachTheReceivingTool()
         {
-            var written = ClashBcf.Write(new[] { Item(A, B, GuidA, GuidB) });
+            var written = Written(Found(A, B), GuidA, GuidB);
 
             Assert.Equal(0, written.Blind);
             Assert.Equal(0, written.Partial);
@@ -70,7 +88,7 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void TheCountIsSaidOutLoudWhenAnythingCannotBeReached()
         {
-            var blind = ClashBcf.Write(new[] { Item(A, B) });
+            var blind = Written(Found(A, B));
 
             Assert.Contains(blind.Warnings,
                 w => w.Contains("no elements", StringComparison.OrdinalIgnoreCase)
@@ -81,7 +99,7 @@ namespace CamelWorks.Core.Tests
             Assert.Contains(blind.Warnings, w => w.Contains("GlobalId", StringComparison.Ordinal));
 
             // Nothing is said when every topic reaches.
-            var fine = ClashBcf.Write(new[] { Item(A, B, GuidA, GuidB) });
+            var fine = Written(Found(A, B), GuidA, GuidB);
 
             Assert.DoesNotContain(fine.Warnings, w => w.Contains("GlobalId", StringComparison.Ordinal));
         }
@@ -92,14 +110,20 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void TheLocatorsSurviveTheRoundTrip()
         {
-            var item = Item(A, B);
+            var finding = Found(A, B);
 
-            item.PathIdA = "3/1/44";
-            item.PathIdB = "3/1/91";
-            item.TreeA = "Structure.rvt\u001FLevel 02\u001FBeams\u001FUB 305x165";
-            item.TreeB = "Structure.rvt\u001FLevel 02\u001FDucts\u001FSupply 400x200";
+            var routes = new Dictionary<ElementKey, ElementLocator>
+            {
+                [finding.Elements[0]] = new ElementLocator(
+                    finding.Elements[0], "3/1/44",
+                    "Structure.rvt\u001FLevel 02\u001FBeams\u001FUB 305x165"),
+                [finding.Elements[1]] = new ElementLocator(
+                    finding.Elements[1], "3/1/91",
+                    "Structure.rvt\u001FLevel 02\u001FDucts\u001FSupply 400x200"),
+            };
 
-            using var stream = new System.IO.MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
+            using var stream = new System.IO.MemoryStream(
+                Written(finding, at: key => routes[key]).Bytes);
 
             var back = ClashBcf.Read(stream).Results.Single();
 
@@ -112,9 +136,9 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void AFileWrittenWithoutThemStillReads()
         {
-            // Every file written before the locators existed. Absent is an ordinary answer, and
-            // the keys are what the reading seat falls back to.
-            using var stream = new System.IO.MemoryStream(ClashBcf.Write(new[] { Item(A, B) }).Bytes);
+            // A seat that could not resolve the elements writes no route. Absent is an ordinary
+            // answer, and the keys are what the reading seat falls back to.
+            using var stream = new System.IO.MemoryStream(Written(Found(A, B)).Bytes);
 
             var back = ClashBcf.Read(stream).Results.Single();
 
@@ -136,7 +160,7 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void ABlindTopicStillCarriesACameraSoItIsWorthSending()
         {
-            var written = ClashBcf.Write(new[] { Item(A, B) });
+            var written = Written(Found(A, B));
 
             using var stream = new System.IO.MemoryStream(written.Bytes);
 

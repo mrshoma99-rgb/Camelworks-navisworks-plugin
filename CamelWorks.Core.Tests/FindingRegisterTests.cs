@@ -31,6 +31,37 @@ namespace CamelWorks.Core.Tests
         // -----------------------------------------------------------------------------------
 
         [Fact]
+        public void A_closed_finding_this_run_reports_again_is_listed_as_reopened()
+        {
+            // The register does not demote it: the lattice promotes only, so "was closed, is open
+            // now" cannot be read back off the status. The intake is the only moment that knows,
+            // and this is the board's Regressed line.
+            var register = new FindingRegister();
+
+            register.Observe(FindingSource.Clash, new[] { Clash(A, B) }, 1);
+
+            var held = register.All.Single();
+            held.Status = FindingStatus.Approved;
+
+            var intake = register.Observe(FindingSource.Clash, new[] { Clash(A, B) }, 2);
+
+            Assert.Equal(held.Id, Assert.Single(intake.Reopened));
+            Assert.Equal(FindingStatus.Approved, held.Status);
+        }
+
+        [Fact]
+        public void A_finding_nobody_has_settled_is_not_reopened()
+        {
+            var register = new FindingRegister();
+
+            var first = register.Observe(FindingSource.Clash, new[] { Clash(A, B) }, 1);
+            var second = register.Observe(FindingSource.Clash, new[] { Clash(A, B) }, 2);
+
+            Assert.Empty(first.Reopened);
+            Assert.Empty(second.Reopened);
+        }
+
+        [Fact]
         public void ARerunKeepsTheDecisionAndTakesTheFacts()
         {
             var register = new FindingRegister();
@@ -227,6 +258,31 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void AnEmptyFactIsNotStored()
+        {
+            // A producer writes the facts it owns on every read, empty where the run reported
+            // nothing, so the merge overwrites the last run's value rather than leaving it. Absent
+            // and empty read the same to every reader, so the empty one is not written: eighteen
+            // thousand clash findings would otherwise each carry several empty keys.
+            var register = new FindingRegister();
+            var finding = Clash(A, B, "MEP vs Structure", "cell-40-80-120");
+
+            finding.Facts["Level"] = "L03";
+            finding.Facts["Distance"] = string.Empty;
+
+            register.Put(finding);
+
+            var written = register.ToJson().ToJson();
+
+            Assert.DoesNotContain("Distance", written, StringComparison.Ordinal);
+
+            var read = FindingRegister.FromJson(JsonReader.Parse(written)).All.Single();
+
+            Assert.Equal("L03", read.Facts["Level"]);
+            Assert.False(read.Facts.ContainsKey("Distance"));
+        }
+
+        [Fact]
         public void TheIdIsDerivedAgainOnLoadAndStillMatches()
         {
             // An issue points at the id. If loading invented a different one, every link would
@@ -242,24 +298,24 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void AParentKeepsItsChildrenAndTheirLocations()
+        public void AFindingKeepsItsLocationsAndTheirElements()
         {
-            var parent = Finding.CreateParent(FindingSource.Ids, "Fire rating", "12 walls unrated");
+            var finding = Finding.CreateParent(FindingSource.Ids, "Fire rating", "12 walls unrated");
 
-            parent.AddChild(Finding.Create(FindingSource.Ids, "Fire rating", "Wall 1", new[] { A }));
-            parent.AddChild(Finding.Create(FindingSource.Ids, "Fire rating", "Wall 2", new[] { B }));
+            finding.AddLocation(new FindingLocation("Wall 1", new[] { A }, "no FireRating"));
+            finding.AddLocation(new FindingLocation("Wall 2", new[] { B }));
 
-            parent.Status = FindingStatus.Active;
+            finding.Status = FindingStatus.Active;
 
             var register = new FindingRegister();
-            register.Put(parent);
+            register.Put(finding);
 
             var back = FindingRegister.FromJson(JsonReader.Parse(register.ToJson().ToJson()));
             var read = back.All.Single();
 
-            Assert.Equal(2, read.Children.Count);
+            Assert.Equal(2, read.Locations.Count);
             Assert.Equal(FindingStatus.Active, read.Status);
-            Assert.All(read.Children, c => Assert.Equal(FindingStatus.New, c.Status));
+            Assert.Equal("no FireRating", read.Locations[0].Detail);
             Assert.Equal(2, read.AllElements().Count);
         }
 

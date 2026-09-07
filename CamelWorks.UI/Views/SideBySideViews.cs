@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Compare;
+using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Issues;
 using CamelWorks.Core.Project;
@@ -508,10 +509,14 @@ namespace CamelWorks.UI.Views
                         : Ui.Count(from.Count, "difference") + " between " + _leftName + " and "
                           + _rightName;
 
-                    var issue = new Issue(id, title)
+                    // Raised by the comparison, not by hand. Provenance decides two things: the
+                    // detail card's sentence about where the issue came from, and whether the
+                    // issue is projected onto the clash board, which happens for every open
+                    // hand-raised issue naming two or more elements. A comparison over a whole
+                    // revision names dozens, so leaving it at the default put it there.
+                    var issue = new Issue(id, title, FindingSource.Compare)
                     {
                         Type = "Coordination",
-                        Source = _leftName + " vs " + _rightName,
                         Description = string.Join(Environment.NewLine, from.Take(20).Select(c =>
                             c.Print.Name + ": " + Where(c) + " — " + c.Summary())),
                         HasPoint = true,
@@ -519,6 +524,8 @@ namespace CamelWorks.UI.Views
                         Y = from.Average(c => c.Print.CentreY) * scale,
                         Z = from.Average(c => c.Print.CentreZ) * scale,
                     };
+
+                    issue.Facts[Issue.SourceFact] = _leftName + " vs " + _rightName;
 
                     foreach (var change in from)
                         if (change.Print.TryKey(out var key) && !issue.Elements.Contains(key))

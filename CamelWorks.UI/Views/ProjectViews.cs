@@ -295,7 +295,7 @@ namespace CamelWorks.UI.Views
             }
 
             var show = Ui.Quiet("Show me what left"
-                + (finding.Children.Count < Count(finding) ? " (the first " + keys.Count + ")" : string.Empty),
+                + (finding.Locations.Count < Count(finding) ? " (the first " + keys.Count + ")" : string.Empty),
                 () =>
                 {
                     session.Model.Select(keys);
@@ -307,12 +307,81 @@ namespace CamelWorks.UI.Views
             return row;
         }
 
+        /// <summary>
+        /// Attach a drift finding to an issue that already exists.
+        ///
+        /// Raising a second issue about a set that emptied is how one problem becomes two rows in
+        /// the register, both open, neither the whole story. The issues are picked from a list
+        /// rather than typed, because the id is on somebody's screen and a typo makes a third.
+        /// </summary>
+        /// <param name="session">The open document.</param>
+        /// <param name="kept">The finding to attach.</param>
+        /// <param name="said">Where the outcome goes.</param>
+        private static void Attach(Session session, Finding kept, Panel said)
+        {
+            said.Children.Clear();
+
+            var register = IssueViews.Read(session);
+
+            var open = register.Issues
+                               .OrderBy(one => !one.IsOpen)
+                               .ThenBy(one => one.Id, StringComparer.OrdinalIgnoreCase)
+                               .ToList();
+
+            if (open.Count == 0)
+            {
+                said.Children.Add(Ui.Problem("There are no issues yet. \"Raise an issue\" makes "
+                    + "one from this finding."));
+
+                return;
+            }
+
+            var byLine = new Dictionary<string, Issue>(StringComparer.Ordinal);
+
+            foreach (var one in open)
+                byLine[one.Id + " — " + one.Title
+                       + (one.IsOpen ? string.Empty : " (closed)")] = one;
+
+            Parts.Choose(said, "Attach \"" + kept.Title + "\" to which issue?",
+                         byLine.Keys.ToList(), null, null, null, line =>
+            {
+                if (!byLine.TryGetValue(line ?? string.Empty, out var issue)) return;
+
+                said.Children.Clear();
+
+                if (IssueFindings.Attach(issue, new[] { kept }) == 0)
+                {
+                    said.Children.Add(Ui.Note("That issue already covers this finding."));
+                    return;
+                }
+
+                issue.ModifiedTicks = DateTime.UtcNow.Ticks;
+
+                foreach (var element in kept.AllElements())
+                    if (!issue.Elements.Contains(element)) issue.Elements.Add(element);
+
+                var problem = IssueViews.Write(session, register);
+
+                if (problem != null)
+                {
+                    said.Children.Add(Ui.Problem(problem));
+                    return;
+                }
+
+                session.Record(ActivityKind.Regroup,
+                               "attached a set drift finding to issue " + issue.Id);
+
+                said.Children.Add(Ui.Info("Attached to " + issue.Id + ".",
+                                          "Open the register", () => IssueViews.Open(issue.Id)));
+            });
+        }
+
         /// <summary>How many left the set, as the finding recorded it.</summary>
         private static int Count(Finding finding) =>
             finding.Facts.TryGetValue(SetDriftFindings.Left, out var left)
             && int.TryParse(left, out var many)
                 ? many
-                : finding.Children.Count;
+                : finding.Locations.Count;
 
         /// <summary>Whether a drift is the kind that disarms rather than merely narrows.</summary>
         private static bool Fault(Finding finding) =>
@@ -524,15 +593,16 @@ namespace CamelWorks.UI.Views
 
                 var (made, problem) = IssueViews.Raise(session, id =>
                 {
-                    var issue = new Issue(id, kept.Title)
+                    var issue = new Issue(id, kept.Title, kept.Source)
                     {
                         Type = "Quality",
-                        Source = kept.Rule,
                         Description = kept.Detail
                             ?? (kept.Facts.TryGetValue(HealthFindings.Fix, out var fix)
                                 ? fix
                                 : null),
                     };
+
+                    issue.Facts[Issue.SourceFact] = kept.Rule;
 
                     IssueFindings.Attach(issue, new[] { kept });
 
@@ -552,11 +622,13 @@ namespace CamelWorks.UI.Views
                     "Open the register", () => IssueViews.Open(null)));
             });
 
+            var attach = Ui.Quiet("Attach to an issue", () => Attach(session, kept, said));
+
             var status = Ui.Small(kept.Status == FindingStatus.Approved
                 ? "Settled"
                 : kept.IsPresent ? "Open" : "Not found by the latest sweep");
 
-            var row = Ui.Across(settle, raise, status);
+            var row = Ui.Across(settle, raise, attach, status);
             row.Margin = new Thickness(0, 6, 0, 0);
             return row;
         }
@@ -1319,15 +1391,15 @@ namespace CamelWorks.UI.Views
             {
                 var finding = findings[at++];
 
-                var issue = new Issue(id, finding.Title)
+                var issue = new Issue(id, finding.Title, finding.Source)
                 {
                     Type = "Quality",
-                    Source = finding.Facts.TryGetValue(IdsFindings.Document, out var from)
-                        ? from
-                        : "IDS",
                     Description = finding.Detail
                         ?? (finding.Facts.TryGetValue(IdsFindings.Why, out var why) ? why : null),
                 };
+
+                issue.Facts[Issue.SourceFact] =
+                    finding.Facts.TryGetValue(IdsFindings.Document, out var from) ? from : "IDS";
 
                 IssueFindings.Attach(issue, new[] { finding });
 

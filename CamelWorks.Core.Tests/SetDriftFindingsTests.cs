@@ -73,8 +73,8 @@ namespace CamelWorks.Core.Tests
             // tell them apart.
             var finding = SetDriftFindings.From(Emptied())!;
 
-            Assert.True(finding.IsParent);
-            Assert.Equal(40, finding.Children.Count);
+            Assert.True(finding.HasLocations);
+            Assert.Equal(40, finding.Locations.Count);
             Assert.Equal(40, finding.AllElements().Count);
         }
 
@@ -83,7 +83,7 @@ namespace CamelWorks.Core.Tests
         {
             var finding = SetDriftFindings.From(Emptied(was: 2000), null, cap: 500)!;
 
-            Assert.Equal(500, finding.Children.Count);
+            Assert.Equal(500, finding.Locations.Count);
             Assert.Equal("2000", finding.Facts[SetDriftFindings.Was]);
         }
 

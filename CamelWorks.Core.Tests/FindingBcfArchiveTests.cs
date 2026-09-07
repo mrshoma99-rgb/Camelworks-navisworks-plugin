@@ -38,7 +38,7 @@ namespace CamelWorks.Core.Tests
             finding.Labels.Add("Site query");
             finding.Comments.Add(new FindingComment("ada", 1, "The beam cannot move."));
 
-            var issue = new Issue("I1", "Duct run through the transfer beam", IssueOrigin.Clash);
+            var issue = new Issue("I1", "Duct run through the transfer beam", FindingSource.Clash);
 
             IssueFindings.Attach(issue, new[] { finding });
 
@@ -49,7 +49,7 @@ namespace CamelWorks.Core.Tests
         {
             var (finding, issue) = Pair();
 
-            var topics = FindingBcf.Together(new[] { finding }, new[] { IssueBcf.ToTopic(issue) },
+            var topics = FindingBcf.Together(new[] { finding }, new[] { FindingBcf.ToTopic(issue) },
                                              _ => issue.Findings, "CamelWorks",
                                              _ => "11111111-1111-1111-1111-111111111111");
 

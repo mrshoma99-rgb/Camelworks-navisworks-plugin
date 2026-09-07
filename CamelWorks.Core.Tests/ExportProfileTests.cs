@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using CamelWorks.Core.Identity;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Store;
@@ -378,6 +379,39 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void A_folder_member_two_recipients_both_claim_reaches_both_packs()
+        {
+            // Two tests can report the same conflict in the same cell, and both results can be on
+            // the board and in one folder. A split that kept only the last recipient for a key
+            // dropped the other one's member out of that recipient's group.
+            var mine = Item("a", "Hard", FindingStatus.New, 1);
+            var theirs = Item("a", "Clearance", FindingStatus.New, 1);
+
+            Assert.Equal(mine.Key, theirs.Key);
+
+            mine.AssignedTo = "Mechanical";
+            theirs.AssignedTo = "Structure";
+
+            var folder = Group("Corridor C", null, mine, theirs);
+
+            var profile = Everything("Hard", "Clearance");
+
+            profile.SplitBy = "assignee";
+            profile.KeepGroups = true;
+
+            var rounds = profile.Rounds(new[] { mine, theirs }, new[] { folder });
+
+            Assert.Equal(2, rounds.Count);
+
+            foreach (var round in rounds)
+            {
+                var group = Assert.Single(round.Selection.Groups);
+
+                Assert.Equal(2, group.Items.Count);
+            }
+        }
+
+        [Fact]
         public void Clashes_nobody_was_assigned_get_their_own_pack_rather_than_none()
         {
             var loose = Item("a", "Hard", FindingStatus.New, 1);
@@ -400,6 +434,89 @@ namespace CamelWorks.Core.Tests
             var round = Assert.Single(profile.Rounds(new[] { Item("a", "Hard", FindingStatus.New, 1) }));
 
             Assert.Equal(profile.Name, round.Recipient);
+        }
+
+
+        [Fact]
+        public void A_split_the_check_has_no_sides_for_falls_back_to_the_assignee()
+        {
+            // Clearance has an obstruction and a surface, not two trades, so a discipline split
+            // over it names every pack "? v ?" - one pack addressed to nobody. The assignee is the
+            // one recipient every check has, and the round says which split it used.
+            var mine = Item("a", "Hard", FindingStatus.New, 1);
+            var theirs = Item("b", "Hard", FindingStatus.New, 2);
+
+            mine.DisciplineA = null;
+            mine.DisciplineB = null;
+            theirs.DisciplineA = null;
+            theirs.DisciplineB = null;
+
+            mine.AssignedTo = "Mechanical";
+            theirs.AssignedTo = "Structure";
+
+            var profile = Everything("Hard");
+
+            profile.SplitBy = "disciplines";
+
+            var rounds = profile.Rounds(new[] { mine, theirs });
+
+            Assert.Equal(2, rounds.Count);
+            Assert.Equal(new[] { "Mechanical", "Structure" },
+                         rounds.Select(r => r.Recipient).OrderBy(r => r, StringComparer.Ordinal));
+
+            Assert.All(rounds, round =>
+            {
+                Assert.Equal("Assigned to", round.SplitBy);
+                Assert.Equal("Disciplines", round.Asked);
+            });
+        }
+
+        [Fact]
+        public void A_split_nothing_answers_and_nobody_is_assigned_is_one_pack_that_says_so()
+        {
+            // The branch the tab draws a sentence from. SplitBy naming nothing left that sentence
+            // reading "so the split fell back to ."
+            var loose = Item("a", "Hard", FindingStatus.New, 1);
+
+            loose.DisciplineA = null;
+            loose.DisciplineB = null;
+
+            var profile = Everything("Hard");
+
+            profile.SplitBy = "disciplines";
+
+            var round = Assert.Single(profile.Rounds(new[] { loose }));
+
+            Assert.Equal(profile.Name, round.Recipient);
+            Assert.Equal(ExportProfile.OnePack, round.SplitBy);
+            Assert.Equal("Disciplines", round.Asked);
+        }
+
+        [Fact]
+        public void A_split_the_check_does_have_sides_for_is_the_split_that_is_used()
+        {
+            // The fallback is not a default. A clash has two trades, so a discipline split splits
+            // by discipline and nothing is said about a fallback.
+            var mine = Item("a", "Hard", FindingStatus.New, 1);
+            var theirs = Item("b", "Hard", FindingStatus.New, 2);
+
+            mine.DisciplineA = "Mechanical";
+            mine.DisciplineB = "Structural";
+            theirs.DisciplineA = "Electrical";
+            theirs.DisciplineB = "Structural";
+
+            mine.AssignedTo = "Ada";
+            theirs.AssignedTo = "Ada";
+
+            var profile = Everything("Hard");
+
+            profile.SplitBy = "disciplines";
+
+            var rounds = profile.Rounds(new[] { mine, theirs });
+
+            Assert.Equal(2, rounds.Count);
+            Assert.All(rounds, round => Assert.Null(round.Asked));
+            Assert.All(rounds, round => Assert.Equal("Disciplines", round.SplitBy));
         }
 
         [Fact]
@@ -497,11 +614,20 @@ namespace CamelWorks.Core.Tests
             var picked = profile.Choose(new[] { mine, stale, elsewhere },
                                         new[] { Group("Ducts", "Mechanical", mine, stale) });
 
-            var written = ClashBcf.Write(picked.Items, picked.Groups,
-                                         profile.BcfOptions("Federation.nwf"));
+            var how = profile.BcfOptions("Federation.nwf");
+            var folders = picked.Groups.SelectMany(g => g.Items.Select(i => (i.Key, g.Name)))
+                                       .ToDictionary(one => one.Key, one => one.Name);
 
-            Assert.Equal(1, written.Results);
-            Assert.Equal("Hard", Assert.Single(written.Tests).Name);
+            var going = picked.Items.Select(ClashFixture.Found).ToList();
+
+            how.GroupOf = finding => folders.TryGetValue(
+                ClashKey.Create(finding.Elements[0], finding.Elements[1],
+                                finding.X ?? 0, finding.Y ?? 0, finding.Z ?? 0),
+                out var named) ? named : null;
+
+            var written = FindingBcf.Write(going, null, how);
+
+            Assert.Equal(1, written.Findings);
 
             var read = ClashFile.Read(written.Bytes);
 

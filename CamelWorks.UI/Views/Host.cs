@@ -4,6 +4,8 @@ using System.IO;
 using System.Reflection;
 using Autodesk.Navisworks.Api;
 using CamelWorks.Core.Abstractions;
+using CamelWorks.Core.Checks;
+using CamelWorks.Core.Data;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Project;
@@ -33,11 +35,36 @@ namespace CamelWorks.UI.Views
             Clash = clash;
             ClashProblem = clashProblem;
             View = new NavViewSession(model);
+            Triangles = new NavTriangles(model);
             Viewpoints = new NavViewpointStore(model);
             Search = new NavSearch(model);
             Findings = FindingStore.Open(PhysicalFileSystem.Instance, store);
+            Checks = new CheckCatalogue();
             Baselines = SetBaselineStore.Open(PhysicalFileSystem.Instance, store);
+
+            var runs = CheckRunStore.Read(store);
+
+            Checks.Add(new ClearanceCheck(Findings.Findings, runs, model,
+                                          Triangles, MetresPerUnit,
+                                          () => SaveWork(out var problem) ? null : problem,
+                                          // Read when a run measures, not now: Levels & Zones
+                                          // edits the storeys while the document stays open.
+                                          () => LevelPlan.FromJson(
+                                              store.Section(ProjectStore.ProfileSection)[LevelPlan.Key]),
+                                          store));
+
+            Checks.Add(new FallCheck(Findings.Findings, runs, model, Triangles, MetresPerUnit,
+                                     () => SaveWork(out var problem) ? null : problem, store));
         }
+
+        /// <summary>
+        /// Every check this session can offer, other than clash.
+        ///
+        /// Clash is built by the board itself, because it caches what each test is between and
+        /// reading that is a host call per test; everything else is registered here and the board
+        /// lists what it finds.
+        /// </summary>
+        public CheckCatalogue Checks { get; }
 
         /// <summary>
         /// Every finding this project holds, whatever check produced it.
@@ -115,6 +142,15 @@ namespace CamelWorks.UI.Views
 
         /// <summary>The document behind the seam.</summary>
         public NavDocument Model { get; }
+
+        /// <summary>
+        /// Triangles, for the checks that cannot be answered from a bounding box.
+        ///
+        /// Whether an element faces up, how much contiguous surface it has and where its outline
+        /// runs are all questions a box cannot answer, and the clearance check's surface detection
+        /// asks all three.
+        /// </summary>
+        public ITriangleSource Triangles { get; }
 
         /// <summary>Runs compiled set expressions and publishes native sets.</summary>
         public NavSearch Search { get; }
@@ -205,6 +241,16 @@ namespace CamelWorks.UI.Views
         /// <summary>Take or renew that right.</summary>
         /// <param name="force">Take it from a live holder — what the "Take it over" button does.</param>
         public LeaseResult Claim(bool force = false) => Store.TakeLease(Owner, NowTicks, force);
+
+        /// <summary>
+        /// Save the findings sidecar and the project file together, in that order.
+        ///
+        /// The one door for any edit that spans both — raising an issue, attaching findings to
+        /// one, cascading a status onto them. Delegates to <see cref="WorkSave"/> and adds
+        /// nothing, so what it guarantees is asserted in Core.Tests over a fake file system.
+        /// </summary>
+        /// <param name="problem">Why nothing was saved, or null when both writes landed.</param>
+        public bool SaveWork(out string? problem) => WorkSave.Save(Store, Findings, out problem);
 
         /// <summary>Record something in the activity log and save the project file.</summary>
         /// <param name="kind">One of <see cref="ActivityKind"/>.</param>
@@ -329,6 +375,11 @@ namespace CamelWorks.UI.Views
         /// <summary>Tell every cache that what it holds is about a document nobody has open.</summary>
         private static void Changed()
         {
+            // The key memo is keyed by Model reference, so it holds the models of the document
+            // being left. Cleared here rather than registered like a screen's cache, because it
+            // belongs to the identity layer and there is no screen to own it.
+            Nav.NavKeys.Forget();
+
             List<Action> forgetters;
 
             lock (_onChange) forgetters = new List<Action>(_onChange);

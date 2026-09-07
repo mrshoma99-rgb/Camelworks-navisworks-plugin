@@ -58,6 +58,7 @@ namespace CamelWorks.Core.Clash
             new NameToken("{symbol}", "Symbol", "What is in the cell — A, B, the sheet's own mark."),
             new NameToken("{test}", "Test kind", "Hard, Clearance, Duplicate — what the symbol means."),
             new NameToken("{tolerance}", "Tolerance", "The symbol's tolerance, in millimetres."),
+            new NameToken("{level}", "Level", "The storey the board is about, when it names one."),
             new NameToken("{n}", "Number", "Where it falls in the build, from one."),
         };
 
@@ -74,8 +75,10 @@ namespace CamelWorks.Core.Clash
         /// <param name="symbol">The cell's symbol, and what it means.</param>
         /// <param name="at">Where this falls in the build, from one.</param>
         /// <param name="scheme">The board's scheme, for its custom fields. Null for none.</param>
+        /// <param name="level">The storey the board is about, or null when it names none.</param>
         public static string Fill(string? pattern, MatrixLine row, MatrixLine column,
-                                  MatrixSymbol? symbol, int at, MatrixScheme? scheme = null)
+                                  MatrixSymbol? symbol, int at, MatrixScheme? scheme = null,
+                                  string? level = null)
         {
             if (row == null) throw new ArgumentNullException(nameof(row));
             if (column == null) throw new ArgumentNullException(nameof(column));
@@ -100,6 +103,7 @@ namespace CamelWorks.Core.Clash
                 .Replace("{symbol}", symbol?.Symbol ?? string.Empty)
                 .Replace("{test}", symbol == null ? string.Empty : Worded(symbol.Test))
                 .Replace("{tolerance}", millimetres)
+                .Replace("{level}", level ?? string.Empty)
                 .Replace("{n}", at.ToString(CultureInfo.InvariantCulture));
 
             // The scheme's own fields, after the built-in ones so a project that names a field

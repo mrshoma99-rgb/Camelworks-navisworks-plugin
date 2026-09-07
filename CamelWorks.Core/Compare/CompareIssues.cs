@@ -14,10 +14,10 @@ namespace CamelWorks.Core.Compare
     /// survives the next run. That is what a reported change has to become before anybody acts on
     /// it.
     ///
-    /// One parent per model per kind of change, with children underneath. Three hundred moved
+    /// One finding per model per kind of change, with a location per element. Three hundred moved
     /// elements are one thing to decide about and three hundred places to look, and the board exists
-    /// to keep the first from being buried by the second. Status and assignee live on the parent;
-    /// children carry the locations.
+    /// to keep the first from being buried by the second. Status and assignee live on the finding;
+    /// the locations carry no decision of their own.
     /// </summary>
     public static class CompareIssues
     {
@@ -27,10 +27,10 @@ namespace CamelWorks.Core.Compare
         /// <summary>
         /// Raise findings from a comparison.
         ///
-        /// Children come from <see cref="CompareResult.Changes"/>, which is capped — see
+        /// Locations come from <see cref="CompareResult.Changes"/>, which is capped — see
         /// <see cref="CompareSettings.ExampleCap"/>. Run the comparison uncapped when the findings
-        /// are going out as BCF and every element has to be in them; the parent's title carries
-        /// the true count either way, so a capped set of children is visible rather than silent.
+        /// are going out as BCF and every element has to be in them; the finding's title carries
+        /// the true count either way, so a capped set of locations is visible rather than silent.
         /// </summary>
         /// <param name="result">What the comparison found.</param>
         /// <param name="buckets">
@@ -70,9 +70,8 @@ namespace CamelWorks.Core.Compare
                 {
                     if (!change.Print.TryKey(out var key)) continue;
 
-                    parent.AddChild(Finding.Create(
-                        FindingSource.Compare, Rule, change.Title, new[] { key },
-                        change.Print.Local));
+                    parent.AddLocation(new FindingLocation(parent.Id + "/" + key, new[] { key },
+                                                           change.Title));
                 }
 
                 findings.Add(parent);

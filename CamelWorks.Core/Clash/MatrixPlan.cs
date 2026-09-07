@@ -193,7 +193,8 @@ namespace CamelWorks.Core.Clash
                 }
 
                 var named = MatrixNaming.Distinct(
-                    MatrixNaming.Fill(pattern, cell.Row, cell.Column, meaning, tests.Count + 1),
+                    MatrixNaming.Fill(pattern, cell.Row, cell.Column, meaning, tests.Count + 1,
+                                      board.Scheme, board.Level),
                     taken);
 
                 tests.Add(new MatrixTestPlan(cell.Row, cell.Column, named, meaning));

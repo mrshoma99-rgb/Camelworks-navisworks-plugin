@@ -1209,6 +1209,11 @@ namespace CamelWorks.Nav.Clash
 
             var items = new ModelItemCollection();
 
+            // De-duplicated in a set rather than by asking the host collection whether it already
+            // holds each item: Contains on a ModelItemCollection is a walk, so selecting five
+            // thousand results was a quadratic scan of what had been added so far.
+            var taken = new HashSet<ModelItem>();
+
             foreach (var wanted in resultIds)
             {
                 // Straight to the result. This used to walk every result the test holds to find
@@ -1218,8 +1223,8 @@ namespace CamelWorks.Nav.Clash
 
                 // The two items the engine recorded when the test ran. No key, no lookup: it is
                 // still holding them.
-                Take(items, result.CompositeItem1);
-                Take(items, result.CompositeItem2);
+                Take(items, taken, result.CompositeItem1);
+                Take(items, taken, result.CompositeItem2);
             }
 
             try
@@ -1228,8 +1233,12 @@ namespace CamelWorks.Nav.Clash
 
                 if (add)
                 {
+                    // What is already selected, once. Asking the host collection per item was the
+                    // same quadratic walk again, on the collection that is usually the larger.
+                    var already = new HashSet<ModelItem>(selection.SelectedItems.Cast<ModelItem>());
+
                     foreach (ModelItem item in items)
-                        if (!selection.SelectedItems.Contains(item)) selection.SelectedItems.Add(item);
+                        if (already.Add(item)) selection.SelectedItems.Add(item);
                 }
                 else
                 {
@@ -1246,9 +1255,9 @@ namespace CamelWorks.Nav.Clash
         }
 
         /// <summary>Add one of a result's sides to a collection, when the engine recorded one.</summary>
-        private static void Take(ModelItemCollection items, ModelItem? item)
+        private static void Take(ModelItemCollection items, HashSet<ModelItem> taken, ModelItem? item)
         {
-            if (item == null || items.Contains(item)) return;
+            if (item == null || !taken.Add(item)) return;
 
             items.Add(item);
         }
@@ -2040,6 +2049,17 @@ namespace CamelWorks.Nav.Clash
             return clash;
         }
 
+        /// <summary>
+        /// One test by its id.
+        ///
+        /// Not memoised. A table of tests would be built inside the very loops that need it —
+        /// every bulk operation calls <see cref="Writable"/> once and then mutates in a loop — and
+        /// a regroup replaces the test object, a delete removes it and a move reparents it. The
+        /// document's generation does not bump for any of those, so the table would hand out
+        /// handles to tests the document no longer has. The tree walk is the correct answer here.
+        /// </summary>
+        /// <param name="clash">The document's clash data.</param>
+        /// <param name="testId">Which test.</param>
         private static ClashTest? FindTest(DocumentClash clash, string testId) =>
             AllTests(clash)
                 .Select(t => t.Test)

@@ -226,9 +226,10 @@ namespace CamelWorks.Core.Clash
     /// <summary>One recipient's pack: who it is for, and what goes in it.</summary>
     public sealed class ExportRound
     {
-        internal ExportRound(string recipient, ExportSelection selection)
+        internal ExportRound(string recipient, ExportSelection selection,
+                             string? splitBy = null, string? asked = null)
         {
-            Recipient = recipient; Selection = selection;
+            Recipient = recipient; Selection = selection; SplitBy = splitBy; Asked = asked;
         }
 
         /// <summary>Who the pack is for, as the facet named them.</summary>
@@ -236,6 +237,26 @@ namespace CamelWorks.Core.Clash
 
         /// <summary>What goes in it.</summary>
         public ExportSelection Selection { get; }
+
+        /// <summary>
+        /// What the rounds were split on, as the facet titles it, or null when nothing was asked.
+        ///
+        /// <see cref="ExportProfile.OnePack"/> when a split was asked for and nothing answered it,
+        /// which is a different thing from a profile that asked for no split. Said out loud
+        /// because it is not always the split that was asked for: see <see cref="Asked"/>.
+        /// </summary>
+        public string? SplitBy { get; }
+
+        /// <summary>
+        /// The split that was asked for and answered nothing, or null when the asked-for split is
+        /// the one that was used.
+        ///
+        /// A clash has two trades and clearance has an obstruction and a surface, so a profile
+        /// that splits by discipline produces one pack called "? v ?" on every check but clash.
+        /// The split falls back to the assignee, and the tab says which split it used rather than
+        /// presenting one unexplained pack.
+        /// </summary>
+        public string? Asked { get; }
 
         /// <summary>A filename stem for this round, with nothing a file system will refuse.</summary>
         public string FileStem()
@@ -378,9 +399,11 @@ namespace CamelWorks.Core.Clash
         /// <param name="items">Everything on the board.</param>
         /// <param name="groups">The board's folders, or null when it has none.</param>
         /// <param name="plan">The project's storeys, for a filter that names one.</param>
+        /// <param name="issued">What has already gone out, for a filter that names it.</param>
         public ExportSelection Choose(IEnumerable<ClashItem>? items,
                                       IEnumerable<ClashGroup>? groups = null,
-                                      Data.LevelPlan? plan = null)
+                                      Data.LevelPlan? plan = null,
+                                      ClashIssueLog? issued = null)
         {
             var board = (items ?? Array.Empty<ClashItem>()).Where(i => i != null).ToList();
 
@@ -429,14 +452,14 @@ namespace CamelWorks.Core.Clash
 
             if (!Pick.IsEverything)
             {
-                var narrowed = Pick.Take(keeping, plan);
+                var narrowed = Pick.Take(keeping, plan, issued);
 
                 byFilter = keeping.Count - narrowed.Count;
                 keeping = narrowed.ToList();
             }
             else
             {
-                keeping = Pick.Ordered(keeping, plan).ToList();
+                keeping = Pick.Ordered(keeping, plan, issued).ToList();
             }
 
             var kept = new HashSet<ClashKey>(keeping.Select(i => i.Key));
@@ -480,23 +503,51 @@ namespace CamelWorks.Core.Clash
         /// <param name="items">Everything on the board.</param>
         /// <param name="groups">The board's folders.</param>
         /// <param name="plan">The project's storeys.</param>
+        /// <param name="issued">What has already gone out, for a filter that names it.</param>
         public IReadOnlyList<ExportRound> Rounds(IEnumerable<ClashItem>? items,
                                                  IEnumerable<ClashGroup>? groups = null,
-                                                 Data.LevelPlan? plan = null)
+                                                 Data.LevelPlan? plan = null,
+                                                 ClashIssueLog? issued = null)
         {
-            var chosen = Choose(items, groups, plan);
+            var chosen = Choose(items, groups, plan, issued);
 
             if (string.IsNullOrWhiteSpace(SplitBy))
                 return new[] { new ExportRound(Name, chosen) };
 
-            var facet = ClashFacets.Of(SplitBy, chosen.Items, plan);
+            var facet = ClashFacets.Of(SplitBy, chosen.Items, plan, issued);
 
             if (facet == null) return new[] { new ExportRound(Name, chosen) };
+
+            // The facet a check has no sides for. Splitting by discipline sends every clearance
+            // breach and every fall hazard to one pack named after nobody, because those checks
+            // have an obstruction and a surface rather than two trades. The assignee is the one
+            // recipient every check has, so it is what the split falls back to; where nothing is
+            // assigned either, there is one pack and the tab says so.
+            string? asked = null;
+
+            if (!string.Equals(facet.Key, Assignee, StringComparison.OrdinalIgnoreCase)
+                && !Answers(facet, chosen.Items))
+            {
+                var assignee = ClashFacets.Of(Assignee, chosen.Items, plan, issued);
+
+                // Nothing is assigned either, so there is one pack. SplitBy names what that one
+                // pack is split on, which is nothing, and the tab has to be able to say "nothing
+                // here carries X, so everything went in one pack" rather than trailing off.
+                if (assignee == null || !Answers(assignee, chosen.Items))
+                    return new[] { new ExportRound(Name, chosen, OnePack, facet.Title) };
+
+                asked = facet.Title;
+                facet = assignee;
+            }
 
             var folders = (groups ?? Array.Empty<ClashGroup>()).Where(g => g != null).ToList();
 
             var order = new List<string>();
             var byWhom = new Dictionary<string, List<ClashItem>>(StringComparer.OrdinalIgnoreCase);
+            // A list, not one recipient. Two tests can report the same conflict in the same cell,
+            // and both results can be on the board and in one folder: a key that kept only the
+            // last recipient dropped the other one's member out of that recipient's group.
+            var whose = new Dictionary<ClashKey, List<string>>();
 
             foreach (var item in chosen.Items)
             {
@@ -512,44 +563,94 @@ namespace CamelWorks.Core.Clash
                 }
 
                 held.Add(item);
+
+                if (!whose.TryGetValue(item.Key, out var claimants))
+                {
+                    claimants = new List<string>();
+                    whose[item.Key] = claimants;
+                }
+
+                if (!claimants.Contains(said, StringComparer.OrdinalIgnoreCase))
+                    claimants.Add(said);
             }
 
             order.Sort(StringComparer.OrdinalIgnoreCase);
 
+            // One pass over the folders, routing each member to its recipient's copy of the group
+            // it is in. Trimming every group for every recipient in turn walked the whole board
+            // once per recipient, and a split by assignee on a large job has thirty of them.
+            var trimmed = new Dictionary<string, List<ClashGroup>>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var group in folders)
+            {
+                var copies = new Dictionary<string, ClashGroup>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var member in group.Items)
+                {
+                    if (member == null || !whose.TryGetValue(member.Key, out var claimants))
+                        continue;
+
+                    foreach (var who in claimants)
+                    {
+                        if (!copies.TryGetValue(who, out var copy))
+                        {
+                            copy = new ClashGroup(group.Id, group.Name)
+                            {
+                                AssignedTo = group.AssignedTo,
+                            };
+
+                            copies[who] = copy;
+
+                            if (!trimmed.TryGetValue(who, out var theirs))
+                            {
+                                theirs = new List<ClashGroup>();
+                                trimmed[who] = theirs;
+                            }
+
+                            theirs.Add(copy);
+                        }
+
+                        copy.Items.Add(member);
+                    }
+                }
+            }
+
             var rounds = new List<ExportRound>();
 
             foreach (var who in order)
-            {
-                var mine = byWhom[who];
-                var keys = new HashSet<ClashKey>(mine.Select(one => one.Key));
-                var trimmed = new List<ClashGroup>();
-
-                foreach (var group in folders)
-                {
-                    var survivors = group.Items.Where(m => m != null && keys.Contains(m.Key))
-                                               .ToList();
-
-                    if (survivors.Count == 0) continue;
-
-                    var copy = new ClashGroup(group.Id, group.Name)
-                    {
-                        AssignedTo = group.AssignedTo,
-                    };
-
-                    foreach (var member in survivors) copy.Items.Add(member);
-
-                    trimmed.Add(copy);
-                }
-
-                rounds.Add(new ExportRound(who,
-                    new ExportSelection(mine, trimmed, 0, 0, 0, 0)));
-            }
+                rounds.Add(new ExportRound(who, new ExportSelection(
+                    byWhom[who],
+                    trimmed.TryGetValue(who, out var groupsFor)
+                        ? groupsFor
+                        : (IReadOnlyList<ClashGroup>)Array.Empty<ClashGroup>(),
+                    0, 0, 0, 0), facet.Title, asked));
 
             return rounds;
         }
 
         /// <summary>What a round is called when the facet says nothing about who it is for.</summary>
         public const string Nobody = "Unassigned";
+
+        /// <summary>
+        /// What <see cref="ExportRound.SplitBy"/> says when the asked-for split answered nothing
+        /// and the assignee answered nothing either, so everything went in one pack.
+        /// </summary>
+        public const string OnePack = "one pack";
+
+        /// <summary>The facet the split falls back to, which is the one every check has.</summary>
+        private const string Assignee = "assignee";
+
+        /// <summary>Whether a facet names a recipient for any of these results.</summary>
+        /// <param name="facet">The facet.</param>
+        /// <param name="items">The results going out.</param>
+        private static bool Answers(ClashFacet facet, IReadOnlyList<ClashItem> items) =>
+            items.Any(item =>
+            {
+                var said = facet.Read(item);
+
+                return !string.IsNullOrWhiteSpace(said)
+                       && !string.Equals(said, ClashItem.UnknownPair, StringComparison.Ordinal);
+            });
 
         /// <summary>
         /// The profile, as the writer's settings.
@@ -560,16 +661,29 @@ namespace CamelWorks.Core.Clash
         /// </summary>
         /// <param name="sourceFile">The document this came from.</param>
         /// <param name="whenTicks">When the file is being written.</param>
-        /// <param name="metresPerUnit">Model units to metres, for the viewpoint cameras.</param>
-        public ClashBcfOptions BcfOptions(string? sourceFile = null, long whenTicks = 0,
-                                          double metresPerUnit = 1.0) =>
-            new ClashBcfOptions
+        public Findings.FindingBcfOptions BcfOptions(string? sourceFile = null, long whenTicks = 0) =>
+            new Findings.FindingBcfOptions
             {
                 KeepGroups = KeepGroups,
                 SourceFile = sourceFile,
                 WhenTicks = whenTicks,
-                MetresPerUnit = metresPerUnit <= 0 ? 1.0 : metresPerUnit,
+                View = View,
+                Highlight = Highlight,
+                Section = Section,
+                SectionMetres = SectionMetres,
             };
+
+        /// <summary>Which way each topic's camera looks at its clash.</summary>
+        public OpenBim.BcfView View { get; set; } = OpenBim.BcfView.Standing;
+
+        /// <summary>Whether the two clashing elements are coloured in the viewpoint.</summary>
+        public bool Highlight { get; set; } = true;
+
+        /// <summary>Whether the viewpoint carries a section box around the clash.</summary>
+        public bool Section { get; set; }
+
+        /// <summary>How far that box reaches from the clash point, in metres.</summary>
+        public double SectionMetres { get; set; } = 2.0;
 
         /// <summary>
         /// Record that these tests have just been written into a file.
@@ -615,6 +729,10 @@ namespace CamelWorks.Core.Clash
             JsonValue.Object()
                 .Set("name", Name)
                 .Set("keepGroups", KeepGroups)
+                .Set("view", View.ToString())
+                .Set("highlight", Highlight)
+                .Set("section", Section)
+                .Set("sectionMetres", SectionMetres)
                 .Set("tests", JsonValue.Array(_tests.Select(t => t.ToJson())))
                 .Set("statuses", JsonValue.Array(
                     Statuses.OrderBy(s => (int)s).Select(s => JsonValue.String(s.ToString()))))
@@ -632,6 +750,16 @@ namespace CamelWorks.Core.Clash
 
             profile.Name = json["name"].AsString("Everything") ?? "Everything";
             profile.KeepGroups = json["keepGroups"].AsBool(true);
+
+            if (Enum.TryParse<OpenBim.BcfView>(json["view"].AsString(), out var view))
+                profile.View = view;
+
+            profile.Highlight = json["highlight"].AsBool(true);
+            profile.Section = json["section"].AsBool(false);
+
+            var reach = json["sectionMetres"];
+
+            if (reach.Kind == Store.JsonKind.Number) profile.SectionMetres = reach.AsDouble();
 
             foreach (var item in json["tests"].Items)
             {

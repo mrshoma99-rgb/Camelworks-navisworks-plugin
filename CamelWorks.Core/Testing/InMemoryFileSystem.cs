@@ -124,8 +124,15 @@ namespace CamelWorks.Core.Testing
         }
     }
 
-    /// <summary>Thrown by <see cref="InMemoryFileSystem"/> when a failure was injected.</summary>
-    public sealed class SimulatedIoException : Exception
+    /// <summary>
+    /// Thrown by <see cref="InMemoryFileSystem"/> when a failure was injected.
+    ///
+    /// An <see cref="System.IO.IOException"/>, because that is what the stores catch. A fake
+    /// throwing anything else cannot exercise the path a real disk failure takes: the injected
+    /// failure would escape the store's own handling and the test would be asserting about a
+    /// call stack the product never has.
+    /// </summary>
+    public sealed class SimulatedIoException : System.IO.IOException
     {
         /// <summary>Create the exception.</summary>
         public SimulatedIoException(string message) : base(message) { }
