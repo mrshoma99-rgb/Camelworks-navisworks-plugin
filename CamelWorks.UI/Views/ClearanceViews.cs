@@ -140,7 +140,7 @@ namespace CamelWorks.UI.Views
                     // used to ask it third, under two numbers and two sides.
                     Bench.Group("Where",
                         Sized(Ui.Field("Zone",
-                                 Reading(Ui.Choice(new[] { WholeModel }.Concat(sets).ToList(),
+                                 Reading(Ui.Choice(Zones(sets, settings.Zone),
                                      string.IsNullOrWhiteSpace(settings.Zone)
                                          ? WholeModel : settings.Zone!,
                                      pick => Keep(one => one.Zone =
@@ -427,6 +427,29 @@ namespace CamelWorks.UI.Views
                 Named(() => _seat.Sets().Select(set => set.Name)
                                  .Distinct(StringComparer.OrdinalIgnoreCase)
                                  .OrderBy(name => name, StringComparer.OrdinalIgnoreCase));
+
+            /// <summary>
+            /// The zone list: no zone, this document's sets, and whatever the run is set to.
+            ///
+            /// The run's own value is kept in the list whether the document offers it or not. A
+            /// test written against last week's federation names a set this one may not hold, and
+            /// a picker that drops it shows an empty box: the reader cannot tell a run with no
+            /// zone from one whose zone this document cannot resolve.
+            /// </summary>
+            /// <param name="sets">The document's saved sets.</param>
+            /// <param name="zone">What the run is confined to, or null.</param>
+            private static List<string> Zones(IEnumerable<string> sets, string? zone)
+            {
+                var list = new List<string> { WholeModel };
+
+                list.AddRange(sets);
+
+                if (!string.IsNullOrWhiteSpace(zone)
+                    && !list.Contains(zone!, StringComparer.OrdinalIgnoreCase))
+                    list.Add(zone!);
+
+                return list;
+            }
 
             /// <summary>
             /// The categories this document's elements carry, for the ignore list.
