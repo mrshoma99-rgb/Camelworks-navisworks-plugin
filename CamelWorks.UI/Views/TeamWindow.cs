@@ -32,8 +32,8 @@ namespace CamelWorks.UI.Views
         /// The person's own copy wins on a name they both hold, because it is the one they have
         /// been correcting. The project only fills in people they have never met.
         /// </summary>
-        /// <param name="session">The session whose project may carry a roster.</param>
-        internal static TeamRoster Read(Session? session)
+        /// <param name="session">The seat whose project may carry a roster.</param>
+        internal static TeamRoster Read(ISeat? session)
         {
             var mine = TeamRoster.Mine();
 
@@ -66,9 +66,9 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>Write it to both homes, and say where it did not reach.</summary>
-        /// <param name="session">The session whose project also keeps a copy.</param>
+        /// <param name="session">The seat whose project also keeps a copy.</param>
         /// <param name="roster">The roster.</param>
-        internal static string? Keep(Session? session, TeamRoster roster)
+        internal static string? Keep(ISeat? session, TeamRoster roster)
         {
             var carried = roster.Keep();
 
@@ -98,9 +98,9 @@ namespace CamelWorks.UI.Views
         /// wants to redraw once, after the person is done, not eleven times while they type.
         /// </summary>
         /// <param name="near">The screen it belongs to; the window is owned by the host.</param>
-        /// <param name="session">The session, for the project's copy.</param>
+        /// <param name="session">The seat, for the project's copy.</param>
         /// <param name="onChanged">Called once, when something was changed.</param>
-        internal static void Show(FrameworkElement near, Session? session, Action? onChanged)
+        internal static void Show(FrameworkElement near, ISeat? session, Action? onChanged)
         {
             _ = near;
 
@@ -130,19 +130,29 @@ namespace CamelWorks.UI.Views
                 if (problem != null) said.Children.Add(Ui.Problem(problem));
             }
 
+            var ticked = new HashSet<string>(StringComparer.Ordinal);
+            Picking? picking = null;
+
             void Fill()
             {
                 rows.Children.Clear();
 
+                // Ticks on people who are no longer on the roster count towards nothing and would
+                // make "everybody is picked" impossible to reach.
+                ticked.IntersectWith(roster.Members.Select(one => one.Id));
+
                 foreach (var member in roster.Members
                              .OrderBy(m => m.Name, StringComparer.CurrentCulture)
                              .ToList())
-                    rows.Children.Add(Line(roster, member, Fill, Kept));
+                    rows.Children.Add(Line(roster, member, Fill, Kept, ticked,
+                                           () => picking?.Refresh()));
 
                 if (roster.Members.Count == 0)
                     rows.Children.Add(Ui.Small("No members yet. Press “Add member” and complete "
                         + "the row. Every field is editable in place, and the roles, teams and "
                         + "companies used appear in the lists afterwards."));
+
+                picking?.Refresh();
             }
 
             Fill();
@@ -150,7 +160,7 @@ namespace CamelWorks.UI.Views
             var body = new DockPanel { Margin = new Thickness(18, 16, 18, 16), LastChildFill = true };
 
             var head = Ui.Stack(
-                Ui.Eyebrow("The team"),
+                Ui.Heading("The team"),
                 Ui.Small("Kept beside you rather than inside one job, so the same people are here "
                          + "the next time you open a model — and written into this project as "
                          + "well, so whoever opens it next gets the team with it."));
@@ -167,15 +177,20 @@ namespace CamelWorks.UI.Views
             headings.Margin = new Thickness(0, 12, 0, 4);
 
 
-            Put(headings, Ui.Eyebrow("Name"), 0);
-            Put(headings, Ui.Eyebrow("Role"), 1);
-            Put(headings, Ui.Eyebrow("Team"), 2);
-            Put(headings, Ui.Eyebrow("Company"), 3);
-            Put(headings, Ui.Eyebrow("Email"), 4);
-            Put(headings, Ui.Eyebrow("BCF folder"), 5);
+            Put(headings, Ui.Small("Name"), 1);
+            Put(headings, Ui.Small("Role"), 2);
+            Put(headings, Ui.Small("Team"), 3);
+            Put(headings, Ui.Small("Company"), 4);
+            Put(headings, Ui.Small("Email"), 5);
+            Put(headings, Ui.Small("BCF folder"), 6);
 
             DockPanel.SetDock(headings, Dock.Top);
             body.Children.Add(headings);
+
+            picking = new Picking(roster, ticked, headings, Fill, Kept, said);
+
+            DockPanel.SetDock(picking.Bar, Dock.Bottom);
+            body.Children.Add(picking.Bar);
 
             var adding = Ui.Primary("Add member", () =>
             {
@@ -195,7 +210,8 @@ namespace CamelWorks.UI.Views
 
             var foot = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 10, 0, 0) };
 
-            var close = Ui.Primary("Done", () => window.Close());
+            // Quiet, not filled. Done closes the window; the writes have already happened.
+            var close = Ui.Quiet("Done", () => window.Close());
             close.MinWidth = 92;
 
             DockPanel.SetDock(close, Dock.Right);
@@ -270,6 +286,80 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
+        /// The roster as a panel, for a tab that hosts it rather than a window that opens it.
+        /// </summary>
+        /// <param name="roster">The team, edited in place.</param>
+        /// <param name="onEdit">Called after every edit, so the tab can save it.</param>
+        internal static UIElement Panel(TeamRoster roster, Action onEdit)
+        {
+            var held = Ui.Stack();
+            var rows = Ui.Stack();
+
+            var ticked = new HashSet<string>(StringComparer.Ordinal);
+            Picking? picking = null;
+
+            void Fill()
+            {
+                rows.Children.Clear();
+
+                ticked.IntersectWith(roster.Members.Select(one => one.Id));
+
+                foreach (var member in roster.Members
+                             .OrderBy(m => m.Name, StringComparer.CurrentCulture)
+                             .ToList())
+                    rows.Children.Add(Line(roster, member, Fill, onEdit, ticked,
+                                           () => picking?.Refresh()));
+
+                if (roster.Members.Count == 0)
+                    rows.Children.Add(Ui.Empty(
+                        "No members yet",
+                        "Until the roster has members, an assignment is whatever name was typed "
+                        + "on the board.",
+                        "Add the first member", () => Ui.Safely(() =>
+                        {
+                            roster.Add(Fresh(roster));
+                            onEdit();
+                            Fill();
+                        })));
+            }
+
+            var headings = Columns();
+
+            headings.Margin = new Thickness(0, 0, 0, 4);
+
+            Put(headings, Ui.Small("Name"), 1);
+            Put(headings, Ui.Small("Role"), 2);
+            Put(headings, Ui.Small("Team"), 3);
+            Put(headings, Ui.Small("Company"), 4);
+            Put(headings, Ui.Small("Email"), 5);
+            Put(headings, Ui.Small("BCF folder"), 6);
+
+            var said = Ui.Stack();
+
+            picking = new Picking(roster, ticked, headings, Fill, onEdit, said);
+
+            Fill();
+
+            var adding = Ui.Button("Add member", () => Ui.Safely(() =>
+            {
+                roster.Add(Fresh(roster));
+                onEdit();
+                Fill();
+            }));
+
+            adding.HorizontalAlignment = HorizontalAlignment.Left;
+            adding.Margin = new Thickness(0, 10, 0, 0);
+
+            held.Children.Add(headings);
+            held.Children.Add(rows);
+            held.Children.Add(picking.Bar);
+            held.Children.Add(said);
+            held.Children.Add(adding);
+
+            return held;
+        }
+
+        /// <summary>
         /// The one column layout the headings and every row share.
         ///
         /// Shares rather than fixed widths. Six columns at their previous fixed widths exceeded the
@@ -280,6 +370,11 @@ namespace CamelWorks.UI.Views
         private static Grid Columns()
         {
             var grid = new Grid();
+
+            // The tick, hard left. Fixed rather than Auto for the same reason as the bin: every
+            // row is a grid of its own, and an Auto column would be as wide as that row's own
+            // tick while the headings, which carry one too, sized independently.
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(26) });
 
             // Name, Role, Team, Company, Email, BCF folder.
             foreach (var share in new[] { 1.3, 1.1, 0.9, 1.1, 1.3, 1.6 })
@@ -323,14 +418,30 @@ namespace CamelWorks.UI.Views
         /// </summary>
         /// <param name="roster">The team, for the lists the boxes offer.</param>
         /// <param name="member">The person.</param>
+        /// <param name="ticked">Who is picked, by member id. The row's tick reads and writes it.</param>
+        /// <param name="onPick">Called when the tick changes, so the bar redraws its count.</param>
         /// <param name="onShape">Called when the list itself has to be drawn again.</param>
         /// <param name="onEdit">Called after every edit, to keep it.</param>
         private static UIElement Line(TeamRoster roster, TeamMember member,
-                                      Action onShape, Action onEdit)
+                                      Action onShape, Action onEdit,
+                                      ISet<string> ticked, Action onPick)
         {
             var grid = Columns();
 
             grid.Margin = new Thickness(0, 2, 0, 2);
+
+            var tick = new CheckBox
+            {
+                IsChecked = ticked.Contains(member.Id),
+                VerticalAlignment = VerticalAlignment.Center,
+                ToolTip = "Pick " + member.Name,
+            };
+
+            tick.Checked += (s, e) => Ui.Safely(() => { ticked.Add(member.Id); onPick(); });
+            tick.Unchecked += (s, e) => Ui.Safely(() => { ticked.Remove(member.Id); onPick(); });
+
+            Grid.SetColumn(tick, 0);
+            grid.Children.Add(tick);
 
             // The name is the identity, so changing it is a remove and an add rather than an
             // edit in place - and the list is drawn again because the order may have moved.
@@ -359,16 +470,16 @@ namespace CamelWorks.UI.Views
                 onShape();
             });
 
-            Put(grid, name, 0);
+            Put(grid, name, 1);
 
             Put(grid, Suggesting(roster.RolesOffered, member.Role,
-                                 typed => { member.Role = Or(typed); onEdit(); }), 1);
+                                 typed => { member.Role = Or(typed); onEdit(); }), 2);
 
             Put(grid, Suggesting(roster.Teams, member.Team,
-                                 typed => { member.Team = Or(typed); onEdit(); }), 2);
+                                 typed => { member.Team = Or(typed); onEdit(); }), 3);
 
             Put(grid, Suggesting(roster.Parties, member.Party,
-                                 typed => { member.Party = Or(typed); onEdit(); }), 3);
+                                 typed => { member.Party = Or(typed); onEdit(); }), 4);
 
             var email = Ui.Text(member.Email ?? string.Empty, "nobody@", null, 74);
 
@@ -378,7 +489,7 @@ namespace CamelWorks.UI.Views
                 onEdit();
             });
 
-            Put(grid, email, 4);
+            Put(grid, email, 5);
 
             // A folder, with a Browse, because a job that issues clashes by folder rather than
             // by email has nowhere else to put it - and typing a share path by hand is how the
@@ -394,10 +505,11 @@ namespace CamelWorks.UI.Views
             // The row, not the field: a field puts a label over the box and a gap under it,
             // which in a table is a cell taller than the ones beside it holding a box that sits
             // lower than all of them.
-            Put(grid, Ui.PathRow(folder, PathKind.Folder), 5);
+            Put(grid, Ui.PathRow(folder, PathKind.Folder), 6);
 
             var off = Ui.Icon(Glyphs.Bin, "Take them off the team", () =>
             {
+                ticked.Remove(member.Id);
                 roster.Remove(member.Id);
                 onEdit();
                 onShape();
@@ -405,10 +517,117 @@ namespace CamelWorks.UI.Views
 
             off.Margin = new Thickness(0);
 
-            Grid.SetColumn(off, 6);
+            Grid.SetColumn(off, 7);
             grid.Children.Add(off);
 
             return grid;
+        }
+
+
+        /// <summary>
+        /// The tick over the tick column, and the bar under the rows.
+        ///
+        /// The roster was a stack of editable rows with a bin on each one, so taking eleven people
+        /// off a team was eleven presses. Tick what is going and press once; the count is in the
+        /// caption, so what the press covers is the last thing read before it.
+        /// </summary>
+        private sealed class Picking
+        {
+            private readonly TeamRoster _roster;
+            private readonly ISet<string> _ticked;
+            private readonly CheckBox _every = new CheckBox
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+                ToolTip = "Pick every member, or none",
+            };
+
+            private readonly TextBlock _count = Ui.Small(string.Empty);
+            private readonly Button _off;
+            private readonly Action _onShape;
+            private bool _filling;
+
+            /// <summary>Build one.</summary>
+            /// <param name="roster">The team.</param>
+            /// <param name="ticked">Who is picked, by member id. Shared with the rows.</param>
+            /// <param name="headings">The heading row, which gets the all-or-none tick.</param>
+            /// <param name="onShape">Redraws the rows.</param>
+            /// <param name="onEdit">Called after a change, to keep it.</param>
+            /// <param name="said">Where the bar asks before it removes anybody.</param>
+            internal Picking(TeamRoster roster, ISet<string> ticked, Grid headings,
+                             Action onShape, Action onEdit, Panel said)
+            {
+                _roster = roster;
+                _ticked = ticked;
+                _onShape = onShape;
+
+                _count.VerticalAlignment = VerticalAlignment.Center;
+                _count.Margin = new Thickness(0, 0, 10, 0);
+
+                _off = Ui.Danger("Take them off the team", () => { });
+
+                Grid.SetColumn(_every, 0);
+                headings.Children.Add(Ui.Loose(_every));
+
+                _every.Checked += (s, e) => Ui.Safely(() => All(true));
+                _every.Unchecked += (s, e) => Ui.Safely(() => All(false));
+
+                _off.Click += (s, e) => Ui.Safely(() =>
+                {
+                    var going = _roster.Members.Where(one => _ticked.Contains(one.Id)).ToList();
+
+                    if (going.Count == 0) return;
+
+                    Parts.Sure(said, "Take " + Ui.Count(going.Count, "person") + " off the team?",
+                               "Take them off", () =>
+                    {
+                        foreach (var one in going) _roster.Remove(one.Id);
+
+                        _ticked.Clear();
+                        onEdit();
+                        onShape();
+                    });
+                });
+
+                Bar = Ui.Across(_count, _off);
+                Bar.Margin = new Thickness(0, 6, 0, 0);
+
+                Refresh();
+            }
+
+            /// <summary>The bar itself, for the caller to place.</summary>
+            internal Panel Bar { get; }
+
+            /// <summary>Say again how many are picked. Called whenever a row's tick moves.</summary>
+            internal void Refresh()
+            {
+                var picked = _roster.Members.Count(one => _ticked.Contains(one.Id));
+
+                _count.Text = picked == 0
+                    ? "Tick a row to act on it"
+                    : Ui.Count(picked, "person") + " picked";
+
+                _off.IsEnabled = picked > 0;
+                _off.Content = picked > 1
+                    ? "Take these " + picked.ToString(CultureInfo.CurrentCulture) + " off the team"
+                    : "Take them off the team";
+
+                // Set, not raised: the box writes back through its own handlers, and a refresh
+                // that fired them would tick or untick the roster as a side effect of counting it.
+                _filling = true;
+                _every.IsChecked = _roster.Members.Count > 0 && picked == _roster.Members.Count;
+                _filling = false;
+            }
+
+            private void All(bool on)
+            {
+                if (_filling) return;
+
+                _ticked.Clear();
+
+                if (on) foreach (var one in _roster.Members) _ticked.Add(one.Id);
+
+                _onShape();
+            }
         }
 
         /// <summary>A box that offers what is already in use, and takes anything else.</summary>

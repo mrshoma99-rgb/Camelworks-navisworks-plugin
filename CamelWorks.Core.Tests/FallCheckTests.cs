@@ -323,6 +323,70 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void A_new_run_says_nothing_about_where_to_cut_and_is_refused()
+        {
+            // There is no safe cut elevation. On a site-coordinate model zero is below the
+            // foundations, the band catches nothing, and the run comes back with no findings and
+            // no reason on the screen the button is on.
+            var settings = new FallSettings { Floors = "Level 03 Floors" };
+
+            Assert.False(settings.HasLevel);
+            Assert.Contains("elevation", settings.Wrong());
+
+            settings.LevelMetres = 0;
+
+            Assert.True(settings.HasLevel);
+
+            // And a deliberate zero survives the project file, where "not set" does not.
+            var spec = new CheckRunSpec(FindingSource.FallHazard, "ground", "Ground floor");
+
+            settings.Write(spec);
+
+            Assert.True(FallSettings.From(spec).HasLevel);
+            Assert.False(FallSettings.From(new CheckRunSpec(FindingSource.FallHazard, "x", "X")).HasLevel);
+        }
+
+        [Fact]
+        public void A_new_run_names_no_floor_and_ignores_a_gap_narrower_than_a_person()
+        {
+            var settings = new FallSettings();
+
+            // Everything loaded reads walls and ducts at the cut elevation and projects each of
+            // them as solid floor, so the run asks rather than assuming.
+            Assert.False(settings.HasFloors);
+            Assert.Equal(0.3, settings.MinPassageMetres, 6);
+        }
+
+        [Fact]
+        public void Changing_the_floor_side_says_why_every_hazard_reads_as_new()
+        {
+            var register = new FindingRegister();
+            var runs = new CheckRunStore();
+            var document = Model();
+
+            runs.Put(Spec("level3", "Level 3 openings"));
+
+            var check = Check(register, runs, document);
+
+            Assert.True(check.Runner!.Run("level3", null));
+            Assert.DoesNotContain(check.Notes, note => note.Contains("read the floor from"));
+
+            var spec = check.Spec("level3")!;
+            var settings = FallSettings.From(spec);
+
+            settings.LevelMetres = 0.5;
+            settings.Write(spec);
+
+            Assert.True(check.Runner.Run("level3", null));
+            Assert.Contains(check.Notes, note => note.Contains("read the floor from"));
+
+            // Said once, for the change that happened. Running again at the same settings is not
+            // another change.
+            Assert.True(check.Runner.Run("level3", null));
+            Assert.DoesNotContain(check.Notes, note => note.Contains("read the floor from"));
+        }
+
+        [Fact]
         public void A_run_that_names_no_floor_is_refused_before_it_reads_anything()
         {
             var register = new FindingRegister();
@@ -534,7 +598,7 @@ namespace CamelWorks.Core.Tests
         [InlineData("limit", "gap that needs a handrail")]
         public void A_setting_of_nothing_or_less_refuses_the_run(string key, string said)
         {
-            var settings = new FallSettings { Floors = FallSettings.Loaded };
+            var settings = new FallSettings { Floors = FallSettings.Loaded, LevelMetres = 10.5 };
 
             Assert.Null(settings.Wrong());
 

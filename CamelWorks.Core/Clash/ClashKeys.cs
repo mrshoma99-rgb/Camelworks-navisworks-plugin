@@ -49,24 +49,5 @@ namespace CamelWorks.Core.Clash
         /// <summary>The matrix as it was last edited.</summary>
         public const string Matrix = "clashmatrix";
 
-        /// <summary>
-        /// Keys nothing writes any more, kept so a project file that still holds them can be
-        /// migrated and cleared. Named here rather than spelt out at the one site that removes
-        /// them, so a rename cannot leave a stale value behind unnoticed.
-        /// </summary>
-        public static class Retired
-        {
-            /// <summary>The snapshot's per-party counts, before they moved into the snapshot.</summary>
-            public const string Parties = "parties";
-
-            /// <summary>When the snapshot was taken, before it moved into the snapshot.</summary>
-            public const string Taken = "taken";
-
-            /// <summary><see cref="Parties"/>, for the board Undo puts back.</summary>
-            public const string PreviousParties = "previousParties";
-
-            /// <summary><see cref="Taken"/>, for the board Undo puts back.</summary>
-            public const string PreviousTaken = "previousTaken";
-        }
     }
 }

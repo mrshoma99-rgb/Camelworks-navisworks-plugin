@@ -137,15 +137,23 @@ namespace CamelWorks.UI.Views
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
-            var kind = new TextBlock
-            {
-                Text = label ?? string.Empty,
-                VerticalAlignment = VerticalAlignment.Center,
-                FontSize = 12,
-            };
+            // No label block at all when there is no label, rather than an empty one. A chip under
+            // a field already headed "Levels" does not need to say Levels again, and an empty
+            // TextBlock still takes the gap after it.
+            var named = !string.IsNullOrWhiteSpace(label);
 
-            kind.Tint(TextBlock.ForegroundProperty, "Muted");
-            row.Children.Add(kind);
+            if (named)
+            {
+                var kind = new TextBlock
+                {
+                    Text = label!,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    FontSize = 12,
+                };
+
+                kind.Tint(TextBlock.ForegroundProperty, "Muted");
+                row.Children.Add(kind);
+            }
 
             var what = new TextBlock
             {
@@ -153,7 +161,7 @@ namespace CamelWorks.UI.Views
                 VerticalAlignment = VerticalAlignment.Center,
                 FontSize = 12,
                 FontWeight = FontWeights.SemiBold,
-                Margin = new Thickness(6, 0, 0, 0),
+                Margin = new Thickness(named ? 6 : 0, 0, 0, 0),
             };
 
             what.Tint(TextBlock.ForegroundProperty, "Text");
@@ -184,7 +192,7 @@ namespace CamelWorks.UI.Views
                 Background = Brushes.Transparent,
                 VerticalAlignment = VerticalAlignment.Center,
                 Cursor = Cursors.Hand,
-                ToolTip = "Remove " + label + " " + value,
+                ToolTip = named ? "Remove " + label + " " + value : "Remove " + value,
                 Child = Ui.Glyph(Glyphs.Close, 11, "Muted"),
             };
 
@@ -597,7 +605,6 @@ namespace CamelWorks.UI.Views
                 stacked.Children.Add(new TextBlock
                 {
                     Text = option.Under,
-                    FontSize = 10,
                     Margin = new Thickness(0, 1, 0, 0),
                 }.Wearing("Hint"));
 
@@ -782,8 +789,7 @@ namespace CamelWorks.UI.Views
                 words.Children.Add(new TextBlock { Text = here.Label }.Wearing("Body"));
 
                 if (!string.IsNullOrEmpty(here.Under))
-                    words.Children.Add(new TextBlock { Text = here.Under, FontSize = 10 }
-                        .Wearing("Hint"));
+                    words.Children.Add(new TextBlock { Text = here.Under }.Wearing("Hint"));
 
                 line.Children.Add(words);
 
@@ -2207,9 +2213,28 @@ namespace CamelWorks.UI.Views
         /// <param name="picked">How many rows are picked.</param>
         /// <param name="what">What one of them is called.</param>
         /// <param name="onClear">Unpicks everything.</param>
+        /// <param name="verbs">
+        /// The verbs, left to right. A null is skipped, so a caller can include one conditionally;
+        /// a <see cref="Ui.Vrule"/> separates two verbs that would otherwise run together.
+        /// </param>
+        public static UIElement SelectionBar(int picked, string what, Action onClear,
+                                             params UIElement?[] verbs) =>
+            SelectionBar(picked, what, onClear, Tone.Plain, verbs);
+
+        /// <summary>
+        /// The same bar, with the count carrying a tone.
+        /// </summary>
+        /// <param name="picked">How many rows are picked.</param>
+        /// <param name="what">What one of them is called.</param>
+        /// <param name="onClear">Unpicks everything.</param>
+        /// <param name="tone">
+        /// How the count reads. Plain draws it in the muted ink: the accent on this bar means
+        /// something can be pressed, and a count is a fact, so an accented count beside a filled
+        /// button read as a second control.
+        /// </param>
         /// <param name="verbs">The verbs, left to right.</param>
         public static UIElement SelectionBar(int picked, string what, Action onClear,
-                                             params UIElement?[] verbs)
+                                             Tone tone, params UIElement?[] verbs)
         {
             var row = new DockPanel { LastChildFill = false };
 
@@ -2227,7 +2252,10 @@ namespace CamelWorks.UI.Views
             };
 
             count.Wearing("Body");
-            count.Tint(TextBlock.ForegroundProperty, "Accent");
+
+            if (tone == Tone.Plain) count.Tint(TextBlock.ForegroundProperty, "Muted");
+            else count.Foreground = Skin.Ink(tone);
+
             row.Children.Add(count);
 
             var divider = new Border
@@ -2247,7 +2275,10 @@ namespace CamelWorks.UI.Views
 
                 if (verb is FrameworkElement element)
                 {
-                    element.Margin = new Thickness(0, 0, 8, 0);
+                    // A margin the caller set is kept: a separator between two verbs carries its
+                    // own gaps, and overwriting them put it hard against the verb on its left.
+                    if (element.Margin == default) element.Margin = new Thickness(0, 0, 8, 0);
+
                     element.VerticalAlignment = VerticalAlignment.Center;
                 }
 
@@ -2258,6 +2289,12 @@ namespace CamelWorks.UI.Views
             {
                 Padding = new Thickness(16, 8, 16, 8),
                 BorderThickness = new Thickness(0, 1, 0, 0),
+
+                // A minimum row, so the bar is the same height whatever it is holding. Its verbs
+                // are a mix of chips, symbols and links: with only links in it the bar was a line
+                // shorter than with a chip in it, and the table above jumped by that much every
+                // time the last chip verb left the bar.
+                MinHeight = 44,
                 Child = row,
             };
 

@@ -42,6 +42,8 @@ ALLOWED = {
     # through them; none is a feature, and six of the seven checks answer null to most of them.
     "ICheck", "ICheckHostEcho", "ICheckGrouping", "ICheckRunner", "ICheckNaming",
     "ICheckGeometry", "ICheckProperties",
+    # The glyph keys a check names its symbol with. A list of strings, as ClashKeys is.
+    "CheckSymbols",
     # Storage plumbing. Every tool writes through it; no tool is it.
     "PhysicalFileSystem", "AtomicFile", "JournalEntry", "JournalFold", "JsonReader",
     "JsonValue", "VersionedDocument", "SectionDiff",

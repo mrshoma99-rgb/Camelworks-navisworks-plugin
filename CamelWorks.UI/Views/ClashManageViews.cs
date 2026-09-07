@@ -96,6 +96,38 @@ namespace CamelWorks.UI.Views
         /// <param name="session">The open document.</param>
         public static UIElement Manage(Session session) => new Screen(session).Build();
 
+        /// <summary>
+        /// The board over a supplied clash engine, read, for the render harness.
+        ///
+        /// The board is the engine's results, and a seat with no document has no engine, so
+        /// <see cref="Manage"/> on the empty seat draws the start screen and nothing else. Every
+        /// picture of this tab was therefore a hand-written reconstruction in the harness, and a
+        /// reconstruction cannot show a fault in the code that lays the tab out — which is where
+        /// the faults on this tab have been.
+        ///
+        /// The engine is a parameter rather than taken off the seat because the seat's own is a
+        /// stand-in that reports itself unavailable. Everything else — the project file, the
+        /// findings, the naming, the levels, the roster — comes off the seat as it does on a
+        /// licensed one, and the read is the same read the "Read the results" button runs.
+        /// </summary>
+        /// <param name="seat">The seat this is running in.</param>
+        /// <param name="clash">The clash engine to read.</param>
+        /// <param name="panel">Whether the rail's filter panel is open.</param>
+        public static UIElement Drawn(ISeat seat, IClashSource clash, bool panel = false)
+        {
+            if (seat == null) throw new ArgumentNullException(nameof(seat));
+            if (clash == null) throw new ArgumentNullException(nameof(clash));
+
+            // Nothing carried in from another page: the board, the file leg and the per-check
+            // state are all static, and two pages of this tab in one process would otherwise draw
+            // whichever one ran first.
+            Forget();
+
+            _engine = new ClashCheck(clash, seat.MetresPerUnit, null);
+
+            return new Screen(seat).Drawn(panel);
+        }
+
         static ClashManageViews() => Host.WhenDocumentChanges(Forget);
 
         /// <summary>
@@ -146,7 +178,7 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// What the Checks tab asked to show, applied to the next visit once.
+        /// What a set-up tab asked to show, applied to the next visit once.
         ///
         /// The hand-off from set-up: pressing Run there should arrive here with that check picked
         /// and that run selected, rather than on a board still showing whatever was last read.
@@ -541,7 +573,18 @@ namespace CamelWorks.UI.Views
 
         private sealed class Screen
         {
-            private readonly Session _session;
+            /// <summary>The seat the board is running in. Everything it draws comes from here.</summary>
+            private readonly ISeat _seat;
+
+            /// <summary>
+            /// The live session, or null on a seat with no document.
+            ///
+            /// Four acts need the host document rather than the seat: selecting elements by
+            /// locator, reading and writing the issue register, and asking the clash engine for a
+            /// result snapshot on export. None of them is on the draw path, so the board draws
+            /// without one and each of them says so where it is refused.
+            /// </summary>
+            private readonly Session? _live;
 
             private readonly StackPanel _log = Ui.Stack();
             private readonly StackPanel _headline = Ui.Stack();
@@ -852,7 +895,17 @@ namespace CamelWorks.UI.Views
             private TeamRoster? _roster;
 
             /// <summary>The team as it stands, read once and held until something changes it.</summary>
-            private TeamRoster Roster() => _roster ??= TeamWindow.Read(_session);
+            private TeamRoster Roster() => _roster ??= TeamWindow.Read(_seat);
+
+            /// <summary>
+            /// Write the issue register back, and say what stopped it.
+            ///
+            /// Through the session rather than the seat: an issue names finding ids, so the
+            /// findings sidecar is written with it, and a seat with no document has neither.
+            /// </summary>
+            /// <param name="register">The register to keep.</param>
+            private string? Stored(IssueRegister register) =>
+                _live == null ? Host.NoModel : IssueViews.Write(_live, register);
 
             /// <summary>
             /// The project's naming, read once per screen and held.
@@ -866,7 +919,7 @@ namespace CamelWorks.UI.Views
 
             /// <summary>The project's fields, patterns and per-test bindings.</summary>
             private NamingBook Book => _book ??= NamingBook.FromJson(
-                _session.Store.Section(ProjectStore.ClashSection)[NamingBook.Key]);
+                _seat.Store.Section(ProjectStore.ClashSection)[NamingBook.Key]);
 
             /// <summary>
             /// The project's storeys, read once per screen and held.
@@ -878,16 +931,16 @@ namespace CamelWorks.UI.Views
 
             /// <summary>The storeys this project says the building has.</summary>
             private LevelPlan Plan => _plan ??= LevelPlan.FromJson(
-                _session.Store.Section(ProjectStore.ProfileSection)[LevelPlan.Key]);
+                _seat.Store.Section(ProjectStore.ProfileSection)[LevelPlan.Key]);
 
             /// <summary>Write the storeys back to the project file.</summary>
             /// <returns>True when the project file took them.</returns>
             private bool KeepPlan()
             {
-                _session.Store.Section(ProjectStore.ProfileSection)
+                _seat.Store.Section(ProjectStore.ProfileSection)
                         .Set(LevelPlan.Key, Plan.ToJson() ?? JsonValue.Array());
 
-                return _session.Store.Save();
+                return _seat.Store.Save();
             }
 
             /// <summary>
@@ -937,10 +990,10 @@ namespace CamelWorks.UI.Views
             /// <returns>True when the project file took it.</returns>
             private bool KeepBook()
             {
-                _session.Store.Section(ProjectStore.ClashSection)
+                _seat.Store.Section(ProjectStore.ClashSection)
                         .Set(NamingBook.Key, Book.ToJson() ?? JsonValue.Object());
 
-                return _session.Store.Save();
+                return _seat.Store.Save();
             }
 
             /// <summary>
@@ -962,7 +1015,7 @@ namespace CamelWorks.UI.Views
             {
                 var sent = new List<string>();
 
-                var held = _session.Store.Section(ProjectStore.ProfileSection)
+                var held = _seat.Store.Section(ProjectStore.ProfileSection)
                                    [ClashExchangeViews.Key];
 
                 foreach (var one in held.Items)
@@ -1001,7 +1054,7 @@ namespace CamelWorks.UI.Views
 
                 if (!KeepBook())
                     Warned(Ui.Problem("The naming could not be kept in this project. "
-                        + (_session.Store.LastSaveProblem ?? string.Empty)));
+                        + (_seat.Store.LastSaveProblem ?? string.Empty)));
 
                 RedrawRail();
                 RedrawBoard();
@@ -1103,16 +1156,19 @@ namespace CamelWorks.UI.Views
             private const string SecondSide = "Second item";
             private const string BothSides = "Both";
 
-            internal Screen(Session session)
+            internal Screen(ISeat seat)
             {
-                _session = session;
+                _seat = seat;
+                _live = seat as Session;
 
                 // Before anything is drawn, so the first board is already the way this person
                 // left it rather than the way it looked the first time they ever opened it.
                 Remembered();
 
                 // A seat with no clash engine has exactly one source; the switch would be a lie.
-                if (!session.Clash.IsAvailable) _source = FromFile;
+                // Asked of the engine rather than of the seat, because the engine may have been
+                // supplied — see Drawn — and the source has to follow what is actually read.
+                if (!Engine.IsAvailable) _source = FromFile;
 
                 _path = Ui.Text(_file?.Path ?? string.Empty, null, 190);
                 _markups = Ui.Text(string.Empty, null, 190);
@@ -1187,7 +1243,7 @@ namespace CamelWorks.UI.Views
             {
                 var found = new List<ICheck> { Engine };
 
-                foreach (var one in _session.Checks.All)
+                foreach (var one in _seat.Checks.All)
                     if (!string.Equals(one.Key, FindingSource.Clash, StringComparison.OrdinalIgnoreCase))
                         found.Add(one);
 
@@ -1218,8 +1274,8 @@ namespace CamelWorks.UI.Views
             /// between and what it ran at: reading those is a host call per test.
             /// </summary>
             private ClashCheck Engine =>
-                _engine ??= new ClashCheck(_session.Clash, _session.MetresPerUnit,
-                                           _session.ClashProblem);
+                _engine ??= new ClashCheck(_seat.Clash, _seat.MetresPerUnit,
+                                           _seat.ClashProblem);
 
             /// <summary>
             /// The check the board is drawing: the document's clash data, or the file being marked
@@ -1234,7 +1290,7 @@ namespace CamelWorks.UI.Views
             private ICheck? Check =>
                 OnFile ? (ICheck?)_fileCheck
                 : IsClash ? Engine
-                : _session.Checks.Find(_checkKey);
+                : _seat.Checks.Find(_checkKey);
 
             /// <summary>
             /// The tab: a test finder on the left, one board on the right, one footer under both.
@@ -1247,6 +1303,24 @@ namespace CamelWorks.UI.Views
             /// The rail finds the test, the board works it, and an action appears when there is
             /// something for it to act on.
             /// </summary>
+            /// <summary>
+            /// The tab with its results already read, and the rail's filter panel in the state
+            /// asked for.
+            ///
+            /// The read runs first because Build draws the caption, the headline and the footer
+            /// out of what is on the board when it runs: built first and read second, the tab
+            /// comes back carrying the start screen's banner over a full board.
+            /// </summary>
+            /// <param name="panel">Whether the rail's filter panel is open.</param>
+            internal UIElement Drawn(bool panel)
+            {
+                _panel = panel;
+
+                Read(Job.Silent());
+
+                return Build();
+            }
+
             internal UIElement Build()
             {
                 // The ask first: it can change which check is being drawn, and the column index is
@@ -1308,7 +1382,7 @@ namespace CamelWorks.UI.Views
                         _headline.Children.Add(Ui.Info("This Navisworks edition has no clash "
                             + "engine, so the model source is off — but the review round is not: "
                             + "open the exported file, mark it up, save the markup. "
-                            + (_session.ClashProblem ?? string.Empty)));
+                            + (_seat.ClashProblem ?? string.Empty)));
                 }
 
                 Redraw();
@@ -1332,7 +1406,7 @@ namespace CamelWorks.UI.Views
             private const double RailWidth = 372;
 
             /// <summary>
-            /// Take up whatever the Checks tab asked to show, once.
+            /// Take up whatever a set-up tab asked to show, once.
             ///
             /// The hand-off from set-up. Applied before anything is drawn, so pressing Run there
             /// lands on that check's board with that run selected.
@@ -1358,6 +1432,19 @@ namespace CamelWorks.UI.Views
             /// and found nothing — is an answer rather than an absence and belongs on the board
             /// itself, where the rows would have been.
             /// </summary>
+            /// <summary>
+            /// Which tab sets this check's tests up, by its tool id and by the name on the tab.
+            ///
+            /// Every kind is set up on the Create tab. A clash test's two sides have to be
+            /// resolved against the document, which is the matrix, so a board with no clash test
+            /// is sent there instead.
+            /// </summary>
+            /// <param name="check">The check the board is showing.</param>
+            private static (string Id, string Tab) SetUpOn(ICheck check) =>
+                string.Equals(check.Key, FindingSource.Clash, StringComparison.Ordinal)
+                    ? ("matrix", "Clash matrix")
+                    : ("create", "Create");
+
             private UIElement NothingYet()
             {
                 var check = Check;
@@ -1371,12 +1458,13 @@ namespace CamelWorks.UI.Views
                                     check.Unavailable ?? "This seat cannot offer it.");
 
                 var saved = check.Runs();
+                var setup = SetUpOn(check);
 
                 if (saved.Count == 0)
                     return Ui.Empty("No " + check.Name.ToLowerInvariant() + " " + check.RunWord + "s yet.",
-                                    "A " + check.RunWord + " is set up on the Checks tab, and what it "
-                                    + "finds lands here.",
-                                    "Set one up", () => Ui.Told(Shell.AppWindow.Show("clash", "checks")));
+                                    "A " + check.RunWord + " is set up on the " + setup.Tab
+                                    + " tab, and what it finds lands here.",
+                                    "Set one up", () => Ui.Told(Shell.AppWindow.Show("clash", setup.Id)));
 
                 var waiting = saved.Where(one => one.LastRunTicks == 0).ToList();
 
@@ -1385,7 +1473,7 @@ namespace CamelWorks.UI.Views
                                     Ui.Count(waiting.Count, check.RunWord)
                                     + " saved and never run. Reading measures nothing on its own; "
                                     + "the run is what fills this board.",
-                                    "Set up and run", () => Ui.Told(Shell.AppWindow.Show("clash", "checks")));
+                                    "Set up and run", () => Ui.Told(Shell.AppWindow.Show("clash", setup.Id)));
 
                 return Bench.Ready(
                     "Reading pulls every " + check.ResultWord + " these " + check.RunWord
@@ -1421,7 +1509,7 @@ namespace CamelWorks.UI.Views
             /// Which check the board is drawing, over the rail's search box.
             /// </summary>
             private UIElement Picker() =>
-                CheckPicker.Draw(Offered(), Check, _session.Findings.Findings, Pick);
+                CheckPicker.Draw(Offered(), Check, _seat.Findings.Findings, Pick);
 
             /// <summary>
             /// What the last read could not do, as one line under the rail.
@@ -1646,7 +1734,7 @@ namespace CamelWorks.UI.Views
             {
                 var body = Ui.Stack();
 
-                body.Children.Add(Ui.Eyebrow("Discipline"));
+                body.Children.Add(Titling("Discipline"));
 
                 var parties = new WrapPanel();
 
@@ -1667,7 +1755,7 @@ namespace CamelWorks.UI.Views
 
                 if (folders.Count > 0)
                 {
-                    body.Children.Add(Ui.Eyebrow("Folder"));
+                    body.Children.Add(Titling("Folder"));
 
                     var chips = new WrapPanel();
 
@@ -1765,7 +1853,7 @@ namespace CamelWorks.UI.Views
                     // rather than drawn as a row of one chip that cannot change the list.
                     if (values.Count < 2) continue;
 
-                    body.Children.Add(Ui.Eyebrow(Titled(here)));
+                    body.Children.Add(Titling(Titled(here)));
 
                     var chips = new WrapPanel();
 
@@ -1787,7 +1875,7 @@ namespace CamelWorks.UI.Views
 
                 if (unread > 0)
                 {
-                    body.Children.Add(Ui.Eyebrow("Naming"));
+                    body.Children.Add(Titling("Naming"));
 
                     var chips = new WrapPanel();
 
@@ -1883,14 +1971,20 @@ namespace CamelWorks.UI.Views
                 // Each figure's label is the order it stands for. The sort menu holds the same
                 // six and says which is on; these are the one-press way to the four that are
                 // already on screen as columns.
+                //
+                // All five are abbreviated the same way and none of them takes a full stop: two
+                // of five clipped words is a heading row that reads as two different kinds of
+                // label. The whole status word is on each one's tooltip.
                 var orders = new[]
                 {
-                    (FindingStatusWords.Of(FindingStatus.New), MostNew),
-                    (FindingStatusWords.Of(FindingStatus.Active), MostOpen),
-                    ("Rev.", MostReviewed), ("Appr.", MostApproved), ("Res.", MostClosed),
+                    (Short(FindingStatus.New), FindingStatus.New, MostNew),
+                    (Short(FindingStatus.Active), FindingStatus.Active, MostOpen),
+                    (Short(FindingStatus.Reviewed), FindingStatus.Reviewed, MostReviewed),
+                    (Short(FindingStatus.Approved), FindingStatus.Approved, MostApproved),
+                    (Short(FindingStatus.Resolved), FindingStatus.Resolved, MostClosed),
                 };
 
-                foreach (var (label, order) in orders)
+                foreach (var (label, status, order) in orders)
                 {
                     var here = order;
 
@@ -1910,8 +2004,9 @@ namespace CamelWorks.UI.Views
                         Margin = new Thickness(10, 0, 0, 0),
                         Background = System.Windows.Media.Brushes.Transparent,
                         Cursor = System.Windows.Input.Cursors.Hand,
-                        ToolTip = State.Sort == here ? "Sorted by " + here.ToLowerInvariant()
-                                                : "Sort by " + here.ToLowerInvariant(),
+                        ToolTip = FindingStatusWords.Of(status) + " — "
+                                  + (State.Sort == here ? "sorted by " + here.ToLowerInvariant()
+                                                        : "sort by " + here.ToLowerInvariant()),
                         Child = head,
                     };
 
@@ -1984,14 +2079,6 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                // Which run time most of them share, so a row can stay quiet about the ones that
-                // ran with everything else and call out only the one that did not.
-                var common = shown
-                    .GroupBy(When, StringComparer.Ordinal)
-                    .OrderByDescending(g => g.Count())
-                    .Select(g => g.Key)
-                    .FirstOrDefault() ?? string.Empty;
-
                 // Folders first, because a coordinator with eighty tests files them before they
                 // sort them. The root's tests come first with no heading over them; every folder
                 // after that gets one. A rail with nothing filed looks exactly as it always did.
@@ -2003,7 +2090,6 @@ namespace CamelWorks.UI.Views
 
                 _railAt.Clear();
                 _railOrder.Clear();
-                _railCommon = common;
 
                 _railFolder.Clear();
                 _railBandAt.Clear();
@@ -2037,7 +2123,7 @@ namespace CamelWorks.UI.Views
 
                         held.Add(entry.Run.Id);
 
-                        var row = RailRow(entry, common);
+                        var row = RailRow(entry);
 
                         if (shut) row.Visibility = Visibility.Collapsed;
 
@@ -2106,9 +2192,6 @@ namespace CamelWorks.UI.Views
             private readonly Dictionary<string, int> _railAt =
                 new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
-            /// <summary>The run time most tests share, kept so a single row can be rebuilt.</summary>
-            private string _railCommon = string.Empty;
-
             /// <summary>The order the rail was last drawn in, to tell a move from a repaint.</summary>
             private readonly List<string> _railOrder = new List<string>();
 
@@ -2165,7 +2248,7 @@ namespace CamelWorks.UI.Views
 
                 if (entry == null) return;
 
-                var row = RailRow(entry, _railCommon);
+                var row = RailRow(entry);
 
                 // A row rebuilt inside a shut folder stays hidden. Without this, writing a status
                 // on a test in a folder that is shut made that one row appear under the heading.
@@ -2269,8 +2352,7 @@ namespace CamelWorks.UI.Views
 
             /// <summary>One test, as a row of the rail.</summary>
             /// <param name="entry">The test.</param>
-            /// <param name="common">The run time most tests share, which goes unsaid.</param>
-            private UIElement RailRow(TestEntry entry, string common)
+            private UIElement RailRow(TestEntry entry)
             {
                 var on = string.Equals(entry.Run.Id, State.CurrentRun, StringComparison.OrdinalIgnoreCase);
                 var open = entry.Of(FindingStatus.New) + entry.Of(FindingStatus.Active);
@@ -2289,10 +2371,14 @@ namespace CamelWorks.UI.Views
                 // was measured at 5 mm: a hard clash at 5 mm and a clearance at 5 mm are
                 // different questions with different answers, and which one a test asked was
                 // only findable by opening its settings.
+                //
+                // The same three facts on every row, in the same order. The run was left off
+                // whichever tests ran together, so two rows differed in shape for a reason the
+                // rail did not show, and a test that had never run said nothing at all.
                 var hint = new TextBlock
                 {
-                    Text = entry.Run.Kind + " · " + Tolerance(entry)
-                           + (when.Length == 0 || when == common ? string.Empty : " · run " + when),
+                    Text = entry.Run.Kind + " · " + Tolerance(entry) + " · "
+                           + (when.Length == 0 ? "never run" : "run " + when),
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     TextWrapping = TextWrapping.NoWrap,
                     Margin = new Thickness(0, 1, 0, 0),
@@ -2331,7 +2417,7 @@ namespace CamelWorks.UI.Views
                     BorderThickness = new Thickness(0, 0, 0, 1),
                     Cursor = System.Windows.Input.Cursors.Hand,
                     ToolTip = entry.Run.Name + " — " + entry.Run.Between + ", "
-                              + entry.Run.Kind.ToLowerInvariant() + " at " + Tolerance(entry)
+                              + Kinded(entry) + " at " + Tolerance(entry)
                               + (when.Length == 0 ? string.Empty : ", run " + when),
                     Child = tone,
                 };
@@ -2598,21 +2684,21 @@ namespace CamelWorks.UI.Views
                         ? shown + " of " + Ui.Count(read.Count, "test")
                         : Ui.Count(read.Count, "test");
 
-                // What the selected test holds, under the list it was selected from. The grouped
-                // and loose split is the one number the board cannot show from its own rows,
-                // because the board is filtered and this is not.
+                // What the selected test holds, on the tooltip. On the line it was a second
+                // sentence in a strip narrow enough to cut the first one at "3 of 6 t...", and
+                // the grouped and loose split is a figure to look up rather than to watch.
                 var about = entry == null
                     ? string.Empty
-                    : " · " + Skin.Num(entry.Rows.Count) + " results, "
+                    : Skin.Num(entry.Rows.Count) + " results, "
                       + Skin.Num(entry.Rows.Count(r => r.Group.Length == 0)) + " loose";
 
                 var say = new TextBlock
                 {
-                    Text = tests + about,
+                    Text = tests,
                     VerticalAlignment = VerticalAlignment.Center,
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     TextWrapping = TextWrapping.NoWrap,
-                    ToolTip = entry == null ? null : entry.Run.Name + " — " + about.Substring(3),
+                    ToolTip = entry == null ? null : entry.Run.Name + " — " + about,
                 };
 
                 row.Children.Add(say.Wearing("Hint"));
@@ -2793,15 +2879,24 @@ namespace CamelWorks.UI.Views
             };
 
 
-            private readonly Border _bar = new Border();
+            /// <summary>
+            /// The verbs for what is picked. It lives in the footer.
+            ///
+            /// It was a bar of its own across the bottom of the board, immediately above the
+            /// footer: two action strips stacked on one edge of the window, each with a filled
+            /// button of its own. There is one bar, and the primary on it is the footer's.
+            /// </summary>
+            private readonly Border _bar = new Border
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+            };
 
-            /// <summary>The board, as one pane: head, table, and the bar for what is picked.</summary>
+            /// <summary>The board, as one pane: the head and the table.</summary>
             private UIElement BoardPane()
             {
                 var grid = new Grid();
                 grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
                 grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
                 // One line, not two. The name, the counts, the search and the verbs all sit on
                 // the same row - the two rows they were on cost forty pixels of the thing this
@@ -2828,9 +2923,6 @@ namespace CamelWorks.UI.Views
 
                 Grid.SetRow(body, 1);
                 grid.Children.Add(body);
-
-                Grid.SetRow(_bar, 2);
-                grid.Children.Add(Ui.Loose(_bar));
 
                 var ground = new Border { Child = grid };
                 ground.Tint(Border.BackgroundProperty, "Bg");
@@ -3102,18 +3194,38 @@ namespace CamelWorks.UI.Views
                     // whose results have never been grouped is a flat list of loose rows, and a
                     // heading over all of them divides nothing.
                     if (shape.Groups.Count > 0)
-                        lines.Add(BoardLine.Banner(() => Parts.ViewBand(
-                            Glyphs.Clash, "In no group",
-                            Ui.Count(shape.Loose.Count, "result"),
-                            "of " + Skin.Num(shape.LooseTotal)
-                            + " — tick two or more to group them, or run the rules on the "
-                            + "Coordinate tab",
-                            () => PickAll(shape.Loose))));
+                        lines.Add(BoardLine.Banner(() => LooseBand(shape)));
 
                     foreach (var row in shape.Loose) Add(row);
                 }
 
                 return lines;
+            }
+
+            /// <summary>
+            /// The band over the results that are in no group.
+            ///
+            /// It says what the rows under it are and how many, and nothing else. It carried a
+            /// second count of the same rows and an instruction on how to group them, which is a
+            /// lesson inside a data row; what it teaches is on its tooltip, and the verbs are on
+            /// the bar that appears when rows are picked.
+            ///
+            /// The label slot is left empty because it is drawn upper-case. The words are in the
+            /// value slot, which is sentence case, until the shared helper is fixed.
+            /// </summary>
+            /// <param name="shape">The board as the filters left it.</param>
+            private UIElement LooseBand(BoardShape shape)
+            {
+                var band = Parts.ViewBand(Glyphs.Clash, string.Empty, "In no group",
+                                          Ui.Count(shape.Loose.Count, "result"),
+                                          () => PickAll(shape.Loose));
+
+                if (band is FrameworkElement placed)
+                    placed.ToolTip = "Results this test has not put in a group. Pick two or more "
+                                     + "to group them. Rules that group results are on the Filter "
+                                     + "tab.";
+
+                return band;
             }
 
             /// <summary>
@@ -3142,7 +3254,10 @@ namespace CamelWorks.UI.Views
                 }
 
                 var by = _bands[depth];
-                var label = (depth == 0 ? "View · " : string.Empty) + Facet(by);
+
+                // In the value slot rather than the label slot: the label is drawn upper-case by
+                // the shared helper, and the headings on this board are sentence case.
+                var label = (depth == 0 ? "View · " : string.Empty) + Facet(by) + " · ";
 
                 foreach (var band in Bands(entry, rows, by))
                 {
@@ -3156,7 +3271,7 @@ namespace CamelWorks.UI.Views
                     var shut = _shutBands.Contains(key);
 
                     lines.Add(BoardLine.Banner(() => Parts.ViewBand(
-                        at == 0 ? Glyphs.Columns : Glyphs.Layers, label, named,
+                        at == 0 ? Glyphs.Columns : Glyphs.Layers, string.Empty, label + named,
                         Ui.Count(here.Sum(r => r.Rows.Count), "result"),
                         () => PickAll(here), at, shut, () => Folded(key),
                         () => FoldEvery(!shut))));
@@ -3191,17 +3306,6 @@ namespace CamelWorks.UI.Views
                     Orientation = Orientation.Horizontal,
                     VerticalAlignment = VerticalAlignment.Center,
                 };
-
-                // The search and the status chips come up here with the name and the verbs. They
-                // had a row of their own under this one, which is a strip of window spent on two
-                // controls.
-                _boardBox.VerticalAlignment = VerticalAlignment.Center;
-                _boardBox.Margin = new Thickness(10, 0, 10, 0);
-                verbs.Children.Add(Ui.Loose(_boardBox));
-
-                _strip.VerticalAlignment = VerticalAlignment.Center;
-                _strip.Margin = new Thickness(0, 0, 10, 0);
-                verbs.Children.Add(Ui.Loose(_strip));
 
                 if (Check?.Runner != null)
                     verbs.Children.Add(Ui.Icon(Glyphs.Play, "Run this test",
@@ -3251,12 +3355,31 @@ namespace CamelWorks.UI.Views
                     // line of chrome the eye read once and then had to read past. It is on the
                     // title's tooltip, and the place beside the title now carries the one number
                     // that does change.
-                    ToolTip = entry.Run.Name + " — " + entry.Run.Between + ", hard clash at "
-                              + Tolerance(entry)
+                    // The check's own word for what this test is, not "hard clash". The board draws
+                    // clearance breaches and fall hazards as well, and every one of them said it
+                    // was a hard clash.
+                    ToolTip = entry.Run.Name + " — " + entry.Run.Between + ", "
+                              + Kinded(entry) + " at " + Tolerance(entry)
                               + (When(entry).Length == 0 ? string.Empty : ", run " + When(entry)),
                 };
 
-                var words = new DockPanel { LastChildFill = true };
+                // The search and the status chips fill what the title and the symbols leave, in a
+                // panel that wraps.
+                //
+                // They used to sit in the symbol row, which is a horizontal stack: a stack offers
+                // its children unlimited width, so a six-part status strip took whatever it wanted
+                // and what it took came off the title and, once, off the last symbol. Here they
+                // are handed a finite width and go onto a second line when there is not enough for
+                // one, which costs a few pixels of height and never a control.
+                var words = new WrapPanel { Orientation = Orientation.Horizontal };
+
+                _boardBox.VerticalAlignment = VerticalAlignment.Center;
+                _boardBox.Margin = new Thickness(0, 0, 10, 0);
+                words.Children.Add(Ui.Loose(_boardBox));
+
+                _strip.VerticalAlignment = VerticalAlignment.Center;
+                _strip.Margin = new Thickness(0, 0, 10, 0);
+                words.Children.Add(Ui.Loose(_strip));
 
                 if (Check?.Naming != null)
                 {
@@ -3270,10 +3393,10 @@ namespace CamelWorks.UI.Views
                     };
                 }
 
-                // Only when a filter is actually hiding something. Unfiltered it said "178
-                // results" next to chips already reading "178 all", which is the same number
-                // twice - and the width it spent was width the name did not have.
-                if (count != total)
+                // Only when something other than the status chips is hiding rows. The chip row
+                // states the selected status and its count, so a header counter beside it is the
+                // same fact twice, and the width it spends is width the name does not have.
+                if (count != total && NarrowedBeyondStatus)
                 {
                     var said = new TextBlock
                     {
@@ -3284,13 +3407,47 @@ namespace CamelWorks.UI.Views
                         TextWrapping = TextWrapping.NoWrap,
                     };
 
-                    DockPanel.SetDock(said, Dock.Right);
                     words.Children.Add(said.Wearing("Hint"));
                 }
 
-                // The name last, so it is the child that fills what the rest have left and the
-                // one that gives way when there is not enough for everybody.
-                words.Children.Add(head.Wearing("Head"));
+                // The title has a width of its own rather than whatever is left.
+                //
+                // It used to be the child that fills, and the rest of the row is a search box, a
+                // five-part status strip and five symbols: on an ordinary pane the name of the
+                // test being worked came out as "L03 MEP v..." beside two hundred pixels of
+                // nothing. It is docked, with a floor so it is always readable and a ceiling so a
+                // long name cannot push a symbol off the right edge - which is what a floor alone
+                // did, and losing a control is worse than losing the tail of a name.
+                var naming = new DockPanel
+                {
+                    LastChildFill = true,
+                    MinWidth = 150,
+                    MaxWidth = 250,
+                    Margin = new Thickness(0, 0, 10, 0),
+                };
+
+                // The kind's symbol before the name, so the board says what sort of thing it is
+                // showing without being read. The rail below it lists one kind, and the words for
+                // the kind are on the title's tooltip; this is the mark the eye finds first.
+                if (Check != null)
+                {
+                    var mark = Ui.Glyph(Ui.CheckSymbol(Check.Symbol), 15, "Muted");
+
+                    mark.VerticalAlignment = VerticalAlignment.Bottom;
+                    mark.Margin = new Thickness(0, 0, 8, 3);
+                    mark.ToolTip = Check.Name;
+
+                    DockPanel.SetDock(mark, Dock.Left);
+                    naming.Children.Add(mark);
+                }
+
+                naming.Children.Add(head.Wearing("Head"));
+
+                // After the symbols, not before them: a DockPanel gives each child what is left
+                // in the order they were added, so the controls take their size first and the
+                // title takes what remains within its own two bounds.
+                DockPanel.SetDock(naming, Dock.Left);
+                row.Children.Add(naming);
 
                 row.Children.Add(words);
 
@@ -3298,30 +3455,47 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// What changed since the last run, in one line under the title.
+            /// When the test last ran, and how much of the board is new, in one short line.
             ///
-            /// Built on every board build and never said, which is why reviewers read these
-            /// screens as a product with no memory across runs. Restricted to this test's rows and
-            /// to this test's run: the comparison covers every test the read touched, so printed
-            /// raw it counts results this screen does not draw and results that went from other
-            /// tests, which is a number the screen cannot account for.
+            /// The full comparison is a sentence of four figures. In the header slot it is a
+            /// paragraph nobody reads past, so the line carries the two facts that date the board
+            /// and the rest is behind "What changed", where it lands over the rows it describes.
             ///
-            /// The grouping funnel is deliberately not here. It describes the pipeline's run over
-            /// every test on the Coordinate tab, and this board's groups are the host's own — a
-            /// sentence claiming the rules made them would be the kind of thing this phase exists
-            /// to stop.
+            /// The delta is restricted to this test's rows and this test's run: the comparison
+            /// covers every test the read touched, so printed raw it counts results this screen
+            /// does not draw and results that went from other tests.
+            ///
+            /// The grouping funnel is deliberately not here. It describes the rules' run over
+            /// every test, and this board's groups are the host's own.
             /// </summary>
             /// <param name="entry">The test on the board.</param>
             private UIElement Standing(TestEntry entry)
             {
                 var row = new WrapPanel { Margin = new Thickness(0, 2, 0, 0) };
 
-                var delta = CoordinateViews.LastDelta;
+                var when = When(entry);
+
+                var said = when.Length == 0 ? "Not run yet" : "Last run " + when;
+
+                var delta = CoordinateViews.LastDelta?.OnBoard(
+                    entry.Rows.Select(one => one.Fact.Id), entry.Run.Id);
+
+                if (delta != null && !delta.NoPreviousRun)
+                    said += " · " + Ui.Count(delta.New.Count, "new result");
+
+                var line = Ui.Small(said);
+                line.VerticalAlignment = VerticalAlignment.Center;
+                row.Children.Add(line);
 
                 if (delta == null) return row;
 
-                row.Children.Add(Ui.Small(delta.OnBoard(entry.Rows.Select(one => one.Fact.Id),
-                                                       entry.Run.Id).Explain()));
+                // On demand, and over the board rather than in the header: the comparison is
+                // read once after a run and is chrome for the rest of the session.
+                var more = Ui.Link("What changed", () => Said(Ui.Note(delta.Explain()), hold: true));
+
+                more.VerticalAlignment = VerticalAlignment.Center;
+                more.Margin = new Thickness(8, 0, 0, 0);
+                row.Children.Add(more);
 
                 return row;
             }
@@ -3336,7 +3510,9 @@ namespace CamelWorks.UI.Views
             /// <param name="entry">The test on the board.</param>
             private UIElement Strip(TestEntry entry)
             {
-                var strip = new StackPanel { Orientation = Orientation.Horizontal };
+                // A wrap, not a stack. Six counts is 350 px, and on a docked pane the row it sits
+                // in has less than that to spare once the title and the symbols have theirs.
+                var strip = new WrapPanel { Orientation = Orientation.Horizontal };
 
                 var tabs = new (string Label, int Count, string Key, FindingStatus? Status)[]
                 {
@@ -3457,7 +3633,7 @@ namespace CamelWorks.UI.Views
                 }
                 _ = entry;
 
-                if (_by != null) said.Add("in " + _by + " order"
+                if (_by != null) said.Add("in " + Heading(_by) + " order"
                                           + (_back ? ", backwards" : string.Empty));
 
                 if (_bands.Count > 0)
@@ -3570,7 +3746,8 @@ namespace CamelWorks.UI.Views
             {
                 var said = new List<string>();
 
-                if (_by != null) said.Add("by " + _by + (_back ? ", backwards" : string.Empty));
+                if (_by != null)
+                    said.Add("by " + Heading(_by) + (_back ? ", backwards" : string.Empty));
                 if (_bands.Count > 0)
                     said.Add("banded by " + string.Join(" then ", _bands.Select(Facet)));
 
@@ -3593,7 +3770,7 @@ namespace CamelWorks.UI.Views
 
                 if (_by != null)
                 {
-                    items.Add(Parts.Entry.Heading("Order: by " + _by
+                    items.Add(Parts.Entry.Heading("Order: by " + Heading(_by)
                                                   + (_back ? ", backwards" : string.Empty)));
 
                     items.Add(Parts.Entry.Act("Restore the test's own order", Glyphs.Close, () =>
@@ -3694,7 +3871,7 @@ namespace CamelWorks.UI.Views
                     items.Add(Parts.Entry.Rule());
                     items.Add(Parts.Entry.Heading("Sharing an item with " + Both(_sameAs)));
 
-                    items.Add(Parts.Entry.Act("All clashes, not only these", Glyphs.Close,
+                    items.Add(Parts.Entry.Act("All " + Result + "s, not only these", Glyphs.Close,
                         () =>
                         {
                             _sameAs = null;
@@ -4288,6 +4465,31 @@ namespace CamelWorks.UI.Views
             private const string Level = "Level";
 
             /// <summary>
+            /// What a column is called on its header.
+            ///
+            /// The key a column is held under is not always a heading: <see cref="Named"/>
+            /// describes the two kinds of row it can hold, and the clash check declares "Item 1",
+            /// "Item 2" and "Worst", which say what the figures are only to whoever wrote them.
+            /// The key stays as it is — widths, order, sort and the saved arrangement are all
+            /// keyed on it — and this is what the header says instead. It is keyed off the clash
+            /// check's own column names, so a board of another kind is untouched.
+            /// </summary>
+            /// <param name="column">The column's key.</param>
+            private static string Heading(string column) =>
+                column == Named ? "Name"
+                : column == ClashColumns.ItemA ? FirstSide
+                : column == ClashColumns.ItemB ? SecondSide
+                : column == ClashColumns.Worst ? "Overlap"
+                : column;
+
+            /// <summary>What a heading means, where the figures under it need saying.</summary>
+            /// <param name="column">The column's key.</param>
+            private static string Explained(string column) =>
+                column == ClashColumns.Worst
+                    ? "The deepest overlap on the row; on a group, the deepest of its members. "
+                    : string.Empty;
+
+            /// <summary>
             /// How wide a column is: what was dragged, or what it starts at.
             ///
             /// Through a lookup rather than an indexer because a property column is somebody's
@@ -4552,10 +4754,11 @@ namespace CamelWorks.UI.Views
             private UIElement Head(string column, bool right, string? unit = null)
             {
                 var on = string.Equals(_by, column, StringComparison.Ordinal);
+                var heading = Heading(column);
 
                 var label = new TextBlock
                 {
-                    Text = column,
+                    Text = heading,
                     VerticalAlignment = VerticalAlignment.Center,
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     TextWrapping = TextWrapping.NoWrap,
@@ -4586,10 +4789,11 @@ namespace CamelWorks.UI.Views
                 {
                     Background = System.Windows.Media.Brushes.Transparent,
                     Cursor = System.Windows.Input.Cursors.Hand,
-                    ToolTip = (!on ? "Sort by " + column
-                              : _back ? "Sorted by " + column + ", the other way round. Press "
+                    ToolTip = Explained(column)
+                              + (!on ? "Sort by " + heading
+                              : _back ? "Sorted by " + heading + ", the other way round. Press "
                                         + "again for the order the test holds."
-                              : "Sorted by " + column + ". Press again to turn it round.")
+                              : "Sorted by " + heading + ". Press again to turn it round.")
                               + " Drag it to move the column, or its right edge to resize it."
                               + (string.IsNullOrWhiteSpace(unit)
                                      ? string.Empty
@@ -4609,7 +4813,7 @@ namespace CamelWorks.UI.Views
                     HorizontalAlignment = HorizontalAlignment.Right,
                     Cursor = System.Windows.Input.Cursors.SizeWE,
                     Opacity = 0,
-                    ToolTip = "Drag to resize " + column,
+                    ToolTip = "Drag to resize " + heading,
                 };
 
                 // Measured from the pointer, not from the thumb.
@@ -4885,7 +5089,7 @@ namespace CamelWorks.UI.Views
 
                     Prompt("Rename the group", row.Name, "Rename",
                            renamed => Regroup(row.Rows.Cast<object>().ToList(), renamed,
-                                              "Renamed the clash group to"));
+                                              "Renamed the group to"));
                 };
 
                 name.MouseLeftButtonUp += (s, e) =>
@@ -4917,7 +5121,7 @@ namespace CamelWorks.UI.Views
                     Margin = new Thickness(8, 0, 0, 0),
                     TextAlignment = TextAlignment.Right,
                     TextWrapping = TextWrapping.NoWrap,
-                    ToolTip = Ui.Count(row.Rows.Count, "clash") + " in this group",
+                    ToolTip = Ui.Count(row.Rows.Count, Result) + " in this group",
                 };
 
                 var named = new DockPanel { LastChildFill = true };
@@ -4981,7 +5185,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private List<Parts.ChipOption> Giving()
             {
-                var roster = TeamWindow.Read(_session);
+                var roster = TeamWindow.Read(_seat);
                 var options = new List<Parts.ChipOption>();
                 var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -5018,7 +5222,7 @@ namespace CamelWorks.UI.Views
                         if (row.Assigned.Length > 0)
                             Offer(Responsible.Read(row.Assigned), null);
 
-                foreach (var party in _session.Profile.Parties)
+                foreach (var party in _seat.Profile.Parties)
                     Offer(Responsible.Person(party), null);
 
                 options.Add(new Parts.ChipOption(string.Empty, Nobody, null, Glyphs.Close, "Faint"));
@@ -5039,6 +5243,23 @@ namespace CamelWorks.UI.Views
             private static string Tint(ResponsibleKind kind) =>
                 kind == ResponsibleKind.Person ? "Muted" : "Accent";
 
+            /// <summary>
+            /// Everyone a row is assigned to, each with what kind of party it is.
+            ///
+            /// The cell has room for one name. This is where the rest of them, and the
+            /// difference between a person and a whole team, can be read.
+            /// </summary>
+            /// <param name="assigned">The field as it is stored.</param>
+            private static string Whose(string assigned)
+            {
+                var all = Responsible.ReadAll(assigned);
+
+                return all.Count == 0
+                    ? "Not assigned. Press to assign it."
+                    : string.Join(", ", all.Select(one => one.ToString()))
+                      + ". Press to change it.";
+            }
+
             /// <summary>The symbol for what a row is assigned to, or null when it is nobody.</summary>
             /// <param name="assigned">The field as it is stored.</param>
             private static string? Marked(string assigned)
@@ -5057,10 +5278,9 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// Which results the issue register covers, keyed the way the board keys a row.
             ///
-            /// Both ways an issue can name a clash are read: the findings it has attached, which
-            /// is how one raised from this board is held, and the clash keys an older issue kept
-            /// before findings existed. Guarded whole - a register that will not open is a board
-            /// without two small marks on it, not a board that will not draw.
+            /// An issue names its findings, and a row's finding is what the board keys against.
+            /// Guarded whole - a register that will not open is a board without two small marks on
+            /// it, not a board that will not draw.
             /// </summary>
             private HashSet<string> Register()
             {
@@ -5072,7 +5292,7 @@ namespace CamelWorks.UI.Views
 
                     if (read == null) return found;
 
-                    var register = IssueViews.Read(_session);
+                    var register = IssueViews.Read(_seat);
 
                     var attached = new HashSet<string>(
                         register.Issues.SelectMany(i => i.Findings), StringComparer.OrdinalIgnoreCase);
@@ -5217,7 +5437,7 @@ namespace CamelWorks.UI.Views
                 {
                     var talk = Ui.Glyph(Glyphs.Comment, 12, "Accent", new Thickness(0, 0, 4, 0));
 
-                    talk.ToolTip = Ui.Count(said, "comment") + " on this clash.";
+                    talk.ToolTip = Ui.Count(said, "comment") + " on this " + Result + ".";
                     marks.Children.Add(talk);
                 }
 
@@ -5250,7 +5470,7 @@ namespace CamelWorks.UI.Views
                 foreach (var column in Added)
                     Put(grid, Cell(result, column), Where(column.Title));
 
-                var wrapper = new BoardRow(id, result.Name ?? "this clash", false,
+                var wrapper = new BoardRow(id, result.Name ?? "this " + Result, false,
                                            new List<Row> { result });
 
                 return Finish(grid, wrapper, on, inside);
@@ -5269,15 +5489,18 @@ namespace CamelWorks.UI.Views
             /// <param name="inside">True when it is a member of an open group.</param>
             private UIElement Finish(Grid grid, BoardRow row, bool on, bool inside)
             {
-                Put(grid, Parts.InlineChip(
-                        FindingStatusWords.Of(row.Status), FindingStatusWords.Words,
-                        value => SetStatus(row, FindingStatusWords.Read(value)),
-                        Reads(row.Status), "Set status"),
-                    Where(Status));
+                Put(grid, StatusChip(row.Status), Where(Status));
 
-                Put(grid, Parts.Presser(Responsible.Shown(row.Assigned), Marked(row.Assigned),
-                        "Assign", chip => Assigning(chip, Reaching(row), row.Assigned)),
-                    Where(Assigned));
+                // The person, and nothing else in the cell. What kind of party it is comes from
+                // the symbol in front of the name, and everyone the row is assigned to is on the
+                // tooltip: a name and a discipline in one 120-pixel cell is a name cut in half.
+                var who = Parts.Presser(Responsible.Shown(row.Assigned), Marked(row.Assigned),
+                                        "Assign", chip => Assigning(chip, Reaching(row),
+                                                                    row.Assigned));
+
+                if (who is FrameworkElement cell) cell.ToolTip = Whose(row.Assigned);
+
+                Put(grid, who, Where(Assigned));
 
                 // The row being read shows its verbs too: it is the one somebody is looking at,
                 // and making them hover a row they have already pressed to act on it is a step
@@ -5608,7 +5831,7 @@ namespace CamelWorks.UI.Views
 
                 var what = many
                     ? Ui.Count(State.Picked.Count, "picked row")
-                    : row.IsGroup ? "this clash group" : "this clash";
+                    : row.IsGroup ? "this group" : "this " + Result;
 
                 var picked = reaching;
 
@@ -5630,7 +5853,7 @@ namespace CamelWorks.UI.Views
                     ? Ui.Icon(Glyphs.Comment, "Comment on " + what,
                         () => Prompt("Comment on " + what, string.Empty, "Comment",
                                      body => CommentPicked(picked, body, _toast)))
-                    : Ui.Icon(Glyphs.Comment, "Read and write the comments on this clash",
+                    : Ui.Icon(Glyphs.Comment, "Read and write the comments on this " + Result,
                         () => Conversation(row.Rows[0])));
 
                 bar.Children.Add(Parts.MoreMenu(Glyphs.More, "More actions for " + what,
@@ -5659,7 +5882,7 @@ namespace CamelWorks.UI.Views
 
                 var what = State.Picked.Count > 1 && State.Picked.Contains(row.Id)
                     ? Ui.Count(State.Picked.Count, "picked row")
-                    : row.IsGroup ? "this clash group" : "this clash";
+                    : row.IsGroup ? "this group" : "this " + Result;
 
                 var picked = reaching;
                 var rest = Doing(Rows(reaching), what);
@@ -5670,17 +5893,17 @@ namespace CamelWorks.UI.Views
                 {
                     rest.Add(Parts.Entry.Act("Rename the group", Glyphs.Pencil,
                         () => Prompt("Rename the group", row.Name, "Rename",
-                                     name => Regroup(picked, name, "Renamed the clash group to"))));
+                                     name => Regroup(picked, name, "Renamed the group to"))));
 
                     rest.Add(Parts.Entry.Act("Ungroup", Glyphs.Group,
                         () => Regroup(picked, string.Empty,
-                                      "Dissolved the clash group and put {0} back loose.")));
+                                      "Dissolved the group and put {0} back loose.")));
                 }
                 else if (row.Only.Group.Length > 0)
                 {
                     rest.Add(Parts.Entry.Act("Remove from group", Glyphs.MoveIn,
                         () => Regroup(picked, string.Empty,
-                                      "Took {0} out of their clash group.")));
+                                      "Took {0} out of their group.")));
                 }
                 else
                 {
@@ -5695,7 +5918,7 @@ namespace CamelWorks.UI.Views
                     // element in" meant reading the board with an element name held in the head.
                     rest.Add(Parts.Entry.Rule());
 
-                    rest.Add(Parts.Entry.Act("Find other clashes with these items", Glyphs.Find,
+                    rest.Add(Parts.Entry.Act("Find other " + Result + "s with these items", Glyphs.Find,
                                              () => SameItems(row.Only)));
                 }
 
@@ -5818,29 +6041,89 @@ namespace CamelWorks.UI.Views
             // Region 3 — the bar for what is picked
             // -------------------------------------------------------------------------------
 
-            /// <summary>Draw the selection bar, or take it away when nothing is picked.</summary>
+            /// <summary>
+            /// Draw the picked-row verbs in the footer, or take them away.
+            ///
+            /// The footer's own line steps aside while they are up, so the window has one row of
+            /// verbs along its bottom edge rather than two stacked on each other.
+            /// </summary>
             private void RedrawSelection()
             {
                 if (State.Picked.Count == 0)
                 {
                     _bar.Child = null;
+                    _bar.Visibility = Visibility.Collapsed;
+
+                    if (_footLeft != null) _footLeft.Visibility = Visibility.Visible;
+
                     return;
                 }
 
                 var rows = Picked();
                 var picked = rows.Cast<object>().ToList();
 
-                _bar.Child = Parts.SelectionBar(State.Picked.Count, "row",
-                    () => { State.Picked.Clear(); State.PickedFrom = null; RedrawRows(); },
+                var bar = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+
+                // Not in the accent. Blue on this board means something can be pressed, and a
+                // count is a fact: in the accent beside a filled button it read as a second
+                // control.
+                var count = new TextBlock
+                {
+                    Text = Ui.Count(State.Picked.Count, "row") + " picked",
+                    FontWeight = FontWeights.SemiBold,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 10, 0),
+                };
+
+                count.Wearing("Body");
+                count.Tint(TextBlock.ForegroundProperty, "Muted");
+                bar.Children.Add(count);
+
+                var verbs = new UIElement?[]
+                {
                     Parts.InlineChip(null, FindingStatusWords.Words,
                         value => SetMany(picked, value, true), Tone.Plain, "Set status"),
                     Parts.Presser(null, null, "Assign to",
                         chip => Assigning(chip, picked, Common(rows))),
                     Grouping(rows),
-                    Parts.Verb("Raise as issues", Glyphs.Issue, false,
+
+                    // Named for where the rows land: the Issue Manager's register.
+                    Parts.Verb("Raise in Issue Manager", Glyphs.Issue, false,
                                () => RaiseIssue(picked, false)),
-                    Parts.MoreMenu(Glyphs.More, "More actions",
-                                   PickedMenu(rows), up: true));
+                    Parts.MoreMenu(Glyphs.More, "More actions", PickedMenu(rows), up: true),
+                };
+
+                foreach (var verb in verbs)
+                {
+                    if (verb == null) continue;
+
+                    if (verb is FrameworkElement element)
+                    {
+                        element.Margin = new Thickness(0, 0, 8, 0);
+                        element.VerticalAlignment = VerticalAlignment.Center;
+                    }
+
+                    bar.Children.Add(verb);
+                }
+
+                var clear = Ui.Link("Clear", () =>
+                {
+                    State.Picked.Clear();
+                    State.PickedFrom = null;
+                    RedrawRows();
+                });
+
+                clear.VerticalAlignment = VerticalAlignment.Center;
+                bar.Children.Add(clear);
+
+                _bar.Child = bar;
+                _bar.Visibility = Visibility.Visible;
+
+                if (_footLeft != null) _footLeft.Visibility = Visibility.Collapsed;
             }
 
             /// <summary>
@@ -5894,7 +6177,7 @@ namespace CamelWorks.UI.Views
                     if (groups.Count == 1)
                         return Parts.Entry.Act("Ungroup", Glyphs.Group,
                             () => Regroup(picked, string.Empty,
-                                          "Dissolved the clash group and put {0} back loose."));
+                                          "Dissolved the group and put {0} back loose."));
 
                     return Parts.Entry.Danger("Merge groups", Glyphs.Group,
                         () => Prompt("Name for the merged group", groups[0], "Merge",
@@ -5906,7 +6189,7 @@ namespace CamelWorks.UI.Views
                 // Anything already in a group, and the way out of it is the verb that matters.
                 if (groups.Count > 0)
                     return Parts.Entry.Act("Remove from group", Glyphs.MoveIn,
-                        () => Regroup(inside, string.Empty, "Took {0} out of their clash group."));
+                        () => Regroup(inside, string.Empty, "Took {0} out of their group."));
 
                 if (loose.Count > 1)
                     return Parts.Entry.Danger("Group", Glyphs.Group,
@@ -5961,7 +6244,7 @@ namespace CamelWorks.UI.Views
             {
                 var picked = rows.Cast<object>().ToList();
 
-                return new List<Parts.Entry>
+                var menu = new List<Parts.Entry>
                 {
                     // Grouped by what the line does to the world, in the order somebody works:
                     // look at it, say something about it, file it, send it somewhere.
@@ -5989,7 +6272,7 @@ namespace CamelWorks.UI.Views
                     Parts.Entry.Rule(),
                     Parts.Entry.Heading("File"),
                     Parts.Entry.Act("Move to an existing group", Glyphs.MoveIn,
-                        () => Prompt("Which clash group", string.Empty, "Move",
+                        () => Prompt("Which group", string.Empty, "Move",
                                      name => Regroup(picked, name, "Moved {0} into"))),
 
                     Parts.Entry.Rule(),
@@ -6000,6 +6283,28 @@ namespace CamelWorks.UI.Views
                                     () => ExportMarkers(rows, what, _toast)),
                     Parts.Entry.Act("Copy as columns", Glyphs.Copy, () => CopyRows(rows)),
                 };
+
+                // The status is set from here and from the bar, because the column no longer
+                // holds a control. The one a row already has is left out: it is what the chip on
+                // the row says, and offering it is a line that does nothing.
+                var already = rows.Count == 1 ? (FindingStatus?)rows[0].Status : null;
+
+                var setting = new List<Parts.Entry> { Parts.Entry.Heading("Set the status") };
+
+                foreach (var status in FindingStatusWords.All)
+                {
+                    if (already == status) continue;
+
+                    var here = status;
+
+                    setting.Add(Parts.Entry.Act(FindingStatusWords.Of(here), Glyphs.Tick,
+                        () => SetMany(picked, FindingStatusWords.Of(here), true)));
+                }
+
+                setting.Add(Parts.Entry.Rule());
+                menu.InsertRange(0, setting);
+
+                return menu;
             }
 
             // -------------------------------------------------------------------------------
@@ -6074,15 +6379,32 @@ namespace CamelWorks.UI.Views
                 left.VerticalAlignment = VerticalAlignment.Center;
                 left.Margin = new Thickness(0, 0, 16, 0);
 
+                _footLeft = left;
+
+                // The board is drawn before the footer, so the bar may already be holding the
+                // verbs for rows picked before this tab was rebuilt.
+                left.Visibility = _bar.Child == null ? Visibility.Visible : Visibility.Collapsed;
+
                 // The runner puts eight pixels above its progress for the stacked case, where it
                 // separates the bar from the button. Here there is nothing above it to separate
                 // from, and the gap is the foot growing for no reason.
                 read.Progress.Margin = new Thickness(0);
 
-                row.Children.Add(left);
+                // The picked-row verbs take this same place, and the read's own line steps aside
+                // while they are there. Both cannot be in force at once: the read button is only
+                // offered over an empty board, and an empty board has nothing to pick.
+                var zone = new Grid { VerticalAlignment = VerticalAlignment.Center };
+
+                zone.Children.Add(left);
+                zone.Children.Add(Ui.Loose(_bar));
+
+                row.Children.Add(zone);
 
                 return row;
             }
+
+            /// <summary>The footer's own line, hidden while the picked-row verbs are up.</summary>
+            private Panel? _footLeft;
 
             /// <summary>
             /// The footer's facts, every one of them derived.
@@ -6148,8 +6470,9 @@ namespace CamelWorks.UI.Views
                     // answer to a question somebody has rather than a standing reproach.
                     OnFile || WaitingCount == 0
                         ? null
-                        : Parts.Entry.Saying("Show what is pending", Glyphs.Clock,
-                            Ui.Count(WaitingCount, "change") + " the document has not taken",
+                        : Parts.Entry.Saying("Show the changes still to be written", Glyphs.Clock,
+                            Ui.Count(WaitingCount, "change") + " saved to the project and not yet "
+                            + "written into the document",
                             ShowHeld),
                     Parts.Entry.Saying(OnFile ? "Save the markup" : "Save as a clash file (BCF)",
                         Glyphs.Round, "The offline review round — out and back", SaveChanges),
@@ -6319,7 +6642,7 @@ namespace CamelWorks.UI.Views
             {
                 job.Say("Saving the results…");
 
-                var register = _session.Findings.Findings;
+                var register = _seat.Findings.Findings;
 
                 // A board read from a file writes findings of its own, hashed under the file's
                 // test name rather than the host's id for that test. This claims them before the
@@ -6329,14 +6652,10 @@ namespace CamelWorks.UI.Views
 
                 var intake = register.Observe(
                     Check?.Key ?? FindingSource.Clash, read.Findings, DateTime.UtcNow.Ticks,
-                    origin: _session.Store.Path,
+                    origin: _seat.Store.Path,
                     scope: read.Scope);
 
                 Index(register);
-
-                var carried = Carried(register);
-
-                if (carried > 0) Index(register);
 
                 foreach (var entry in entries)
                     foreach (var row in entry.Rows)
@@ -6354,15 +6673,11 @@ namespace CamelWorks.UI.Views
                 // sidecar has already lost.
                 Repointed(moved);
 
-                if (!_session.Findings.Save())
+                if (!_seat.Findings.Save())
                     return "These results are on the board but could not be kept: "
-                           + (_session.Findings.LastSaveProblem ?? "there was nowhere to write.");
+                           + (_seat.Findings.LastSaveProblem ?? "there was nowhere to write.");
 
                 return intake.Explain()
-                       + (carried > 0
-                           ? " " + Ui.Count(carried, "clash") + " took back what an earlier "
-                             + "version of this tool was keeping in the project file."
-                           : string.Empty)
                        + (claimed > 0
                            ? " " + Ui.Count(claimed, "clash") + " marked up from a file is now "
                              + "held against this document's own result."
@@ -6387,11 +6702,11 @@ namespace CamelWorks.UI.Views
 
                 try
                 {
-                    var issues = IssueViews.Read(_session);
+                    var issues = IssueViews.Read(_seat);
 
                     if (IssueFindings.Repoint(issues.Issues, moved) == 0) return;
 
-                    var problem = IssueViews.Write(_session, issues);
+                    var problem = Stored(issues);
 
                     if (problem != null) _log.Children.Add(Ui.Problem(problem));
                 }
@@ -6415,7 +6730,7 @@ namespace CamelWorks.UI.Views
             /// <param name="entries">The runs whose rows were replaced.</param>
             private void Laid(IReadOnlyList<TestEntry> entries)
             {
-                var register = _session.Findings.Findings;
+                var register = _seat.Findings.Findings;
 
                 // The callers are a run, a renumber and a compact, which are exactly the
                 // operations that renumber the host's result ids, and neither re-read path
@@ -6522,7 +6837,7 @@ namespace CamelWorks.UI.Views
             /// <param name="read">What the file check read.</param>
             private void Marked(CheckRead read)
             {
-                var register = _session.Findings.Findings;
+                var register = _seat.Findings.Findings;
 
                 var unheld = FileCheck.Fold(register, read.Findings, out var folded);
 
@@ -6535,7 +6850,7 @@ namespace CamelWorks.UI.Views
                 // Failing to save is an ordinary outcome on a seat with no project file, and never
                 // a reason to refuse the read: the markup is still on the board and still goes out
                 // with the file.
-                _session.Findings.Save();
+                _seat.Findings.Save();
             }
 
             /// <summary>
@@ -6580,26 +6895,6 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Take back what the two old side registers were holding, once each run.
-            ///
-            /// Somebody who marked up a published NWD before findings existed has that work in
-            /// the project file under keys nothing reads any more. Folding is idempotent, so this
-            /// runs on every read and neither doubles anything nor deletes the old keys.
-            /// </summary>
-            private int Carried(FindingRegister register)
-            {
-                var section = _session.Store.Section(ProjectStore.ClashSection);
-
-                var held = section[ClashLegacy.HeldKey];
-                var asides = section[ClashLegacy.AsideKey];
-
-                if (held.Kind != JsonKind.Object && asides.Kind != JsonKind.Object) return 0;
-
-                return ClashLegacy.Fold(held, asides,
-                                        register.From(FindingSource.Clash).Where(f => f.IsPresent));
-            }
-
-            /// <summary>
             /// The finding behind a row's host result, or null when the index holds none.
             ///
             /// The fallback inside <c>Recorded</c> and not a way back in its own right: it
@@ -6629,13 +6924,13 @@ namespace CamelWorks.UI.Views
             {
                 var made = row.Fact;
 
-                var register = _session.Findings.Findings;
+                var register = _seat.Findings.Findings;
 
                 // The check's own key. A finding arriving under another check's source is refused
                 // by the register, and every later edit would then land on an object it does not
                 // hold.
                 register.Observe(made.Source, new[] { made }, DateTime.UtcNow.Ticks,
-                                 origin: _session.Store.Path,
+                                 origin: _seat.Store.Path,
                                  scope: f => false);
 
                 var kept = register.Find(made.Id) ?? made;
@@ -6664,7 +6959,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             /// <param name="row">The row.</param>
             private Finding? Recorded(Row row) =>
-                _session.Findings.Findings.Find(row.Fact.Id) ?? Found(row);
+                _seat.Findings.Findings.Find(row.Fact.Id) ?? Found(row);
 
             /// <summary>
             /// The finding a row is a view of, raising one when nothing is recorded for it yet.
@@ -6696,7 +6991,7 @@ namespace CamelWorks.UI.Views
             /// has no place for.
             /// </summary>
             private IEnumerable<Finding> Waiting =>
-                _session.Findings.Findings.From(Check?.Key ?? FindingSource.Clash)
+                _seat.Findings.Findings.From(Check?.Key ?? FindingSource.Clash)
                         .Where(f => f.IsHeld);
 
             /// <summary>How many clashes are waiting for the document.</summary>
@@ -6777,11 +7072,11 @@ namespace CamelWorks.UI.Views
                 // At what the register holds for each of them. A result the fold matched to a
                 // finding already held is that finding now, and a row still pointing at the copy
                 // the fold dropped would put it back the moment somebody edited the row.
-                var byTopic = Topics(_session.Findings.Findings);
+                var byTopic = Topics(_seat.Findings.Findings);
 
                 foreach (var row in round.Entries.SelectMany(entry => entry.Rows))
                 {
-                    row.Fact = _session.Findings.Findings.Find(row.Fact.Id)
+                    row.Fact = _seat.Findings.Findings.Find(row.Fact.Id)
                                ?? Same(byTopic, row.Fact)
                                ?? row.Fact;
 
@@ -6891,7 +7186,7 @@ namespace CamelWorks.UI.Views
             /// federation to exist at all.
             /// </summary>
             private UIElement Storeys() =>
-                Bench.Group("Levels",
+                Options("Levels",
                     ClashLevels.Panel(Plan, _board, KeepPlan,
                                       () => Ui.Safely(RedrawBoard)));
 
@@ -6905,7 +7200,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private UIElement SettingsPage() => Ui.Stack(
                 Engine.IsAvailable
-                    ? Bench.Group("Results",
+                    ? Options("Results",
                         Ui.Field("Read from",
                             Ui.Segmented(new[] { FromModel, FromFile }, _source, pick =>
                             {
@@ -6918,10 +7213,10 @@ namespace CamelWorks.UI.Views
                                  + "up an exported baseline instead, which is how a seat without "
                                  + "a clash engine takes part in the review."))
                     : Ui.Info("This Navisworks edition has no clash engine, so results can only "
-                              + "be read from a file. " + (_session.ClashProblem ?? string.Empty)),
+                              + "be read from a file. " + (_seat.ClashProblem ?? string.Empty)),
 
                 OnFile
-                    ? Bench.Group("The baseline file",
+                    ? Options("The baseline file",
                         Ui.PathField("Open", _path, PathKind.Open,
                                      ClashFile.Filter,
                                      "the baseline a Manage seat exported, or a saved markup"),
@@ -6933,7 +7228,7 @@ namespace CamelWorks.UI.Views
 
                 Storeys(),
 
-                Bench.Group("Focus",
+                Options("Focus",
                     Ui.Field("Zoom out", Ui.Text(
                         _focusBack.ToString(CultureInfo.InvariantCulture), text =>
                         {
@@ -6955,7 +7250,7 @@ namespace CamelWorks.UI.Views
                              + "point and standing closer to a clash in one changes nothing on "
                              + "screen.")),
 
-                Bench.Group("Markers",
+                Options("Markers",
                     Ui.Field("Diameter", Ui.Text(
                         _markerAcross.ToString(CultureInfo.InvariantCulture), text =>
                         {
@@ -7063,7 +7358,7 @@ namespace CamelWorks.UI.Views
             {
                 RedrawColumnList();
 
-                return Bench.Group("Property columns",
+                return Options("Property columns",
                     _columnList,
                     _fill,
                     Ui.Small("A column belongs to the board, not to one " + (Check?.RunWord ?? "test")
@@ -7075,11 +7370,11 @@ namespace CamelWorks.UI.Views
             }
 
             private UIElement RoundPage() => OnFile
-                ? Bench.Group("The review round",
+                ? Options("The review round",
                     Ui.Small("You are on the file leg: mark the results up and press \"Save "
                              + "markup\" on the Source page. A Manage seat reads it back."))
                 : Ui.Stack(
-                    Bench.Group("Export",
+                    Options("Export",
                         // What "Save changes" writes, said where somebody deciding to send a
                         // file is looking. It used to sit two levels down behind a symbol and a
                         // text button, which is a strange place for a setting that changes what
@@ -7099,7 +7394,7 @@ namespace CamelWorks.UI.Views
                                     : new[] { Entry()!.Run.Id });
                             Ui.Told(Shell.AppWindow.Show("clash", "exchange"));
                         }))),
-                    Bench.Group("Restore",
+                    Options("Restore",
                         Ui.PathField("Markups", _markups, PathKind.Open,
                                      ClashFile.Filter,
                                      "a markup file, or the baseline — every markup beside it is read"),
@@ -7321,6 +7616,27 @@ namespace CamelWorks.UI.Views
             private static string Tolerance(TestEntry entry) =>
                 entry.Run.Threshold ?? "the tolerance it was run at";
 
+            /// <summary>
+            /// The check's word for one result: a clash, a breach, a hazard.
+            ///
+            /// The board draws every kind through the same table, and these sentences said "clash"
+            /// whichever kind was on it.
+            /// </summary>
+            private string Result => Check?.ResultWord ?? "result";
+
+            /// <summary>What kind of test this is, lower case, for the middle of a sentence.</summary>
+            /// <param name="entry">The test.</param>
+            private static string Kinded(TestEntry entry)
+            {
+                var kind = entry.Run.Kind;
+
+                if (string.IsNullOrWhiteSpace(kind)) return "run";
+
+                // Only the first letter. A kind is a short phrase the check words itself, and
+                // lower-casing the whole of it would turn a proper noun in one into a common one.
+                return char.ToLower(kind[0], CultureInfo.CurrentCulture) + kind.Substring(1);
+            }
+
             /// <summary>When the host last ran a test, or empty when it has never said.</summary>
             /// <param name="entry">The test.</param>
             private static string When(TestEntry entry)
@@ -7401,8 +7717,17 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>Whether anything at all is narrowing the board.</summary>
-            private bool Filtering =>
-                State.Status != null || State.Party != null || State.BoardFind.Trim().Length > 0
+            private bool Filtering => State.Status != null || NarrowedBeyondStatus;
+
+            /// <summary>
+            /// Whether anything other than the status chips is hiding rows.
+            ///
+            /// The chip row already says which status is selected and how many rows it holds, so
+            /// the header's own counter is only worth its width when the board is narrowed by
+            /// something the chips do not show.
+            /// </summary>
+            private bool NarrowedBeyondStatus =>
+                State.Party != null || State.BoardFind.Trim().Length > 0
                 || _showing != BothKinds || _sameAs != null || State.ByColumn.Count > 0;
 
             /// <summary>Whether one result survives every filter in force.</summary>
@@ -7502,20 +7827,18 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// What the filters leave, worked out once.
             ///
-            /// The board used to ask for this three or four times per draw - once for the rows,
-            /// once for the count over them, once for the "of n" under the loose band - and every
-            /// ask walked every result of the test through every filter again. On a test with
-            /// thousands of results that is the same work done four times for one keystroke.
+            /// The board used to ask for this three or four times per draw - once for the rows
+            /// and once for the count over them - and every ask walked every result of the test
+            /// through every filter again. On a test with thousands of results that is the same
+            /// work done several times for one keystroke.
             /// </summary>
             private sealed class BoardShape
             {
-                internal BoardShape(List<BoardRow> groups, List<BoardRow> loose,
-                                    int counted, int looseTotal)
+                internal BoardShape(List<BoardRow> groups, List<BoardRow> loose, int counted)
                 {
                     Groups = groups;
                     Loose = loose;
                     Counted = counted;
-                    LooseTotal = looseTotal;
                 }
 
                 /// <summary>The clash groups the filters left.</summary>
@@ -7526,9 +7849,6 @@ namespace CamelWorks.UI.Views
 
                 /// <summary>How many results the board is showing, groups counted by their members.</summary>
                 internal int Counted { get; }
-
-                /// <summary>How many loose results the test has before any filter.</summary>
-                internal int LooseTotal { get; }
             }
 
             /// <summary>
@@ -7565,8 +7885,7 @@ namespace CamelWorks.UI.Views
 
                 _shape = new BoardShape(
                     groups, loose,
-                    groups.Sum(g => g.Rows.Count) + loose.Count,
-                    entry.Rows.Count(r => r.Group.Length == 0));
+                    groups.Sum(g => g.Rows.Count) + loose.Count);
 
                 _shapeKey = now;
 
@@ -7807,6 +8126,13 @@ namespace CamelWorks.UI.Views
                 if (!Plan.IsEmpty) held.Add(ByLevel);
 
                 held.AddRange(Tokened().Select(one => ByToken + one));
+
+                // The check's own columns, where the check said how to band one. A clearance
+                // board can band by clear height and a fall board by gap width because both
+                // declare a bucket; the menu offered neither, so the only columns that could be
+                // banded were the ones somebody added by hand.
+                held.AddRange(Declared().Where(c => c.Bucket != null).Select(c => ByColumn + c.Id));
+
                 held.AddRange(Added.Select(c => ByColumn + c.Id));
 
                 return held;
@@ -7867,6 +8193,117 @@ namespace CamelWorks.UI.Views
                 FindingStatus.Resolved => Tone.Good,
                 _ => Tone.Plain,
             };
+
+            /// <summary>
+            /// A row's status, as a chip that reads rather than a control that opens.
+            ///
+            /// Every row carried a drop-down, so the column was five chip widths wide with a
+            /// chevron on each of them, and a board of four hundred rows carried four hundred
+            /// controls to change one value at a time. The chip is one width for all five
+            /// statuses, so the column reads down; the status is set from the row's own menu and
+            /// from the bar for picked rows, which is where every other verb on a row is.
+            /// </summary>
+            /// <param name="status">The row's status.</param>
+            private static UIElement StatusChip(FindingStatus status)
+            {
+                var tone = Reads(status);
+
+                var label = new TextBlock
+                {
+                    Text = FindingStatusWords.Of(status),
+                    FontSize = 11,
+                    FontWeight = FontWeights.SemiBold,
+                    TextAlignment = TextAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Foreground = Skin.Ink(tone),
+                };
+
+                var chip = new Border
+                {
+                    // One width for all five, or the column is five ragged edges.
+                    MinWidth = 76,
+                    Height = 20,
+                    CornerRadius = new CornerRadius(7),
+                    BorderThickness = new Thickness(1),
+                    Padding = new Thickness(8, 0, 8, 0),
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Background = Skin.Wash(tone),
+                    BorderBrush = Skin.Edge(tone),
+                    Child = label,
+                    ToolTip = FindingStatusWords.Of(status)
+                              + ". Set it from the row's menu, or pick rows and set it on the bar.",
+                };
+
+                if (tone == Tone.Plain)
+                {
+                    chip.Tint(Border.BackgroundProperty, "Nav");
+                    chip.Tint(Border.BorderBrushProperty, "Bd");
+                    label.Tint(TextBlock.ForegroundProperty, "Muted");
+                }
+
+                return chip;
+            }
+
+            /// <summary>
+            /// A small label over a group of controls, in sentence case.
+            ///
+            /// <c>Ui.Eyebrow</c> upper-cases whatever it is given, and this screen's headings are
+            /// one case and one weight. It is the same style without the upper-casing; the fix
+            /// belongs in the shared helper, which this file does not own.
+            /// </summary>
+            /// <param name="text">What it says.</param>
+            private static TextBlock Titling(string text) =>
+                new TextBlock { Text = text ?? string.Empty }.Wearing("Caps");
+
+            /// <summary>
+            /// A group of options under a small label, the way <c>Bench.Group</c> lays one out.
+            ///
+            /// Here rather than through <c>Bench.Group</c> because that draws its label through
+            /// <c>Ui.Eyebrow</c>, which upper-cases it. Same layout, same margins, sentence-case
+            /// label. Null children are skipped so a caller can include a row conditionally.
+            /// </summary>
+            /// <param name="label">The group's label, or empty for an unlabelled group.</param>
+            /// <param name="fields">The fields, in reading order.</param>
+            private static UIElement Options(string label, params UIElement?[] fields)
+            {
+                var stack = new StackPanel { Margin = new Thickness(0, 0, 0, 14) };
+
+                if (!string.IsNullOrEmpty(label))
+                {
+                    var head = Titling(label);
+                    head.Margin = new Thickness(0, 0, 0, 6);
+                    stack.Children.Add(head);
+                }
+
+                foreach (var field in fields)
+                {
+                    if (field == null) continue;
+
+                    if (field is FrameworkElement placed && placed.Margin == default)
+                        placed.Margin = new Thickness(0, 0, 0, 8);
+
+                    // Loose, for the reason Ui.Stack does it: a group rebuilt around a control
+                    // the screen keeps in a field must not be told it already has a parent.
+                    stack.Children.Add(Ui.Loose(field));
+                }
+
+                return stack;
+            }
+
+            /// <summary>
+            /// A status in three letters, for a heading over a column of figures.
+            ///
+            /// Taken off the status word rather than written out, so the five abbreviations
+            /// cannot disagree with the words they stand for or with each other.
+            /// </summary>
+            /// <param name="status">The status.</param>
+            private static string Short(FindingStatus status)
+            {
+                var word = FindingStatusWords.Of(status);
+
+                return word.Length <= 3 ? word : word.Substring(0, 3);
+            }
 
             /// <summary>The tone bar down the left of a row, or nothing while it is only active.</summary>
             /// <param name="status">The row's status.</param>
@@ -8037,12 +8474,6 @@ namespace CamelWorks.UI.Views
             // Writing, from the board's own controls
             // -------------------------------------------------------------------------------
 
-            /// <summary>Set the status from the chip on a row, over everything picked.</summary>
-            /// <param name="row">The row the chip is on.</param>
-            /// <param name="status">The new status.</param>
-            private void SetStatus(BoardRow row, FindingStatus status) =>
-                Mark(Reaching(row), status, _toast);
-
             /// <summary>
             /// Assign rows to one or more people, roles, companies or teams.
             ///
@@ -8066,7 +8497,7 @@ namespace CamelWorks.UI.Views
                     Giving(),
                     Responsible.ReadAll(already).Select(w => w.Written).ToList(),
                     "Add team members\u2026",
-                    () => TeamWindow.Show(_board, _session, () =>
+                    () => TeamWindow.Show(_board, _seat, () =>
                     {
                         _roster = null;
                         RedrawRows();
@@ -8351,7 +8782,7 @@ namespace CamelWorks.UI.Views
                                ? " They are nested in the document, as they were on the board."
                                : string.Empty);
 
-                if (!OnFile) _session.Record(ActivityKind.Regroup, what);
+                if (!OnFile) _seat.Record(ActivityKind.Regroup, what);
 
                 RailChanged(new[] { entry.Run.Id });
                 RedrawBoard();
@@ -8449,7 +8880,7 @@ namespace CamelWorks.UI.Views
             {
                 Reread();
 
-                _session.Record(ActivityKind.Regroup,
+                _seat.Record(ActivityKind.Regroup,
                                 "renamed the test \"" + entry.Run.Name + "\" to \"" + wanted + "\"");
 
                 // One word, in memory. This used to re-harvest every result on the job to change
@@ -8618,17 +9049,17 @@ namespace CamelWorks.UI.Views
 
             /// <summary>What this project calls its tests, read fresh off the project file.</summary>
             private ClashTestNames TestNames() =>
-                ClashTestNames.FromJson(_session.Store.Section(ProjectStore.ClashSection)[ClashTestNames.Key]);
+                ClashTestNames.FromJson(_seat.Store.Section(ProjectStore.ClashSection)[ClashTestNames.Key]);
 
             /// <summary>Keep what this project calls its tests.</summary>
             /// <param name="names">The names to keep.</param>
             /// <returns>True when the project file took them.</returns>
             private bool KeepTestNames(ClashTestNames names)
             {
-                _session.Store.Section(ProjectStore.ClashSection)
+                _seat.Store.Section(ProjectStore.ClashSection)
                         .Set(ClashTestNames.Key, names.ToJson());
 
-                return _session.Store.Save();
+                return _seat.Store.Save();
             }
 
             /// <summary>
@@ -8749,7 +9180,7 @@ namespace CamelWorks.UI.Views
                 }
 
                 if (ran > 0)
-                    _session.Record(ActivityKind.Regroup, "ran " + Ui.Count(ran, word));
+                    _seat.Record(ActivityKind.Regroup, "ran " + Ui.Count(ran, word));
 
                 // Re-read either way. A run that reported nothing still has notes to show, and a
                 // board that swallowed them said only that the run had failed.
@@ -8783,7 +9214,7 @@ namespace CamelWorks.UI.Views
                 // of them, and that is not a reason for the renumber to have not happened.
                 Renumber(tests.SelectMany(e => e.Rows).ToList(), prefix);
 
-                _session.Record(ActivityKind.Regroup, "renamed the results of "
+                _seat.Record(ActivityKind.Regroup, "renamed the results of "
                     + Ui.Count(tests.Count, "test") + " to \"" + prefix + "...\"");
 
                 Redraw();
@@ -8824,7 +9255,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                _session.Record(ActivityKind.Regroup, "moved " + Ui.Count(tests.Count, word)
+                _seat.Record(ActivityKind.Regroup, "moved " + Ui.Count(tests.Count, word)
                     + (folder.Length == 0 ? " to the root" : " into \"" + folder + "\""));
 
                 // In memory rather than a re-read. Re-reading threw the board away and put the
@@ -8879,7 +9310,7 @@ namespace CamelWorks.UI.Views
                 // moment it is renamed.
                 if (State.ShutFolders.Remove(folder)) State.ShutFolders.Add(wanted);
 
-                _session.Record(ActivityKind.Regroup,
+                _seat.Record(ActivityKind.Regroup,
                                 "renamed the folder \"" + folder + "\" to \"" + wanted + "\"");
 
                 Moved();
@@ -8916,7 +9347,7 @@ namespace CamelWorks.UI.Views
                         return;
                     }
 
-                    _session.Record(ActivityKind.Regroup,
+                    _seat.Record(ActivityKind.Regroup,
                                     "deleted " + Ui.Count(tests.Count, word));
                     Reread("Deleted " + Ui.Count(tests.Count, word) + ".", null);
                 }));
@@ -8947,7 +9378,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                _session.Record(ActivityKind.Regroup,
+                _seat.Record(ActivityKind.Regroup,
                                 "compacted " + Ui.Count(tests.Count, word)
                                 + ", dropping their Resolved results");
                 RereadTests(tests.Select(t => t.Run.Id).ToList(),
@@ -9022,7 +9453,7 @@ namespace CamelWorks.UI.Views
                 var point = Middle(rows);
 
                 if (point != null)
-                    _session.View.LookAt(point.Value.X, point.Value.Y, point.Value.Z,
+                    _seat.View.LookAt(point.Value.X, point.Value.Y, point.Value.Z,
                                          _focusBack / 1000.0);
 
                 // The ball, if it is wanted. Every picked point rather than the average the camera
@@ -9097,9 +9528,11 @@ namespace CamelWorks.UI.Views
 
                 var found = Located(rows);
 
-                if (found.Count == 0) return 0;
+                // A seat with no document has nothing to select in, which is the file board on
+                // a Simulate seat as well as the harness.
+                if (found.Count == 0 || _live == null) return 0;
 
-                var selected = _session.Model.SelectByLocator(found);
+                var selected = _live.Model.SelectByLocator(found);
 
                 _outOfReach = found.Count - selected;
 
@@ -9139,9 +9572,9 @@ namespace CamelWorks.UI.Views
             /// <param name="rows">The rows being focused.</param>
             private void MarkFocused(IReadOnlyList<Row> rows)
             {
-                if (!_session.View.CanMark) return;
+                if (!_seat.View.CanMark) return;
 
-                var metres = _session.MetresPerUnit;
+                var metres = _seat.MetresPerUnit;
                 var perUnit = metres > 0 ? metres : 1.0;
                 var radius = _markerAcross / 2000.0 / perUnit;
 
@@ -9153,7 +9586,7 @@ namespace CamelWorks.UI.Views
 
                 // The overlay is drawn in the document's units and a row's point is metres on
                 // both legs, so the conversion is the same one either way round.
-                _session.View.ShowMarkers(Marks(rows, 1.0 / perUnit, radius));
+                _seat.View.ShowMarkers(Marks(rows, 1.0 / perUnit, radius));
             }
 
             /// <summary>The rows the markers on screen are about, or null when there are none.</summary>
@@ -9217,7 +9650,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                var register = IssueViews.Read(_session);
+                var register = IssueViews.Read(_seat);
 
                 var open = register.Issues
                     .OrderBy(i => !i.IsOpen)
@@ -9233,7 +9666,7 @@ namespace CamelWorks.UI.Views
                 }
 
                 _log.Children.Clear();
-                _log.Children.Add(Ui.Eyebrow("Attach " + Ui.Count(findings.Count, "result")
+                _log.Children.Add(Titling("Attach " + Ui.Count(findings.Count, "result")
                                              + " to an issue"));
 
                 var table = Ui.Table(
@@ -9268,7 +9701,7 @@ namespace CamelWorks.UI.Views
                             issue.ModifiedTicks = now;
                         }
 
-                        var problem = IssueViews.Write(_session, register);
+                        var problem = Stored(register);
 
                         if (problem != null)
                         {
@@ -9276,7 +9709,7 @@ namespace CamelWorks.UI.Views
                             return;
                         }
 
-                        _session.Record(ActivityKind.Regroup,
+                        _seat.Record(ActivityKind.Regroup,
                             "attached " + Ui.Count(added, "finding") + " to "
                             + Ui.Count(issues.Count, "issue"));
 
@@ -9369,9 +9802,11 @@ namespace CamelWorks.UI.Views
                     return issue;
                 }
 
+                if (_live == null) { Warned(Ui.Problem(Host.NoModel)); return; }
+
                 var at = 0;
 
-                var (made, problem) = IssueViews.Raise(_session,
+                var (made, problem) = IssueViews.Raise(_live,
                     id => each ? Make(id, new[] { rows[at++] }) : Make(id, rows),
                     each ? rows.Count : 1);
 
@@ -9428,7 +9863,7 @@ namespace CamelWorks.UI.Views
                 // meant resolving each one back to the element it names, which for a key that is
                 // not an instance GUID indexes the whole federation - so isolating what was
                 // already selected started a walk of the model to find what it was holding.
-                var kept = _session.View.IsolateSelection();
+                var kept = _seat.View.IsolateSelection();
 
                 // The one case that used to fail in silence. Isolating works off the host's
                 // current selection, so a selection the host did not take leaves this press
@@ -9444,7 +9879,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                _session.View.ZoomToSelection(1.0);
+                _seat.View.ZoomToSelection(1.0);
 
                 // Nothing said when it worked. What isolating did is the thing on the screen.
                 _ = keys;
@@ -9462,9 +9897,9 @@ namespace CamelWorks.UI.Views
             {
                 var selected = Selected(rows);
 
-                return selected == 0
+                return selected == 0 || _live == null
                     ? (IReadOnlyList<ElementKey>)Array.Empty<ElementKey>()
-                    : _session.Model.SelectedKeys();
+                    : _live.Model.SelectedKeys();
             }
 
             /// <summary>Set the status on everything picked.</summary>
@@ -10025,7 +10460,7 @@ namespace CamelWorks.UI.Views
                 {
                     if (problems.Count == 0)
                         problems.Add("That change could not be kept. "
-                            + (_session.Findings.LastSaveProblem
+                            + (_seat.Findings.LastSaveProblem
                                ?? "There was nowhere to write it."));
 
                     foreach (var problem in problems) say.Children.Add(Ui.Problem(problem));
@@ -10047,7 +10482,7 @@ namespace CamelWorks.UI.Views
                 var what = string.Format(CultureInfo.InvariantCulture, didFormat,
                                          Ui.Count(done + held, "result"));
 
-                if (!OnFile) _session.Record(ActivityKind.Regroup, what);
+                if (!OnFile) _seat.Record(ActivityKind.Regroup, what);
 
                 // Redrawing replaces the table whose bar the message panel lived in, so the
                 // outcome goes to the screen's own log, which survives.
@@ -10158,7 +10593,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                _session.Record(ActivityKind.Export, "exported clash markers", mesh.Explain());
+                _seat.Record(ActivityKind.Export, "exported clash markers", mesh.Explain());
 
                 var tests = rows.Select(r => r.TestName).Distinct(StringComparer.Ordinal).Count();
 
@@ -10181,13 +10616,13 @@ namespace CamelWorks.UI.Views
             {
                 say.Children.Clear();
 
-                if (_session.View.HideMarkers() == 0 && _session.View.CanUnhideMarkers)
-                    _session.View.UnhideMarkers();
+                if (_seat.View.HideMarkers() == 0 && _seat.View.CanUnhideMarkers)
+                    _seat.View.UnhideMarkers();
             }
 
             /// <summary>What the marker toggle should say right now.</summary>
             private string MarkerToggle() =>
-                _session.View.CanUnhideMarkers && !MarkerOverlay.Any
+                _seat.View.CanUnhideMarkers && !MarkerOverlay.Any
                     ? "Show the markers"
                     : "Hide the markers";
 
@@ -10631,7 +11066,7 @@ namespace CamelWorks.UI.Views
                     items.Add(item);
                 }
 
-                var collapse = DuplicateCollapse.Across(items, _session.Profile.DuplicateBand);
+                var collapse = DuplicateCollapse.Across(items, _seat.Profile.DuplicateBand);
 
                 if (collapse.Count == 0)
                 {
@@ -10753,7 +11188,7 @@ namespace CamelWorks.UI.Views
 
                 if (!OnFile)
                     Ui.Working("Reading IFC ids for the export...",
-                               job => ids = new ClashIdentity.Ids(_session, going, job));
+                               job => ids = new ClashIdentity.Ids(_live, going, job));
 
                 // Which test and result each finding came from, so the clash engine can draw it
                 // rather than the camera having to be moved.
@@ -10776,16 +11211,17 @@ namespace CamelWorks.UI.Views
                 {
                     GroupOf = finding =>
                         grouped.TryGetValue(finding.Id, out var named) ? named : null,
-                    Snapshot = _pictures && !OnFile
-                        ? ClashIdentity.Pictures(_session, 1280, 720,
+                    Snapshot = _pictures && !OnFile && _live != null
+                        ? ClashIdentity.Pictures(_live, 1280, 720,
                               finding => drawnFrom.TryGetValue(finding.Id, out var at)
                                   ? at
-                                  : ((string Test, string Result)?)null)
+                                  : ((string Test, string Result)?)null,
+                              job: null, check: Check)
                         : null,
                     IfcGuidOf = ids.Of,
                     LocatorOf = ids.At,
-                    SourceFile = _session.Store.Path,
-                    ProjectName = _session.Profile.ProjectName,
+                    SourceFile = _seat.Store.Path,
+                    ProjectName = _seat.Profile.ProjectName,
                     Author = Environment.UserName ?? "CamelWorks",
                     WhenTicks = DateTime.UtcNow.Ticks,
                 });
@@ -10811,7 +11247,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                _session.Record(ActivityKind.Export, "wrote a clash baseline", written.Explain());
+                _seat.Record(ActivityKind.Export, "wrote a clash baseline", written.Explain());
 
                 // Into the footer, where the read's own counts go - not the strip over the board.
                 // A press that produces a file has to say where the file went, which is the one
@@ -10906,7 +11342,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                _session.Record(ActivityKind.Export, "wrote the clash results grid",
+                _seat.Record(ActivityKind.Export, "wrote the clash results grid",
                                 Ui.Count(_shown.Count, "row") + " to " + dialog.FileName);
 
                 _log.Children.Clear();
@@ -11000,7 +11436,7 @@ namespace CamelWorks.UI.Views
                 var written = FindingBcf.Write(going, null, new FindingBcfOptions
                 {
                     SourceFile = round.Path,
-                    ProjectName = _session.Profile.ProjectName,
+                    ProjectName = _seat.Profile.ProjectName,
                     Author = Environment.UserName ?? "reviewer",
                     WhenTicks = DateTime.UtcNow.Ticks,
                     IfcGuidOf = key => ids.TryGetValue(key, out var guid) ? guid : null,
@@ -11329,7 +11765,7 @@ namespace CamelWorks.UI.Views
 
                 var raisedNote = Raise(strangers, named);
 
-                _session.Record(ActivityKind.Regroup, "synced " + Ui.Count(files.Count, "markup")
+                _seat.Record(ActivityKind.Regroup, "synced " + Ui.Count(files.Count, "markup")
                     + " into the model", statuses + " statuses, " + comments + " comments, "
                     + assigns + " assignments");
 
@@ -11576,7 +12012,7 @@ namespace CamelWorks.UI.Views
                 // Failing to save is an ordinary outcome — a document nobody has saved has no
                 // project file — and never a reason to refuse the edit: it still applies on the
                 // board and still travels out in the baseline.
-                _session.Findings.Save();
+                _seat.Findings.Save();
             }
 
             /// <summary>
@@ -11812,7 +12248,7 @@ namespace CamelWorks.UI.Views
                 if (!Engine.IsAvailable)
                     return "This Navisworks edition has no clash engine, so there are no clash "
                            + "results in the file to write into. "
-                           + (_session.ClashProblem ?? string.Empty).Trim();
+                           + (_seat.ClashProblem ?? string.Empty).Trim();
 
                 return null;
             }
@@ -11889,7 +12325,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private void SaveWork()
             {
-                var stored = _session.Findings.Save();
+                var stored = _seat.Findings.Save();
                 var why = WhySync();
 
                 if (why == null && WaitingCount > 0)
@@ -11905,7 +12341,7 @@ namespace CamelWorks.UI.Views
                     Tell("The decisions on this board could not be saved.",
                          new List<string>
                          {
-                             _session.Findings.LastSaveProblem
+                             _seat.Findings.LastSaveProblem
                              ?? "There was nowhere to write the project file.",
                          });
 
@@ -11959,7 +12395,7 @@ namespace CamelWorks.UI.Views
 
                 // Over the board, and held there. A list somebody asked to see is not a
                 // confirmation, and three seconds is not long enough to read one.
-                Said(Ui.Eyebrow("Waiting to be written"));
+                Said(Titling("Changes still to be written"));
                 Hold();
 
                 var table = Ui.Table(
@@ -12022,10 +12458,10 @@ namespace CamelWorks.UI.Views
 
                 try
                 {
-                    var register = IssueViews.Read(_session);
+                    var register = IssueViews.Read(_seat);
                     var merged = FindingBcf.MergeIssues(register, strangers, source);
 
-                    var problem = IssueViews.Write(_session, register);
+                    var problem = Stored(register);
 
                     if (problem != null)
                         return " " + Ui.Count(strangers.Count, "topic") + " could not be placed on "
@@ -12205,7 +12641,7 @@ namespace CamelWorks.UI.Views
             {
                 var names = new List<string>();
 
-                foreach (var party in _session.Profile.Parties)
+                foreach (var party in _seat.Profile.Parties)
                     if (!names.Contains(party, StringComparer.OrdinalIgnoreCase)) names.Add(party);
 
                 var from = entry != null

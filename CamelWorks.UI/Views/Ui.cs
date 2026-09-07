@@ -9,6 +9,7 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using CamelWorks.Core.Checks;
 using CamelWorks.Core.Data;
 using CamelWorks.Core.Identity;
 using ToggleButton = System.Windows.Controls.Primitives.ToggleButton;
@@ -48,6 +49,51 @@ namespace CamelWorks.UI.Views
             var whole = value is double number && number > 0 ? number : 0;
 
             return whole <= 0 ? Least : Math.Max(Least, whole * Of);
+        }
+
+        /// <inheritdoc />
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
+            Binding.DoNothing;
+    }
+
+    /// <summary>
+    /// One table cell drawn as a symbol and its text.
+    ///
+    /// A converter rather than a factory tree because a glyph is a stroked path on its own
+    /// 24-unit canvas inside a Viewbox, which <see cref="Ui.Glyph"/> already assembles; building
+    /// the same three elements again as a FrameworkElementFactory would be a second definition of
+    /// how a glyph is drawn.
+    /// </summary>
+    internal sealed class SymbolCell : IValueConverter
+    {
+        /// <summary>Make one.</summary>
+        /// <param name="column">Which of the row's cells supplies the text.</param>
+        internal SymbolCell(int column) => Column = column;
+
+        /// <summary>Which of the row's cells supplies the text.</summary>
+        internal int Column { get; }
+
+        /// <inheritdoc />
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (!(value is TableRow row)) return string.Empty;
+
+            var text = new TextBlock
+            {
+                Text = row[Column],
+                ToolTip = row[Column],
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            if (string.IsNullOrEmpty(row.Symbol)) return text;
+
+            var line = new StackPanel { Orientation = Orientation.Horizontal };
+
+            line.Children.Add(Ui.Glyph(row.Symbol!, 14, "Muted", new Thickness(0, 0, 7, 0)));
+            line.Children.Add(text);
+
+            return line;
         }
 
         /// <inheritdoc />
@@ -112,6 +158,14 @@ namespace CamelWorks.UI.Views
 
         /// <summary>How the row reads — used to tint it.</summary>
         public Tone Tone { get; set; }
+
+        /// <summary>
+        /// The symbol drawn beside one of this row's cells, or null for none.
+        ///
+        /// Path data in a 24-unit box, as <c>Glyphs</c> writes it. Which column it lands in is the
+        /// table's, not the row's: see <c>Symbolled</c>.
+        /// </summary>
+        public string? Symbol { get; set; }
 
         /// <summary>Cell text by column. Out-of-range is empty rather than an exception.</summary>
         /// <param name="index">Column index.</param>
@@ -569,10 +623,17 @@ namespace CamelWorks.UI.Views
         public static TextBlock Code(string text) =>
             new TextBlock { Text = text }.Wearing("Mono");
 
-        /// <summary>A small upper-case label above a group of things.</summary>
+        /// <summary>
+        /// A small label above a group of things.
+        ///
+        /// Sentence case, as written. This upper-cased its text until every section heading in
+        /// the product read as shouting, and a heading and a pane title were indistinguishable
+        /// because both arrived here. The "Caps" style still sets the size, weight and colour;
+        /// only the case is the caller's.
+        /// </summary>
         /// <param name="text">The label.</param>
         public static TextBlock Eyebrow(string text) =>
-            new TextBlock { Text = (text ?? string.Empty).ToUpperInvariant() }.Wearing("Caps");
+            new TextBlock { Text = text ?? string.Empty }.Wearing("Caps");
 
         /// <summary>A number and its label, for a scoreboard.</summary>
         /// <param name="value">The number, already formatted.</param>
@@ -1366,6 +1427,21 @@ namespace CamelWorks.UI.Views
             Margin = new Thickness(0, Gap, 0, Gap),
         }.Tint(Border.BackgroundProperty, "Bd");
 
+        /// <summary>
+        /// The same hairline stood on end, for a bar that runs left to right.
+        ///
+        /// Two link verbs side by side have no chrome between them and read as one long phrase —
+        /// "Resolve the conflict…Say why…". A rule between them separates the two presses without
+        /// giving either a border.
+        /// </summary>
+        public static UIElement Vrule() => new Border
+        {
+            Width = 1,
+            Height = 18,
+            Margin = new Thickness(Gap, 0, Gap, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        }.Tint(Border.BackgroundProperty, "Bd");
+
         /// <summary>A label on the left and its value on the right, as one row.</summary>
         /// <param name="label">What it is.</param>
         /// <param name="value">What it says.</param>
@@ -1413,6 +1489,148 @@ namespace CamelWorks.UI.Views
         /// <param name="onClick">What it does.</param>
         public static System.Windows.Controls.Button Primary(string caption, Action onClick) =>
             Press(caption, onClick, "PrimaryBtn");
+
+        /// <summary>
+        /// The screen's main action as it is drawn when it cannot be pressed: the caption greyed,
+        /// and the reason on the same line.
+        ///
+        /// A filled button drawn live over a notice saying the work is impossible is a press that
+        /// reports its own failure, and the reader has to press it to find that out. The reason
+        /// belongs beside the control, not under the screen.
+        ///
+        /// Only for an action that is blocked by the seat rather than by what has been filled in.
+        /// A form that is merely incomplete says so where the field is.
+        /// </summary>
+        /// <param name="caption">What the button would say.</param>
+        /// <param name="why">Why it cannot be pressed, in the user's terms.</param>
+        public static Panel Blocked(string caption, string why)
+        {
+            var go = new System.Windows.Controls.Button
+            {
+                Content = caption ?? string.Empty,
+                IsEnabled = false,
+                ToolTip = why,
+            };
+
+            go.Wearing("PrimaryBtn");
+
+            var row = Foot(go);
+
+            // Inline on a stage rather than in a footer band, so the gap above it is this
+            // caller's to set. A footer band has its own padding.
+            row.Margin = new Thickness(0, Gap, 0, 0);
+
+            return row;
+        }
+
+        /// <summary>
+        /// A screen's footer: the reason, the secondary action, the primary hard right.
+        ///
+        /// One anatomy for every screen's last row, for one reason: the primary must be in the
+        /// same place before and after it can be pressed. The footers this replaces put the
+        /// disabled button and its reason in a wrap panel, so the button moved when the reason
+        /// arrived or went, and on a narrow pane the reason pushed it onto a second line.
+        ///
+        /// The reason is read off the primary rather than passed in, so a screen that keeps the
+        /// button in a field and enables it later has nothing to redraw: it sets the tooltip and
+        /// the footer states it. An enabled primary has no tooltip, so the line is empty and takes
+        /// no room; a disabled one without a tooltip is a press with no stated reason, which is
+        /// the defect this exists to make visible.
+        /// </summary>
+        /// <param name="primary">
+        /// The screen's one action, or the row a <see cref="RunParts"/> returns. Where it is a
+        /// panel, the first button in it is the primary the reason is read from.
+        /// </param>
+        /// <param name="secondary">A supporting action, drawn to the left of the primary.</param>
+        /// <param name="aside">
+        /// What the screen is set up with — the windows that hold the settings the primary spends.
+        /// Drawn hard left, away from the actions, or null on a footer with none.
+        /// </param>
+        public static Panel Foot(UIElement primary, UIElement? secondary = null,
+                                 UIElement? aside = null)
+        {
+            if (primary == null) throw new ArgumentNullException(nameof(primary));
+
+            var row = new DockPanel { LastChildFill = false };
+
+            if (primary is FrameworkElement main)
+            {
+                main.VerticalAlignment = VerticalAlignment.Center;
+                main.Margin = new Thickness(Gap, 0, 0, 0);
+            }
+
+            // Docked in this order, so the primary is against the right edge whatever else the
+            // row is holding, and nothing to its left can displace it.
+            DockPanel.SetDock(primary, Dock.Right);
+            row.Children.Add(primary);
+
+            if (secondary != null)
+            {
+                if (secondary is FrameworkElement other)
+                {
+                    other.VerticalAlignment = VerticalAlignment.Center;
+                    other.Margin = new Thickness(Gap, 0, 0, 0);
+                }
+
+                DockPanel.SetDock(secondary, Dock.Right);
+                row.Children.Add(secondary);
+            }
+
+            if (aside != null)
+            {
+                if (aside is FrameworkElement side) side.VerticalAlignment = VerticalAlignment.Center;
+
+                DockPanel.SetDock(aside, Dock.Left);
+                row.Children.Add(aside);
+            }
+
+            var said = Small(string.Empty);
+
+            said.Margin = new Thickness(0, 0, Gap, 0);
+            said.VerticalAlignment = VerticalAlignment.Center;
+            said.TextWrapping = TextWrapping.Wrap;
+            said.TextAlignment = TextAlignment.Right;
+
+            // Bound rather than copied: the reason is whatever the primary says it is at the
+            // moment it is read, and an enabled primary carries none, so the line empties itself.
+            var button = Pressed(primary, 3);
+
+            if (button != null)
+                said.SetBinding(TextBlock.TextProperty,
+                                new Binding("ToolTip")
+                                {
+                                    Source = button,
+                                    TargetNullValue = string.Empty,
+                                    FallbackValue = string.Empty,
+                                });
+
+            DockPanel.SetDock(said, Dock.Right);
+            row.Children.Add(said);
+
+            return row;
+        }
+
+        /// <summary>
+        /// The button a footer's primary slot is actually built around.
+        ///
+        /// The slot takes a runner as readily as a button, and a runner is a column holding a row
+        /// holding the button, so the search goes down rather than only at the element handed in.
+        /// </summary>
+        /// <param name="element">The primary slot's content.</param>
+        /// <param name="depth">How many panels to look through.</param>
+        private static System.Windows.Controls.Button? Pressed(UIElement element, int depth)
+        {
+            if (element is System.Windows.Controls.Button button) return button;
+            if (depth <= 0 || !(element is Panel panel)) return null;
+
+            foreach (var child in panel.Children.OfType<UIElement>())
+            {
+                var found = Pressed(child, depth - 1);
+                if (found != null) return found;
+            }
+
+            return null;
+        }
 
         /// <summary>A supporting action, with no border until it is hovered.</summary>
         /// <param name="caption">What it says.</param>
@@ -3039,6 +3257,39 @@ namespace CamelWorks.UI.Views
             return table;
         }
 
+        /// <summary>
+        /// Draw one column as its row's <see cref="TableRow.Symbol"/> and then its text.
+        ///
+        /// For a column whose value is a kind rather than a measurement. A list of tests where
+        /// every row carries the same mark cannot be sorted by eye, and the kind has to be read
+        /// word by word; a mark per kind sorts the list at a glance and the word stays beside it
+        /// for anybody who does not know the marks.
+        ///
+        /// Rows with no symbol draw the text alone, so a table may mix kinds that have a mark with
+        /// kinds that do not.
+        /// </summary>
+        /// <param name="table">The table.</param>
+        /// <param name="column">Which column, from nought.</param>
+        public static ListView Symbolled(this ListView table, int column)
+        {
+            if (!(table.View is GridView grid) || column < 0 || column >= grid.Columns.Count)
+                return table;
+
+            var cell = new FrameworkElementFactory(typeof(ContentPresenter));
+
+            // The whole row, converted to a built visual, rather than a factory tree with the
+            // path bound: a glyph is a path on its own 24-unit canvas inside a Viewbox, and Glyph
+            // already assembles that. One assembly of it, used everywhere.
+            cell.SetBinding(ContentPresenter.ContentProperty, new Binding(".")
+            {
+                Converter = new SymbolCell(column),
+            });
+
+            grid.Columns[column].CellTemplate = new DataTemplate { VisualTree = cell };
+
+            return table;
+        }
+
         public static ListView Multi(this ListView table)
         {
             table.SelectionMode = SelectionMode.Extended;
@@ -3568,11 +3819,23 @@ namespace CamelWorks.UI.Views
             // word.
             all.VerticalAlignment = VerticalAlignment.Center;
             none.VerticalAlignment = VerticalAlignment.Center;
-            all.Margin = new Thickness(0, 0, Gap, 0);
 
             // A gap, or the two read as one word. They had none, so every table on every screen
             // ended its bar with "AllNone".
             all.Margin = new Thickness(0, 0, Gap, 0);
+
+            // One child of the wrap, not two. As two they were wrapped independently, so a bar
+            // with enough verbs to fill the line left "All" on it and pushed "None" onto the
+            // next - a lone word under the table with nothing to say what it picks.
+            var picking = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(Gap, 0, 0, 0),
+            };
+
+            picking.Children.Add(all);
+            picking.Children.Add(none);
 
             var buttons = new List<System.Windows.Controls.Button>();
 
@@ -3597,13 +3860,20 @@ namespace CamelWorks.UI.Views
                     ? (here.Primary
                         ? Primary(here.Caption.Replace("{n}", "0"), () => Verb(here, table, said))
                         : Quiet(here.Caption.Replace("{n}", "0"), () => Verb(here, table, said)))
-                    : Icon(glyph, here.Caption.Replace("{n}", "0"), () => Verb(here, table, said));
+                    : Icon(glyph, here.Caption.Replace("{n}", "0"), () => Verb(here, table, said),
+                           here.Danger ? "RedTx" : "Muted");
 
+                // A destructive verb reads as destructive whether or not it can be drawn. This
+                // applied the danger style only to the worded ones, which left every delete that
+                // has a symbol - which is all of them - in the same grey as the verb beside it.
                 if (here.Danger && glyph == null) button.Wearing("DangerBtn");
 
                 // A worded button carries its own padding; a symbol needs the room put around it,
-                // for the same reason Icon does.
-                button.Margin = new Thickness(glyph == null ? Gap : 3, 2, glyph == null ? 0 : 3, 2);
+                // for the same reason Icon does. A danger verb gets a wider left gap either way,
+                // so the press before it is not adjacent to the one that deletes.
+                var before = here.Danger ? Gap * 2 : glyph == null ? Gap : 3;
+
+                button.Margin = new Thickness(before, 2, glyph == null ? 0 : 3, 2);
                 button.VerticalAlignment = VerticalAlignment.Center;
                 button.Tag = here.Caption;
 
@@ -3611,9 +3881,7 @@ namespace CamelWorks.UI.Views
                 bar.Children.Add(button);
             }
 
-            bar.Children.Add(new Border { Width = Gap });
-            bar.Children.Add(all);
-            bar.Children.Add(none);
+            bar.Children.Add(picking);
 
             void Say()
             {
@@ -3677,7 +3945,8 @@ namespace CamelWorks.UI.Views
                 case "show": return Glyphs.EyeOff;
                 case "select":
                 case "pick": return Glyphs.Boxed;
-                case "copy": return Glyphs.Copy;
+                case "copy":
+                case "duplicate": return Glyphs.Copy;
                 case "delete":
                 case "remove":
                 case "drop":
@@ -3686,6 +3955,7 @@ namespace CamelWorks.UI.Views
                 case "try": return Glyphs.Play;
                 case "rename":
                 case "edit": return Glyphs.Pencil;
+                case "set": return Glyphs.Tune;
                 case "renumber": return Glyphs.Number;
                 case "move": return Glyphs.MoveIn;
                 case "compact": return Glyphs.Compact;
@@ -3712,6 +3982,29 @@ namespace CamelWorks.UI.Views
                 case "paint": return Glyphs.Layers;
                 case "find": return Glyphs.Find;
                 default: return null;
+            }
+        }
+
+        /// <summary>
+        /// The symbol for a kind of check, from the key the check declares.
+        ///
+        /// One table, so every list of tests draws a clash test with the same mark: the Create
+        /// list, the check picker, the Manage rail and the exchange desk had one glyph between
+        /// them and the kind could only be read as text.
+        ///
+        /// A key with no shape here falls back to the checklist rather than to nothing, so a check
+        /// added later draws a mark from the day it is registered and gets its own by adding one
+        /// case.
+        /// </summary>
+        /// <param name="symbol">The key, as <see cref="CheckSymbols"/> spells it.</param>
+        public static string CheckSymbol(string? symbol)
+        {
+            switch ((symbol ?? string.Empty).Trim().ToLowerInvariant())
+            {
+                case CheckSymbols.Clash: return Glyphs.Clash;
+                case CheckSymbols.Clearance: return Glyphs.Clearance;
+                case CheckSymbols.Opening: return Glyphs.Opening;
+                default: return Glyphs.Checklist;
             }
         }
 
@@ -4203,6 +4496,17 @@ namespace CamelWorks.UI.Views
 
         /// <summary>Two shapes meeting: a clash.</summary>
         public const string Clash = "M4,12 L11,12 M13,12 L20,12 M12,4 L12,11 M12,13 L12,20 M9,9 L15,15 M15,9 L9,15";
+
+        /// <summary>
+        /// A soffit, a floor, and the height between them: a clearance.
+        ///
+        /// A section rather than a ruler. A ruler is any measured dimension, and this check
+        /// measures one dimension in particular — what is over a surface, and how far.
+        /// </summary>
+        public const string Clearance = "M4,6.5 L20,6.5 M4,19.5 L20,19.5 M12,8.5 L12,17.5 M9.6,10.9 L12,8.5 L14.4,10.9 M9.6,15.1 L12,17.5 L14.4,15.1";
+
+        /// <summary>A floor with a gap in it and a drop through the gap: a fall hazard.</summary>
+        public const string Opening = "M3,9.5 L9,9.5 M15,9.5 L21,9.5 M9,9.5 L9,12.5 M15,9.5 L15,12.5 M12,12 L12,20 M9.4,17.4 L12,20 L14.6,17.4";
 
         /// <summary>Two panels side by side: a comparison.</summary>
         public const string Compare = "M11,4 L11,20 M4,7 L8,7 L8,17 L4,17 Z M16,7 L20,7 L20,17 L16,17 Z";

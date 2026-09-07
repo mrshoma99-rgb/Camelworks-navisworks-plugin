@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -88,9 +89,17 @@ namespace CamelWorks.UI.Views
 
             if (foot != null)
             {
-                // The footer: the same bar in every app, with the primary on the right. The foot
-                // element is usually a Runner, which carries its own progress and Stop, so the
-                // whole of it is right-aligned rather than split.
+                // The footer: the same bar in every app, with the primary on the right.
+                //
+                // A footer built by Ui.Foot lays itself out across the whole width - the primary
+                // docked right, the reason taking what is left - so it is given the width rather
+                // than right-aligned inside a box. Anything else is a Runner or a row of buttons
+                // that sizes to its content, and is still pushed right.
+                //
+                // No maximum. It was capped at 560, which is half the window: the Filter screen's
+                // footer came to 472 pixels of buttons, so the primary wrapped onto a second line
+                // and the reason had to be shortened to fit. The reason is the part that varies,
+                // and Ui.Foot wraps it in place without moving the buttons.
                 var footer = new Border
                 {
                     Padding = new Thickness(16, 9, 16, 10),
@@ -98,8 +107,9 @@ namespace CamelWorks.UI.Views
                     Child = new ContentControl
                     {
                         Content = foot,
-                        HorizontalAlignment = HorizontalAlignment.Right,
-                        MaxWidth = 560,
+                        HorizontalAlignment = Spread(foot)
+                            ? HorizontalAlignment.Stretch
+                            : HorizontalAlignment.Right,
                     },
                 };
 
@@ -112,6 +122,20 @@ namespace CamelWorks.UI.Views
 
             return root;
         }
+
+        /// <summary>
+        /// Whether a footer lays itself out across the width it is given.
+        ///
+        /// A <see cref="Ui.Foot"/> row does: it docks the primary right and gives the reason the
+        /// rest. A runner column carrying one is the same thing with a progress bar under it.
+        /// Anything else sizes to its content and is pushed right instead.
+        /// </summary>
+        /// <param name="foot">The footer element.</param>
+        private static bool Spread(UIElement foot) =>
+            foot is DockPanel
+            || (foot is StackPanel column
+                && column.Orientation == Orientation.Vertical
+                && column.Children.OfType<DockPanel>().Any());
 
         /// <summary>
         /// The other anatomy: a strip, two tables side by side, and one action row.
@@ -271,6 +295,8 @@ namespace CamelWorks.UI.Views
 
             if (say != null)
             {
+                if (say is FrameworkElement line) line.VerticalAlignment = VerticalAlignment.Center;
+
                 named.Children.Add(new Border { Width = 10 });
                 named.Children.Add(say);
             }
@@ -346,9 +372,29 @@ namespace CamelWorks.UI.Views
         /// </summary>
         /// <param name="label">The group's label. Empty for the first, unlabelled group.</param>
         /// <param name="fields">The fields, in reading order.</param>
-        public static UIElement Group(string label, params UIElement?[] fields)
+        public static UIElement Group(string label, params UIElement?[] fields) =>
+            Group(label, false, fields);
+
+        /// <summary>
+        /// The same group, with the fields laid out left to right.
+        ///
+        /// A strip above two panes has the window's width and one line of height, so its fields
+        /// run across; the options column has the opposite shape and stacks them. Both are the
+        /// same group under the same label, so they are one control rather than a second copy of
+        /// the label rules per surface.
+        /// </summary>
+        /// <param name="label">The group's label. Empty for the first, unlabelled group.</param>
+        /// <param name="across">
+        /// True for a strip: the fields wrap left to right and the group carries the trailing gap
+        /// that separates it from the next one. False for the options column.
+        /// </param>
+        /// <param name="fields">The fields, in reading order.</param>
+        public static UIElement Group(string label, bool across, params UIElement?[] fields)
         {
-            var stack = new StackPanel { Margin = new Thickness(0, 0, 0, 14) };
+            var stack = new StackPanel
+            {
+                Margin = across ? new Thickness(0, 0, 28, 0) : new Thickness(0, 0, 0, 14),
+            };
 
             if (!string.IsNullOrEmpty(label))
             {
@@ -357,17 +403,22 @@ namespace CamelWorks.UI.Views
                 stack.Children.Add(eyebrow);
             }
 
+            var row = across ? new WrapPanel() : null;
+
             foreach (var field in fields)
             {
                 if (field == null) continue;
 
                 if (field is FrameworkElement fe && fe.Margin == default)
-                    fe.Margin = new Thickness(0, 0, 0, 8);
+                    fe.Margin = across ? new Thickness(0, 0, 14, 0) : new Thickness(0, 0, 0, 8);
 
                 // Loose, for the same reason Ui.Stack does it: a group rebuilt around a
                 // control the screen keeps in a field must not be told it already has a parent.
-                stack.Children.Add(Ui.Loose(field));
+                if (row != null) row.Children.Add(Ui.Loose(field));
+                else stack.Children.Add(Ui.Loose(field));
             }
+
+            if (row != null) stack.Children.Add(row);
 
             return stack;
         }
@@ -424,17 +475,14 @@ namespace CamelWorks.UI.Views
         /// <param name="tone">How it reads.</param>
         public static UIElement Verdict(string text, Tone tone = Tone.Plain)
         {
-            var line = new TextBlock
-            {
-                Text = text ?? string.Empty,
-                FontSize = 16,
-                FontWeight = FontWeights.SemiBold,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 0, 0, 8),
-                Foreground = Skin.Ink(tone),
-            };
+            // The heading primitive, not a size of its own. This was a hard-coded 16 that
+            // happened to match the Head style, so the two drifted apart the first time the
+            // scale moved.
+            var line = Ui.Heading(text ?? string.Empty);
 
-            if (tone == Tone.Plain) line.Tint(TextBlock.ForegroundProperty, "Text");
+            line.Margin = new Thickness(0, 0, 0, 8);
+
+            if (tone != Tone.Plain) line.Foreground = Skin.Ink(tone);
 
             return line;
         }

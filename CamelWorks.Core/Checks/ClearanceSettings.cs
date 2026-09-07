@@ -27,6 +27,9 @@ namespace CamelWorks.Core.Checks
         /// <summary>What the run measures up from.</summary>
         public const string SurfacesKey = "surfaces";
 
+        /// <summary>Whether the walkable surfaces are found inside the source rather than taken whole.</summary>
+        public const string DetectKey = "detect";
+
         /// <summary>What the run measures up to.</summary>
         public const string TargetsKey = "targets";
 
@@ -51,6 +54,9 @@ namespace CamelWorks.Core.Checks
         /// <summary>The smallest detected surface the run keeps, in square metres.</summary>
         public const string MinAreaKey = "minArea";
 
+        /// <summary>How far a detected surface may tilt from horizontal, in degrees.</summary>
+        public const string MaxSlopeKey = "maxSlope";
+
         /// <summary>The detected surfaces somebody dropped, by patch id, semicolon separated.</summary>
         public const string ExcludedKey = "excluded";
 
@@ -63,12 +69,6 @@ namespace CamelWorks.Core.Checks
         /// it compares against. Not a setting anybody edits, which is why it has no property here.
         /// </summary>
         public const string LastSurfacesKey = "lastSurfaces";
-
-        /// <summary>What the surface side is set to when detection finds the surfaces.</summary>
-        public const string Detected = "Detected walkable surfaces";
-
-        /// <summary>What the surface side is set to when the category names are guessed at.</summary>
-        public const string Guessed = "Walking surfaces (a guess)";
 
         /// <summary>What either side is set to for whatever the host has selected.</summary>
         public const string Selected = "Current selection";
@@ -90,11 +90,30 @@ namespace CamelWorks.Core.Checks
         /// Distinct from the minimum because they answer different questions: a 2.100 m corridor
         /// measured at 2.098 m is a survey difference and a 2.100 m corridor at 1.850 m is a
         /// coordination issue. A breach shallower than this is not reported.
+        ///
+        /// 25 mm by default rather than zero. At zero a 2.099 m soffit is a row, and the first run
+        /// on a federation is thousands of them; at 25 mm every shortfall anyone argues about is
+        /// still reported. Set it to zero to report all of them.
         /// </summary>
-        public double ToleranceMetres { get; set; }
+        public double ToleranceMetres { get; set; } = 0.025;
 
-        /// <summary>What the run measures up from.</summary>
-        public string Surfaces { get; set; } = Detected;
+        /// <summary>
+        /// What the run measures up from: a saved set, the selection, or everything loaded.
+        ///
+        /// A source, never a mode. Detection refines what is named here rather than replacing it,
+        /// so naming "Level 03 Floors" and leaving <see cref="DetectSurfaces"/> on sweeps that set
+        /// for walkable surfaces instead of sweeping the federation and discarding the set.
+        /// </summary>
+        public string Surfaces { get; set; } = Loaded;
+
+        /// <summary>
+        /// Whether the walkable surfaces are found in the triangles of the source.
+        ///
+        /// On by default, which is the answer for a source that is not already a floors set: taking
+        /// every element in "Everything loaded" as a surface to measure from is not a headroom
+        /// check. Turn it off when the source names the slabs, so their whole top faces are used.
+        /// </summary>
+        public bool DetectSurfaces { get; set; } = true;
 
         /// <summary>What the run measures up to.</summary>
         public string Targets { get; set; } = NotTheSurfaces;
@@ -109,9 +128,21 @@ namespace CamelWorks.Core.Checks
         /// Categories kept off the obstruction side.
         ///
         /// Without it the first federation run reports every sprinkler head, light fitting and
-        /// smoke detector, and the first act on the board is deleting several thousand rows.
+        /// smoke detector, and the first act on the board is deleting several thousand rows. So the
+        /// three that cost the most start in the list, matched as substrings of the category name
+        /// so they hold across authoring tools, and the set-up screen shows them rather than
+        /// applying them out of sight.
         /// </summary>
-        public IList<string> Ignore { get; } = new List<string>();
+        public IList<string> Ignore { get; } = new List<string>(Unreported);
+
+        /// <summary>
+        /// The categories a new run leaves off the obstruction side.
+        ///
+        /// Substrings, not exact names: "Lighting" catches "Lighting Fixtures" and "Lighting
+        /// Devices", "Sprinkler" catches "Sprinklers", "Fire Alarm" catches the detector families.
+        /// </summary>
+        public static IReadOnlyList<string> Unreported { get; } =
+            new[] { "Sprinkler", "Lighting", "Fire Alarm" };
 
         /// <summary>
         /// Whether each surface reports its worst breach only.
@@ -138,6 +169,15 @@ namespace CamelWorks.Core.Checks
         public double MinPatchAreaSquareMetres { get; set; } = 0.05;
 
         /// <summary>
+        /// How far a detected surface may tilt from horizontal and still be walked on, in degrees.
+        ///
+        /// 10 degrees covers a floor laid to falls and a level-access ramp. It was fixed at that
+        /// and never shown, so a car-park ramp at 1:5 (11.3 degrees) was not a walkable surface and
+        /// the envelope over the steepest ramp in the building went unchecked with no note.
+        /// </summary>
+        public double MaxSlopeDegrees { get; set; } = 10.0;
+
+        /// <summary>
         /// The detected surfaces somebody dropped, by patch id.
         ///
         /// In the run's own settings rather than in memory: a patch id is derived from where the
@@ -146,9 +186,8 @@ namespace CamelWorks.Core.Checks
         /// </summary>
         public ISet<string> Excluded { get; } = new HashSet<string>(StringComparer.Ordinal);
 
-        /// <summary>True when the surfaces are found in the triangles rather than named.</summary>
-        public bool IsDetecting =>
-            string.Equals(Surfaces, Detected, StringComparison.OrdinalIgnoreCase);
+        /// <summary>True when the surfaces are found in the triangles rather than taken whole.</summary>
+        public bool IsDetecting => DetectSurfaces;
 
         /// <summary>
         /// What this run covers, as the rail's one sentence.
@@ -157,7 +196,8 @@ namespace CamelWorks.Core.Checks
         /// the sentence and prints it.
         /// </summary>
         public string Between =>
-            Said(Surfaces) + " under " + Said(Targets)
+            (DetectSurfaces ? "walkable surfaces in " + Said(Surfaces) : Said(Surfaces))
+            + " under " + Said(Targets)
             + (Levels.Count == 0 ? string.Empty : ", " + string.Join(", ", Levels))
             + (string.IsNullOrWhiteSpace(Zone) ? string.Empty : ", in " + Zone);
 
@@ -182,6 +222,7 @@ namespace CamelWorks.Core.Checks
             settings.MinimumMetres = Number(spec, MinimumKey, settings.MinimumMetres);
             settings.ToleranceMetres = Number(spec, ToleranceKey, settings.ToleranceMetres);
             settings.Surfaces = Word(spec, SurfacesKey) ?? settings.Surfaces;
+            settings.DetectSurfaces = Yes(spec, DetectKey, settings.DetectSurfaces);
             settings.Targets = Word(spec, TargetsKey) ?? settings.Targets;
             settings.Zone = Word(spec, ZoneKey);
             settings.WorstPerPatch = Yes(spec, WorstKey, settings.WorstPerPatch);
@@ -189,8 +230,14 @@ namespace CamelWorks.Core.Checks
             settings.PreferFloorCategories = Yes(spec, PreferFloorsKey, settings.PreferFloorCategories);
             settings.MinPatchAreaSquareMetres =
                 Number(spec, MinAreaKey, settings.MinPatchAreaSquareMetres);
+            settings.MaxSlopeDegrees = Number(spec, MaxSlopeKey, settings.MaxSlopeDegrees);
 
             foreach (var level in Many(spec, LevelsKey)) settings.Levels.Add(level);
+
+            // The ignore list starts populated, so a saved run has to be able to say "none": the
+            // key being present at all means this run's list is what was saved, empty included.
+            if (spec.Settings.ContainsKey(IgnoreKey)) settings.Ignore.Clear();
+
             foreach (var category in Many(spec, IgnoreKey)) settings.Ignore.Add(category);
             foreach (var patch in Many(spec, ExcludedKey)) settings.Excluded.Add(patch);
 
@@ -208,6 +255,7 @@ namespace CamelWorks.Core.Checks
             spec.Settings[MinimumKey] = Written(MinimumMetres);
             spec.Settings[ToleranceKey] = Written(ToleranceMetres);
             spec.Settings[SurfacesKey] = Surfaces;
+            spec.Settings[DetectKey] = DetectSurfaces ? "true" : "false";
             spec.Settings[TargetsKey] = Targets;
             spec.Settings[LevelsKey] = string.Join(";", Levels);
             spec.Settings[ZoneKey] = Zone;
@@ -216,6 +264,7 @@ namespace CamelWorks.Core.Checks
             spec.Settings[StairsKey] = ExcludeStairs ? "true" : "false";
             spec.Settings[PreferFloorsKey] = PreferFloorCategories ? "true" : "false";
             spec.Settings[MinAreaKey] = Written(MinPatchAreaSquareMetres);
+            spec.Settings[MaxSlopeKey] = Written(MaxSlopeDegrees);
             spec.Settings[ExcludedKey] = string.Join(";", Excluded.OrderBy(id => id, StringComparer.Ordinal));
         }
 

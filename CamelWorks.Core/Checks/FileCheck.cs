@@ -77,11 +77,20 @@ namespace CamelWorks.Core.Checks
         /// <inheritdoc />
         public string ResultWord => "clash";
 
+        /// <summary>The same symbol the document leg draws. The same check; the file is where it read from.</summary>
+        public string Symbol => CheckSymbols.Clash;
+
         /// <inheritdoc />
         public bool IsAvailable => _read.IsUsable;
 
         /// <inheritdoc />
         public string? Unavailable => IsAvailable ? null : _read.Explain();
+
+        /// <summary>
+        /// Nothing to report. This check reads a file that was already written, so there is no
+        /// press here that can do part of what it was asked.
+        /// </summary>
+        public IReadOnlyList<string> Notes => Array.Empty<string>();
 
         /// <summary>
         /// The same three columns the document leg declares.

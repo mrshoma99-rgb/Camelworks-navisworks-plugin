@@ -64,9 +64,21 @@ namespace CamelWorks.UI.Shell
             ["matrix"] = (new[] { "clash matrix", "discipline grid", "test matrix" },
                 new[] { "they sent me their clash matrix", "forty tests by hand" }),
 
-            ["checks"] = (new[] { "headroom", "ceiling height", "soffit", "head height", "clear height" },
+            ["create"] = (new[] { "new test", "create tests", "checks", "headroom",
+                                  "ceiling height", "soffit", "head height", "clear height",
+                                  "clearance", "fall hazard", "fall", "opening",
+                                  "hole in the slab", "handrail", "guardrail", "edge protection",
+                                  "void" },
                 new[] { "not enough headroom", "the ceiling is too low under that duct",
-                        "will a person fit under that" }),
+                        "will a person fit under that", "is that edge railed",
+                        "where are the holes in this floor" }),
+
+            ["clashsettings"] = (new[] { "levels", "storeys", "zones", "team", "roster",
+                                         "disciplines", "naming", "patterns", "renumber",
+                                         "units", "grouping distance" },
+                new[] { "which floor is this clash on", "who can I assign this to",
+                        "the models are on the wrong discipline",
+                        "our tests are named differently", "set the project up once" }),
 
             ["rules"] = (new[] { "filters", "ignore", "suppress", "auto-assign", "grouping rules" },
                 new[] { "the same false positives every week", "insulation touching a wall",

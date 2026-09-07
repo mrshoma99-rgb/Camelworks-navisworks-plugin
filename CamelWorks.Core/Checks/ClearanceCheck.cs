@@ -89,11 +89,21 @@ namespace CamelWorks.Core.Checks
         /// <inheritdoc />
         public string Name => "Clearance";
 
-        /// <inheritdoc />
-        public string RunWord => "run";
+        /// <summary>
+        /// "test", the same word every kind uses.
+        ///
+        /// It was "run", which was the word this check used when it had a tab of its own. The
+        /// Create tab lists every kind in one table and cannot say two words for one column, and
+        /// the Manage board reads this back for the same objects: a coordinator set up a test on
+        /// one tab and was told how many runs there were on the next.
+        /// </summary>
+        public string RunWord => "test";
 
         /// <inheritdoc />
         public string ResultWord => "breach";
+
+        /// <summary>A measured gap between a surface and what is over it.</summary>
+        public string Symbol => CheckSymbols.Clearance;
 
         /// <summary>
         /// True whenever a document is open. The check needs geometry and not a clash engine, so a
@@ -241,13 +251,44 @@ namespace CamelWorks.Core.Checks
             {
                 ClearHeightMetres = settings.MinimumMetres,
                 MinPatchAreaSquareMetres = settings.MinPatchAreaSquareMetres,
+                MaxSlopeDegrees = settings.MaxSlopeDegrees,
                 PreferFloorCategories = settings.PreferFloorCategories,
                 ExcludeStairs = settings.ExcludeStairs,
             };
 
-            return WalkableSurfaces.Read(_document, _triangles, TraversalScope.WholeDocument,
+            // Detection refines the source rather than replacing it. Sweeping the federation and
+            // then discarding the set somebody named was the defect docs/CHECKS_PLAN.md section 3.5
+            // records: a run scoped to "Level 03 Floors" came back with 412 surfaces from the whole
+            // building, desk tops included. Where the source names nothing narrower, the zone is the
+            // next best scope; only a run that names neither sweeps everything.
+            return WalkableSurfaces.Read(_document, _triangles, Sweeping(settings),
                                          _metresPerUnit, options, diagnostics, onProgress);
         }
+
+        /// <summary>What detection sweeps: the source, else the zone, else the whole document.</summary>
+        /// <param name="settings">The run's settings.</param>
+        private static TraversalScope Sweeping(ClearanceSettings settings)
+        {
+            if (Narrows(settings.Surfaces)) return Scope(settings.Surfaces);
+
+            return string.IsNullOrWhiteSpace(settings.Zone)
+                ? TraversalScope.WholeDocument
+                : TraversalScope.Set(settings.Zone!);
+        }
+
+        /// <summary>Whether a side's choice names something narrower than the whole document.</summary>
+        /// <param name="choice">What the side is set to.</param>
+        private static bool Narrows(string choice) =>
+            !string.IsNullOrWhiteSpace(choice)
+            && !string.Equals(choice, ClearanceSettings.Loaded, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(choice, ClearanceSettings.NotTheSurfaces, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>The traversal one named source stands for.</summary>
+        /// <param name="choice">What the side is set to.</param>
+        private static TraversalScope Scope(string choice) =>
+            string.Equals(choice, ClearanceSettings.Selected, StringComparison.OrdinalIgnoreCase)
+                ? TraversalScope.CurrentSelection
+                : TraversalScope.Set(choice);
 
         /// <summary>What the last run or detection could not do. Cleared when either starts.</summary>
         public IReadOnlyList<string> Notes => _notes;
@@ -529,8 +570,13 @@ namespace CamelWorks.Core.Checks
         /// <param name="onProgress">Called with how many elements have been read.</param>
         private List<Piece>? Whole(ClearanceSettings settings, Func<int, bool>? onProgress)
         {
-            if (!NeedsWhole(settings.Surfaces) && !NeedsWhole(settings.Targets))
-                return new List<Piece>();
+            // The surface side is not read as elements when detection is on: the patches come out
+            // of the triangles, so a source of "Everything loaded" there is not a reason to walk
+            // the document.
+            var needed = (!settings.DetectSurfaces && NeedsWhole(settings.Surfaces))
+                         || NeedsWhole(settings.Targets);
+
+            if (!needed) return new List<Piece>();
 
             var pieces = new List<Piece>();
             var read = 0;
@@ -576,18 +622,13 @@ namespace CamelWorks.Core.Checks
         {
             List<Piece>? pieces;
 
-            if (string.Equals(choice, ClearanceSettings.Guessed, StringComparison.OrdinalIgnoreCase))
-                pieces = whole.Where(one => one.Walkable).ToList();
-            else if (string.Equals(choice, ClearanceSettings.Loaded, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(choice, ClearanceSettings.Loaded, StringComparison.OrdinalIgnoreCase))
                 pieces = whole.ToList();
             else if (string.Equals(choice, ClearanceSettings.NotTheSurfaces, StringComparison.OrdinalIgnoreCase))
                 pieces = whole.Where(one => exclude == null || !exclude.Contains(one.Id)).ToList();
             else
             {
-                var scope = string.Equals(choice, ClearanceSettings.Selected,
-                                          StringComparison.OrdinalIgnoreCase)
-                    ? TraversalScope.CurrentSelection
-                    : TraversalScope.Set(choice);
+                var scope = Scope(choice);
 
                 pieces = new List<Piece>();
                 var read = 0;
@@ -608,26 +649,8 @@ namespace CamelWorks.Core.Checks
         /// <summary>Whether a side's choice can only be answered by walking the whole document.</summary>
         /// <param name="choice">What the side is set to.</param>
         private static bool NeedsWhole(string choice) =>
-            string.Equals(choice, ClearanceSettings.Guessed, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(choice, ClearanceSettings.Loaded, StringComparison.OrdinalIgnoreCase)
+            string.Equals(choice, ClearanceSettings.Loaded, StringComparison.OrdinalIgnoreCase)
             || string.Equals(choice, ClearanceSettings.NotTheSurfaces, StringComparison.OrdinalIgnoreCase);
-
-        /// <summary>Whether an element reads as something people walk on.</summary>
-        /// <param name="item">The element.</param>
-        public static bool IsWalkable(IModelItem? item)
-        {
-            if (item == null) return false;
-
-            var category = item.Category ?? string.Empty;
-            var type = item.TypeName ?? string.Empty;
-
-            foreach (var word in WalkingWords)
-                if (category.IndexOf(word, StringComparison.OrdinalIgnoreCase) >= 0
-                    || type.IndexOf(word, StringComparison.OrdinalIgnoreCase) >= 0)
-                    return true;
-
-            return false;
-        }
 
         /// <summary>An element as the check sees it, or null when it carries no geometry.</summary>
         /// <param name="item">The element.</param>
@@ -646,7 +669,7 @@ namespace CamelWorks.Core.Checks
                 MinZ = bounds.MinZ * scale, MaxZ = bounds.MaxZ * scale,
             };
 
-            return new Piece(item.Key, id, item.Category, IsWalkable(item), box);
+            return new Piece(item.Key, id, item.Category, box);
         }
 
         /// <summary>A detected surface as the rest of the run sees an element.</summary>
@@ -660,7 +683,7 @@ namespace CamelWorks.Core.Checks
                 MinZ = patch.Footprint.MinZ, MaxZ = patch.TopMetres,
             };
 
-            return new Piece(patch.Source, patch.Id, patch.Level, true, box) { Level = patch.Level };
+            return new Piece(patch.Source, patch.Id, patch.Level, box) { Level = patch.Level };
         }
 
         /// <summary>Which storey a surface stands on, or null when the project declares none.</summary>
@@ -672,12 +695,11 @@ namespace CamelWorks.Core.Checks
         /// <summary>One element as both sides of the run see it.</summary>
         private sealed class Piece
         {
-            internal Piece(ElementKey key, string id, string? category, bool walkable, HeadroomElement box)
+            internal Piece(ElementKey key, string id, string? category, HeadroomElement box)
             {
                 Key = key;
                 Id = id;
                 Category = category ?? string.Empty;
-                Walkable = walkable;
                 Box = box;
             }
 
@@ -686,8 +708,6 @@ namespace CamelWorks.Core.Checks
             internal string Id { get; }
 
             internal string Category { get; }
-
-            internal bool Walkable { get; }
 
             internal HeadroomElement Box { get; }
 

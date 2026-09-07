@@ -1,627 +1,422 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using CamelWorks.Core.Checks;
 using CamelWorks.Core.Data;
-using CamelWorks.Core.Findings;
 using CamelWorks.Core.Measurement;
 using CamelWorks.Core.Project;
 
 namespace CamelWorks.UI.Views
 {
     /// <summary>
-    /// Checks: the set-up for every check whose runs this project owns.
+    /// The settings panel for one clearance test, drawn beside the list on the Create tab.
     ///
-    /// One tab with a check picker rather than a tab per check. Clearance set-up and fall-hazard
-    /// set-up are the same shape — a run list, a side picker or two and a handful of numbers.
+    /// Clearance had a tab of its own, holding a list of tests, a footer and these fields. The list
+    /// and the footer are the Create tab's, which lists every kind at once; what is left here is
+    /// the fields, which are the only part of the screen that is clearance's own.
     ///
-    /// The results are not here. A clearance breach is a place to argue about, assign and close,
-    /// which is a clash result in everything but how it was found, so it is worked on the Manage
-    /// board with the same grouping, sorting, filtering, exchange, renaming and export. This screen
-    /// says what to measure and presses Run; pressing Run goes to the board.
+    /// A clearance test is a <see cref="CheckRunSpec"/> in the project file, so every field is
+    /// editable with no document open. What needs a document — the pickers fed by the document's
+    /// sets, and surface detection — is disabled and says why.
     ///
-    /// Both inputs are model-fed: every search set and selection set the document holds, the
-    /// current selection, or everything loaded. The one guess it offers is labelled as a guess and
-    /// says which words it matches.
+    /// Results are not here. A clearance breach is a place to argue about, assign and close, so it
+    /// is worked on the Manage board with the same grouping, sorting, filtering, exchange, renaming
+    /// and export as a clash.
     /// </summary>
     public static class ClearanceViews
     {
-        /// <summary>The words the guess matches, on the element's category or type.</summary>
-        internal static IReadOnlyList<string> WalkingWords => ClearanceCheck.WalkingWords;
-
-        // Which check is being set up and which of its runs, held between visits: a federation
-        // sweep is a minute of traversal and glancing at another tab must not cost it.
-        private static string _checkKey = FindingSource.Headroom;
-
-        /// <summary>
-        /// Which run is being set up, across every check's set-up screen.
-        ///
-        /// Shared rather than one per screen because the tab holds one run at a time: the picker
-        /// swaps which check is showing, and a run id belongs to whichever check is.
-        /// </summary>
-        internal static string? Picked { get; set; }
-
-        /// <summary>
-        /// The surface, for a desk to bench.
-        ///
-        /// A frame rather than a screen, because the tab holds one check's set-up at a time and
-        /// the picker swaps it. The tab's surface is built once and kept by the app window, so a
-        /// screen swap has to happen inside it.
-        /// </summary>
-        /// <param name="seat">The seat this is running in.</param>
-        public static UIElement Check(ISeat seat)
-        {
-            var frame = new ContentControl();
-
-            Draw(frame, seat);
-
-            return frame;
-        }
-
-        /// <summary>
-        /// Put the set-up of whichever check is showing into the tab's frame.
-        ///
-        /// The one place that knows which screen belongs to which check. A check with no set-up
-        /// screen of its own falls back to the clearance screen's run list, which states that it
-        /// has none rather than drawing an empty tab.
-        /// </summary>
-        /// <param name="frame">The tab's frame, or null when there is nothing to draw into.</param>
-        /// <param name="seat">The seat this is running in.</param>
-        internal static void Draw(ContentControl? frame, ISeat seat)
-        {
-            if (frame == null) return;
-
-            frame.Content = seat.Checks.Find(_checkKey) is FallCheck
-                ? FallHazardViews.Setup(seat, frame)
-                : (UIElement)new Screen(seat, frame).Build();
-        }
-
-        /// <summary>
-        /// Set up another check's runs. Nothing on one of these screens belongs to two checks, so
-        /// the whole set-up is swapped rather than redrawn.
-        /// </summary>
-        /// <param name="frame">The tab's frame.</param>
-        /// <param name="seat">The seat this is running in.</param>
-        /// <param name="check">The check picked.</param>
-        internal static void Pick(ContentControl? frame, ISeat seat, ICheck check)
-        {
-            _checkKey = check.Key;
-            Picked = null;
-            FallHazardViews.Forget();
-
-            Draw(frame, seat);
-        }
-
         static ClearanceViews() => Host.WhenDocumentChanges(Forget);
 
         /// <summary>
-        /// Forget what was detected, so the next visit starts clean. Surfaces detected in the
-        /// federation that was open are not surfaces in the one that is. The runs themselves are in
-        /// the project file and survive, which is the point of saving them.
+        /// Forget what was detected. Surfaces detected in the federation that was open are not
+        /// surfaces in the one that is. The tests themselves are in the project file and survive.
         /// </summary>
-        internal static void Forget()
-        {
-            ClearanceSurfaces.Forget();
+        internal static void Forget() => ClearanceSurfaces.Forget();
 
-            Picked = null;
-        }
+        /// <summary>What the detection tick says, caveat included.</summary>
+        internal static string DetectSaid => "Find the walkable surfaces in it";
 
         /// <summary>
-        /// The option's whole sentence, caveat included. An option that says only "detected
-        /// walkable surfaces" reads as though the software found the floors.
+        /// What detection will keep, said in the seat's units.
+        ///
+        /// The caveat belongs beside the tick. A control that says only "find the walkable
+        /// surfaces" reads as though the software can tell a floor from a desk top.
         /// </summary>
         /// <param name="units">The seat's units, so the area reads in them.</param>
         /// <param name="minimumAreaSquareMetres">The smallest patch detection will report.</param>
-        internal static string DetectedSaid(Measure units, double minimumAreaSquareMetres) =>
-            ClearanceSettings.Detected + " — every up-facing surface over " + units.Area(minimumAreaSquareMetres)
-            + ", which includes desk tops and duct tops.";
+        /// <param name="maxSlopeDegrees">How far a surface may tilt and still be walked on.</param>
+        internal static string DetectHint(Measure units, double minimumAreaSquareMetres,
+                                          double maxSlopeDegrees) =>
+            "Every up-facing surface over " + units.Area(minimumAreaSquareMetres) + " tilted no more "
+            + "than " + Whole(maxSlopeDegrees) + "°, which includes desk tops and duct tops. Off, "
+            + "the source's elements are the surfaces.";
+
+        /// <summary>A degree count without a trailing zero.</summary>
+        /// <param name="degrees">The angle.</param>
+        private static string Whole(double degrees) =>
+            degrees.ToString("0.#", System.Globalization.CultureInfo.CurrentCulture);
+
+        /// <summary>
+        /// One clearance test's settings.
+        /// </summary>
+        /// <param name="seat">The seat this is running in.</param>
+        /// <param name="check">The clearance check that holds the test.</param>
+        /// <param name="run">The test being set up. It must already be saved.</param>
+        /// <param name="onChanged">Called after each edit, so the list beside this redraws.</param>
+        public static UIElement Settings(ISeat seat, ClearanceCheck check, CheckRunSpec run,
+                                         Action onChanged)
+        {
+            if (check == null) throw new ArgumentNullException(nameof(check));
+            if (run == null) throw new ArgumentNullException(nameof(run));
+
+            return new Fields(seat, check, run, onChanged).Build();
+        }
 
         // -----------------------------------------------------------------------------------
 
-        private sealed class Screen
+        private sealed class Fields
         {
             private readonly ISeat _seat;
-            private readonly ContentControl? _frame;
+            private readonly ClearanceCheck _check;
+            private readonly CheckRunSpec _run;
+            private readonly Action _onChanged;
 
             private readonly StackPanel _log = Ui.Stack();
-            private readonly StackPanel _runs = Ui.Stack();
-            private readonly StackPanel _picker = Ui.Stack();
 
-            internal Screen(ISeat seat, ContentControl? frame)
+            internal Fields(ISeat seat, ClearanceCheck check, CheckRunSpec run, Action onChanged)
             {
                 _seat = seat;
-                _frame = frame;
+                _check = check;
+                _run = run;
+                _onChanged = onChanged;
             }
 
             private Measure Units => _seat.Profile.Units;
 
-            /// <summary>Every check with set-up of its own, in the order the picker lists them.</summary>
-            private IReadOnlyList<ICheck> Checks => _seat.Checks.All;
-
-            /// <summary>The check being set up, or null when this session registered none.</summary>
-            private ICheck? Current =>
-                _seat.Checks.Find(_checkKey) ?? Checks.FirstOrDefault();
-
-            /// <summary>The clearance check, when that is the one showing.</summary>
-            private ClearanceCheck? Clearance => Current as ClearanceCheck;
-
-            /// <summary>The run being set up, or null when none is picked.</summary>
-            private CheckRunSpec? Run() => Clearance?.Spec(Picked);
-
-            /// <summary>The run's settings, or the defaults when there is no run.</summary>
-            private ClearanceSettings Settings() => ClearanceSettings.From(Run());
+            /// <summary>Why the document cannot be read here, or null when it can.</summary>
+            private string? Blocked =>
+                _check.IsAvailable ? null : _check.Unavailable ?? "This seat cannot offer it.";
 
             internal UIElement Build()
             {
-                var run = Ui.Runner("Run", _log, RunNow);
+                var settings = ClearanceSettings.From(_run);
+                var sets = Sets();
+                var blocked = Blocked;
+                var storeys = Storeys();
 
-                RedrawPicker();
-                RedrawRuns();
+                // A source, never a mode: detection refines what is named here. The three
+                // whole-model answers plus the document's own sets, and nothing that guesses.
+                var from = new List<string> { ClearanceSettings.Loaded, ClearanceSettings.Selected };
 
-                return Bench.Surface(null, Foot(run),
-                                     Ui.Stack(_picker, _log, _runs));
-            }
+                from.AddRange(sets);
 
-            /// <summary>The action row: run, then the windows the set-up lives in.</summary>
-            /// <param name="run">The Run button.</param>
-            private UIElement Foot(UIElement run)
-            {
-                var row = new WrapPanel();
+                var to = new List<string> { ClearanceSettings.NotTheSurfaces,
+                                            ClearanceSettings.Selected, ClearanceSettings.Loaded };
 
-                row.Children.Add(run);
-                row.Children.Add(new Border { Width = 14 });
+                to.AddRange(sets);
 
-                row.Children.Add(Ui.Icon(Glyphs.Ruler, "What to measure", () => Configure("measure")));
-                row.Children.Add(Ui.Icon(Glyphs.Filter, "Scope and reductions", () => Configure("scope")));
-                row.Children.Add(Ui.Icon(Glyphs.Layers, "Detected walkable surfaces",
-                                         () => Configure("detected")));
+                if (!from.Contains(settings.Surfaces, StringComparer.OrdinalIgnoreCase))
+                    from.Add(settings.Surfaces);
 
-                return row;
-            }
+                if (!to.Contains(settings.Targets, StringComparer.OrdinalIgnoreCase))
+                    to.Add(settings.Targets);
 
-            /// <summary>Which check's runs are being set up, above the list of them.</summary>
-            private void RedrawPicker()
-            {
-                _picker.Children.Clear();
-
-                var row = new WrapPanel();
-
-                row.Children.Add(CheckPicker.Draw(Checks, Current, _seat.Findings.Findings, Pick));
-                row.Children.Add(new Border { Width = 10 });
-                row.Children.Add(Ui.Icon(Glyphs.Add, "A new run", NewRun));
-
-                _picker.Children.Add(Ui.Loose(row));
-            }
-
-            /// <summary>Set up another check's runs, which is another screen in the same frame.</summary>
-            /// <param name="check">The check picked.</param>
-            private void Pick(ICheck check) =>
-                Ui.Safely(() => ClearanceViews.Pick(_frame, _seat, check));
-
-            /// <summary>
-            /// The runs this check has saved, with what each covers and when it last ran. A run
-            /// saved and never run and a run that found nothing are opposite facts and different
-            /// lines.
-            /// </summary>
-            private void RedrawRuns()
-            {
-                _runs.Children.Clear();
-
-                var check = Current;
-
-                if (check == null)
-                {
-                    _runs.Children.Add(Ui.Empty("This session registered no checks.",
-                        "Nothing here has set-up of its own, which is a fault in this build."));
-
-                    return;
-                }
-
-                if (!check.IsAvailable)
-                {
-                    _runs.Children.Add(Ui.Info(check.Unavailable ?? "This seat cannot offer it."));
-                    return;
-                }
-
-                var saved = check.Runs();
-
-                if (saved.Count == 0)
-                {
-                    _runs.Children.Add(Bench.Ready(
-                        "Measures the clear height over every surface you name and lists every "
-                        + "place the minimum is not there.",
-                        "A duct 1.9 m over a corridor clashes with nothing — this is the check "
-                        + "that finds it, and what it finds is worked on the Manage tab beside "
-                        + "the clashes."));
-
-                    _runs.Children.Add(Ui.Empty("No " + check.RunWord + "s yet.",
-                        "A " + check.RunWord + " is a name, a clear height and what to measure it "
-                        + "over. It is saved in the project, so re-running it later is one press.",
-                        "New " + check.RunWord, NewRun));
-
-                    return;
-                }
-
-                var rows = saved.Select(one => new TableRow(one,
-                    one.Name,
-                    one.Folder ?? "—",
-                    one.Between,
-                    one.Threshold ?? "—",
-                    Ui.Count(one.ResultCount, check.ResultWord),
-                    When(one))
-                {
-                    Tone = string.Equals(one.Id, Picked, StringComparison.Ordinal)
-                        ? Tone.Good
-                        : Tone.Plain,
-                }).ToList();
-
-                var table = Ui.Table(rows,
-                                     ("Run", 0), ("Folder", 110), ("What it covers", 260),
-                                     ("Threshold", 120), ("Found", 110), ("Last run", 130));
-
-                table.SelectionChanged += (s, e) =>
-                {
-                    if (!(table.SelectedItem is TableRow row) || !(row.Source is CheckRun one)) return;
-
-                    Picked = one.Id;
-                };
-
-                _runs.Children.Add(table);
-
-                _runs.Children.Add(Ui.Picking(table,
-                    new Ui.OnPicked("Run these {n}", (picked, said) => RunPicked(picked, said)),
-                    new Ui.OnPicked("Rename this one...", (picked, said) => Rename(picked, said)),
-                    new Ui.OnPicked("Delete these {n}", (picked, said) => Delete(picked, said))));
-
-                var waiting = saved.Count(one => one.LastRunTicks == 0);
-
-                if (waiting > 0)
-                    _runs.Children.Add(Ui.Small(Ui.Count(waiting, check.RunWord)
-                        + " saved and not yet run."));
-            }
-
-            /// <summary>When a run last ran, or that it never has.</summary>
-            /// <param name="run">The run.</param>
-            private static string When(CheckRun run) =>
-                run.LastRunTicks == 0
-                    ? "not yet run"
-                    : new DateTime(run.LastRunTicks, DateTimeKind.Utc).ToLocalTime()
-                        .ToString("d MMM HH:mm", CultureInfo.CurrentCulture);
-
-            /// <summary>Save a new run and open the set-up on it.</summary>
-            private void NewRun()
-            {
-                var check = Clearance;
-
-                if (check == null) return;
-
-                var made = new CheckRunSpec(check.Key, Guid.NewGuid().ToString("N"),
-                                            "Clearance " + (check.Runs().Count + 1)
-                                                .ToString(CultureInfo.InvariantCulture));
-
-                new ClearanceSettings().Write(made);
-
-                var problem = check.Put(made);
-
-                Picked = made.Id;
-
-                RedrawRuns();
-
-                if (problem != null) _log.Children.Add(Ui.Problem(problem));
-
-                Configure("measure");
-            }
-
-            /// <summary>The runs a picking bar handed over.</summary>
-            /// <param name="picked">What was picked.</param>
-            private static List<CheckRun> Chosen(IReadOnlyList<object> picked) =>
-                picked.OfType<CheckRun>().ToList();
-
-            /// <summary>
-            /// Run these runs, one after another, and go to the board — which is where the results
-            /// are, so a run that finished lands on them rather than on a screen saying so.
-            /// </summary>
-            /// <param name="runIds">Which runs.</param>
-            /// <param name="onProgress">Called with how far it has got; returning false stops it.</param>
-            /// <param name="say">Where the outcome goes.</param>
-            private void Ran(IReadOnlyList<string> runIds, Func<int, bool>? onProgress, Panel say)
-            {
-                var check = Current;
-
-                if (check?.Runner == null || runIds.Count == 0)
-                {
-                    say.Children.Add(Ui.Problem("Pick a run first, or make one."));
-                    return;
-                }
-
-                if (!check.Runner.CanRun)
-                {
-                    say.Children.Add(Ui.Problem(check.Runner.CannotRun ?? "This run cannot run here."));
-                    return;
-                }
-
-                foreach (var id in runIds)
-                    if (!check.Runner.Run(id, onProgress)) break;
-
-                foreach (var note in Clearance?.Notes ?? Array.Empty<string>())
-                    say.Children.Add(Ui.Note(note));
-
-                RedrawRuns();
-
-                _seat.Record(ActivityKind.Regroup,
-                             "ran " + Ui.Count(runIds.Count, check.RunWord) + " of "
-                             + check.Name.ToLowerInvariant());
-
-                Onward(runIds);
-            }
-
-            /// <summary>Run whatever the run list has picked.</summary>
-            /// <param name="picked">The runs picked.</param>
-            /// <param name="said">Where the bar says what it did.</param>
-            private void RunPicked(IReadOnlyList<object> picked, Panel said)
-            {
-                var runs = Chosen(picked);
-
-                if (runs.Count > 0) Picked = runs[0].Id;
-
-                Ran(runs.Select(one => one.Id).ToList(), null, said);
+                return Ui.Stack(
+                    _log,
+                    // No heading over the name and the folder: the tab is called Create and the
+                    // list beside this has a Test column.
+                    Bench.Group(string.Empty,
+                        Ui.Across(
+                            Sized(Ui.Field("Name", Ui.Settled(_run.Name, string.Empty,
+                                name => Keep(_ => _run.Name = name), 190)), 200),
+                            Sized(Ui.Field("Folder", Ui.Settled(_run.Folder ?? string.Empty,
+                                string.Empty,
+                                folder => Keep(_ => _run.Folder =
+                                    string.IsNullOrWhiteSpace(folder) ? null : folder),
+                                160)), 170))),
+                    // Scope first. It is the decision that makes the answer usable, and the panel
+                    // used to ask it third, under two numbers and two sides.
+                    Bench.Group("Where",
+                        Sized(Ui.Field("Zone",
+                                 Reading(Ui.Choice(Zones(sets, settings.Zone),
+                                     string.IsNullOrWhiteSpace(settings.Zone)
+                                         ? WholeModel : settings.Zone!,
+                                     pick => Keep(one => one.Zone =
+                                         string.Equals(pick, WholeModel, StringComparison.Ordinal)
+                                             ? null : pick), 230)),
+                                 "Narrows what is measured. Nothing named measures the whole "
+                                 + "federation."),
+                              380),
+                        Chosen("Levels", settings.Levels, storeys, EveryLevel,
+                               "Narrows what is reported, by the storey a surface stands on.",
+                               (one, add) => one.Levels.Add(add),
+                               (one, drop) => one.Levels.Remove(drop))),
+                    Bench.Group("What to measure",
+                        Sized(Ui.Field("Measure up from",
+                                 Reading(Ui.Choice(from, settings.Surfaces,
+                                     pick => Keep(one => one.Surfaces = pick), 380))),
+                              380),
+                        Detecting(settings),
+                        Sized(Ui.Field("Measure up to",
+                                 Reading(Ui.Choice(to, settings.Targets,
+                                                   pick => Keep(one => one.Targets = pick), 230))),
+                              380),
+                        // With the side it modifies. What counts as an obstruction is one decision,
+                        // and it used to be split across two groups with the scope between them.
+                        Chosen("Categories not worth reporting", settings.Ignore, Categories(),
+                               NoCategories,
+                               "Matched anywhere in the category name, so \"Duct\" also leaves out "
+                               + "\"Duct Fittings\".",
+                               (one, add) => one.Ignore.Add(add),
+                               (one, drop) => one.Ignore.Remove(drop))),
+                    Bench.Group("How much clearance",
+                        Ui.Across(
+                            Sized(Number("Minimum clear height", settings.MinimumMetres,
+                                         metres => metres > 0,
+                                         (one, metres) => one.MinimumMetres = metres), 190),
+                            Sized(Number("Ignore shortfalls under", settings.ToleranceMetres,
+                                         metres => metres >= 0,
+                                         (one, metres) => one.ToleranceMetres = metres), 190)),
+                        settings.ToleranceMetres > 0
+                            ? null
+                            : Ui.Note("Every shortfall is reported, however small.")),
+                    Bench.Group("What to report",
+                        Ui.Check("One row per surface — its worst obstruction only",
+                                 settings.WorstPerPatch,
+                                 on => Keep(one => one.WorstPerPatch = on))),
+                    Notices(blocked, storeys.Count, sets.Count),
+                    Ui.Link("How clearance is measured", Explain));
             }
 
             /// <summary>
-            /// Hand off to the board: the check picked, those runs selected. The same pattern the
-            /// Exchange tab is handed its tests by.
+            /// The detection tick and, when it is on, the way into what it found.
+            ///
+            /// A tick over the source rather than an entry in the source list. Detection refines
+            /// what the source names; as a list entry it replaced it, so a run scoped to a floors
+            /// set swept the whole federation and threw the set away.
             /// </summary>
-            /// <param name="runIds">The runs to select.</param>
-            private void Onward(IReadOnlyList<string> runIds)
+            /// <param name="settings">The run's settings as they stand.</param>
+            private UIElement Detecting(ClearanceSettings settings)
             {
-                var check = Current;
+                var blocked = Blocked;
 
-                if (check == null) return;
+                // Never greyed. It is a setting on the run, editable with no document open like
+                // every other field on this panel; what needs a document is looking at what
+                // detection found, and that is the link below.
+                var tick = Ui.Check(DetectSaid, settings.DetectSurfaces,
+                                    on => Keep(one => one.DetectSurfaces = on));
 
-                ClashManageViews.Asked = new ClashManageViews.Request(check.Key, runIds);
+                if (!settings.DetectSurfaces)
+                    return Ui.Stack(tick, Ui.Small(DetectHint(Units, settings.MinPatchAreaSquareMetres,
+                                                              settings.MaxSlopeDegrees)));
 
-                Ui.Told(Shell.AppWindow.Show("clash", "manage"));
+                var link = Ui.Link("Review what detection found, and how it looks", () =>
+                    Ui.Configure("Walkable surfaces", () => Ui.Safely(_onChanged),
+                                 new Ui.Page("Walkable surfaces",
+                                             () => ClearanceSurfaces.Page(_check, Units, _run.Id, Keep))));
+
+                link.IsEnabled = blocked == null;
+
+                if (blocked != null) link.ToolTip = blocked;
+
+                return Ui.Stack(tick,
+                                Ui.Small(DetectHint(Units, settings.MinPatchAreaSquareMetres,
+                                                    settings.MaxSlopeDegrees)),
+                                link);
             }
 
-            /// <summary>Rename one run.</summary>
-            /// <param name="picked">The runs picked.</param>
-            /// <param name="said">Where the bar says what it did.</param>
-            private void Rename(IReadOnlyList<object> picked, Panel said)
+            /// <summary>
+            /// A list-valued setting: what is chosen, as chips that come off, and one picker to add.
+            ///
+            /// The record has held lists here since it was written and the panel wrote one of them,
+            /// so a 2.4 m minimum across levels 2 to 4 excluding three categories was three tests.
+            /// </summary>
+            /// <param name="label">What the list is.</param>
+            /// <param name="chosen">What is in it now.</param>
+            /// <param name="offered">Everything that could go in it.</param>
+            /// <param name="empty">What the picker reads when the list is empty.</param>
+            /// <param name="hint">One line under the picker.</param>
+            /// <param name="add">Puts one value into the settings.</param>
+            /// <param name="drop">Takes one value out.</param>
+            private UIElement Chosen(string label, IList<string> chosen, IReadOnlyList<string> offered,
+                                     string empty, string hint,
+                                     Action<ClearanceSettings, string> add,
+                                     Action<ClearanceSettings, string> drop)
             {
-                var runs = Chosen(picked);
+                var left = offered.Where(one => !chosen.Contains(one, StringComparer.OrdinalIgnoreCase))
+                                  .ToList();
 
-                if (runs.Count != 1)
-                {
-                    said.Children.Add(Ui.Note("Pick one run to rename."));
-                    return;
-                }
+                var picker = Ui.Choice(new[] { chosen.Count == 0 ? empty : Add }.Concat(left).ToList(),
+                                       chosen.Count == 0 ? empty : Add,
+                                       pick =>
+                                       {
+                                           if (string.Equals(pick, empty, StringComparison.Ordinal)
+                                               || string.Equals(pick, Add, StringComparison.Ordinal))
+                                               return;
 
-                var one = runs[0];
+                                           Keep(one => add(one, pick));
+                                       }, 230);
 
-                Parts.Ask(said, "Call it", one.Name, "Rename", name =>
-                {
-                    if (Current?.Naming?.Rename(one.Id, name) != true) return;
+                // Picker, then what is chosen, then the line that says what the list does. The chips
+                // are the answer and belong next to the control that adds to it.
+                var stack = Ui.Stack(Ui.Field(label, Reading(picker)));
 
-                    RedrawRuns();
+                if (chosen.Count > 0)
+                    stack.Children.Add(Ui.Across(chosen
+                        .Select(one => (UIElement)Parts.FilterChip(string.Empty, one,
+                                                                   () => Keep(two => drop(two, one))))
+                        .ToArray()));
 
-                    said.Children.Add(Ui.Done("Renamed. Its findings keep their decisions: the run's "
-                        + "id is what they are keyed on, not its name."));
-                });
+                stack.Children.Add(Ui.Small(hint));
+
+                return Sized(stack, 380);
             }
 
-            /// <summary>Delete runs, and the findings that name them.</summary>
-            /// <param name="picked">The runs picked.</param>
-            /// <param name="said">Where the bar says what it did.</param>
-            private void Delete(IReadOnlyList<object> picked, Panel said)
+            /// <summary>What the level picker reads when no level narrows the run.</summary>
+            private const string EveryLevel = "Every level";
+
+            /// <summary>What the category picker reads when nothing is left out.</summary>
+            private const string NoCategories = "Everything is reported";
+
+            /// <summary>What the zone picker reads when the run is not confined to a set.</summary>
+            private const string WholeModel = "The whole model";
+
+            /// <summary>What a list picker reads once it holds something.</summary>
+            private const string Add = "Add another";
+
+            /// <summary>
+            /// One notice region for everything this panel's surroundings are missing.
+            ///
+            /// One banner per missing thing stacked: with no document open the panel drew a banner
+            /// saying so, a second saying the project declares no storeys and a third saying the
+            /// document holds no sets, all of which are the same fact said three times.
+            ///
+            /// The seat's own reason is not repeated here. It is on the footer beside the greyed
+            /// Run, which is where the reader is when it matters, and on each control it disables.
+            /// </summary>
+            /// <param name="blocked">Why the document cannot be read, or null.</param>
+            /// <param name="storeys">How many storeys the project declares.</param>
+            /// <param name="sets">How many saved sets the document holds.</param>
+            private static UIElement? Notices(string? blocked, int storeys, int sets)
             {
-                var runs = Chosen(picked);
+                if (blocked != null) return null;
 
-                if (runs.Count == 0) return;
+                var said = new List<string>();
 
-                var found = runs.Sum(one => one.ResultCount);
+                if (storeys == 0)
+                    said.Add("This project declares no storeys yet. Levels & Zones works them out "
+                             + "from the geometry and they appear in Level.");
 
-                Parts.Sure(said, "Delete " + Ui.Count(runs.Count, "run") + " and "
-                           + Ui.Count(found, "finding") + "?", "Delete", () =>
-                {
-                    Current?.Runner?.Delete(runs.Select(one => one.Id).ToList());
+                if (sets == 0)
+                    said.Add("This document holds no saved sets yet. Build one in Set Builder and "
+                             + "it appears in the zone and the two surface lists.");
 
-                    if (runs.Any(one => string.Equals(one.Id, Picked, StringComparison.Ordinal)))
-                        Picked = null;
-
-                    RedrawRuns();
-
-                    said.Children.Add(Ui.Done(Ui.Count(runs.Count, "run") + " deleted."));
-                });
+                return said.Count == 0 ? null : Ui.Note(string.Join(Environment.NewLine, said));
             }
 
-            /// <summary>Run the picked run from the action row.</summary>
-            /// <param name="job">The job, for progress and a Stop.</param>
-            private void RunNow(Job job) =>
-                Ran(Picked == null ? Array.Empty<string>() : new[] { Picked },
-                    read => job.Step(read, "elements read"), _log);
+            /// <summary>
+            /// The reference matter, behind one link rather than standing under the fields.
+            ///
+            /// Every sentence here answers "why would I change this", which is a question asked
+            /// once. Standing text answers it on every visit and pushes the fields off the panel.
+            /// </summary>
+            private void Explain() =>
+                Ui.Configure("How clearance is measured", null, new Ui.Page(
+                    "How clearance is measured",
+                    () => Ui.Stack(
+                        Bench.Group("The two heights",
+                            Ui.Small("The minimum clear height is what the design requires. "
+                                     + "\"Ignore shortfalls under\" is how far below it earns a "
+                                     + "row: a 2.100 m corridor measured at 2.098 m is a survey "
+                                     + "difference and the same corridor at 1.850 m is a "
+                                     + "coordination issue.")),
+                        Bench.Group("The two sides",
+                            Ui.Small("Apart from the fixed entries, both lists are this model's "
+                                     + "own search sets and selection sets."),
+                            Ui.Small("Detection reads the model's triangles. It cannot tell a "
+                                     + "floor from a desk top or a duct top, which is why what it "
+                                     + "found can be reviewed and dropped. It refines the source "
+                                     + "rather than replacing it: naming a floors set and leaving "
+                                     + "the tick on sweeps that set, not the federation.")),
+                        Bench.Group("Scope",
+                            Ui.Small("Without a scope the first federation run returns every "
+                                     + "soffit in the building. A zone narrows what is measured; "
+                                     + "levels narrow what is reported. Both take more than one "
+                                     + "value."),
+                            Ui.Small("An ignored category is matched anywhere in the category "
+                                     + "name, so \"Duct\" also leaves out \"Duct Fittings\" and "
+                                     + "\"Duct Insulation\". Sprinklers, lighting and fire alarm "
+                                     + "devices start in the list because every one of them is "
+                                     + "under the minimum somewhere.")),
+                        Bench.Group("What to report",
+                            Ui.Small("A slab under a plant room has a thousand things above it "
+                                     + "and one of them is the lowest. Turn the one-row setting "
+                                     + "off when the answer wanted is every obstruction rather "
+                                     + "than the one that has to move.")))));
 
-            /// <summary>What one symbol on the action row is for, in a window of its own.</summary>
-            /// <param name="section">Which section the symbol names.</param>
-            private void Configure(string section)
+            /// <summary>A short number field, with its unit in the label.</summary>
+            /// <param name="label">What the number is, without its unit.</param>
+            /// <param name="value">What it is now, in metres.</param>
+            /// <param name="allows">Whether a value read off the box may be written.</param>
+            /// <param name="write">Puts an accepted value onto the settings.</param>
+            private Panel Number(string label, double value, Func<double, bool> allows,
+                                 Action<ClearanceSettings, double> write) =>
+                Ui.Field(label + " (" + Units.LengthUnit + ")",
+                         Ui.Settled(Units.Bare(value), string.Empty, text => Keep(one =>
+                         {
+                             if (Units.TryRead(text, out var metres) && allows(metres))
+                                 write(one, metres);
+                         }), 90));
+
+            /// <summary>A field capped to a readable width, so short fields sit two to a row.</summary>
+            /// <param name="field">The field.</param>
+            /// <param name="width">How wide it may be.</param>
+            private static UIElement Sized(FrameworkElement field, double width)
             {
-                Ui.Page page;
+                field.Width = width;
 
-                switch (section)
-                {
-                    case "scope": page = new Ui.Page("Scope and reductions", ScopePage); break;
-                    case "detected": page = new Ui.Page(ClearanceSettings.Detected, Surfaces); break;
-                    default: page = new Ui.Page("What to measure", MeasurePage); break;
-                }
+                // Left, not the default stretch. A stretched element given a fixed width is
+                // centred in what is left over, so Ignore category started under Zone with an
+                // empty cell to its left.
+                field.HorizontalAlignment = HorizontalAlignment.Left;
 
-                Ui.Configure(page.Name, () => Ui.Safely(RedrawRuns), page);
+                return field;
             }
 
-            /// <summary>Write the settings back onto the run and into the project file.</summary>
+            /// <summary>Write the settings back onto the test and into the project file.</summary>
             /// <param name="change">What to change.</param>
             private void Keep(Action<ClearanceSettings> change)
             {
-                var spec = Run();
-                var check = Clearance;
-
-                if (spec == null || check == null) return;
-
-                var settings = ClearanceSettings.From(spec);
+                var settings = ClearanceSettings.From(_run);
 
                 change(settings);
-                settings.Write(spec);
+                settings.Write(_run);
 
-                var problem = check.Put(spec);
+                var problem = _check.Put(_run);
 
                 if (problem != null) _log.Children.Add(Ui.Problem(problem));
+
+                _onChanged();
             }
 
-            /// <summary>What a set-up page says when there is no run to set up.</summary>
-            /// <param name="title">The page's own heading.</param>
-            private UIElement NoRun(string title) =>
-                Bench.Group(title, Ui.Empty("No run picked.",
-                    "The settings belong to a run, so there is nothing to change until there is "
-                    + "one.", "New run", NewRun));
-
-            /// <summary>The floor side: what detection found, and what to drop from it.</summary>
-            private UIElement Surfaces()
+            /// <summary>
+            /// A picker whose contents come off the document, greyed with the reason when there is
+            /// no document to read. Its list is empty in that state, and an empty list that can
+            /// still be opened says nothing about why.
+            /// </summary>
+            /// <param name="picker">The picker.</param>
+            private ComboBox Reading(ComboBox picker)
             {
-                var spec = Run();
-                var check = Clearance;
+                var blocked = Blocked;
 
-                return spec == null || check == null
-                    ? NoRun(ClearanceSettings.Detected)
-                    : ClearanceSurfaces.Page(check, Units, spec.Id, Keep);
-            }
+                if (blocked == null) return picker;
 
-            private UIElement MeasurePage()
-            {
-                var spec = Run();
+                picker.IsEnabled = false;
+                picker.ToolTip = blocked;
 
-                if (spec == null) return NoRun("What to measure");
-
-                var settings = ClearanceSettings.From(spec);
-                var sets = Sets();
-                var said = DetectedSaid(Units, settings.MinPatchAreaSquareMetres);
-
-                var from = new List<string> { said, ClearanceSettings.Guessed, ClearanceSettings.Selected, ClearanceSettings.Loaded };
-                from.AddRange(sets);
-
-                var to = new List<string> { ClearanceSettings.NotTheSurfaces, ClearanceSettings.Selected, ClearanceSettings.Loaded };
-                to.AddRange(sets);
-
-                var chosen = settings.IsDetecting ? said : settings.Surfaces;
-
-                if (!from.Contains(chosen, StringComparer.OrdinalIgnoreCase)) from.Add(chosen);
-                if (!to.Contains(settings.Targets, StringComparer.OrdinalIgnoreCase)) to.Add(settings.Targets);
-
-                return Ui.Stack(
-                    Bench.Group("The run",
-                        Ui.Field("Name", Ui.Text(spec.Name, name => Keep(_ => spec.Name = name), 220)),
-                        Ui.Field("Folder", Ui.Text(spec.Folder ?? string.Empty,
-                                                   folder => Keep(_ => spec.Folder =
-                                                       string.IsNullOrWhiteSpace(folder) ? null : folder),
-                                                   220),
-                                 "how the board's rail files it")),
-                    Bench.Group("What to measure",
-                        Ui.Field("Clear height",
-                                 Ui.Text(Units.Bare(settings.MinimumMetres),
-                                         text => Keep(one =>
-                                         {
-                                             if (Units.TryRead(text, out var metres) && metres > 0)
-                                                 one.MinimumMetres = metres;
-                                         }), 90),
-                                 "the minimum, in " + Units.LengthUnit),
-                        Ui.Field("Report under",
-                                 Ui.Text(Units.Bare(settings.ToleranceMetres),
-                                         text => Keep(one =>
-                                         {
-                                             if (Units.TryRead(text, out var metres) && metres >= 0)
-                                                 one.ToleranceMetres = metres;
-                                         }), 90),
-                                 "how far under the minimum is worth reporting"),
-                        Ui.Field("Measure up from",
-                                 Ui.Choice(from, chosen,
-                                           pick => Keep(one => one.Surfaces = pick == said ? ClearanceSettings.Detected : pick),
-                                           420),
-                                 "the walking surface"),
-                        Ui.Field("Measure up to",
-                                 Ui.Choice(to, settings.Targets, pick => Keep(one => one.Targets = pick), 210),
-                                 "what might be too low over it"),
-                        Ui.Small("A 2.100 m corridor measured at 2.098 m is not a coordination "
-                                 + "issue and the same corridor at 1.850 m is. The clear height is "
-                                 + "what the design requires; \"report under\" is how far below it "
-                                 + "earns a row. Leave it at nothing and every breach is reported."),
-                        Ui.Small("Apart from the first two, both lists are this model's own search "
-                                 + "sets and selection sets. \"" + ClearanceSettings.Guessed + "\" reads names: it "
-                                 + "takes anything whose category or type contains "
-                                 + string.Join(", ", WalkingWords)
-                                 + ". Name a set instead and nothing is guessed at all."),
-                        sets.Count == 0
-                            ? Ui.Note("This document holds no saved sets yet. Build one in Set Builder "
-                                      + "and it appears in both lists.")
-                            : null));
-            }
-
-            private UIElement ScopePage()
-            {
-                var spec = Run();
-
-                if (spec == null) return NoRun("Scope and reductions");
-
-                var settings = ClearanceSettings.From(spec);
-                var storeys = Storeys();
-
-                return Ui.Stack(
-                    Bench.Group("Scope",
-                        Ui.Field("Levels",
-                                 Ui.Choice(new[] { "Every level" }.Concat(storeys).ToList(),
-                                           settings.Levels.Count == 0 ? "Every level" : settings.Levels[0],
-                                           pick => Keep(one =>
-                                           {
-                                               one.Levels.Clear();
-
-                                               if (!string.Equals(pick, "Every level", StringComparison.Ordinal))
-                                                   one.Levels.Add(pick);
-                                           }), 220),
-                                 "the storeys this project declares"),
-                        Ui.Field("Zone", Pickers.Set(settings.Zone,
-                                                     pick => Keep(one => one.Zone = pick), 220),
-                                 "a saved set the run is confined to"),
-                        Ui.Small("Without a scope the first federation run returns every soffit in "
-                                 + "the building. A level narrows what is reported; a zone narrows "
-                                 + "what is measured. One level per run: the run record holds a "
-                                 + "list, and this screen writes one of them."),
-                        storeys.Count == 0
-                            ? Ui.Note("This project declares no storeys yet. Levels & Zones works "
-                                      + "them out from the geometry and they appear here.")
-                            : null),
-                    Bench.Group("Left out of what is over the surface",
-                        Ui.Field("Category", Pickers.Category(settings.Ignore.FirstOrDefault(),
-                                                              pick => Keep(one =>
-                                                              {
-                                                                  one.Ignore.Clear();
-
-                                                                  if (!string.IsNullOrWhiteSpace(pick))
-                                                                      one.Ignore.Add(pick);
-                                                              }), 220)),
-                        Ui.Small("Every sprinkler head, light fitting and smoke detector is under "
-                                 + "the minimum somewhere. Naming the category here is the "
-                                 + "difference between a board of coordination issues and four "
-                                 + "thousand rows to delete."),
-                        Ui.Small("The name is matched anywhere in the category, so \"Duct\" also "
-                                 + "leaves out \"Duct Fittings\" and \"Duct Insulation\". One "
-                                 + "category per run: the run record holds a list, and this screen "
-                                 + "writes one of them.")),
-                    Bench.Group("How much to report",
-                        Ui.Check("One row per surface — its worst obstruction only",
-                                 settings.WorstPerPatch,
-                                 on => Keep(one => one.WorstPerPatch = on)),
-                        Ui.Small("A slab under a plant room has a thousand things above it and one "
-                                 + "of them is the lowest. Turn this off when the answer wanted is "
-                                 + "every duct rather than the one that has to move.")));
+                return picker;
             }
 
             /// <summary>Every saved set this document holds, named once.</summary>
@@ -629,6 +424,48 @@ namespace CamelWorks.UI.Views
                 Named(() => _seat.Sets().Select(set => set.Name)
                                  .Distinct(StringComparer.OrdinalIgnoreCase)
                                  .OrderBy(name => name, StringComparer.OrdinalIgnoreCase));
+
+            /// <summary>
+            /// The zone list: no zone, this document's sets, and whatever the run is set to.
+            ///
+            /// The run's own value is kept in the list whether the document offers it or not. A
+            /// test written against last week's federation names a set this one may not hold, and
+            /// a picker that drops it shows an empty box: the reader cannot tell a run with no
+            /// zone from one whose zone this document cannot resolve.
+            /// </summary>
+            /// <param name="sets">The document's saved sets.</param>
+            /// <param name="zone">What the run is confined to, or null.</param>
+            private static List<string> Zones(IEnumerable<string> sets, string? zone)
+            {
+                var list = new List<string> { WholeModel };
+
+                list.AddRange(sets);
+
+                if (!string.IsNullOrWhiteSpace(zone)
+                    && !list.Contains(zone!, StringComparer.OrdinalIgnoreCase))
+                    list.Add(zone!);
+
+                return list;
+            }
+
+            /// <summary>
+            /// The categories this document's elements carry, for the ignore list.
+            ///
+            /// The three the run leaves out by default are always offered, whether or not the
+            /// bounded scan reached one: a list that cannot show what a run is set to is a list
+            /// that cannot take it back off.
+            /// </summary>
+            private List<string> Categories()
+            {
+                var found = Named(() => Pickers.CategoryNames());
+
+                foreach (var one in ClearanceSettings.Unreported)
+                    if (!found.Contains(one, StringComparer.OrdinalIgnoreCase)) found.Add(one);
+
+                found.Sort(StringComparer.OrdinalIgnoreCase);
+
+                return found;
+            }
 
             /// <summary>The storeys this project declares, for the level scope.</summary>
             private List<string> Storeys() =>

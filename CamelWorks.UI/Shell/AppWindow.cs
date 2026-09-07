@@ -26,7 +26,7 @@ namespace CamelWorks.UI.Shell
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         private readonly App _app;
-        private readonly StackPanel _strip = new StackPanel { Orientation = Orientation.Horizontal };
+        private readonly DockPanel _strip = new DockPanel { LastChildFill = false };
         private readonly ContentControl _surface = new ContentControl();
         private string? _toolId;
         private bool _hooked;
@@ -242,11 +242,27 @@ namespace CamelWorks.UI.Shell
         }
 
         /// <summary>
-        /// Rebuild the strip: every tab, flat, the current one carrying the app's accent.
+        /// Rebuild the strip: the steps of the job in order, then the tools, apart from them.
+        ///
+        /// An app whose tabs are one flat row reads as a sequence, and for most of them that is
+        /// true. The Clash Manager's are not all steps: the matrix and the settings are gone to
+        /// and come back from at any point, and listing them in line put two of them between
+        /// Manage and Report. The steps stay left in their order; anything marked
+        /// <see cref="AppTab.IsAside"/> goes right. An app with no aside tab draws as before.
         /// </summary>
         private void BuildStrip()
         {
             _strip.Children.Clear();
+
+            // Built fresh on every draw rather than kept: a kept panel added to a parent twice
+            // throws on the second draw, and these have no state worth carrying across one.
+            var steps = new StackPanel { Orientation = Orientation.Horizontal };
+            var tools = new StackPanel { Orientation = Orientation.Horizontal };
+
+            DockPanel.SetDock(steps, Dock.Left);
+            DockPanel.SetDock(tools, Dock.Right);
+            _strip.Children.Add(steps);
+            _strip.Children.Add(tools);
 
             foreach (var tab in _app.Tabs)
             {
@@ -282,7 +298,7 @@ namespace CamelWorks.UI.Shell
                 button.Wearing("RailRow");
                 button.Click += (s, e) => Tab(here.ToolId);
 
-                _strip.Children.Add(button);
+                (here.IsAside ? tools : steps).Children.Add(button);
             }
         }
 

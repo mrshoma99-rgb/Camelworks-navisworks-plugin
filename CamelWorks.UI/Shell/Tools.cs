@@ -151,16 +151,23 @@ namespace CamelWorks.UI.Shell
                + "instead of naming forty tests by hand.",
                "Read the matrix"),
 
-            Of("checks", "Checks", ToolShape.Window, Glyph.Layers,
-               "Set up and run the checks whose results have no home in the model: the clear "
-               + "height under the services, which no clash test can find because nothing is "
-               + "touching. What they find is worked on the Manage tab beside the clashes.",
+            Of("clashsettings", "Clash Settings", ToolShape.Window, Glyph.Tune,
+               "The settings every clash tab reads: the storeys, the roster, which discipline "
+               + "each model is, how tests are named, and the project's units and grouping "
+               + "distances.",
+               "Save the settings"),
+
+            Of("create", "Create Tests", ToolShape.Window, Glyph.Ruler,
+               "Every test this project holds, of every kind, with the picked test's settings "
+               + "beside the list: clash tests read from the document, clearance runs and "
+               + "fall-hazard runs saved in the project. Run any set of them and the results land "
+               + "on the Manage tab.",
                "Run"),
 
-            Of("rules", "Filter Clashes", ToolShape.Window, Glyph.Filter,
+            Of("rules", "Filter", ToolShape.Window, Glyph.Filter,
                "Suppress what does not matter, group what is one issue, and assign what is left - "
                + "one pipeline, previewed before any of it is applied.",
-               "Try these on the board"),
+               "Save rules"),
 
             Of("issuelist", "Issues", ToolShape.Window, Glyph.Report,
                "Every issue on this project, however it was raised: by hand, from clash results, "
@@ -185,7 +192,7 @@ namespace CamelWorks.UI.Shell
                "Send each party the clashes that are theirs as BCF, and take their answers back "
                + "onto the board, showing where two of them disagree rather than letting the last "
                + "one win.",
-               "Preview the export"),
+               "Write the packs"),
 
             // ---- Compare ----------------------------------------------------------------------
 

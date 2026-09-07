@@ -38,11 +38,36 @@ namespace CamelWorks.Core.Checks
         /// <summary>What one result is called: "clash", "breach", "opening", "failure".</summary>
         string ResultWord { get; }
 
+        /// <summary>
+        /// Which symbol stands for this check, as one of <see cref="CheckSymbols"/>.
+        ///
+        /// A key naming what the symbol depicts, not a drawing: Core is netstandard2.0 and
+        /// references only the framework, so the shape belongs to the surface exactly as it does
+        /// for <see cref="ColumnKind"/>. A key the surface does not recognise draws the fallback
+        /// symbol rather than nothing.
+        ///
+        /// Every list of tests draws this beside the kind's name and never instead of it. The
+        /// symbol separates the kinds at a glance; the word is what somebody who does not know the
+        /// symbols reads.
+        /// </summary>
+        string Symbol { get; }
+
         /// <summary>False when this seat cannot offer the check at all.</summary>
         bool IsAvailable { get; }
 
         /// <summary>Why not, in one sentence, for the empty state. Null when available.</summary>
         string? Unavailable { get; }
+
+        /// <summary>
+        /// What the last press could not do, in the check's own words. Empty when it did it all.
+        ///
+        /// Cleared when a run or a read starts, so it always describes the most recent press and
+        /// never a stale one. It is here rather than on each check because the screens that press
+        /// the buttons hold an <see cref="ICheck"/>: a run that stops writes a specific reason —
+        /// "resolved to no surface to measure from", "gave no triangles within 1 m of 0 m" — and
+        /// without this the set-up screen could report only that nothing was found.
+        /// </summary>
+        IReadOnlyList<string> Notes { get; }
 
         /// <summary>The per-result columns this check declares, beyond the standing ones.</summary>
         IReadOnlyList<ResultColumn> Columns { get; }

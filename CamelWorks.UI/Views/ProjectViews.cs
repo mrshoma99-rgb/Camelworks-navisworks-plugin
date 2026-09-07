@@ -1795,7 +1795,13 @@ namespace CamelWorks.UI.Views
                 var saved = profile.OverridesToJson();
                 var section = session.Store.Section(ProjectStore.ProfileSection);
 
-                foreach (var key in section.Keys.ToList()) section.Remove(key);
+                // Only the keys this screen owns. The profile section also holds the level plan
+                // and the team roster, and clearing it whole deleted a project's storeys and its
+                // members every time somebody saved an override here. "Reset all" above has
+                // always carried this guard; this did not.
+                foreach (var key in section.Keys.ToList())
+                    if (profile.Find(key) != null) section.Remove(key);
+
                 foreach (var key in saved.Keys) section.Set(key, saved[key]);
 
                 status.Children.Add(session.Store.Save()

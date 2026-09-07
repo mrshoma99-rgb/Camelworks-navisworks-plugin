@@ -83,11 +83,21 @@ namespace CamelWorks.Core.Checks
         /// <inheritdoc />
         public string Name => "Fall hazard";
 
-        /// <inheritdoc />
-        public string RunWord => "run";
+        /// <summary>
+        /// "test", the same word every kind uses.
+        ///
+        /// It was "run", which was the word this check used when it had a tab of its own. The
+        /// Create tab lists every kind in one table and cannot say two words for one column, and
+        /// the Manage board reads this back for the same objects: a coordinator set up a test on
+        /// one tab and was told how many runs there were on the next.
+        /// </summary>
+        public string RunWord => "test";
 
         /// <inheritdoc />
         public string ResultWord => "hazard";
+
+        /// <summary>A gap in a floor, which is what both this check's findings are about.</summary>
+        public string Symbol => CheckSymbols.Opening;
 
         /// <summary>True when a document is open and this seat gives triangles.</summary>
         public bool IsAvailable =>
@@ -383,6 +393,23 @@ namespace CamelWorks.Core.Checks
             var found = FallHazardFindings.For(grid, edges, floor.Keys, floor.Names,
                                                settings.LevelMetres, settings.LimitMetres,
                                                FallHazardFindings.DefaultCell, spec.Id, spec.Name);
+
+            // Changing the floor side or the cut elevation re-derives every id under this run: a
+            // hazard is keyed by the run, the cell it sits in and the elements around it, so the
+            // delta reports the whole run as gone and reported again. Said here, because nothing
+            // downstream can tell that from a floor that was covered over.
+            var floors = settings.Floors + " at " + Printed(settings.LevelMetres) + " m";
+
+            if (spec.Settings.TryGetValue(FallSettings.LastFloorsKey, out var last)
+                && !string.IsNullOrWhiteSpace(last)
+                && !string.Equals(last, floors, StringComparison.OrdinalIgnoreCase))
+                _notes.Add("This run read the floor from \"" + last + "\" last time and from \""
+                           + floors + "\" now. A hazard is identified differently either side of "
+                           + "that change, so every hazard under this run reads as gone and "
+                           + "reported again rather than as the same hazard, and the status, the "
+                           + "assignee and the comments on it do not carry over.");
+
+            spec.Settings[FallSettings.LastFloorsKey] = floors;
 
             _register.Observe(Key, found, DateTime.UtcNow.Ticks,
                               scope: CheckFacts.ScopeOf(new[] { spec.Id }));

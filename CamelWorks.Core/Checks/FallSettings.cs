@@ -28,6 +28,9 @@ namespace CamelWorks.Core.Checks
         /// <summary>The elevation the plan is cut at, in metres.</summary>
         public const string LevelKey = "level";
 
+        /// <summary>The storey the elevation was taken from, when it was picked from the list.</summary>
+        public const string LevelNameKey = "levelName";
+
         /// <summary>How far above and below the level an element still counts, in metres.</summary>
         public const string BandKey = "band";
 
@@ -43,17 +46,41 @@ namespace CamelWorks.Core.Checks
         /// <summary>The shortest break in the protection worth reporting, in metres.</summary>
         public const string PassageKey = "minPassage";
 
+        /// <summary>
+        /// What the floor side was set to when this run last swept.
+        ///
+        /// Written by the runner and read by nothing else, the same arrangement as
+        /// <see cref="ClearanceSettings.LastSurfacesKey"/>. A hazard's id is derived from the run,
+        /// the cell it sits in and the elements around it, so changing the floor side re-derives
+        /// every finding under the run and detaches the status, the assignee, the comments and any
+        /// issue link. Changing the level does the same. The run says so on the next sweep.
+        /// </summary>
+        public const string LastFloorsKey = "lastFloors";
+
         /// <summary>What a side is set to for whatever the host has selected.</summary>
         public const string Selected = "Current selection";
 
         /// <summary>What a side is set to for everything loaded.</summary>
         public const string Loaded = "Everything loaded";
 
-        /// <summary>What a side is set to when there is nothing to read for it.</summary>
-        public const string Nothing = "Nothing";
+        /// <summary>
+        /// What a side is set to when there is nothing to read for it.
+        ///
+        /// The word the screen shows, so nothing has to translate between what is stored and what
+        /// is printed. A saved set of this document actually called "None" is the empty side; there
+        /// is no third name to give it.
+        /// </summary>
+        public const string Nothing = "None";
 
-        /// <summary>What the run treats as floor. A saved set, the selection, or everything.</summary>
-        public string Floors { get; set; } = Loaded;
+        /// <summary>
+        /// What the run treats as floor. A saved set, the selection, or everything.
+        ///
+        /// Nothing by default, so the run refuses rather than reading the whole federation at the
+        /// cut elevation: every wall, duct and column through the band projects its own outline as
+        /// though it were floor, and the plan that produces is not the floor. Naming the floors is
+        /// the one thing this check cannot guess, which is why it is asked for rather than assumed.
+        /// </summary>
+        public string Floors { get; set; } = Nothing;
 
         /// <summary>
         /// What the run treats as handrail. Nothing by default.
@@ -67,8 +94,33 @@ namespace CamelWorks.Core.Checks
         /// <summary>What plugs an opening: equipment, ducts, pipes. Nothing by default.</summary>
         public string Obstructions { get; set; } = Nothing;
 
-        /// <summary>The elevation the plan is cut at, in metres.</summary>
-        public double LevelMetres { get; set; }
+        private double _levelMetres;
+
+        /// <summary>
+        /// The elevation the plan is cut at, in metres.
+        ///
+        /// Setting it marks the run as having been told where to cut. There is no safe default: on
+        /// a model in site or shared coordinates, zero is below the foundations, the band catches
+        /// nothing and the run returns nothing at all. So the run is refused until this is set
+        /// rather than silently swept at zero.
+        /// </summary>
+        public double LevelMetres
+        {
+            get => _levelMetres;
+            set { _levelMetres = value; HasLevel = true; }
+        }
+
+        /// <summary>True when the run has been told what elevation to cut the plan at.</summary>
+        public bool HasLevel { get; private set; }
+
+        /// <summary>
+        /// The storey the elevation was taken from, or null when it was typed.
+        ///
+        /// Kept so the picker can show which storey is selected, and so a run reads as "Level 03"
+        /// rather than as 10.5. The elevation stays the authority: a storey whose height is edited
+        /// does not silently move a run that was already swept.
+        /// </summary>
+        public string? LevelName { get; set; }
 
         /// <summary>
         /// How far above and below the level an element still counts, in metres.
@@ -96,8 +148,14 @@ namespace CamelWorks.Core.Checks
 
         /// <summary>
         /// The shortest unprotected break worth reporting, in metres. Zero reports every break.
+        ///
+        /// A person's width, not a void's: a 40 mm break between two rails is not somewhere anyone
+        /// falls through, and at zero every one of them is a row.
         /// </summary>
-        public double MinPassageMetres { get; set; }
+        public double MinPassageMetres { get; set; } = 0.3;
+
+        /// <summary>True when the run names something to read the floor from.</summary>
+        public bool HasFloors => Names(Floors);
 
         /// <summary>True when the run has handrails to read.</summary>
         public bool HasHandrails => Names(Handrails);
@@ -107,9 +165,15 @@ namespace CamelWorks.Core.Checks
 
         /// <summary>What this run covers, as the rail's one sentence.</summary>
         public string Between =>
-            Floors + " at " + Metres(LevelMetres) + " m (±" + Metres(BandMetres) + " m)"
+            Floors + " at " + Cut + " (±" + Metres(BandMetres) + " m)"
             + (HasHandrails ? ", handrails from " + Handrails : ", no handrails named")
             + (HasObstructions ? ", plugged by " + Obstructions : string.Empty);
+
+        /// <summary>Where the plan is cut, as a storey name when there is one and a height when not.</summary>
+        public string Cut =>
+            string.IsNullOrWhiteSpace(LevelName)
+                ? Metres(LevelMetres) + " m"
+                : LevelName + " (" + Metres(LevelMetres) + " m)";
 
         /// <summary>The threshold, worded, as the rail prints it.</summary>
         public string Threshold =>
@@ -126,7 +190,11 @@ namespace CamelWorks.Core.Checks
             settings.Floors = Word(spec, FloorsKey) ?? settings.Floors;
             settings.Handrails = Word(spec, HandrailsKey) ?? settings.Handrails;
             settings.Obstructions = Word(spec, ObstructionsKey) ?? settings.Obstructions;
-            settings.LevelMetres = Number(spec, LevelKey, settings.LevelMetres);
+            if (Word(spec, LevelKey) is string cut
+                && double.TryParse(cut, NumberStyles.Float, CultureInfo.InvariantCulture, out var metres))
+                settings.LevelMetres = metres;
+
+            settings.LevelName = Word(spec, LevelNameKey);
             settings.BandMetres = Number(spec, BandKey, settings.BandMetres);
             settings.CellMetres = Number(spec, CellKey, settings.CellMetres);
             settings.LimitMetres = Number(spec, LimitKey, settings.LimitMetres);
@@ -145,7 +213,12 @@ namespace CamelWorks.Core.Checks
             spec.Settings[FloorsKey] = Floors;
             spec.Settings[HandrailsKey] = Handrails;
             spec.Settings[ObstructionsKey] = Obstructions;
-            spec.Settings[LevelKey] = Written(LevelMetres);
+
+            // Left out entirely when nothing has set it, so "no elevation" survives a save and a
+            // reload rather than reading back as a deliberate zero.
+            if (HasLevel) spec.Settings[LevelKey] = Written(LevelMetres);
+
+            spec.Settings[LevelNameKey] = LevelName;
             spec.Settings[BandKey] = Written(BandMetres);
             spec.Settings[CellKey] = Written(CellMetres);
             spec.Settings[LimitKey] = Written(LimitMetres);
@@ -156,7 +229,14 @@ namespace CamelWorks.Core.Checks
         /// <summary>Why this run cannot be run as it stands, or null when it can.</summary>
         public string? Wrong()
         {
-            if (!Names(Floors)) return "This run names nothing to read the floor from.";
+            if (!Names(Floors))
+                return "This run names nothing to read the floor from. Name a set of floors or "
+                       + "slabs: read from everything loaded, a wall or a duct through the band "
+                       + "projects its outline as though it were floor.";
+
+            if (!HasLevel)
+                return "This run does not say what elevation the plan is cut at. Pick the storey.";
+
             if (CellMetres <= 0) return "The cell size must be more than nothing.";
             if (BandMetres <= 0) return "The band must be more than nothing.";
             if (LimitMetres <= 0) return "The gap that needs a handrail must be more than nothing.";

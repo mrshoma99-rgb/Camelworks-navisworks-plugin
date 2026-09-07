@@ -235,8 +235,8 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// The facets a filter can name once there is a log to read.
         ///
-        /// Added to the standing list rather than built into it, because a profile written before
-        /// anything went out has no log and these three would all answer the same way for every
+        /// Added to the standing list rather than built into it: on a job where nothing has been
+        /// sent out yet there is no log, and these three would answer the same way for every
         /// result.
         /// </summary>
         public IReadOnlyList<ClashFacet> Facets() => new[]

@@ -13,6 +13,7 @@ using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Store;
+using CamelWorks.Core.Testing;
 using CamelWorks.UI.Shell;
 using CamelWorks.UI.Views;
 
@@ -36,9 +37,17 @@ namespace CamelWorks.Studio
         /// <summary>Every app page, in ribbon order.</summary>
         public static IReadOnlyList<Sheet> All { get; } = new[]
         {
-            Page("app-clash-manage", "Clash Manager · Manage", 980, () => Coordination(false)),
+            // The Manage board, drawn by the tab that ships it. This page used to be a table
+            // written here, because the board is the clash engine's results and a seat with no
+            // document has no engine — so the one page whose faults have all been in the layout
+            // code was the one page no render could show. ClashManageViews.Drawn takes the
+            // engine, and what is drawn is the tab, read, measured by WPF.
+            Page("app-clash-manage", "Clash Manager · Manage", 980, () => Managing(false)),
+
+            // The same board with the rail's filter panel open: the disciplines, the folders and
+            // the naming tokens this read actually holds, drawn as a card over the test list.
             Page("app-clash-finder", "Clash Manager · Manage, the filter panel open", 980,
-                 () => Coordination(true)),
+                 () => Managing(true)),
             Page("app-issue-register", "Issue Manager · Issues", 780, Issues),
             Page("app-audit", "Model Audit · Health", 780, Federation),
             Page("app-data", "Data Manager · Properties", 780, Data),
@@ -61,7 +70,7 @@ namespace CamelWorks.Studio
             // Drawn from the fielded board: it is the same grid plus a scheme, so one page
             // covers the matrix and the two things the fields add to it — a number counted down
             // the axis, and the mark on the row that has left the counting.
-            Page("app-clash-matrix-drawn", "Clash Manager · Matrix, drawn", 820,
+            Page("app-clash-matrix-drawn", "Clash Manager · Matrix, drawn", 880,
                  () => MatrixWindow.Surface(Seated(), Fielded())),
 
             // The fields window, and the state that matters in it: a built-in field counted down
@@ -76,7 +85,7 @@ namespace CamelWorks.Studio
             // exist on and this harness has none - so until this was split out, every dialogue
             // in the product was checked by a coordinator on a licensed seat and described to me
             // in words.
-            Page("app-clash-matrix-read", "Clash Manager · Read from the model", 660,
+            Page("app-clash-matrix-read", "Clash Manager · Read from the model", 700,
                  () => MatrixReadWindow.Draw(Named(), "{rowCode}-{rowNumber} {row} vs "
                                                       + "{columnCode}-{columnNumber} {column}",
                                              null, null)),
@@ -91,7 +100,7 @@ namespace CamelWorks.Studio
             // The panel beside the grid, with a line picked, which is the only state it draws
             // anything in. Every field of a line is typed here and a field of the project's own
             // is made here, and until this page existed none of it had been photographed.
-            Page("app-clash-matrix-line", "Clash Manager · Matrix, a line picked", 820,
+            Page("app-clash-matrix-line", "Clash Manager · Matrix, a line picked", 880,
                  () => MatrixWindow.Surface(Seated(), Fielded(), MatrixWindow.Showing.Symbols,
                                             null, "ARC_Internal Partitions")),
 
@@ -112,19 +121,62 @@ namespace CamelWorks.Studio
                      Child = ClashExchangeViews.Drawn(Filed(), "Riverside", Sent()),
                  }),
 
-            // The other half of the round: several parties' packs read together, with the
-            // conflicts marked. Drawn with nothing chosen, which is the state it opens in and the
-            // one an empty screen has to explain rather than merely be blank in.
-            Page("app-clash-exchange-import", "Clash Manager · Exchange, import", 560,
+            // The other half of the round with nothing chosen, which is the state it opens in and
+            // the one an empty screen has to explain rather than merely be blank in. Short,
+            // because that state is one card.
+            Page("app-clash-exchange-import", "Clash Manager · Exchange, import", 360,
                  () => new Border
                  {
-                     Height = 500,
+                     Height = 300,
                      Child = ClashExchangeViews.Drawn(Filed(), "Riverside", Sent(),
                                                       importing: true),
                  }),
 
-            Page("app-clash-levels", "Clash Manager · Levels", 620,
-                 () => Ui.Loose(Bench.Group("Levels", ClashLevels.Drawn(Storeyed())))),
+            // The import mode in the state it is used in: two parties' packs read against the
+            // board, one clash answered differently by each. The conflict row, the verb that
+            // resolves it and the primary that applies the rest are all drawn only in this state,
+            // and none of them had been photographed.
+            Page("app-clash-exchange-import-read", "Clash Manager · Exchange, packs read", 560,
+                 () => Deck("clash", "exchange", new Border
+                 {
+                     Height = 500,
+                     Child = ClashExchangeViews.Drawn(Filed(), "Riverside", Sent(),
+                                                      importing: true, returned: Returned()),
+                 })),
+
+            // The Filter tab as a fresh project has it: three sections with nothing in them, the
+            // composer beside them, and the preview blocked because a preview reads results and
+            // this seat has no model. The empty states were written for this and had never been
+            // drawn.
+            Page("app-clash-rules", "Clash Manager · Filter", 720,
+                 () => Deck("clash", "rules", CoordinateViews.Rules(Seated()))),
+
+            // The same tab with rules on it, which is the state every list, every order control
+            // and every trim on this screen exists for.
+            Page("app-clash-rules-set", "Clash Manager · Filter, rules written", 860, Ruled),
+
+            // The Report tab. A report is written from the board and this seat has none, so what
+            // the page draws is the rest of the screen: the document picker, the audience, the
+            // marker settings and the revision line, none of which had been looked at.
+            Page("app-clash-report", "Clash Manager · Report", 620,
+                 () => Deck("clash", "clashreport", CoordinateViews.Report(Seated()))),
+
+            // The Settings tab, on each of the three sections that has data behind it. The whole
+            // tab each time: the rail says which section is open and the foot says whether
+            // anything is unsaved, and neither is visible in a picture of the pane alone.
+            Page("app-clash-settings", "Clash Manager · Settings, levels", 760,
+                 () => Deck("clash", "clashsettings",
+                            ClashSettingsViews.Drawn(Seated(), ClashSettingsViews.Part.Levels,
+                                                     Storeyed()))),
+
+            Page("app-clash-settings-naming", "Clash Manager · Settings, test naming", 760,
+                 () => Deck("clash", "clashsettings",
+                            ClashSettingsViews.Drawn(Seated(), ClashSettingsViews.Part.Naming,
+                                                     null, Booked(), Testing()))),
+
+            Page("app-clash-settings-units", "Clash Manager · Settings, units and distances", 760,
+                 () => Deck("clash", "clashsettings",
+                            ClashSettingsViews.Drawn(Seated(), ClashSettingsViews.Part.Units))),
 
             // The naming, drawn on each of its panes. This is the surface that decides what the
             // manager can band, filter, sort and renumber by, and every one of those reads a
@@ -145,7 +197,7 @@ namespace CamelWorks.Studio
             // cell and the difference between a nought and a pair no test covers were drawing
             // nobody had ever seen. It is handed the same list a real read hands back, and the
             // tab counts it through MatrixTally exactly as a licensed seat does.
-            Page("app-clash-matrix-results", "Clash Manager · Matrix, results", 820,
+            Page("app-clash-matrix-results", "Clash Manager · Matrix, results", 880,
                  () =>
                  {
                      var board = Drawn(pointed: true);
@@ -159,68 +211,126 @@ namespace CamelWorks.Studio
             // described to me in words, which is how every layout fault on this tab has been
             // found so far. The results view is not here: it counts what a document holds, and
             // this seat holds none.
-            Page("app-clash-matrix-priority", "Clash Manager · Matrix, priority", 820,
+            Page("app-clash-matrix-priority", "Clash Manager · Matrix, priority", 880,
                  () => MatrixWindow.Surface(Seated(), Drawn(), MatrixWindow.Showing.Priority)),
 
-            // The clearance tab's floor side. The whole point of the page is the sentence the
-            // detected option is offered under and the list under it: detection cannot tell a floor
-            // from a desk top, and a screen that says "detected walkable surfaces" and stops there
-            // reads as though it could. Not in the render's default list; named on dispatch.
-            Page("app-clash-clearance-surfaces", "Clash Manager · Clearance, what to measure", 760,
+            // The detected-surface window, opened from a clearance test's settings panel. The
+            // whole point of the page is the sentence the detected option is offered under and the
+            // list under it: detection cannot tell a floor from a desk top, and a screen that says
+            // "detected walkable surfaces" and stops there reads as though it could.
+            // Not in the render's default list; named on dispatch.
+            Page("app-clash-clearance-surfaces", "Clash Manager · Detected walkable surfaces", 700,
                  Walkable),
 
-            // The Checks tab itself, over a seat with nothing in it: the check picker, the run
-            // list and the empty state a project with no runs saved opens on. The shipping screen
-            // rather than a drawing of it, which is what Check(ISeat) buys — before the widening
-            // this tab took a Session and could only be looked at on a licensed seat.
-            // Not in the render's default list; named on dispatch.
-            Page("app-clash-checks", "Clash Manager · Checks", 760,
-                 () => ClearanceViews.Check(Seated())),
+            // The Create tab, with a clearance test picked: the list of every kind on the left,
+            // that test's settings on the right, and the Run the seat cannot press with its
+            // reason. The shipping screen rather than a drawing of it, which is what Create(ISeat)
+            // buys. Not in the render's default list; named on dispatch.
+            Page("app-clash-create", "Clash Manager · Create, a clearance test picked", 760,
+                 () => Creating(FindingSource.Headroom)),
 
             // The Manage board's check picker, opened. A menu lives in a popup and a popup needs
             // a screen to open on, so the greyed entry and its reason — the state this control
             // exists for — had never been drawn.
             Page("app-clash-picker", "Clash Manager · The check picker", 420, Picker),
 
-            // The fall-hazard set-up, which is nine settings in two windows off the action row.
-            // The windows are what the page is for: the tab's own frame is the same shape as
-            // app-clash-checks, and a window needs a screen to open on that this harness has not.
+            // The same tab with a fall-hazard test picked. The nine settings this check is
+            // configured by used to live in two windows off an action row, so they could only be
+            // looked at on a licensed seat; they are the panel now and this page draws them.
             // Not in the render's default list; named on dispatch.
-            Page("app-clash-fall", "Clash Manager · Fall hazard set-up", 900, Falling),
+            Page("app-clash-create-fall", "Clash Manager · Create, a fall-hazard test picked",
+                 760, () => Creating(FindingSource.FallHazard)),
+
+            // The same tab with nothing saved, which is the state a project starts in: the list
+            // says what is missing and carries the verb that fixes it, and the panel says the
+            // settings belong to a test.
+            // Not in the render's default list; named on dispatch.
+            Page("app-clash-create-empty", "Clash Manager · Create, no tests yet", 620,
+                 () => Creating(null)),
         };
 
         /// <summary>
-        /// Fall hazard ▸ what to read and how to judge it, over a saved run.
+        /// The Create tab, with a test of one kind picked.
         ///
-        /// A run is saved into the scratch project first, because the settings belong to a run and
-        /// the pages say so rather than drawing controls over nothing.
+        /// The tests are saved into the scratch project first, because the settings belong to a
+        /// test and the panel says so rather than drawing controls over nothing.
         /// </summary>
-        private static UIElement Falling()
+        /// <param name="checkKey">
+        /// Which kind's test to pick, or null for a project holding no test at all — which is the
+        /// state a project starts in and the one the empty states are written for.
+        /// </param>
+        private static UIElement Creating(string? checkKey)
         {
             var seat = Seated();
-            var check = seat.Checks.All.OfType<FallCheck>().First();
 
-            var spec = new CheckRunSpec(check.Key, "level3-openings", "Level 3 openings");
+            if (checkKey == null)
+            {
+                // The scratch project is shared by every page and this one has to show none, so
+                // it empties the project rather than taking a store of its own: the pages that
+                // need tests write them again on the way in, whatever order the harness draws in.
+                foreach (var one in seat.Checks.All)
+                    one.Runner?.Delete(one.Runs().Select(run => run.Id).ToList());
+
+                return Deck("clash", "create", CheckCreateViews.Drawn(seat, null, null));
+            }
+
+            var clearance = seat.Checks.All.OfType<ClearanceCheck>().First();
+            var fall = seat.Checks.All.OfType<FallCheck>().First();
+
+            var measured = new CheckRunSpec(clearance.Key, "l3-corridors", "Level 3 corridors")
+            {
+                Folder = "Weekly",
+            };
+
+            var heights = new ClearanceSettings
+            {
+                Surfaces = "Level 03 Floors",
+                Targets = ClearanceSettings.NotTheSurfaces,
+                MinimumMetres = 2.1,
+                ToleranceMetres = 0.05,
+                DetectSurfaces = true,
+                Zone = "Level 03",
+                WorstPerPatch = true,
+            };
+
+            // Two storeys, so the render shows what a list-valued scope looks like rather than
+            // the one-value case the panel used to be limited to.
+            heights.Levels.Add("Level 03");
+            heights.Levels.Add("Level 04");
+
+            heights.Write(measured);
+
+            clearance.Put(measured);
+
+            var swept = new CheckRunSpec(fall.Key, "l3-openings", "Level 3 openings")
+            {
+                Folder = "Weekly",
+            };
 
             new FallSettings
             {
                 Floors = "Level 03 Floors",
                 Handrails = "Level 03 Handrails",
                 Obstructions = FallSettings.Nothing,
+                LevelName = "Level 03",
                 LevelMetres = 10.5,
                 BandMetres = 1.0,
                 CellMetres = 0.1,
                 LimitMetres = 0.2,
                 HandrailToleranceMetres = 0.3,
                 MinPassageMetres = 0.5,
-            }.Write(spec);
+            }.Write(swept);
 
-            check.Put(spec);
+            fall.Put(swept);
 
-            return Deck("clash", "checks",
-                        Bench.Surface(null, Ui.Runner("Run", Ui.Stack(), _ => { }),
-                                      FallHazardViews.Drawn(seat, spec)));
+            var picked = string.Equals(checkKey, FindingSource.Headroom, StringComparison.Ordinal)
+                ? measured
+                : swept;
+
+            return Deck("clash", "create",
+                        CheckCreateViews.Drawn(seat, picked.CheckKey, picked.Id));
         }
+
 
         /// <summary>
         /// The check picker's own menu, with an unavailable check in it.
@@ -252,6 +362,114 @@ namespace CamelWorks.Studio
         }
 
         /// <summary>
+        /// Clash Manager - Manage, drawn by the tab itself over a seat and a clash engine.
+        ///
+        /// The engine is a fixture and everything else is the seat: the project file, the
+        /// findings, the naming and the roster are read exactly as they are on a licensed seat,
+        /// and the read is the one the tab's own "Read the results" runs.
+        /// </summary>
+        /// <param name="panel">Whether the rail's filter panel is open.</param>
+        private static UIElement Managing(bool panel)
+        {
+            var seat = Seated();
+            var engine = Engined();
+
+            Decided(seat, engine);
+
+            return Deck("clash", "manage", ClashManageViews.Drawn(seat, engine, panel));
+        }
+
+        /// <summary>
+        /// The decisions this project has already made about its clashes.
+        ///
+        /// A row's status comes from the project's own register rather than from the host: a read
+        /// adopts only the two host statuses that are a human judgement, Reviewed and Approved,
+        /// because New, Active and Resolved are the engine's own bookkeeping. So a board read into
+        /// an empty register has two of its five status segments at nought whatever the engine
+        /// says, and those two are exactly the ones somebody sets by working the board.
+        ///
+        /// This is that work: the register takes the read's own findings and a spread of decisions
+        /// over them, so the strip, the row colours and the rail's counts all have something to
+        /// count.
+        /// </summary>
+        /// <param name="seat">The seat whose register to write.</param>
+        /// <param name="engine">The clash engine the board is about to read.</param>
+        private static void Decided(ISeat seat, IClashSource engine)
+        {
+            var read = new ClashCheck(engine, seat.MetresPerUnit).Read(null, null);
+            var register = seat.Findings.Findings;
+
+            // A fixed moment, so two renders of this page date the findings the same way.
+            var when = new DateTime(2026, 3, 2, 9, 30, 0, DateTimeKind.Utc).Ticks;
+
+            register.Observe(FindingSource.Clash, read.Findings, when,
+                             origin: seat.Store.Path, scope: read.Scope);
+
+            // By id, so the same clashes carry the same decision on every render. The register is
+            // a dictionary and its enumeration order changes on any remove.
+            var held = register.Present.OrderBy(one => one.Id, StringComparer.Ordinal).ToList();
+
+            for (var at = 0; at < held.Count; at++)
+                if (at % 5 == 1) held[at].Status = FindingStatus.Active;
+                else if (at % 5 == 4) held[at].Status = FindingStatus.Resolved;
+
+            seat.Findings.Save();
+        }
+
+        /// <summary>
+        /// The Filter tab with a project's rules on it.
+        ///
+        /// The rules are written into the scratch project on the way in, as
+        /// <see cref="Creating"/> writes its tests: the store is shared by every page, so a page
+        /// that needs data puts it there itself rather than relying on the order the harness draws
+        /// in. Nothing is saved, so the empty Filter page still opens on an empty project.
+        ///
+        /// What is written is what the three lists have to draw: both filter actions, a name long
+        /// enough to be trimmed, a grouping step that carries a number and one that carries a
+        /// property name, and assignments with and without a priority.
+        /// </summary>
+        private static UIElement Ruled()
+        {
+            var seat = Seated();
+            var rules = new ClashRuleSet();
+
+            rules.Filters.Add(new FilterSpec(
+                "Insulation grazing insulation",
+                new PredicateSpec("maxVolume") { A = 0.001 }, suppress: true));
+
+            rules.Filters.Add(new FilterSpec(
+                "Sleeves already coordinated against the structural openings schedule REV21",
+                new PredicateSpec("bothInSet") { Name = "Sleeves REV21" }, suppress: true));
+
+            rules.Filters.Add(new FilterSpec(
+                "Touching, not passing through",
+                new PredicateSpec("distance") { A = 0, B = 0.005 }, suppress: false));
+
+            rules.Filters.Add(new FilterSpec(
+                "Services through structural framing",
+                new PredicateSpec("category") { Name = "Structural Framing" }, suppress: false));
+
+            rules.Grouping.Add(new GroupingSpec("level"));
+            rules.Grouping.Add(new GroupingSpec("proximity") { A = 2.5 });
+            rules.Grouping.Add(new GroupingSpec("property") { Name = "System Name" });
+
+            rules.Assigns.Add(new AssignSpec(
+                new PredicateSpec("eitherInSet") { Name = "WSC_DUCTS_REV21_ISSUED" },
+                "Mechanical", "High"));
+
+            rules.Assigns.Add(new AssignSpec(
+                new PredicateSpec("category") { Name = "Cable Tray" }, "Electrical"));
+
+            rules.Assigns.Add(new AssignSpec(
+                new PredicateSpec("propertyContains") { Name = "System Name", Value = "SPR" },
+                "Fire", "Normal"));
+
+            seat.Store.Section(ProjectStore.ClashSection).Set(ClashKeys.Rules, rules.ToJson());
+
+            return Deck("clash", "rules", CoordinateViews.Rules(seat));
+        }
+
+        /// <summary>
         /// A seat with nothing in it, and a scratch project beside the images.
         ///
         /// Empty on purpose. This is the state a screen is in before a document is open, and the one
@@ -275,27 +493,251 @@ namespace CamelWorks.Studio
         /// </summary>
         private static IReadOnlyList<ClashGroup> Sent()
         {
-            var parties = new[] { "Mechanical", "Structure", "Electrical", "Architecture" };
-            var tests = new[] { "L02 MEP v STR", "L03 MEP v STR", "L04 MEP v ARC",
-                                "L02 ARC v STR", "Basement services", "Roof plant" };
-            var folders = new[] { "Weekly", "Weekly", "Weekly", "Handover", "Handover", null };
-            var levels = new[] { "L02", "L03", "L04" };
-
             var made = new List<ClashItem>();
 
-            for (var at = 0; at < 96; at++)
-            {
-                var item = ClashFixture(at, tests[at % tests.Length], levels[at % levels.Length]);
-
-                item.TestFolder = folders[at % tests.Length];
-                item.AssignedTo = parties[at % parties.Length];
-                item.Status = (FindingStatus)(at % 5);
-
-                made.Add(item);
-            }
+            for (var at = 0; at < BoardSize; at++) made.Add(Boarded(at));
 
             return ClashPipeline.Run(made).Groups;
         }
+
+        /// <summary>How many clashes the board holds. Enough that the tests have sixteen each.</summary>
+        private const int BoardSize = 96;
+
+        /// <summary>Who the board's clashes are assigned to.</summary>
+        private static readonly string[] SentParties =
+            { "Mechanical", "Structure", "Electrical", "Architecture" };
+
+        /// <summary>
+        /// The six tests the board's clashes came from, as the host holds them.
+        ///
+        /// Each side is a saved set, because that is where the host records what a test is
+        /// between: the rail states the two disciplines and the filter panel's chips are the
+        /// values it found, and a test built out of an ad-hoc selection records neither. Two
+        /// clearances among four hard tests, three folders counting the root, and four
+        /// disciplines over the six.
+        /// </summary>
+        private static readonly (string Name, string? Folder, string A, string B,
+                                 MatrixTest Kind, double Tolerance)[] SentShapes =
+        {
+            ("L02 MEP v STR", "Weekly", "Mechanical", "Structure", MatrixTest.Hard, 0.025),
+            ("L03 MEP v STR", "Weekly", "Mechanical", "Structure", MatrixTest.Hard, 0.025),
+            ("L04 MEP v ARC", "Weekly", "Mechanical", "Architecture", MatrixTest.Clearance, 0.05),
+            ("L02 ARC v STR", "Handover", "Architecture", "Structure", MatrixTest.Hard, 0.025),
+            ("Basement services", "Handover", "Electrical", "Structure", MatrixTest.Hard, 0.01),
+            ("Roof plant", null, "Mechanical", "Electrical", MatrixTest.Clearance, 0.075),
+        };
+
+        /// <summary>The storeys the board's clashes stand on.</summary>
+        private static readonly string[] SentLevels = { "L02", "L03", "L04" };
+
+        /// <summary>
+        /// One clash of the board, as the board has it.
+        ///
+        /// Made here rather than inside <see cref="Sent"/> because the returned packs are written
+        /// from the same clashes: a pack whose keys are derived any other way matches nothing on
+        /// the board and the import mode draws an empty reading.
+        /// </summary>
+        /// <param name="at">Which one.</param>
+        private static ClashItem Boarded(int at)
+        {
+            var shape = SentShapes[at % SentShapes.Length];
+
+            var item = ClashFixture(at, shape.Name, SentLevels[at % SentLevels.Length]);
+
+            item.TestFolder = shape.Folder;
+            item.AssignedTo = SentParties[at % SentParties.Length];
+            item.Status = (FindingStatus)(at % 5);
+
+            return item;
+        }
+
+        /// <summary>
+        /// A clash engine holding the board's own clashes, for the Manage page.
+        ///
+        /// The Manage board is what the engine reports, so a page of it needs an engine. These are
+        /// the clashes <see cref="Boarded"/> makes, which is what the exchange packs are written
+        /// from, so the two pages describe one project rather than two.
+        ///
+        /// What is set here is what the board draws: six tests of two kinds in three folders,
+        /// between four disciplines, sixteen results each over the host's five status words and
+        /// four parties, part of one test in two named groups with the rest of it loose, a comment
+        /// trail on one result, and a run date on every test so the header line can carry one. A
+        /// board of one test, one status and no groups draws none of that.
+        /// </summary>
+        private static IClashSource Engined()
+        {
+            var engine = new FakeClashSource();
+            var ids = new List<string>();
+
+            for (var test = 0; test < SentShapes.Length; test++)
+            {
+                var shape = SentShapes[test];
+
+                // Made rather than declared, because a test made from a spec is the only one the
+                // fake records two sides for, and the two sides are what the rail says a test is
+                // between and what the filter panel's discipline chips are read from.
+                var made = engine.Create(new ClashTestSpec(
+                    shape.Name, ClashSide.Set(shape.A), ClashSide.Set(shape.B),
+                    shape.Tolerance, shape.Folder, shape.Kind));
+
+                if (made == null) continue;
+
+                var id = made.Value.Id;
+
+                ids.Add(id);
+
+                var results = 0;
+
+                for (var at = test; at < BoardSize; at += SentShapes.Length)
+                {
+                    var item = Boarded(at);
+
+                    engine.Finding(item.Key.A, item.Key.B, item.X, item.Y, item.Z,
+                                   Hosted(item.Status));
+
+                    var result = "r" + (++results).ToString(CultureInfo.InvariantCulture);
+
+                    engine.Assign(id, new[] { result }, item.AssignedTo ?? string.Empty);
+                }
+
+                // Dated, so the board's header line says when the test last ran rather than that
+                // it never has.
+                engine.Run(id);
+            }
+
+            if (ids.Count == 0) return engine;
+
+            // On the first test only, and over part of it: the board bands grouped results under
+            // a row of their own, and the loose ones sit beside them.
+            engine.Regroup(ids[0], new[] { "r1", "r2", "r3", "r4", "r5" },
+                           "Corridor C - duct against beams");
+
+            engine.Regroup(ids[0], new[] { "r6", "r7", "r8" },
+                           "Riser 2 - pipework against the slab edge");
+
+            engine.Comment(ids[0], new[] { "r1" },
+                           "Re-routed above the beam; waiting on the structural opening.",
+                           "Mechanical");
+
+            return engine;
+        }
+
+        /// <summary>
+        /// The host's word for a status.
+        ///
+        /// The five words the host parses are spelled the same as the five members of
+        /// <see cref="FindingStatus"/>, but they are the host's vocabulary rather than this
+        /// product's, and the engine refuses anything it does not know.
+        /// </summary>
+        /// <param name="status">The status.</param>
+        private static string Hosted(FindingStatus status) => status switch
+        {
+            FindingStatus.Active => "Active",
+            FindingStatus.Reviewed => "Reviewed",
+            FindingStatus.Approved => "Approved",
+            FindingStatus.Resolved => "Resolved",
+            _ => "New",
+        };
+
+        /// <summary>
+        /// Two returned packs on disk, for the import page.
+        ///
+        /// Written rather than fabricated: the tab takes paths, reads the archives and matches
+        /// what it finds against the board, so a fixture that skipped the writer would photograph
+        /// a screen the product cannot produce.
+        ///
+        /// Both parties answer clash 007, and differently, which is the state the conflict row,
+        /// the verb that resolves it and the enabled primary are all drawn in.
+        /// </summary>
+        private static IReadOnlyList<string> Returned()
+        {
+            var folder = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+                                                "camelworks-shots", "returned");
+
+            System.IO.Directory.CreateDirectory(folder);
+
+            // Every answer differs from the status the board has, so each row is a row that
+            // changes something and the "only what changes" filter has the same list under it.
+            return new[]
+            {
+                Answered(folder, "Mechanical", new[]
+                {
+                    (7, FindingStatus.Resolved),
+                    (13, FindingStatus.Active),
+                    (25, FindingStatus.Approved),
+                    (31, FindingStatus.Reviewed),
+                }),
+                Answered(folder, "Structure", new[]
+                {
+                    (7, FindingStatus.Active),
+                    (18, FindingStatus.Resolved),
+                    (44, FindingStatus.Active),
+                }),
+            };
+        }
+
+        /// <summary>
+        /// One party's pack, written to the temp folder.
+        ///
+        /// The file's name is the party: the tab reads the party off the file name unless somebody
+        /// renames it, which is what a coordinator sees when the packs arrive by mail.
+        /// </summary>
+        /// <param name="folder">Where to write it.</param>
+        /// <param name="party">Who sent it back.</param>
+        /// <param name="answers">Which of the board's clashes they answered, and how.</param>
+        private static string Answered(string folder, string party,
+                                       IReadOnlyList<(int At, FindingStatus Said)> answers)
+        {
+            // A fixed moment, so two renders of this page produce the same file.
+            var when = new DateTime(2026, 3, 2, 9, 30, 0, DateTimeKind.Utc).Ticks;
+
+            var findings = new List<Finding>();
+
+            foreach (var answer in answers)
+            {
+                var item = Boarded(answer.At);
+
+                var result = new ClashResultInfo(
+                    answer.At.ToString(CultureInfo.InvariantCulture),
+                    item.Key.A, item.Key.B, item.X, item.Y, item.Z, null, null)
+                {
+                    Name = item.Name,
+                };
+
+                // Through the product's own projection, so the topic guid and the sidecar identity
+                // are the ones a real pack carries and the return leg lands on the right clash.
+                var finding = ClashFindings.From(item.TestName, result);
+
+                finding.Status = answer.Said;
+                finding.AssignedTo = party;
+                finding.Comments.Add(new FindingComment(party, when, Remarked(answer.Said)));
+
+                findings.Add(finding);
+            }
+
+            var path = System.IO.Path.Combine(folder, party + ClashFile.Extension);
+
+            var written = FindingBcf.Write(findings, null, new FindingBcfOptions
+            {
+                ProjectName = "Riverside",
+                Author = party,
+                WhenTicks = when,
+            });
+
+            System.IO.File.WriteAllBytes(path, written.Bytes);
+
+            return path;
+        }
+
+        /// <summary>What a party writes on a clash when they answer it.</summary>
+        /// <param name="said">The status they returned.</param>
+        private static string Remarked(FindingStatus said) => said switch
+        {
+            FindingStatus.Resolved => "Re-routed above the beam, re-issued this morning.",
+            FindingStatus.Approved => "Within the agreed tolerance, no change needed.",
+            FindingStatus.Reviewed => "Looked at; waiting on the structural opening.",
+            _ => "Still ours, not started.",
+        };
 
         /// <summary>One clash, far enough from the last that the grouping keeps them apart.</summary>
         /// <param name="at">Which one, for its name and its position.</param>
@@ -678,38 +1120,15 @@ namespace CamelWorks.Studio
             });
 
         /// <summary>
-        /// Clearance ▸ What to measure, with the detected surfaces listed.
+        /// The detected walkable surfaces, as the window off a clearance test's settings panel
+        /// draws them.
         ///
-        /// Drawn rather than shown: the tab is built from a Session, which needs a document, so
-        /// until this page existed nothing about this window had been looked at away from a
+        /// Drawn rather than shown: a window needs a screen to open on and this harness has none,
+        /// so until this page existed nothing about this window had been looked at away from a
         /// licensed seat.
         /// </summary>
         private static UIElement Walkable()
         {
-            // The option's own sentence, as the tab builds it from the minimum area in force.
-            var said = "Detected walkable surfaces — every up-facing surface over 0.05 m², "
-                     + "which includes desk tops and duct tops.";
-
-            var sources = new[]
-            {
-                said,
-                "Walking surfaces (a guess)",
-                "Current selection",
-                "Everything loaded",
-                "Level 03 Floors",
-            };
-
-            var measure = Bench.Group("What to measure",
-                Ui.Field("Clear height", Ui.Text("2.100", null, 90), "the minimum, in m"),
-                Ui.Field("Report under", Ui.Text("0.050", null, 90),
-                         "how far under the minimum is worth reporting"),
-                Ui.Field("Measure up from", Ui.Choice(sources, said, null, 420),
-                         "the walking surface"),
-                Ui.Field("Measure up to", Ui.Choice(
-                    new[] { "Everything except the surfaces", "Current selection", "MEP" },
-                    "Everything except the surfaces", null, 210),
-                    "what might be too low over it"));
-
             var rows = new[]
             {
                 new TableRow(null, "Level 03", "412.0 m²", "9.600 m", string.Empty),
@@ -722,11 +1141,23 @@ namespace CamelWorks.Studio
 
             var table = Ui.Table(rows, ("Level", 0), ("Area", 90), ("Top", 90), ("In the check", 90));
 
+            var stairs = Ui.Check("Leave stairs out", false, null);
+
+            stairs.ToolTip = "Detection makes one surface per tread, so the flight above reads as "
+                             + "low headroom over the treads below it.";
+
+            // The same order the screen builds: the one orientation sentence, the settings, the
+            // button, then what it found.
             var detected = Bench.Group("Detected walkable surfaces",
+                Ui.Small("Detection reads triangles and keeps every up-facing surface over "
+                         + "0.05 m², which is a floor, and is also a desk top, a worktop, a window "
+                         + "sill and the top of a wide duct: read the list and drop what is not a "
+                         + "floor."),
+                Ui.Field("Smallest surface kept",
+                         Ui.Choice(new[] { "0.05 m²", "0.25 m²", "1.0 m²", "4.0 m²", "10.0 m²" },
+                                   "0.05 m²", null, 160)),
                 Ui.Check("Prefer elements whose category names a floor", false, null),
-                Ui.Check("Leave stairs out — detection makes one surface per tread, and the "
-                         + "flight above then reads as low headroom over the treads below it",
-                         false, null),
+                stairs,
                 Ui.Runner("Find the surfaces", Ui.Stack(), _ => { }, primary: false),
                 Ui.Line("412 surfaces, 8,940 m², 31 elements refused", 1, true),
                 Ui.Small("31 elements would not give triangles; their bounding-box tops were used "
@@ -734,20 +1165,12 @@ namespace CamelWorks.Studio
                 table,
                 Ui.Picking(table,
                     new Ui.OnPicked("Drop these {n}", (picked, panel) => { }),
-                    new Ui.OnPicked("Put these {n} back", (picked, panel) => { })),
-                Ui.Small("406 surfaces in the check, 2 dropped"),
-                Ui.Small("What is dropped is kept in the run's own settings, so the same desk "
-                         + "tops do not have to be dropped again next time."),
-                Ui.Small("Detection reads triangles: it keeps every up-facing surface over 0.05 m², "
-                         + "which is a floor, and is also a desk top, a worktop, a window sill and "
-                         + "the top of a wide duct. Read the list before running the check and drop "
-                         + "what is not a floor."),
-                Ui.Small("Both ticks are off to start with: the geometric answer is the default, "
-                         + "and a stair with a soffit too low over it is still worth reporting."));
+                    new Ui.OnPicked("Include these {n}", (picked, panel) => { })),
+                Ui.Small("410 surfaces in the check, 2 dropped"));
 
-            return Deck("clash", "checks",
-                        Bench.Surface(null, Ui.Runner("Run", Ui.Stack(), _ => { }),
-                                      Ui.Stack(measure, detected)));
+            // No footer: this is a window off the settings panel, not a tab, so it has no Run of
+            // its own. Edits here apply as they are made, as they do in every configure window.
+            return Deck("clash", "create", Bench.Surface(null, null, detected));
         }
 
         private static Sheet Page(string id, string title, int height, Func<UIElement> build) =>
@@ -913,902 +1336,6 @@ namespace CamelWorks.Studio
 
             return Deck("audit", "health",
                 Bench.Surface(setup, Ui.Runner("Check this federation", Ui.Stack(), _ => { }), stage));
-        }
-
-        // -----------------------------------------------------------------------------------
-        // Coordination — the clash results bench
-        // -----------------------------------------------------------------------------------
-
-        /// <summary>
-        /// Clash Manager ▸ Manage: the test finder, the board, and the bar for what is picked.
-        ///
-        /// Reconstructed from <c>ClashManageViews</c>, which needs a live document and cannot run
-        /// here. Everything structural is the real thing — <see cref="Parts"/> draws the chips,
-        /// the bands and the bar, and the columns are the surface's own widths — so what this
-        /// picture gets wrong is the data and never the design.
-        /// </summary>
-        private static UIElement Coordination(bool panel)
-        {
-            var rail = Rail(panel);
-            var board = Board();
-
-            var foot = new DockPanel { LastChildFill = false };
-
-            var right = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-
-            var runner = Ui.Runner("Refresh", Ui.Stack(), _ => { }, primary: false);
-            runner.Margin = new Thickness(0, 0, 10, 0);
-            runner.VerticalAlignment = VerticalAlignment.Center;
-            right.Children.Add(runner);
-
-            right.Children.Add(Parts.MenuButton("Export", Glyphs.Onward, new[]
-            {
-                Parts.Entry.Barred("Sync into the document", Glyphs.Save,
-                    "This is a published NWD — its clash results are read-only"),
-                Parts.Entry.Saying("Save as a clash file (BCF)", Glyphs.Round,
-                                   "The offline review round — out and back", null),
-                Parts.Entry.Saying("Write a report", Glyphs.Report,
-                                   "One document per party, revision-lettered", null),
-            }));
-
-            // The caption the product declares. Its counted form — "Save 14 changes into the
-            // document" — is built at run time from what the document refused, and a picture
-            // cannot claim a caption no panel contains.
-            var save = Ui.Primary("Save changes", () => { });
-            save.Margin = new Thickness(8, 0, 0, 0);
-            save.VerticalAlignment = VerticalAlignment.Center;
-            right.Children.Add(save);
-
-            DockPanel.SetDock(right, Dock.Right);
-            foot.Children.Add(right);
-
-            return Deck("clash", "manage", Bench.Split(null, rail, board, foot, 372));
-        }
-
-        // -----------------------------------------------------------------------------------
-        // Region 1 — the test finder
-        // -----------------------------------------------------------------------------------
-
-        private static UIElement Rail(bool panel)
-        {
-            var grid = new Grid();
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-            var tools = new StackPanel { Orientation = Orientation.Horizontal };
-
-            tools.Children.Add(Parts.MoreMenu(Glyphs.Tune, "Sort: Most new",
-                new[] { Parts.Entry.Act("Most new", null, null) }));
-
-            // Accented, because a filter is in force and the chips that used to say so are gone.
-            var narrow = Ui.Icon(Glyphs.Filter, "Narrowed to Mechanical. Press to change it.",
-                                 () => { });
-
-            narrow.Content = Ui.Glyph(Glyphs.Filter, 15, "Accent");
-            tools.Children.Add(narrow);
-
-            var top = new DockPanel { LastChildFill = true };
-            DockPanel.SetDock(tools, Dock.Right);
-            top.Children.Add(tools);
-            top.Children.Add(Ui.Text(string.Empty, "Search tests by name or discipline", null, 150));
-
-            var head = new Border
-            {
-                Padding = new Thickness(14, 10, 14, 10),
-                BorderThickness = new Thickness(0, 0, 0, 1),
-                Child = Ui.Stack(top),
-            };
-
-            head.Tint(Border.BorderBrushProperty, "Bd");
-            grid.Children.Add(head);
-
-            var rows = Ui.Stack(RailLabels());
-
-            rows.Children.Add(RailRow("L03 — Mech v Struct", "25 mm", true, 18, 42, 12, 31, 65));
-            rows.Children.Add(RailRow("L03 — Elec v Struct", "25 mm", false, 6, 11, 4, 8, 13));
-            rows.Children.Add(RailRow("L04 — Mech v Arch", "10 mm", false, 24, 61, 30, 4, 8));
-            rows.Children.Add(RailRow("Risers — All v All", "25 mm", false, 0, 0, 0, 40, 56));
-            rows.Children.Add(RailRow("B1 — Drainage v Struct", "50 mm · run Mon 08:40", false, 3, 7, 2, 1, 3));
-            rows.Children.Add(RailRow("L05 — Fire v Struct", "25 mm · run Mon 08:41", false, 0, 4, 9, 11, 20));
-
-            var list = new ScrollViewer
-            {
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                Content = rows,
-            };
-
-            Grid.SetRow(list, 1);
-            grid.Children.Add(list);
-
-            // Over the rows, not above them. Inside the head it pushed the test list down by its
-            // own height, and the rail's column headings stopped lining up with the board's.
-            if (panel)
-            {
-                var over = Narrowing();
-
-                if (over is FrameworkElement floating)
-                {
-                    floating.Margin = new Thickness(10, 0, 10, 0);
-                    floating.VerticalAlignment = VerticalAlignment.Top;
-                    floating.HorizontalAlignment = HorizontalAlignment.Stretch;
-                }
-
-                Grid.SetRow(over, 1);
-                Panel.SetZIndex(over, 2);
-                grid.Children.Add(over);
-            }
-
-            var verbs = new StackPanel { Orientation = Orientation.Horizontal };
-            verbs.Children.Add(Ui.Icon(Glyphs.Play, "Run all the tests again", () => { }));
-
-            verbs.Children.Add(Parts.MoreMenu(Glyphs.More, "Everything else you can do to tests",
-                new[] { Parts.Entry.Act("Rename this test", Glyphs.Pencil, null) }, up: true));
-
-            var bar = new DockPanel { LastChildFill = true };
-            DockPanel.SetDock(verbs, Dock.Right);
-            bar.Children.Add(verbs);
-
-            var dot = new System.Windows.Shapes.Ellipse
-            {
-                Width = 7,
-                Height = 7,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(8, 0, 5, 0),
-            };
-
-            dot.Tint(System.Windows.Shapes.Shape.FillProperty, "RedTx");
-
-            // Names what is queued rather than a bare figure. "14 waiting" said nothing about
-            // what was waiting or on what, and the surface itself now says it in the export menu.
-            var held = Ui.Link("14 changes the document has not taken", () => { });  // harness: data
-            held.Margin = new Thickness(0);
-            held.VerticalAlignment = VerticalAlignment.Center;
-
-            DockPanel.SetDock(dot, Dock.Right);
-            DockPanel.SetDock(held, Dock.Right);
-            bar.Children.Add(held);
-            bar.Children.Add(dot);
-
-            var say = new TextBlock
-            {
-                Text = "3 of 6 tests · 168 results, 143 loose",           // harness: data
-                VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                TextWrapping = TextWrapping.NoWrap,
-            };
-
-            bar.Children.Add(say.Wearing("Hint"));
-
-            var foot = new Border
-            {
-                Padding = new Thickness(14, 8, 14, 8),
-                BorderThickness = new Thickness(0, 1, 0, 0),
-                Child = bar,
-            };
-
-            foot.Tint(Border.BackgroundProperty, "Pane");
-            foot.Tint(Border.BorderBrushProperty, "Bd");
-
-            Grid.SetRow(foot, 2);
-            grid.Children.Add(foot);
-
-            var pane = new Border { BorderThickness = new Thickness(0, 0, 1, 0), Child = grid };
-            pane.Tint(Border.BackgroundProperty, "Card");
-            pane.Tint(Border.BorderBrushProperty, "Bd");
-
-            return pane;
-        }
-
-        /// <summary>The rail's filter panel, which is where a filter is made and taken off.</summary>
-        private static UIElement Narrowing()
-        {
-            // Every facet the product offers, at the width a real job produces. Reviewers read
-            // four chips off this panel and reported that multi-select filtering did not exist.
-            var body = Ui.Stack();
-
-            void Facet(string named, string[] values, string? chosen)
-            {
-                body.Children.Add(Ui.Eyebrow(named));
-
-                var wrap = new WrapPanel();
-
-                foreach (var value in values)
-                    wrap.Children.Add(Parts.Pick(
-                        value, string.Equals(value, chosen, StringComparison.Ordinal), () => { }));
-
-                body.Children.Add(wrap);
-            }
-
-            Facet("Assigned to", new[] { "J. Okonkwo", "R. Patel", "S. Aziz", "M. Lindqvist",
-                                         "Unassigned" }, "J. Okonkwo");
-            Facet("Discipline", new[] { "Mechanical", "Structures", "Electrical", "Architecture",
-                                        "Fire", "Public health" }, "Mechanical");
-            Facet("Level", new[] { "B1", "L01", "L02", "L03", "L04", "Roof" }, null);
-            Facet("Folder", new[] { "Week 33", "Week 32", "Handover" }, null);
-            Facet("Zone", new[] { "Core A", "Core B", "Podium" }, null);
-            Facet("System", new[] { "CHW Supply", "CHW Return", "Small Power", "Wet Riser" }, null);
-            Facet("Since last run", new[] { "New", "Regressed", "Unchanged" }, null);
-
-            body.Children.Add(Ui.Check("Only tests with something open", false, null));
-            body.Children.Add(Ui.Link("Clear all", () => { }));
-
-            var panel = new Border
-            {
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(9),
-                Padding = new Thickness(10),
-                Margin = new Thickness(0, 8, 0, 0),
-                Child = body,
-            };
-
-            panel.Tint(Border.BackgroundProperty, "Card");
-            panel.Tint(Border.BorderBrushProperty, "Bd");
-
-            panel.Effect = new System.Windows.Media.Effects.DropShadowEffect
-            {
-                BlurRadius = 12,
-                ShadowDepth = 2,
-                Direction = 270,
-                Opacity = 0.18,
-            };
-
-            return panel;
-        }
-
-        private static UIElement RailLabels()
-        {
-            var row = new DockPanel { LastChildFill = true };
-            var figures = new StackPanel { Orientation = Orientation.Horizontal };
-
-            foreach (var label in new[] { "New", "Active", "Rev.", "Appr.", "Res." })
-            {
-                var head = new TextBlock
-                {
-                    Text = label,
-                    MinWidth = 26,
-                    Margin = new Thickness(10, 0, 0, 0),
-                    TextAlignment = TextAlignment.Right,
-                };
-
-                figures.Children.Add(head.Wearing("Hint"));
-            }
-
-            DockPanel.SetDock(figures, Dock.Right);
-            row.Children.Add(figures);
-            row.Children.Add(new TextBlock { Text = "Test" }.Wearing("Hint"));
-
-            var band = new Border
-            {
-                Padding = new Thickness(27, 5, 14, 5),
-                BorderThickness = new Thickness(0, 0, 0, 1),
-                Child = row,
-            };
-
-            band.Tint(Border.BackgroundProperty, "Card2");
-            band.Tint(Border.BorderBrushProperty, "Bd");
-
-            return band;
-        }
-
-        private static UIElement RailRow(string name, string hint, bool on,
-                                         int fresh, int active, int reviewed, int approved,
-                                         int closed)
-        {
-            var title = new TextBlock
-            {
-                Text = name,                                        // harness: data
-                FontWeight = FontWeights.SemiBold,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                TextWrapping = TextWrapping.NoWrap,
-            };
-
-            var under = new TextBlock
-            {
-                Text = hint,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                TextWrapping = TextWrapping.NoWrap,
-                Margin = new Thickness(0, 1, 0, 0),
-            };
-
-            var row = new DockPanel { LastChildFill = true };
-
-            var band = Parts.CountBand(new[] { fresh, active, reviewed, approved, closed },
-                                       fresh + active == 0);
-
-            DockPanel.SetDock(band, Dock.Right);
-            row.Children.Add(band);
-            row.Children.Add(Ui.Stack(title.Wearing("Body"), under.Wearing("Hint")));
-
-            var tone = new Border
-            {
-                Padding = new Thickness(12, 8, 14, 8),
-                BorderThickness = new Thickness(3, 0, 0, 0),
-                Child = row,
-            };
-
-            tone.BorderBrush = on ? Skin.Of("Accent")
-                : fresh > 0 ? Skin.Of("RedTx")
-                : fresh + active > 0 ? Skin.Of("AmberTx")
-                : Skin.Of("Ok");
-
-            var line = new Border { BorderThickness = new Thickness(0, 0, 0, 1), Child = tone };
-            line.Tint(Border.BorderBrushProperty, "Bd");
-
-            if (on) line.Tint(Border.BackgroundProperty, "NavActive");
-
-            return line;
-        }
-
-        // -----------------------------------------------------------------------------------
-        // Region 2 and 3 — the board, and the bar for what is picked
-        // -----------------------------------------------------------------------------------
-
-        private static UIElement Board()
-        {
-            var grid = new Grid();
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-            var head = new Border
-            {
-                Padding = new Thickness(16, 10, 16, 0),
-                Child = Ui.Stack(BoardTitle(), BoardStanding(), BoardStrip()),
-            };
-
-            grid.Children.Add(head);
-
-            var body = new ScrollViewer
-            {
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                Padding = new Thickness(16, 10, 16, 16),
-                Content = BoardTable(),
-            };
-
-            Grid.SetRow(body, 1);
-            grid.Children.Add(body);
-
-            var bar = Parts.SelectionBar(3, "row", () => { },
-                Parts.InlineChip(null, new[] { "New", "Active" }, _ => { }, Tone.Plain, "Set status"),
-                Parts.InlineChip(null, new[] { "Mechanical" }, _ => { }, Tone.Plain, "Assign to"),
-                Parts.Verb("Group", Glyphs.Group, true, () => { }),
-                Parts.Verb("Raise as issues", Glyphs.Issue, false, () => { }),
-                Parts.MoreMenu(Glyphs.More, "Everything else for the picked rows",
-                    new[] { Parts.Entry.Act("Focus all of them", Glyphs.Focus, null) }, up: true));
-
-            Grid.SetRow(bar, 2);
-            grid.Children.Add(bar);
-
-            var ground = new Border { Child = grid };
-            ground.Tint(Border.BackgroundProperty, "Bg");
-
-            return ground;
-        }
-
-        private static UIElement BoardTitle()
-        {
-            var row = new DockPanel { LastChildFill = true };
-
-            var verbs = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-
-            verbs.Children.Add(Ui.Icon(Glyphs.Play, "Run this test again", () => { }));
-            verbs.Children.Add(Ui.Icon(Glyphs.Read, "Walk the board one clash at a time", () => { }));
-            verbs.Children.Add(Ui.Icon(Glyphs.Columns, "Which columns the board shows", () => { }));
-
-            var layers = Parts.MoreMenu(Glyphs.Layers,
-                "Showing sharing an item with Pipe CHW-31 and Wall PC-200. Press to change it.",
-                new[]
-                {
-                    Parts.Entry.Heading("Show: Both"),
-                    Parts.Entry.Rule(),
-                    Parts.Entry.Heading("Sharing an item with Pipe CHW-31 and Wall PC-200"),
-                    Parts.Entry.Act("Every clash again, not just these", Glyphs.Close, null),
-                });
-
-            verbs.Children.Add(layers);
-
-            verbs.Children.Add(Ui.Icon(Glyphs.Tune, "Settings", () => { }));
-
-            DockPanel.SetDock(verbs, Dock.Right);
-            row.Children.Add(verbs);
-
-            var said = new TextBlock
-            {
-                Text = "Showing 18 of 168",                         // harness: data
-                VerticalAlignment = VerticalAlignment.Bottom,
-                Margin = new Thickness(10, 0, 10, 0),
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                TextWrapping = TextWrapping.NoWrap,
-            };
-
-            var head = new TextBlock
-            {
-                Text = "L03 — Mech v Struct",                       // harness: data
-                VerticalAlignment = VerticalAlignment.Bottom,
-            };
-
-            var words = new DockPanel { LastChildFill = true };
-            DockPanel.SetDock(head, Dock.Left);
-            words.Children.Add(head.Wearing("Head"));
-            words.Children.Add(said.Wearing("Hint"));
-
-            row.Children.Add(words);
-
-            return row;
-        }
-
-        /// <summary>
-        /// What the carry-over did, in one line under the title.
-        ///
-        /// It runs on every board build and never said so, which is why reviewers read these
-        /// screens as a product with no memory across runs.
-        /// </summary>
-        private static UIElement BoardStanding()
-        {
-            var row = new WrapPanel { Margin = new Thickness(0, 2, 0, 0) };
-
-            row.Children.Add(Ui.Small(
-                "150 results kept their statuses from the last run, 18 new, "
-                + "3 are back after being resolved, 9 gone from the model."));   // harness: data
-
-            return row;
-        }
-
-        private static UIElement BoardStrip()
-        {
-            var strip = new StackPanel { Orientation = Orientation.Horizontal };
-
-            var tabs = new (string Label, int Count, string Key, bool On)[]
-            {
-                ("all", 168, "Text", false),
-                ("new", 18, "RedTx", true),
-                ("active", 42, "Text", false),
-                ("reviewed", 12, "AmberTx", false),
-                ("approved", 31, "Ok", false),
-                ("resolved", 65, "Ok", false),
-            };
-
-            for (var i = 0; i < tabs.Length; i++)
-            {
-                var tab = tabs[i];
-
-                var figure = new TextBlock
-                {
-                    Text = tab.Count.ToString(CultureInfo.InvariantCulture),
-                    FontWeight = FontWeights.SemiBold,
-                    VerticalAlignment = VerticalAlignment.Bottom,
-                };
-
-                figure.Tint(TextBlock.ForegroundProperty, tab.Key);
-
-                var label = new TextBlock
-                {
-                    Text = tab.Label,
-                    FontSize = 11,
-                    VerticalAlignment = VerticalAlignment.Bottom,
-                    Margin = new Thickness(4, 0, 0, 0),
-                };
-
-                label.Tint(TextBlock.ForegroundProperty, tab.On ? "Text" : "Faint");
-
-                var words = new StackPanel { Orientation = Orientation.Horizontal };
-                words.Children.Add(figure.Wearing("Body"));
-                words.Children.Add(label);
-
-                var segment = new Border
-                {
-                    Padding = new Thickness(8, 6, 8, tab.On ? 4 : 6),
-                    BorderThickness = new Thickness(i == 0 ? 0 : 1, 0, 0, tab.On ? 2 : 0),
-                    Child = words,
-                };
-
-                segment.Tint(Border.BorderBrushProperty, tab.On ? "Accent" : "Bd");
-                if (tab.On) segment.Tint(Border.BackgroundProperty, "AccentWash");
-
-                strip.Children.Add(segment);
-            }
-
-            var pill = new Border
-            {
-                CornerRadius = new CornerRadius(8),
-                BorderThickness = new Thickness(1),
-                VerticalAlignment = VerticalAlignment.Center,
-                Child = strip,
-            };
-
-            pill.Tint(Border.BackgroundProperty, "Card");
-            pill.Tint(Border.BorderBrushProperty, "Bd");
-            pill.SetValue(UIElement.ClipToBoundsProperty, true);
-
-            var row = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 8, 0, 0) };
-
-            var find = Ui.Text(string.Empty, "Search", null, 128);
-            find.MaxWidth = 128;
-            find.VerticalAlignment = VerticalAlignment.Center;
-            find.Margin = new Thickness(0, 0, 6, 0);
-
-            DockPanel.SetDock(find, Dock.Right);
-            row.Children.Add(find);
-            row.Children.Add(pill);
-
-            return row;
-        }
-
-        /// <summary>The nine columns, in the order the surface builds them.</summary>
-        private static Grid Cells()
-        {
-            var grid = new Grid();
-
-            void Fixed(double width) =>
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(width) });
-
-            void Flexible(double share, double least) =>
-                grid.ColumnDefinitions.Add(new ColumnDefinition
-                {
-                    Width = new GridLength(share, GridUnitType.Star),
-                    MinWidth = least,
-                });
-
-            // No Clashes column. A group's member count is beside its name, and the width goes
-            // to the two items and the property column.
-            Fixed(26);
-            Flexible(2, 110);
-            Flexible(1, 74);
-            Flexible(1, 74);
-            Fixed(60);
-            Flexible(1, 76);    // one property column, as somebody's own column would be
-            Fixed(104);
-            Fixed(104);
-            Fixed(120);
-
-            return grid;
-        }
-
-        private static void Put(Grid grid, UIElement cell, int column)
-        {
-            if (cell is FrameworkElement element)
-            {
-                element.Margin = new Thickness(0, 0, 8, 0);
-                element.VerticalAlignment = VerticalAlignment.Center;
-            }
-
-            Grid.SetColumn(cell, column);
-            grid.Children.Add(cell);
-        }
-
-        /// <summary>A column header: pressable to sort, with a handle to resize it.</summary>
-        /// <param name="column">Which column, which is also what it says.</param>
-        /// <param name="right">True for a figure, whose label sits over its digits.</param>
-        /// <param name="on">True when the board is sorted by it.</param>
-        /// <param name="unit">
-        /// What the figures under it are in, for the tooltip. A declared column states its unit
-        /// there rather than in the heading, which has no room for it.
-        /// </param>
-        private static UIElement Head(string column, bool right, bool on, string? unit = null)
-        {
-            var label = new TextBlock
-            {
-                Text = column,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                TextWrapping = TextWrapping.NoWrap,
-            };
-
-            label.Wearing("Hint");
-            if (on) label.Tint(TextBlock.ForegroundProperty, "Accent");
-
-            var words = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                HorizontalAlignment = right ? HorizontalAlignment.Right : HorizontalAlignment.Left,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-
-            var mark = on
-                ? Ui.Glyph(Glyphs.Down, 10, "Accent",
-                           right ? new Thickness(0, 0, 3, 0) : new Thickness(4, 0, 0, 0))
-                : null;
-
-            if (right && mark != null) words.Children.Add(mark);
-            words.Children.Add(label);
-            if (!right && mark != null) words.Children.Add(mark);
-
-            return new Border
-            {
-                Background = Brushes.Transparent,
-                Cursor = System.Windows.Input.Cursors.Hand,
-                ToolTip = (on ? "Sorted by " + column + ". Press again to turn it round."
-                              : "Sort by " + column)
-                          + (string.IsNullOrWhiteSpace(unit)
-                                 ? string.Empty
-                                 : " Figures are in " + unit + "."),
-                Child = words,
-            };
-        }
-
-        private static TextBlock Hint(string text) =>
-            new TextBlock
-            {
-                Text = text,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                TextWrapping = TextWrapping.NoWrap,
-            }.Wearing("Hint");
-
-        private static TextBlock Right(TextBlock cell)
-        {
-            cell.TextAlignment = TextAlignment.Right;
-            return cell;
-        }
-
-        private static UIElement BoardTable()
-        {
-            var body = Ui.Stack(TableHead());
-
-            // Assigned to people, not to disciplines. TeamRoster holds people, roles, companies
-            // and teams, and a fixture that wrote "Mechanical" in the assignee column had three
-            // reviewers report that assignment to a person was missing.
-            body.Children.Add(GroupRow("Corridor C — duct against beams", 7, "-48 mm", true, true));
-            body.Children.Add(ClashRow("Clash 121", "Duct 400×250", "Beam 610UB", "-48 mm",
-                                       "New", Tone.Bad, "R. Patel · Structures", "CHW Supply",
-                                       true, false));
-            body.Children.Add(ClashRow("Clash 122", "Duct 600×300", "Beam 460UB", "-31 mm",
-                                       "Active", Tone.Plain, "J. Okonkwo · Mechanical",
-                                       "CHW Supply", true, false));
-            body.Children.Add(ClashRow("Clash 123", "Duct 600×300", "Beam 460UB", "-18 mm",
-                                       "Approved", Tone.Good, "J. Okonkwo · Mechanical",
-                                       "CHW Supply", true, false));
-            body.Children.Add(GroupRow("Riser 2 — pipework against slab edge", 5, "-22 mm", false, false));
-
-            body.Children.Add(Parts.ViewBand(Glyphs.Clash, "In no group", "143 results",
-                                             "of 143 — tick two or more to group them, or run "
-                                             + "the rules on the Coordinate tab", () => { }));
-
-            body.Children.Add(ClashRow("Clash 208", "Pipe CHW-31", "Wall PC-200", "-52 mm",
-                                       "New", Tone.Bad, string.Empty, "CHW Return", false, true));
-            body.Children.Add(ClashRow("Clash 209", "Tray CT-9", "Bracing BR-3", "-14 mm",
-                                       "Reviewed", Tone.Warn, "S. Aziz · Electrical",
-                                       "Small Power", false, true));
-            body.Children.Add(ClashRow("Clash 210", "Sprinkler SP-88", "Slab L03", "-9 mm",
-                                       "Resolved", Tone.Good, "M. Lindqvist · Fire", "Wet Riser",
-                                       false, false));
-
-            var card = new Border
-            {
-                MinWidth = 772,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(10),
-                Child = body,
-            };
-
-            card.Tint(Border.BackgroundProperty, "Card");
-            card.Tint(Border.BorderBrushProperty, "Bd");
-            card.SetValue(UIElement.ClipToBoundsProperty, true);
-
-            var sideways = new ScrollViewer
-            {
-                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-                Content = card,
-            };
-
-            card.SetBinding(FrameworkElement.WidthProperty,
-                            new System.Windows.Data.Binding("ViewportWidth") { Source = sideways });
-
-            return sideways;
-        }
-
-        private static UIElement TableHead()
-        {
-            var grid = Cells();
-
-            var all = new CheckBox
-            {
-                IsThreeState = true,
-                IsChecked = null,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-
-            Put(grid, all, 0);
-            Put(grid, Head("Group or result", false, false), 1);
-            Put(grid, Head("Item 1", false, false), 2);
-            Put(grid, Head("Item 2", false, false), 3);
-            Put(grid, Head("Worst", true, true, "mm"), 4);
-            Put(grid, Head("System Name", false, false), 5);
-            Put(grid, Head("Status", false, false), 6);
-            Put(grid, Head("Assigned", false, false), 7);
-
-            var band = new Border
-            {
-                Padding = new Thickness(12, 8, 12, 8),
-                BorderThickness = new Thickness(0, 0, 0, 1),
-                Child = grid,
-            };
-
-            band.Tint(Border.BackgroundProperty, "Card2");
-            band.Tint(Border.BorderBrushProperty, "Bd");
-
-            return band;
-        }
-
-        private static UIElement GroupRow(string name, int count, string worst, bool open, bool made)
-        {
-            var grid = Cells();
-
-            Put(grid, new CheckBox { IsChecked = false, VerticalAlignment = VerticalAlignment.Center }, 0);
-
-            var words = new StackPanel { Orientation = Orientation.Horizontal };
-            words.Children.Add(Ui.Glyph(open ? Glyphs.Down : Glyphs.Right, 13, "Muted",
-                                        new Thickness(0, 0, 7, 0)));
-
-            words.Children.Add(Ui.Glyph(Glyphs.Group, 15, "Accent", new Thickness(0, 0, 7, 0)));
-
-            var title = new TextBlock
-            {
-                Text = name,                                        // harness: data
-                FontWeight = FontWeights.SemiBold,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                TextWrapping = TextWrapping.NoWrap,
-            };
-
-            words.Children.Add(title.Wearing("Body"));
-
-            if (made) words.Children.Add(Parts.Note("grouped by you"));
-
-            // The member count, at the right of the name's own cell. The figure alone, with the
-            // word on its tooltip: spelt out it left the group's name showing one letter.
-            var many = new TextBlock
-            {
-                Text = count.ToString(CultureInfo.InvariantCulture),  // harness: data
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(8, 0, 0, 0),
-                TextAlignment = TextAlignment.Right,
-                TextWrapping = TextWrapping.NoWrap,
-                ToolTip = Ui.Count(count, "clash") + " in this group",
-            };
-
-            var named = new DockPanel { LastChildFill = true };
-
-            DockPanel.SetDock(many, Dock.Right);
-            named.Children.Add(many.Wearing("Hint"));
-            named.Children.Add(words);
-
-            Put(grid, named, 1);
-            Put(grid, Right(Hint("—")), 2);
-            Put(grid, Right(Hint("—")), 3);
-            Put(grid, Figure(worst, true), 4);
-
-            Put(grid, Hint("—"), 5);
-            Put(grid, Parts.InlineChip("New", new[] { "New" }, _ => { }, Tone.Bad, "Set status"), 6);
-            Put(grid, Parts.InlineChip("Structures", new[] { "Structures" }, _ => { }, Tone.Plain, "Assign"), 7);
-            var groupVerbs = Verbs();
-            Put(grid, groupVerbs, 8);
-            groupVerbs.Margin = new Thickness(0);
-
-            var tone = new Border
-            {
-                Padding = new Thickness(12, 9, 12, 9),
-                BorderThickness = new Thickness(3, 0, 0, 0),
-                BorderBrush = Skin.Of("RedTx"),
-                Child = grid,
-            };
-
-            var line = new Border { BorderThickness = new Thickness(0, 0, 0, 1), Child = tone };
-            line.Tint(Border.BorderBrushProperty, "Bd");
-
-            return line;
-        }
-
-        private static UIElement ClashRow(string name, string a, string b, string worst,
-                                          string status, Tone tone, string who, string system,
-                                          bool inside, bool picked)
-        {
-            var grid = Cells();
-
-            Put(grid, new CheckBox { IsChecked = picked, VerticalAlignment = VerticalAlignment.Center }, 0);
-
-            var title = new TextBlock
-            {
-                Text = name,                                        // harness: data
-                VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                TextWrapping = TextWrapping.NoWrap,
-                Margin = new Thickness(inside ? 22 : 0, 0, 8, 0),
-            };
-
-            title.Wearing("Mono");
-            title.Tint(TextBlock.ForegroundProperty, "Faint");
-            Grid.SetColumn(title, 1);
-            grid.Children.Add(title);
-
-            Put(grid, Item(a), 2);
-            Put(grid, Item(b), 3);
-
-            Put(grid, Figure(worst, worst.StartsWith("-4", StringComparison.Ordinal)
-                                    || worst.StartsWith("-5", StringComparison.Ordinal)), 4);
-
-            Put(grid, Item(system), 5);
-            Put(grid, Parts.InlineChip(status, new[] { status }, _ => { }, tone, "Set status"), 6);
-            Put(grid, Parts.InlineChip(who, new[] { "Mechanical" }, _ => { }, Tone.Plain, "Assign"), 7);
-
-            var verbs = Verbs();
-            verbs.Visibility = picked ? Visibility.Visible : Visibility.Hidden;
-            Put(grid, verbs, 8);
-            verbs.Margin = new Thickness(0);
-
-            var edge = status == "New" ? Skin.Of("RedTx")
-                : status == "Reviewed" ? Skin.Of("AmberTx")
-                : status == "Resolved" ? Skin.Of("Ok")
-                : Brushes.Transparent;
-
-            var toned = new Border
-            {
-                Padding = new Thickness(12, inside ? 7 : 9, 12, inside ? 7 : 9),
-                BorderThickness = new Thickness(inside ? 0 : 3, 0, 0, 0),
-                BorderBrush = inside ? Brushes.Transparent : edge,
-                Child = grid,
-            };
-
-            var line = new Border { BorderThickness = new Thickness(0, 0, 0, 1), Child = toned };
-            line.Tint(Border.BorderBrushProperty, "Bd");
-
-            if (picked) line.Tint(Border.BackgroundProperty, "NavActive");
-            else if (inside) line.Tint(Border.BackgroundProperty, "Card2");
-
-            return line;
-        }
-
-        private static TextBlock Item(string name) =>
-            new TextBlock
-            {
-                Text = name,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                TextWrapping = TextWrapping.NoWrap,
-            }.Wearing("Lbl");
-
-        private static FrameworkElement Verbs()
-        {
-            var bar = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Right,
-            };
-
-            bar.Children.Add(Ui.Icon(Glyphs.Focus, "Focus this clash", () => { }));
-            bar.Children.Add(Ui.Icon(Glyphs.Eye, "Isolate this clash", () => { }));
-            bar.Children.Add(Ui.Icon(Glyphs.Comment, "Comment", () => { }));
-
-            bar.Children.Add(Parts.MoreMenu(Glyphs.More, "Everything else for this clash",
-                new[]
-                {
-                    Parts.Entry.Act("Snapshot", Glyphs.Camera, null),
-                    Parts.Entry.Rule(),
-                    Parts.Entry.Act("Find other clashes with these items", Glyphs.Find, null),
-                }));
-
-            foreach (var verb in bar.Children.OfType<FrameworkElement>())
-                verb.Margin = new Thickness(2, 2, 2, 2);
-
-            return bar;
-        }
-
-        private static TextBlock Figure(string text, bool bad)
-        {
-            var cell = new TextBlock { Text = text, TextAlignment = TextAlignment.Right };
-            cell.Wearing("Body");
-            cell.Tint(TextBlock.ForegroundProperty, bad ? "RedTx" : "Muted");
-            return cell;
         }
 
         // -----------------------------------------------------------------------------------

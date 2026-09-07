@@ -84,7 +84,9 @@ namespace CamelWorks.UI.Views
 
             var root = new DockPanel { Margin = new Thickness(14, 12, 14, 12) };
 
-            var done = Ui.Primary("Done", () => window.Close());
+            // Done closes the window. Every setting on it is written as it is changed, so a
+            // filled primary here would be the loudest control on the screen committing nothing.
+            var done = Ui.Button("Done", () => window.Close());
 
             done.MinWidth = 92;
 
@@ -129,7 +131,7 @@ namespace CamelWorks.UI.Views
         {
             into.Children.Clear();
 
-            into.Children.Add(Bench.Group("The grid",
+            into.Children.Add(Grouped("The grid",
                 Ui.Field("The half that is worked in",
                     Ui.Segmented(new[] { "Above the diagonal", "Below it" },
                         style.UpperIsLive ? "Above the diagonal" : "Below it",
@@ -154,21 +156,21 @@ namespace CamelWorks.UI.Views
                 })));
 
             if (style.Spine)
-                into.Children.Add(Bench.Group("The diagonal",
+                into.Children.Add(Grouped("The diagonal",
                     Colours(style.SpineColour, colour =>
                     {
                         style.SpineColour = colour;
                         onChanged();
                     })));
 
-            into.Children.Add(Bench.Group("A pair ruled out",
+            into.Children.Add(Grouped("A pair ruled out",
                 Colours(style.RuledColour, colour =>
                 {
                     style.RuledColour = colour;
                     onChanged();
                 })));
 
-            into.Children.Add(Bench.Group("What a line shows beside its name",
+            into.Children.Add(Grouped("What a line shows beside its name",
                 Ui.Field("Number",
                     Fielded(style.Numbers, at => { style.Numbers = at; onChanged(); }),
                     "On its own, the number column is drawn only when the numbers say something "
@@ -188,6 +190,36 @@ namespace CamelWorks.UI.Views
             into.Children.Add(Ui.Small("What one symbol means and what colour it is belong to that "
                                        + "symbol: they are on the palette, under the pencil beside "
                                        + "the plus."));
+        }
+
+        /// <summary>
+        /// A group of settings under a label, in sentence case.
+        ///
+        /// <see cref="Bench.Group"/> runs its label through <see cref="Ui.Eyebrow"/>, which
+        /// upper-cases it. It is the same layout otherwise; the fix belongs in the shared file.
+        /// </summary>
+        /// <param name="label">The group's label.</param>
+        /// <param name="fields">The fields, in reading order.</param>
+        private static UIElement Grouped(string label, params UIElement?[] fields)
+        {
+            var stack = new StackPanel { Margin = new Thickness(0, 0, 0, 14) };
+
+            var said = new TextBlock { Text = label ?? string.Empty }.Wearing("Caps");
+
+            said.Margin = new Thickness(0, 0, 0, 6);
+            stack.Children.Add(said);
+
+            foreach (var field in fields)
+            {
+                if (field == null) continue;
+
+                if (field is FrameworkElement held && held.Margin == default)
+                    held.Margin = new Thickness(0, 0, 0, 8);
+
+                stack.Children.Add(Ui.Loose(field));
+            }
+
+            return stack;
         }
 
         /// <summary>The three-way switch a field setting is.</summary>

@@ -496,9 +496,7 @@ namespace CamelWorks.UI.Views
         {
             var section = session.Store.Section(ProjectStore.ClashSection);
 
-            var read = ClashSnapshotJson.FromJson(ClashSnapshotJson.Migrated(
-                section[ClashKeys.Previous], section[ClashKeys.Retired.PreviousParties],
-                section[ClashKeys.Retired.PreviousTaken]));
+            var read = ClashSnapshotJson.FromJson(section[ClashKeys.Previous]);
 
             return read != null && read.OpenByParty.Count > 0 ? read : null;
         }
@@ -709,24 +707,8 @@ namespace CamelWorks.UI.Views
             var section = session.Store.Section(ProjectStore.ClashSection);
             var previous = section[ClashKeys.Snapshot];
 
-            if (ClashSnapshotJson.IsSnapshot(previous))
-            {
-                // A snapshot written before ClashSnapshotJson existed is a bare array with its
-                // counts in two sibling keys. Folded in as it moves, so the per-party comparison
-                // does not disappear on the first save after an upgrade.
-                var carried = ClashSnapshotJson.Migrated(previous,
-                                                        section[ClashKeys.Retired.Parties],
-                                                        section[ClashKeys.Retired.Taken]);
-
-                if (carried != null) section.Set(ClashKeys.Previous, carried);
-            }
-
-            // The four keys the two shapes were spread across. Removed once the value that
-            // replaced them is written, so a stale count cannot be read back later.
-            section.Remove(ClashKeys.Retired.Parties);
-            section.Remove(ClashKeys.Retired.Taken);
-            section.Remove(ClashKeys.Retired.PreviousParties);
-            section.Remove(ClashKeys.Retired.PreviousTaken);
+            // The board being replaced becomes the one Undo puts back.
+            if (ClashSnapshotJson.IsSnapshot(previous)) section.Set(ClashKeys.Previous, previous);
 
             var snapshot = ClashSnapshot.Of(board, takenUtc: DateTimeOffset.UtcNow);
 
@@ -843,261 +825,905 @@ namespace CamelWorks.UI.Views
         // Rules
         // ===================================================================================
 
-        /// <summary>Suppress and flag, then group, then assign — one pipeline, saved with the project.</summary>
-        public static UIElement Rules() => new RulesScreen().Build();
+        /// <summary>
+        /// The rules that shape the board, on the live seat.
+        ///
+        /// The rules are project-file state and the project file sits beside the open model, so
+        /// there is nowhere to write them until a model is open. The screen itself takes a seat
+        /// rather than a session, so it can be drawn without one.
+        /// </summary>
+        public static UIElement Rules()
+        {
+            var seat = Host.Current;
 
+            if (seat == null)
+                return Bench.Surface(null, null, Ui.Stack(Ui.Empty(
+                    "No model is open.",
+                    "Rules are kept in the project file beside the model, so there is nowhere to "
+                    + "write them yet. Open the model these rules belong to.")));
+
+            return Rules(seat);
+        }
+
+        /// <summary>The rules screen on a given seat.</summary>
+        /// <param name="seat">The seat. Its project file is where the rules are read and written.</param>
+        public static UIElement Rules(ISeat seat) => new RulesScreen(seat).Build();
+
+        /// <summary>
+        /// Rules for the clash results on the board: criteria and an action, in three ordered
+        /// stages.
+        ///
+        /// The engine behind this is clash-shaped — <see cref="ClashRuleSet"/> and
+        /// <see cref="ClashPipeline"/> work on <see cref="ClashItem"/> — so the screen states that
+        /// scope rather than implying it covers the clearance and fall-hazard results the board
+        /// also carries.
+        /// </summary>
         private sealed class RulesScreen
         {
+            /// <summary>What a new rule does, as the composer offers it.</summary>
+            private const string ActSuppress = "Suppress";
+
+            /// <summary>Keep the result and mark it.</summary>
+            private const string ActFlag = "Flag";
+
+            /// <summary>Add a step to the grouping stack.</summary>
+            private const string ActGroup = "Group";
+
+            /// <summary>Give a group to a party.</summary>
+            private const string ActAssign = "Assign";
+
+            /// <summary>How wide a paragraph is allowed to be, in device pixels — about 80 characters.</summary>
+            private const double TextWidth = 620;
+
+            private readonly ISeat _seat;
+
+            /// <summary>The live session, or null on a seat with no document. Only the preview needs it.</summary>
+            private readonly Session? _live;
+
             private ClashRuleSet _rules = new ClashRuleSet();
+
+            /// <summary>
+            /// Whether the criteria dropdown has been used, or a rule that matches everything has
+            /// been added.
+            ///
+            /// The composer opens on the first kind in the list, which is "Every result". Warning
+            /// about that before the user has picked anything is a warning about a rule that does
+            /// not exist, so the note waits until the criteria are the user's own.
+            /// </summary>
+            private bool _chose;
+
             private readonly StackPanel _filters = Ui.Stack();
             private readonly StackPanel _grouping = Ui.Stack();
             private readonly StackPanel _assigns = Ui.Stack();
-            private readonly StackPanel _status = Ui.Stack();
+            private readonly StackPanel _preview = Ui.Stack();
+            private readonly StackPanel _saved = Ui.Stack();
+            private readonly StackPanel _composerSaid = Ui.Stack();
+
+            private readonly ComboBox _act;
+            private readonly TextBox _name;
+            private readonly ComboBox _party;
+            private readonly SpecEditor _when;
+            private readonly SpecEditor _by;
+            private readonly Panel _nameField;
+            private readonly Panel _partyField;
+
+            internal RulesScreen(ISeat seat)
+            {
+                _seat = seat ?? throw new ArgumentNullException(nameof(seat));
+                _live = seat as Session;
+
+                // Each section is its own shared-size scope, so the columns line up down a list
+                // of fifteen rules without the three lists having to agree with each other.
+                Grid.SetIsSharedSizeScope(_filters, true);
+                Grid.SetIsSharedSizeScope(_grouping, true);
+                Grid.SetIsSharedSizeScope(_assigns, true);
+
+                _act = Ui.Choice(new[] { ActSuppress, ActFlag, ActGroup, ActAssign }, ActSuppress,
+                                 _ => Retune(), 240);
+
+                _name = Ui.Text(string.Empty, "Named after its criteria", null, 200);
+
+                var parties = seat.Profile.Parties.ToList();
+                if (parties.Count == 0) parties.Add("Unassigned");
+
+                _party = Ui.Choice(parties, parties[0], null, 200);
+
+                // The three combining kinds are left out. They take nested rules, this editor has
+                // nowhere to put one, and a "Not" with nothing inside it builds a rule that
+                // matches nothing. A saved file that holds one still lists and runs it.
+                _when = new SpecEditor("Criteria",
+                                       PredicateSpec.Kinds.Where(k => k.Input != SpecInput.Nested).ToList(),
+                                       () => { _chose = true; Retune(); });
+
+                _by = new SpecEditor("Group by", GroupingSpec.Kinds, Retune);
+
+                _nameField = Ui.Field("Rule name", _name);
+                _partyField = Ui.Field("Assign to", _party);
+            }
 
             internal UIElement Build()
             {
-                var session = Host.Current;
+                _rules = ClashRuleSet.FromJson(_seat.Store.Section(ProjectStore.ClashSection)[ClashKeys.Rules]);
 
-                if (session == null)
-                    return Bench.Surface(null, null, Ui.Stack(Ui.Empty("No model is open.", Host.NoModel)));
+                Retune();
+                Redraw();
 
-                _rules = ClashRuleSet.FromJson(session.Store.Section(ProjectStore.ClashSection)[ClashKeys.Rules]);
+                var save = Ui.Primary("Save rules", Save);
 
-                Redraw(session);
+                var help = Ui.Icon(Glyphs.Info, "How rules are applied", Explain);
 
-                var save = Ui.Button("Save rules", () =>
-                {
-                    _status.Children.Clear();
+                // Two acts, drawn as two. Saving writes the project file and is the filled
+                // button; the preview runs the pipeline, writes nothing, and puts its answer on
+                // the stage rather than in the footer.
+                //
+                // The blocked reason states what the preview needs and why. Bench.Surface no
+                // longer caps the footer at 560 device pixels, so the sentence fits on the line
+                // beside the buttons instead of being cut down to three words.
+                var run = _live == null
+                    ? Ui.Blocked("Try these on the board",
+                                 "A preview reads the clash results, so it needs an open model.")
+                    : Ui.Runner("Try these on the board", _preview, job => Preview(_live, job),
+                                primary: false);
 
-                    session.Store.Section(ProjectStore.ClashSection).Set(ClashKeys.Rules, _rules.ToJson());
-
-                    _status.Children.Add(session.Store.Save()
-                        ? Ui.Done("Saved. The board uses these the next time it loads.")
-                        : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
-                });
-
-                // The tab's own purpose line says "previewed before it is applied", and there was
-                // no preview: you saved, went to Triage, and reloaded the board to find out what
-                // you had done. This is that preview, and it is the panel's answer — the four
-                // figures the rules exist to move.
-                var tryOut = Ui.Runner("Try these on the board", _status, job =>
-                {
-                    var notes = new List<string>();
-                    // A preview and not a run: it writes no journal, records no board and does
-                    // not become what the report and the BCF are taken from. Without that, trying
-                    // a rule out left the next real read comparing against the preview and
-                    // reporting nothing changed.
-                    var board = CoordinateViews.Build(session, job, notes, _rules, preview: true);
-
-                    foreach (var note in notes) _status.Children.Add(Ui.Note(note));
-
-                    if (board == null) return;
-
-                    var funnel = board.Funnel;
-
-                    _status.Children.Add(Ui.Across(
-                        Ui.Figure(funnel.Input.ToString("N0", CultureInfo.InvariantCulture), "from the engine"),
-                        Ui.Figure(funnel.Suppressed.ToString("N0", CultureInfo.InvariantCulture), "suppressed",
-                                  funnel.Suppressed > 0 ? Tone.Warn : Tone.Plain),
-                        Ui.Figure(funnel.Groups.ToString("N0", CultureInfo.InvariantCulture), "issues"),
-                        Ui.Figure(funnel.Unassigned.ToString("N0", CultureInfo.InvariantCulture), "unassigned",
-                                  funnel.Unassigned > 0 ? Tone.Warn : Tone.Good)));
-
-                    _status.Children.Add(Ui.Line(funnel.ToString(), 0.8));
-
-                    if (funnel.RulesApplied.Count > 0)
-                        _status.Children.Add(Ui.Line("Rules: " + string.Join(", ", funnel.RulesApplied), 0.7));
-
-                    _status.Children.Add(Ui.Small("Nothing has been saved. This is what the board "
-                                                  + "would look like if it were."));
-                });
-
-                // The pipeline is the working material, so it is the stage: three stretches under
-                // small-caps labels, in the order the rules run. The one action is the preview -
-                // the save is the quiet act beside the answer it makes true.
-                return Bench.Surface(
-                    null,
-                    tryOut,
-                    Ui.Stack(
-                        Ui.Eyebrow("1 · Suppress and flag"),
-                        Ui.Small("Applied to every result before anything else."),
-                        _filters,
-                        Ui.Eyebrow("2 · Group"),
-                        Ui.Small("Outermost rule first. Empty means the built-in stack."),
-                        _grouping,
-                        Ui.Eyebrow("3 · Assign"),
-                        Ui.Small("First match wins."),
-                        _assigns,
-                        Ui.Actions(save),
-                        _status,
-                        Ui.Small("With nothing here the board still works: it groups by model pair, "
-                                 + "then level, then proximity, and assigns nothing. These rules "
-                                 + "narrow that; they do not switch it on.")));
+                // Ui.Foot rather than a row of three: the primary is docked hard right whether or
+                // not the preview is available, and the help symbol sits away from the two acts.
+                return Bench.Surface(Setup(), Ui.Foot(save, run, help), Stage());
             }
 
-            private void Redraw(Session session)
+            /// <summary>The composer: one rule at a time, in the panel the anatomy keeps options in.</summary>
+            private UIElement Setup()
+            {
+                _when.View.Margin = new Thickness(0, 0, 0, 10);
+                _by.View.Margin = new Thickness(0, 0, 0, 10);
+
+                return Bench.Group("Add a rule",
+                    Ui.Field("Action", _act),
+                    _when.View,
+                    _by.View,
+                    _partyField,
+                    _nameField,
+                    Ui.Actions(Ui.Button("Add rule", Add)),
+                    _composerSaid);
+            }
+
+            /// <summary>
+            /// The pipeline: what it runs over, what comes out of it, and its three stages in the
+            /// order they run.
+            /// </summary>
+            private UIElement Stage() =>
+                Ui.Stack(
+                    Bench.Scope(Scope()),
+                    Flow(),
+                    Say(Destination()),
+                    _live == null
+                        ? Say("No model is open. Rules can be written and saved from here; "
+                              + "trying them on the board reads the clash results, which needs "
+                              + "the model open.")
+                        : null,
+                    _saved,
+                    _preview,
+                    Head("Stage 1 — suppress and flag"),
+                    Say("Runs on every clash result, in this order; the first rule that suppresses "
+                        + "a result stops the rules under it."),
+                    _filters,
+                    Head("Stage 2 — group"),
+                    Say("Runs on the results stage 1 left, outermost rule first; a group is named "
+                        + "by their answers joined in that order."),
+                    _grouping,
+                    Head("Stage 3 — assign"),
+                    Say("Runs on the groups stage 2 made, first match wins; a party set by hand is "
+                        + "never overwritten."),
+                    _assigns);
+
+            /// <summary>
+            /// What the rules act on, and what the project holds that they cannot reach.
+            ///
+            /// The engine is typed on <see cref="ClashItem"/> — two sides, a model pair and an
+            /// overlap — so no rule here can match a clearance shortfall or a fall-hazard opening.
+            /// Those are counted rather than left to be discovered, the way the Report tab states
+            /// what its documents leave out.
+            /// </summary>
+            private string Scope()
+            {
+                var covers = "These rules run over clash results only — every result from every "
+                             + "clash test in the project.";
+
+                // The two other kinds the board carries. Health, IDS and compare findings sit in
+                // the same register and belong to other apps, so naming them here would read as a
+                // list of everything this screen is not.
+                var beside = new[] { FindingSource.Headroom, FindingSource.FallHazard };
+
+                var others = _seat.Findings.Findings.Present
+                    .Where(f => beside.Contains(f.Source, StringComparer.OrdinalIgnoreCase))
+                    .GroupBy(f => f.Source, StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(one => one.Key, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                if (others.Count == 0) return covers;
+
+                return covers + " Not in it: " + string.Join(", ", others.Select(one =>
+                    Ui.Count(one.Count(), Named(one.Key) + " result"))) + ".";
+            }
+
+            /// <summary>What a check's findings are called, in that check's own words.</summary>
+            /// <param name="key">The finding's source.</param>
+            private string Named(string key) =>
+                (_seat.Checks.Find(key)?.Name ?? key).ToLowerInvariant();
+
+            /// <summary>
+            /// Which screens read the board these rules shape, and which one does not.
+            ///
+            /// Report, Exchange and Freeze take the board this pipeline produces. The Manage tab
+            /// does not run the pipeline at all, so a user who saves rules and then opens Manage
+            /// sees nothing change. Stated here rather than left to be found out.
+            /// </summary>
+            private static string Destination() =>
+                "The board they shape is what the Report, Exchange and Freeze tabs read. The "
+                + "Manage tab draws the project's finding register and does not run these rules, "
+                + "so saving here does not change what Manage shows.";
+
+            /// <summary>
+            /// The pipeline as one row: what goes in, the three stages in order, what comes out.
+            ///
+            /// The three sections below are those same stages. Drawn once as a shape, the order
+            /// is stated rather than left to be inferred from the order of three headings.
+            /// </summary>
+            private static UIElement Flow() =>
+                Ui.Across(
+                    Ui.Pill("Clash results"), Arrow(),
+                    Ui.Pill("1. Suppress and flag"), Arrow(),
+                    Ui.Pill("2. Group"), Arrow(),
+                    Ui.Pill("3. Assign"), Arrow(),
+                    Ui.Pill("The clash board"));
+
+            /// <summary>The step from one stage of the flow to the next.</summary>
+            private static UIElement Arrow()
+            {
+                var mark = Ui.Line("→", 0.6);
+                mark.VerticalAlignment = VerticalAlignment.Center;
+                return mark;
+            }
+
+            /// <summary>A section heading: sentence case, one size, one weight.</summary>
+            /// <param name="text">The heading.</param>
+            private static TextBlock Head(string text)
+            {
+                var head = Ui.Heading(text);
+                head.Margin = new Thickness(0, 20, 0, 2);
+                return head;
+            }
+
+            /// <summary>A line of orientation, capped at a readable measure.</summary>
+            /// <param name="text">The line.</param>
+            private static TextBlock Say(string text)
+            {
+                var line = Ui.Line(text, 0.75);
+                line.MaxWidth = TextWidth;
+                line.HorizontalAlignment = HorizontalAlignment.Left;
+                return line;
+            }
+
+            /// <summary>Redraw the three stages from the rule set.</summary>
+            private void Redraw()
             {
                 _filters.Children.Clear();
                 _grouping.Children.Clear();
                 _assigns.Children.Clear();
 
-                foreach (var filter in _rules.Filters.ToList())
-                {
-                    var row = new WrapPanel();
-                    row.Children.Add(Ui.Check(string.Empty, filter.IsEnabled, v => filter.IsEnabled = v));
-                    row.Children.Add(Ui.Pill(filter.Suppress ? "suppress" : "flag",
-                        filter.Suppress ? Tone.Warn : Tone.Plain));
-                    row.Children.Add(Ui.Line(filter.Name, 1, true));
-                    row.Children.Add(Ui.Line(filter.When.Describe(), 0.75));
+                _filters.Children.Add(_rules.Filters.Count == 0
+                    ? Nothing("No suppress or flag rules.",
+                              "Every clash result the tests report reaches stage 2.",
+                              "Add a suppress rule", () => Compose(ActSuppress))
+                    : Filters());
 
-                    var drop = Ui.Icon(Glyphs.Bin, "Remove this suppress-or-flag rule", () => { _rules.Filters.Remove(filter); Redraw(session); });
-                    row.Children.Add(drop);
+                _grouping.Children.Add(_rules.Grouping.Count == 0
+                    ? Nothing("No grouping rules.",
+                              "The board groups by model pair, then level, then results within "
+                              + Metres(_seat.Profile.ClashProximity) + " of each other.",
+                              "Add a grouping rule", () => Compose(ActGroup))
+                    : Groups());
 
-                    Space(row);
-                    _filters.Children.Add(row);
-                }
-
-                _filters.Children.Add(NewFilter(session));
-
-                foreach (var group in _rules.Grouping.ToList())
-                {
-                    var row = new WrapPanel();
-                    row.Children.Add(Ui.Line(group.Describe(), 1));
-
-                    var drop = Ui.Icon(Glyphs.Bin, "Remove this grouping step", () => { _rules.Grouping.Remove(group); Redraw(session); });
-                    row.Children.Add(drop);
-
-                    Space(row);
-                    _grouping.Children.Add(row);
-                }
-
-                _grouping.Children.Add(NewGrouping(session));
-
-                foreach (var assign in _rules.Assigns.ToList())
-                {
-                    var row = new WrapPanel();
-                    row.Children.Add(Ui.Check(string.Empty, assign.IsEnabled, v => assign.IsEnabled = v));
-                    row.Children.Add(Ui.Line(assign.Party, 1, true));
-                    row.Children.Add(Ui.Line("gets " + assign.When.Describe(), 0.75));
-
-                    var drop = Ui.Icon(Glyphs.Bin, "Remove this assignment", () => { _rules.Assigns.Remove(assign); Redraw(session); });
-                    row.Children.Add(drop);
-
-                    Space(row);
-                    _assigns.Children.Add(row);
-                }
-
-                _assigns.Children.Add(NewAssign(session));
+                _assigns.Children.Add(_rules.Assigns.Count == 0
+                    ? Nothing("No assignment rules.",
+                              "Groups reach the board with no party, and are assigned by hand there.",
+                              "Add an assignment rule", () => Compose(ActAssign))
+                    : Assigns());
             }
 
-            private static void Space(Panel row)
+            /// <summary>
+            /// One stage with no rules in it, drawn to the same edge and width as the others.
+            ///
+            /// The shared empty state centres itself and takes the width of its own sentence,
+            /// which is right for a whole pane with nothing in it. Three of them down one column
+            /// were three cards of three widths, none of them starting where the headings above
+            /// them start, and where a table will be once a rule exists.
+            /// </summary>
+            /// <param name="what">What the stage has none of.</param>
+            /// <param name="why">What happens in its absence.</param>
+            /// <param name="caption">What the way out says.</param>
+            /// <param name="onClick">The way out.</param>
+            private static UIElement Nothing(string what, string why, string caption, Action onClick)
             {
-                foreach (var child in row.Children.OfType<FrameworkElement>())
-                    child.Margin = new Thickness(0, 2, 7, 2);
+                var card = Ui.Empty(what, why, caption, onClick);
+
+                if (card is FrameworkElement frame)
+                {
+                    frame.HorizontalAlignment = HorizontalAlignment.Left;
+                    frame.MaxWidth = double.PositiveInfinity;
+                    frame.Width = 520;
+                }
+
+                return card;
             }
 
-            private UIElement NewFilter(Session session)
+            /// <summary>
+            /// Stage 1 as a table: what each rule does, what it is handed, and what it matches.
+            ///
+            /// "Runs on" is the answer to what a rule applies to, and it is decided by order: the
+            /// first rule sees every result, each one after it sees what the rules above left.
+            /// That is why the bar can move a rule as well as remove it.
+            /// </summary>
+            private UIElement Filters()
             {
-                var name = Ui.Text("New rule", null, 140);
-                var suppress = Ui.Choice(new[] { "suppress", "flag" }, "suppress", null, 100);
-                var editor = new SpecEditor(PredicateSpec.Kinds);
+                var rows = new List<TableRow>();
 
-                var add = Ui.Icon(Glyphs.Add, "Add this rule", () =>
+                for (var at = 0; at < _rules.Filters.Count; at++)
                 {
-                    var spec = editor.Spec();
-                    if (spec == null) return;
+                    var filter = _rules.Filters[at];
 
-                    _rules.Filters.Add(new FilterSpec(
-                        name.Text.Trim().Length == 0 ? spec.Describe() : name.Text.Trim(),
-                        spec,
-                        (suppress.SelectedItem as string) != "flag"));
+                    // The second cell is the tick column's placeholder: Ticking replaces the cell
+                    // template, and the row still has to carry a value in that slot.
+                    rows.Add(new TableRow(filter,
+                            Place(at),
+                            string.Empty,
+                            filter.Suppress ? "Suppress" : "Flag",
+                            filter.Name,
+                            at == 0 ? "Every clash result" : "What " + Above(at) + " left",
+                            Criteria(filter.When))
+                        .Ticking(filter.IsEnabled, on => { filter.IsEnabled = on; Touched(); }));
+                }
 
-                    Redraw(session);
-                });
+                var table = Ui.Table(rows,
+                    ("#", 28), ("On", 38), ("Does", 78), ("Rule", 185), ("Runs on", 150),
+                    ("Matches", 0)).Ticking(1);
 
-                return Ui.Stack(Ui.Across(name, suppress), editor.View, Ui.Across(add));
+                return Ui.Picking(table,
+                    new Ui.OnPicked("Earlier", (picked, said) => Shift(_rules.Filters, picked, -1)),
+                    new Ui.OnPicked("Later", (picked, said) => Shift(_rules.Filters, picked, 1)),
+                    new Ui.OnPicked("Turn on {n}", (picked, said) => Switch(picked, true)),
+                    new Ui.OnPicked("Turn off {n}", (picked, said) => Switch(picked, false)),
+                    new Ui.OnPicked("Remove {n}", (picked, said) => Forget(_rules.Filters, picked),
+                                    danger: true));
             }
 
-            private UIElement NewGrouping(Session session)
+            /// <summary>
+            /// Stage 2 as a table.
+            ///
+            /// <see cref="GroupingSpec"/> has no enabled flag and the pipeline runs every rule in
+            /// the stack, so the column says Always and the bar removes rather than switches off.
+            /// </summary>
+            private UIElement Groups()
             {
-                var editor = new SpecEditor(GroupingSpec.Kinds);
+                var rows = new List<TableRow>();
 
-                var add = Ui.Icon(Glyphs.Add, "Add this rule", () =>
+                for (var at = 0; at < _rules.Grouping.Count; at++)
                 {
-                    var kind = editor.Kind();
+                    var step = _rules.Grouping[at];
+
+                    rows.Add(new TableRow(step,
+                        Place(at),
+                        "Always",
+                        step.Descriptor?.Title ?? step.Kind,
+                        at == 0 ? "Every result stage 1 left" : "Each group from " + Above(at),
+                        Criteria(step)));
+                }
+
+                var table = Ui.Table(rows,
+                    ("#", 28), ("On", 52), ("Group by", 180), ("Runs on", 175), ("Detail", 0));
+
+                return Ui.Picking(table,
+                    new Ui.OnPicked("Earlier", (picked, said) => Shift(_rules.Grouping, picked, -1)),
+                    new Ui.OnPicked("Later", (picked, said) => Shift(_rules.Grouping, picked, 1)),
+                    new Ui.OnPicked("Remove {n}", (picked, said) => Forget(_rules.Grouping, picked),
+                                    danger: true));
+            }
+
+            /// <summary>Stage 3 as a table: who gets the group, and which groups are still free.</summary>
+            private UIElement Assigns()
+            {
+                var rows = new List<TableRow>();
+
+                for (var at = 0; at < _rules.Assigns.Count; at++)
+                {
+                    var assign = _rules.Assigns[at];
+
+                    rows.Add(new TableRow(assign,
+                            Place(at),
+                            string.Empty,
+                            assign.Party,
+                            at == 0 ? "Every group" : "Groups " + Above(at) + " did not claim",
+                            Criteria(assign.When))
+                        .Ticking(assign.IsEnabled, on => { assign.IsEnabled = on; Touched(); }));
+                }
+
+                var table = Ui.Table(rows,
+                    ("#", 28), ("On", 38), ("Assign to", 140), ("Runs on", 200),
+                    ("Matches", 0)).Ticking(1);
+
+                return Ui.Picking(table,
+                    new Ui.OnPicked("Earlier", (picked, said) => Shift(_rules.Assigns, picked, -1)),
+                    new Ui.OnPicked("Later", (picked, said) => Shift(_rules.Assigns, picked, 1)),
+                    new Ui.OnPicked("Turn on {n}", (picked, said) => Switch(picked, true)),
+                    new Ui.OnPicked("Turn off {n}", (picked, said) => Switch(picked, false)),
+                    new Ui.OnPicked("Remove {n}", (picked, said) => Forget(_rules.Assigns, picked),
+                                    danger: true));
+            }
+
+            /// <summary>A rule's place in its stage, counted from one.</summary>
+            /// <param name="at">Its index.</param>
+            private static string Place(int at) => (at + 1).ToString(CultureInfo.InvariantCulture);
+
+            /// <summary>The rules above this one, as a row refers to them.</summary>
+            /// <param name="at">The index of the rule doing the referring, which is never nought.</param>
+            private static string Above(int at) =>
+                at == 1 ? "rule 1" : "rules 1–" + at.ToString(CultureInfo.InvariantCulture);
+
+            /// <summary>The proximity radius, with the default the pipeline uses when it is unset.</summary>
+            /// <param name="metres">The distance, or zero for the default.</param>
+            private static string Metres(double metres) => Length(metres > 0 ? metres : 5.0);
+
+            /// <summary>Whether a length reads better in millimetres: non-zero and under a metre.</summary>
+            /// <param name="metres">The length.</param>
+            private static bool Fine(double metres) => metres != 0 && Math.Abs(metres) < 1;
+
+            /// <summary>A length with its unit, in the scale asked for.</summary>
+            /// <param name="metres">The length.</param>
+            /// <param name="fine">True for millimetres, false for metres.</param>
+            private static string Length(double metres, bool fine) =>
+                fine
+                    ? (metres * 1000).ToString("0.###", CultureInfo.InvariantCulture) + " mm"
+                    : metres.ToString("0.###", CultureInfo.InvariantCulture) + " m";
+
+            /// <summary>A length with its unit, in whichever scale reads.</summary>
+            /// <param name="metres">The length.</param>
+            private static string Length(double metres) => Length(metres, Fine(metres));
+
+            /// <summary>
+            /// The two ends of a distance range, in one scale.
+            ///
+            /// Both ends take the finer scale if either needs it, so a range never reads
+            /// "between 0 m and 5 mm".
+            /// </summary>
+            /// <param name="from">The near end.</param>
+            /// <param name="to">The far end.</param>
+            private static string Span(double from, double to)
+            {
+                var fine = Fine(from) || Fine(to);
+                return Length(from, fine) + " and " + Length(to, fine);
+            }
+
+            /// <summary>
+            /// What a suppress or flag rule matches, with the unit on every measured value.
+            ///
+            /// <see cref="PredicateSpec.Describe"/> writes bare numbers, because Core has no
+            /// opinion about how a screen shows a length. The three measured kinds are formatted
+            /// here and everything else falls through to the Core wording.
+            /// </summary>
+            /// <param name="spec">The rule.</param>
+            private static string Criteria(PredicateSpec spec)
+            {
+                var kind = spec.Descriptor;
+                if (kind == null) return spec.Describe();
+
+                return kind.Id switch
+                {
+                    "maxVolume" => kind.Title + " "
+                                   + spec.A.ToString("0.####", CultureInfo.InvariantCulture) + " m³",
+                    "distance" => kind.Title + " " + Span(spec.A, spec.B),
+                    "angle" => kind.Title + " " + Degrees(spec.A) + " and " + Degrees(spec.B),
+                    _ => spec.Describe(),
+                };
+            }
+
+            /// <summary>What a grouping rule groups by, without repeating its title.</summary>
+            /// <param name="step">The rule.</param>
+            private static string Criteria(GroupingSpec step)
+            {
+                var kind = step.Descriptor;
+                if (kind == null) return step.Describe();
+
+                return kind.Input switch
+                {
+                    SpecInput.Number => Metres(step.A),
+                    SpecInput.Text => "'" + (step.Name ?? string.Empty) + "'",
+                    _ => string.Empty,
+                };
+            }
+
+            /// <summary>An angle with its unit.</summary>
+            /// <param name="degrees">The angle.</param>
+            private static string Degrees(double degrees) =>
+                degrees.ToString("0.###", CultureInfo.InvariantCulture) + "°";
+
+            /// <summary>
+            /// Move the picked rules one place through their stage.
+            ///
+            /// A rule at the end of its list cannot move, and a wall stops the ones behind it
+            /// stepping over it: without that, picking the first two rules and pressing Earlier
+            /// would swap them rather than leave the pair where it is.
+            /// </summary>
+            /// <typeparam name="T">The rule type.</typeparam>
+            /// <param name="list">The stage's rules.</param>
+            /// <param name="picked">The rows the bar was pressed with.</param>
+            /// <param name="by">Minus one for earlier, plus one for later.</param>
+            private void Shift<T>(IList<T> list, IReadOnlyList<object> picked, int by)
+            {
+                // Earlier moves the topmost rule first, later moves the bottom one first, so a
+                // rule never steps over another rule in the same press.
+                var order = picked.OfType<T>()
+                    .Select(one => list.IndexOf(one))
+                    .Where(at => at >= 0)
+                    .OrderBy(at => by < 0 ? at : -at)
+                    .ToList();
+
+                if (order.Count == 0) return;
+
+                var wall = by < 0 ? 0 : list.Count - 1;
+
+                foreach (var at in order)
+                {
+                    if (by < 0 ? at <= wall : at >= wall)
+                    {
+                        wall += by < 0 ? 1 : -1;
+                        continue;
+                    }
+
+                    var moved = list[at];
+                    list.RemoveAt(at);
+                    list.Insert(at + by, moved);
+                }
+
+                Touched();
+                Redraw();
+            }
+
+            /// <summary>Turn the picked suppress, flag or assignment rules on or off.</summary>
+            /// <param name="picked">The rows the bar was pressed with.</param>
+            /// <param name="on">True to run them, false to leave them in the list doing nothing.</param>
+            private void Switch(IReadOnlyList<object> picked, bool on)
+            {
+                foreach (var one in picked)
+                {
+                    if (one is FilterSpec filter) filter.IsEnabled = on;
+                    else if (one is AssignSpec assign) assign.IsEnabled = on;
+                }
+
+                Touched();
+                Redraw();
+            }
+
+            /// <summary>Take the picked rules out of their stage.</summary>
+            /// <typeparam name="T">The rule type.</typeparam>
+            /// <param name="list">The stage's rules.</param>
+            /// <param name="picked">The rows the bar was pressed with.</param>
+            private void Forget<T>(IList<T> list, IReadOnlyList<object> picked)
+            {
+                foreach (var one in picked.OfType<T>()) list.Remove(one);
+
+                Touched();
+                Redraw();
+            }
+
+            /// <summary>Point the composer at one kind of rule, from a section that has none.</summary>
+            /// <param name="act">Which action to compose.</param>
+            private void Compose(string act)
+            {
+                _act.SelectedItem = act;
+                Retune();
+            }
+
+            /// <summary>Show the fields this action needs, and warn about a combination that empties the board.</summary>
+            private void Retune()
+            {
+                var act = _act.SelectedItem as string ?? ActSuppress;
+
+                _when.View.Visibility = act == ActGroup ? Visibility.Collapsed : Visibility.Visible;
+                _by.View.Visibility = act == ActGroup ? Visibility.Visible : Visibility.Collapsed;
+                _partyField.Visibility = act == ActAssign ? Visibility.Visible : Visibility.Collapsed;
+
+                _nameField.Visibility = act == ActSuppress || act == ActFlag
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+
+                _composerSaid.Children.Clear();
+
+                if (_chose && act == ActSuppress && _when.Kind()?.Id == "always")
+                    _composerSaid.Children.Add(Ui.Note("These criteria match every result, so this "
+                        + "rule would take the whole board off. Narrow it first."));
+            }
+
+            /// <summary>Add the composed rule to its list.</summary>
+            private void Add()
+            {
+                _composerSaid.Children.Clear();
+
+                var act = _act.SelectedItem as string ?? ActSuppress;
+
+                if (act == ActGroup)
+                {
+                    var kind = _by.Kind();
                     if (kind == null) return;
 
-                    _rules.Grouping.Add(new GroupingSpec(kind.Id)
+                    if (kind.Input == SpecInput.Text && _by.Name() == null)
                     {
-                        A = editor.Number(),
-                        Name = editor.Name(),
-                    });
+                        _composerSaid.Children.Add(Ui.Problem("This rule needs a " + _by.Wants() + "."));
+                        return;
+                    }
 
-                    Redraw(session);
-                });
+                    _rules.Grouping.Add(new GroupingSpec(kind.Id) { A = _by.Number(), Name = _by.Name() });
+                }
+                else
+                {
+                    var kind = _when.Kind();
+                    var spec = _when.Spec();
 
-                return Ui.Stack(editor.View, Ui.Across(add));
+                    if (kind == null || spec == null) return;
+
+                    if ((kind.Input == SpecInput.Text || kind.Input == SpecInput.NameAndValue)
+                        && spec.Name == null)
+                    {
+                        _composerSaid.Children.Add(Ui.Problem("This rule needs a " + _when.Wants() + "."));
+                        return;
+                    }
+
+                    if (act == ActAssign)
+                    {
+                        _rules.Assigns.Add(new AssignSpec(spec, _party.SelectedItem as string ?? "Unassigned"));
+                    }
+                    else
+                    {
+                        var typed = _name.Text.Trim();
+
+                        _rules.Filters.Add(new FilterSpec(typed.Length == 0 ? Criteria(spec) : typed,
+                                                          spec, act == ActSuppress));
+                        _name.Text = string.Empty;
+
+                        // The rule exists now, so the note about a rule that takes the whole
+                        // board off has something to point at even if the criteria were left as
+                        // the composer offered them.
+                        if (act == ActSuppress && kind.Id == "always") _chose = true;
+                    }
+                }
+
+                Touched();
+                Redraw();
+                Retune();
             }
 
-            private UIElement NewAssign(Session session)
+            /// <summary>Say that the rule set on screen is no longer what the project file holds.</summary>
+            private void Touched()
             {
-                var parties = session.Profile.Parties.ToList();
-                if (parties.Count == 0) parties.Add("Unassigned");
+                _saved.Children.Clear();
+                _saved.Children.Add(Say("Edited. Nothing is written to the project file until "
+                                        + "Save rules is pressed."));
+            }
 
-                var party = parties[0];
-                var picker = Ui.Choice(parties, party, p => party = p);
-                var editor = new SpecEditor(PredicateSpec.Kinds);
+            /// <summary>Write the rule set to the project file.</summary>
+            private void Save()
+            {
+                _saved.Children.Clear();
 
-                var add = Ui.Icon(Glyphs.Add, "Add this rule", () =>
+                _seat.Store.Section(ProjectStore.ClashSection).Set(ClashKeys.Rules, _rules.ToJson());
+
+                if (!_seat.Store.Save())
                 {
-                    var spec = editor.Spec();
-                    if (spec == null) return;
+                    _saved.Children.Add(Ui.Problem(_seat.Store.LastSaveProblem
+                                                   ?? "Could not write the project file."));
+                    return;
+                }
 
-                    _rules.Assigns.Add(new AssignSpec(spec, party));
-                    Redraw(session);
-                });
+                var count = _rules.Filters.Count + _rules.Grouping.Count + _rules.Assigns.Count;
 
-                return Ui.Stack(Ui.Across(picker), editor.View, Ui.Across(add));
+                _seat.Record(ActivityKind.Setup, "Saved " + Ui.Count(count, "clash rule") + ".");
+                _saved.Children.Add(Ui.Done("Saved. The Report, Exchange and Freeze tabs apply "
+                                            + "these rules the next time the board loads. The "
+                                            + "Manage tab does not run them."));
+            }
+
+            /// <summary>
+            /// Run the pipeline with the rules on screen and report what they would do.
+            ///
+            /// A preview, not a run: it writes no journal and does not become the board the report
+            /// and the BCF are taken from, so trying a rule out cannot leave the next read
+            /// comparing against it.
+            /// </summary>
+            /// <param name="session">The live session.</param>
+            /// <param name="job">The job, for progress and Stop.</param>
+            private void Preview(Session session, Job job)
+            {
+                var notes = new List<string>();
+                var board = CoordinateViews.Build(session, job, notes, _rules, preview: true);
+
+                foreach (var note in notes) _preview.Children.Add(Ui.Note(note));
+
+                if (board == null) return;
+
+                var funnel = board.Funnel;
+
+                _preview.Children.Add(Ui.Across(
+                    Ui.Figure(Tallied(funnel.Input), "results read"),
+                    Ui.Figure(Tallied(funnel.Suppressed), "suppressed",
+                              funnel.Suppressed > 0 ? Tone.Warn : Tone.Plain),
+                    Ui.Figure(Tallied(funnel.Flagged), "flagged"),
+                    Ui.Figure(Tallied(funnel.Groups), "groups"),
+                    Ui.Figure(Tallied(funnel.Assigned), "groups assigned"),
+                    Ui.Figure(Tallied(funnel.Unassigned), "groups unassigned",
+                              funnel.Unassigned > 0 ? Tone.Warn : Tone.Good)));
+
+                var idle = _rules.Filters
+                    .Where(f => f.IsEnabled && !funnel.RulesApplied.Contains(f.Name, StringComparer.Ordinal))
+                    .Select(f => f.Name)
+                    .ToList();
+
+                if (idle.Count > 0)
+                    _preview.Children.Add(Say(Ui.Count(idle.Count, "rule") + " matched nothing: "
+                                              + string.Join(", ", idle) + "."));
+
+                if (funnel.Ungroupable > 0)
+                    _preview.Children.Add(Say(Ui.Count(funnel.Ungroupable, "result")
+                        + " no grouping rule could place. They reach the board in one group "
+                        + "called Ungrouped."));
+
+                _preview.Children.Add(Say("Nothing was written. Press Save rules to keep these."));
+            }
+
+            /// <summary>A count as it reads in a scoreboard.</summary>
+            /// <param name="count">The count.</param>
+            private static string Tallied(int count) => count.ToString("N0", CultureInfo.InvariantCulture);
+
+            /// <summary>
+            /// The reference matter, behind one symbol rather than standing under the lists.
+            ///
+            /// Why the stages run in this order, what an empty rule set does, and the long form
+            /// of the scope the surface states in one line. Each is read once and then known.
+            /// </summary>
+            private void Explain() =>
+                Ui.Configure("How rules are applied", null,
+                    new Ui.Page("The order", () => Ui.Stack(
+                        Part("Suppress and flag",
+                             "Runs on every result before anything else, so a result the "
+                             + "coordinator has decided is not a clash never reaches a group. A "
+                             + "result stops at the first rule that suppresses it, so a flag rule "
+                             + "under a suppress rule that matches the same result never runs."),
+                        Part("Group",
+                             "Runs on what suppression left. Each rule answers with one part of "
+                             + "the group name, and the parts are joined in the order the rules "
+                             + "are listed, so the first rule is the outermost division of the "
+                             + "board. A result no rule can answer for is reported rather than "
+                             + "grouped. Every grouping rule in the list runs — unlike a suppress, "
+                             + "flag or assignment rule it has no on-off box, and is stopped by "
+                             + "removing it."),
+                        Part("Assign",
+                             "Runs on the groups, because the group is the unit of "
+                             + "responsibility. The first rule whose criteria match any result in "
+                             + "the group wins, and a group already given to a party by hand is "
+                             + "left alone."))),
+                    new Ui.Page("With no rules", () => Ui.Stack(
+                        Part("What runs",
+                             "An empty rule set is a working one. The board groups by model pair, "
+                             + "then level, then results within "
+                             + Metres(_seat.Profile.ClashProximity) + " of each other, and "
+                             + "assigns nothing. Rules narrow that; they do not switch it on."),
+                        Part("When they take effect",
+                             "Saved rules are read when the board loads. Saving here does not "
+                             + "rearrange a board that is already open."))),
+                    new Ui.Page("What they cover", () => Ui.Stack(
+                        Part("Clash results only",
+                             "The rule engine works on a clash result: two items, the models they "
+                             + "came from, and the overlap between them. A clearance shortfall and "
+                             + "a fall-hazard opening are not that shape, so no rule on this screen "
+                             + "can match one. Those checks write into the project's finding "
+                             + "register and reach the Manage tab without passing through here."),
+                        Part("Which tests",
+                             "Every clash test in the project. There is no rule that narrows a "
+                             + "stage to one test; group by clash test to keep a test's results "
+                             + "together on the board."),
+                        Part("Where the result goes",
+                             "The board these rules produce is what the Report, Exchange and "
+                             + "Freeze tabs read. The Manage tab draws the finding register and "
+                             + "does not run the rules, so saving here does not change what it "
+                             + "shows."))));
+
+            /// <summary>One passage of the help window: a sentence-case heading and its paragraph.</summary>
+            /// <param name="title">What it is about.</param>
+            /// <param name="text">The passage.</param>
+            private static UIElement Part(string title, string text)
+            {
+                var head = Ui.Heading(title);
+                head.Margin = new Thickness(0, 0, 0, 4);
+
+                var body = Ui.Small(text);
+                body.MaxWidth = TextWidth;
+                body.Margin = new Thickness(0, 0, 0, 16);
+
+                return Ui.Stack(head, body);
             }
         }
 
         /// <summary>
-        /// One editor that can draw every rule, because every rule says what it needs.
+        /// One editor that can draw every rule kind, labelled from the kind it is set to.
         ///
         /// Without this each of the thirteen predicates and ten grouping rules would need its own
         /// row of controls, and adding a rule to Core would mean remembering to add one here.
         /// </summary>
         private sealed class SpecEditor
         {
-            private readonly ComboBox _kind;
-            private readonly TextBox _first = Ui.Text(string.Empty, null, 110);
-            private readonly TextBox _second = Ui.Text(string.Empty, null, 110);
-            private readonly TextBlock _hint = Ui.Line(string.Empty, 0.6);
             private readonly IReadOnlyList<SpecKind> _kinds;
+            private readonly ComboBox _kind;
+            private readonly TextBox _first = Ui.Text(string.Empty, null, 90);
+            private readonly TextBox _second = Ui.Text(string.Empty, null, 90);
 
-            internal SpecEditor(IReadOnlyList<SpecKind> kinds)
+            private readonly TextBlock _firstLabel =
+                new TextBlock { Margin = new Thickness(0, 0, 0, 4) }.Wearing("Lbl");
+
+            private readonly TextBlock _secondLabel =
+                new TextBlock { Margin = new Thickness(0, 0, 0, 4) }.Wearing("Lbl");
+
+            private readonly StackPanel _firstBox;
+            private readonly StackPanel _secondBox;
+            private readonly Action? _onChanged;
+
+            /// <summary>Build an editor over one set of kinds.</summary>
+            /// <param name="label">What the kind dropdown is called.</param>
+            /// <param name="kinds">The kinds it offers.</param>
+            /// <param name="onChanged">Called when the kind changes.</param>
+            internal SpecEditor(string label, IReadOnlyList<SpecKind> kinds, Action? onChanged)
             {
                 _kinds = kinds;
+                _onChanged = onChanged;
 
-                _kind = Ui.Choice(kinds.Select(k => k.Title), kinds[0].Title, _ => Update(), 190);
-                Update();
+                _kind = Ui.Choice(kinds.Select(k => k.Title), kinds[0].Title, _ =>
+                {
+                    Relabel();
+                    _onChanged?.Invoke();
+                }, 240);
 
-                View = Ui.Across(_kind, _first, _second, _hint);
+                _first.MaxWidth = 130;
+                _second.MaxWidth = 130;
+
+                _firstBox = Ui.Stack(_firstLabel, _first);
+                _secondBox = Ui.Stack(_secondLabel, _second);
+
+                View = Ui.Stack(Ui.Field(label, _kind), Ui.Across(_firstBox, _secondBox));
+
+                Relabel();
             }
 
-            internal UIElement View { get; }
+            /// <summary>The dropdown and its operand fields.</summary>
+            internal StackPanel View { get; }
 
+            /// <summary>The kind now picked, or null when the dropdown holds something unknown.</summary>
             internal SpecKind? Kind()
             {
                 var title = _kind.SelectedItem as string;
                 return _kinds.FirstOrDefault(k => string.Equals(k.Title, title, StringComparison.Ordinal));
             }
 
+            /// <summary>What the first field is asking for, for a validation line.</summary>
+            internal string Wants()
+            {
+                var kind = Kind();
+                return kind == null ? "value" : FirstLabel(kind).ToLowerInvariant();
+            }
+
+            /// <summary>The first field as a number, or zero.</summary>
             internal double Number() =>
                 double.TryParse(_first.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var n) ? n : 0;
 
+            /// <summary>The first field as text, or null when it is empty.</summary>
             internal string? Name() => _first.Text.Trim().Length == 0 ? null : _first.Text.Trim();
 
+            /// <summary>The rule the fields describe, or null when no kind is picked.</summary>
             internal PredicateSpec? Spec()
             {
                 var kind = Kind();
@@ -1130,17 +1756,59 @@ namespace CamelWorks.UI.Views
                 return spec;
             }
 
-            private void Update()
+            /// <summary>
+            /// What the operand boxes are called, per kind, with the unit in the label.
+            ///
+            /// Held here rather than on <see cref="SpecKind"/> so the rule engine keeps one hint
+            /// string and this screen carries its own wording. A kind this does not name falls
+            /// back to that hint.
+            /// </summary>
+            /// <param name="kind">The kind.</param>
+            private static string FirstLabel(SpecKind kind) => kind.Id switch
+            {
+                "maxVolume" => "Volume (m³)",
+                "distance" => "From (m)",
+                "angle" => "From (°)",
+                "eitherInSet" => "Set name",
+                "bothInSet" => "Set name",
+                "propertyEquals" => "Property",
+                "propertyContains" => "Property",
+                "category" => "Category",
+                "proximity" => "Distance (m)",
+                "property" => "Property",
+                _ => Capital(kind.Hint),
+            };
+
+            /// <summary>What the second box is called, for the kinds that have one.</summary>
+            /// <param name="kind">The kind.</param>
+            private static string SecondLabel(SpecKind kind) => kind.Id switch
+            {
+                "distance" => "To (m)",
+                "angle" => "To (°)",
+                "propertyEquals" => "Equals",
+                "propertyContains" => "Contains",
+                _ => "Value",
+            };
+
+            /// <summary>A hint written as a label.</summary>
+            /// <param name="text">The hint.</param>
+            private static string Capital(string text) =>
+                text.Length == 0 ? "Value" : char.ToUpperInvariant(text[0]) + text.Substring(1);
+
+            /// <summary>Label the operand boxes for the kind now picked, and hide the ones it has no use for.</summary>
+            private void Relabel()
             {
                 var kind = Kind();
                 if (kind == null) return;
 
-                _hint.Text = kind.Hint;
-                _first.Visibility = kind.Input == SpecInput.None || kind.Input == SpecInput.Nested
+                _firstLabel.Text = FirstLabel(kind);
+                _secondLabel.Text = SecondLabel(kind);
+
+                _firstBox.Visibility = kind.Input == SpecInput.None || kind.Input == SpecInput.Nested
                     ? Visibility.Collapsed
                     : Visibility.Visible;
 
-                _second.Visibility = kind.Input == SpecInput.Range || kind.Input == SpecInput.NameAndValue
+                _secondBox.Visibility = kind.Input == SpecInput.Range || kind.Input == SpecInput.NameAndValue
                     ? Visibility.Visible
                     : Visibility.Collapsed;
             }
@@ -1150,14 +1818,11 @@ namespace CamelWorks.UI.Views
         // Report
         // ===================================================================================
 
-        /// <summary>PDF, XLSX or HTML from the board, with nothing to configure first.</summary>
         /// <summary>
-        /// Where the board stands, said at the top of every Issue Link tab.
+        /// What the board holds, over the report about to be written.
         ///
-        /// Everything in Issue Link issues the board, and the board lives in Clash Manager. A tab
-        /// that only says so at the press — "the board has not been built yet" — has already let
-        /// somebody set up a report of nothing. So each tab opens on the fact: loaded and how many
-        /// issues, or not loaded with Clash Manager's Board one press away, loading on arrival.
+        /// The board is built on Manage and every report is taken from it, so this tab opens on
+        /// whether there is one rather than saying so at the press.
         /// </summary>
         /// <param name="whenMissing">What pressing on without a board means, on this tab.</param>
         private static UIElement BoardState(string whenMissing)
@@ -1165,59 +1830,78 @@ namespace CamelWorks.UI.Views
             var board = LastBoard;
 
             if (board == null)
-                return LoadHere("The board is not loaded. " + whenMissing);
+                return LoadHere("No board is loaded. " + whenMissing);
 
-            return Ui.Line("On the board: " + Ui.Count(board.Groups.Count, "issue") + ", "
+            return Bench.Scope("On the board: " + Ui.Count(board.Groups.Count, "issue") + ", "
                 + Ui.Count(board.Groups.Sum(g => g.Items.Count), "clash")
-                + (string.IsNullOrEmpty(LastBoardLabel) ? string.Empty : " — " + LastBoardLabel)
-                + ". This tab sends that board.", 0.75);
+                + (string.IsNullOrEmpty(LastBoardLabel) ? string.Empty : " — " + LastBoardLabel));
         }
 
         /// <summary>
-        /// What leaves after a report or a file has left: the other format, and the way back.
+        /// Where the same board goes next, offered once a report has been written.
         ///
-        /// The Thursday issue is rarely one artefact — the PDF goes to the meeting, the BCF or the
-        /// clash file goes to whoever answers in a tool — and the reply lands the following week.
-        /// Saying so at the moment of a successful send is what keeps the round trip one workflow
-        /// instead of three windows somebody has to remember are related.
+        /// A report is read and filed; the answers come back as BCF, which is the Exchange tab.
+        /// The two buttons this used to draw named an app id and two tool ids that do not exist,
+        /// so both only ever reported that there is no such app.
         /// </summary>
-        /// <param name="into">Where the send just reported.</param>
-        /// <param name="also">The other formats worth sending, as tool ids of this app's tabs.</param>
-        private static void NextSteps(Panel into, params string[] also)
+        /// <param name="into">Where the write just reported.</param>
+        private static void NextSteps(Panel into)
         {
-            var buttons = new List<UIElement?>();
+            into.Children.Add(Ui.Actions(Ui.Quiet("Open the Exchange tab",
+                () => Ui.Told(Shell.AppWindow.Show("clash", "exchange")))));
 
-            foreach (var tool in also)
-            {
-                var here = tool;
-
-                buttons.Add(Ui.Quiet(
-                    here == "bcf" ? "Send it as BCF too"
-                    : here == "clashxml" ? "Send it as a clash file too"
-                    : "Write the report to go with it",
-                    () => Ui.Told(Shell.AppWindow.Show("issues", here))));
-            }
-
-            into.Children.Add(Ui.Actions(buttons.FirstOrDefault(), buttons.Skip(1).ToArray()));
-
-            into.Children.Add(Ui.Small("When an answered file comes back, the BCF tab reads it "
-                + "against this board — and several reviewers' returns come together on Merge."));
+            into.Children.Add(Ui.Small("Exchange sends the same board as BCF and reads the "
+                + "answers back onto it."));
         }
 
-        public static UIElement Report() => new ReportScreen().Build();
+        /// <summary>
+        /// The report, on the live seat.
+        ///
+        /// A report is written from the board, which is built from the open model, so there is
+        /// nothing to write without one. The screen itself takes a seat rather than a session, so
+        /// it can be drawn without one.
+        /// </summary>
+        public static UIElement Report()
+        {
+            var seat = Host.Current;
 
-        /// <summary>The penetration schedule, as its own tool rather than a template choice.</summary>
-        internal static UIElement PenetrationsReport() =>
-            new ReportScreen("Penetration schedule").Build();
+            if (seat == null)
+                return Bench.Surface(null, null, Ui.Stack(Ui.Empty(
+                    "No model is open.",
+                    "A report is written from the clash board, and the board is built from the "
+                    + "results in the open model. Open the model this report is about.")));
+
+            return Report(seat);
+        }
+
+        /// <summary>The report screen on a given seat.</summary>
+        /// <param name="seat">The seat. Its project file holds the settings and the revisions.</param>
+        public static UIElement Report(ISeat seat) => new ReportScreen(seat).Build();
+
+        /// <summary>The penetration schedule, as its own tool rather than a document choice.</summary>
+        internal static UIElement PenetrationsReport()
+        {
+            var seat = Host.Current;
+
+            if (seat == null)
+                return Bench.Surface(null, null, Ui.Stack(Ui.Empty(
+                    "No model is open.",
+                    "The schedule lists what the model says passes through structure, so it "
+                    + "needs that model open.")));
+
+            return new ReportScreen(seat, "Penetration schedule").Build();
+        }
 
         /// <summary>
-        /// The report, and who it is for.
+        /// The report: which document, who it is for, and what goes in it.
         ///
-        /// A single report of the whole board is the one nobody sends. What actually leaves the
-        /// office on a Friday is one list per subcontractor, holding their groups and nothing else,
-        /// and producing those by hand from a full report is an afternoon of filtering and saving.
-        /// So the audience is part of writing it, and "one file each" is a checkbox rather than a
-        /// morning.
+        /// Three documents come off one board — the full report, the field pack and the
+        /// penetration schedule — and each can be written for one party or for everybody, with a
+        /// revision letter kept per party.
+        ///
+        /// The board is clash-shaped, so these documents carry the clash results and the issues
+        /// raised by hand on the board. The screen states that rather than implying it covers the
+        /// clearance and fall-hazard findings the same project holds.
         /// </summary>
         private sealed class ReportScreen
         {
@@ -1231,7 +1915,7 @@ namespace CamelWorks.UI.Views
             private const string FullReport = "Full report";
 
             /// <summary>One issue per page in large type, for a hand and a wall.</summary>
-            private const string FieldPack = "Field pack - one issue per page";
+            private const string FieldPack = "Field pack";
 
             /// <summary>Services through structure, for the pour.</summary>
             private const string Penetration = "Penetration schedule";
@@ -1258,35 +1942,60 @@ namespace CamelWorks.UI.Views
             };
 
             private readonly StackPanel _results = Ui.Stack();
-            private readonly StackPanel _markers = Ui.Stack();
+
+            /// <summary>The preview of the document about to be written, redrawn on every setting change.</summary>
+            private readonly StackPanel _shape = Ui.Stack();
+
+            /// <summary>The seat. Everything the screen reads without a document comes from here.</summary>
+            private readonly ISeat _seat;
+
+            /// <summary>The live session, or null on a seat with no document. Writing needs one.</summary>
+            private readonly Session? _live;
 
             /// <summary>What this tab was last told, so it does not ask again.</summary>
-            private readonly ToolMemory _kept =
-                ToolMemory.Of(Host.Current?.Store, "coordinate.report");
+            private readonly ToolMemory _kept;
 
             private readonly TextBox _path;
             private readonly TextBox _template;
 
+            /// <summary>The line under the document picker, retuned when the pick changes.</summary>
+            private readonly TextBlock _what = Ui.Small(string.Empty);
+
+            /// <summary>The three controls an empty result blames, so it can offer the way back.</summary>
+            private ComboBox? _for;
+
+            private CheckBox? _changed;
+
+            private CheckBox? _split;
+
             private string _units;
 
             /// <summary>
-            /// Which template this screen is fixed to, or null when the user picks.
+            /// Which document this screen is fixed to, or null when the user picks.
             ///
             /// The penetration schedule is its own ribbon button: a structural engineer asking for
             /// the list before a pour is not writing a clash report, and a window that answers
-            /// "which of three reports?" first is asking a question they do not have.
+            /// "which of three documents?" first is asking a question they do not have.
             /// </summary>
             private readonly string? _locked;
 
-            internal ReportScreen(string? locked = null)
+            /// <summary>Open the screen on a seat.</summary>
+            /// <param name="seat">The seat. Its project file holds the settings and the revisions.</param>
+            /// <param name="locked">The one document this screen writes, or null when the user picks.</param>
+            internal ReportScreen(ISeat seat, string? locked = null)
             {
+                _seat = seat ?? throw new ArgumentNullException(nameof(seat));
+                _live = seat as Session;
+
                 _locked = locked;
                 if (locked != null) _mode = locked;
 
-                _path = Ui.Text(_kept.Text("folder"), text => _kept.Set("folder", text), 340);
+                _kept = ToolMemory.Of(seat.Store, "coordinate.report");
+
+                _path = Ui.Text(_kept.Text("folder"), text => { _kept.Set("folder", text); Restate(); }, 200);
 
                 _template = Ui.Text(_kept.Text("name", Deliverable.DefaultTemplate),
-                                    text => _kept.Set("name", text), 340);
+                                    text => { _kept.Set("name", text); Restate(); }, 200);
 
                 _units = _kept.Text("units", FromDocument) ?? FromDocument;
 
@@ -1305,131 +2014,325 @@ namespace CamelWorks.UI.Views
             private bool _keyPlan;
             private bool _perParty;
 
+            /// <summary>How wide a paragraph is allowed to be, in device pixels — about 80 characters.</summary>
+            private const double TextWidth = 620;
+
+            /// <summary>How wide the options panel is. Its one text field is capped by it.</summary>
+            private const double PanelWidth = 360;
+
             internal UIElement Build()
             {
-                var session = Host.Current;
-
                 var parties = new List<string> { Everyone, Nobody };
-                if (session != null) parties.AddRange(session.Profile.Parties);
+                parties.AddRange(_seat.Profile.Parties);
 
-                // The three explanations that used to sit in a stack of amber notes, one per
-                // template, all visible at once. Only one of them is ever about the report being
-                // written, and which one is a thing the screen already knows.
-                var what = Ui.Small(Explain(_mode));
+                _for = Ui.Choice(parties, _audience, a => { _audience = a; Restate(); }, 150);
 
-                var format = Ui.Choice(new[] { "PDF", "XLSX", "HTML" }, _format,
-                                       f => { _format = f; _kept.Set("format", f); }, 120);
-                var audience = Ui.Choice(parties, _audience, a => _audience = a, 180);
+                var format = Ui.Segmented(new[] { "PDF", "XLSX", "HTML" }, _format,
+                                          f => { _format = f; _kept.Set("format", f); Restate(); });
 
-                var mode = Ui.Choice(new[] { FullReport, FieldPack, Penetration }, _mode, m =>
+                _changed = Ui.Check("Only issues that are new or back after being resolved",
+                                    _changedOnly,
+                                    v => { _changedOnly = v; _kept.Set("changedOnly", v); Restate(); });
+
+                var plan = Ui.Check("A site plan with every issue numbered on it", _keyPlan,
+                                    v => { _keyPlan = v; _kept.Set("keyPlan", v); Restate(); });
+
+                _split = Ui.Check("A separate file for each party", _perParty,
+                                  v => { _perParty = v; _kept.Set("perParty", v); Restate(); });
+
+                var pictures = Ui.Check("A rendered view of each issue", _pictures,
+                                        v => { _pictures = v; _kept.Set("pictures", v); Restate(); });
+
+                var cost = Ui.Small("A rendered view moves the model view while it runs, once "
+                                    + "per issue.");
+
+                // Only the full report has a site plan, and the schedule has no pictures at all.
+                // Shown against the document rather than left on screen doing nothing.
+                void Retune()
                 {
-                    _mode = m;
-                    what.Text = Explain(m);
-                });
+                    _what.Text = Explain(_mode);
 
-                // Locked: the template is the tool, so the picker is not a choice this window has.
-                var contents = _locked == null ? Ui.Field("Contents", mode) : null;
+                    plan.Visibility = _mode == FullReport ? Visibility.Visible : Visibility.Collapsed;
 
-                var changed = Ui.Check("Only what the last run had not seen", _changedOnly,
-                                       v => { _changedOnly = v; _kept.Set("changedOnly", v); });
+                    var images = _mode != Penetration;
 
-                var pictures = Ui.Check("A picture of each group", _pictures,
-                                        v => { _pictures = v; _kept.Set("pictures", v); });
+                    pictures.Visibility = images ? Visibility.Visible : Visibility.Collapsed;
+                    cost.Visibility = images ? Visibility.Visible : Visibility.Collapsed;
 
-                var plan = Ui.Check("A plan of the site with every issue marked", _keyPlan,
-                                    v => { _keyPlan = v; _kept.Set("keyPlan", v); });
-
-                var split = Ui.Check("One file per party, not one file", _perParty,
-                                     v => { _perParty = v; _kept.Set("perParty", v); });
-
-                var write = Ui.Runner("Write the report", _results, Write);
-
-                _results.Children.Add(BoardState("Writing will build it fresh from the tests "
-                    + "and the saved rules."));
-
-                _results.Children.Add(Bench.Ready(
-                    "Writes the board out for whoever it is for, from a built-in template.",
-                    "Each issue takes the next revision letter, and its cover says which one it "
-                    + "supersedes."));
-
-                // The rail keeps what is chosen per report; where it lands, what the markers
-                // look like and the way over to a file are decided once for the job and live in
-                // the window behind the symbols beside the press.
-                var foot = new WrapPanel();
-
-                foot.Children.Add(write);
-                foot.Children.Add(new Border { Width = 14 });
-                foot.Children.Add(Ui.Icon(Glyphs.Folder, "Where it goes and what it is called",
-                                          () => Configure("where")));
-                foot.Children.Add(Ui.Icon(Glyphs.Sphere, "Markers in the model",
-                                          () => Configure("markers")));
-                foot.Children.Add(Ui.Icon(Glyphs.Onward, "Send it as an exchange file",
-                                          () => Configure("file")));
-
-                return Bench.Surface(
-                    Ui.Stack(
-                        Bench.Group("",
-                            contents,
-                            what,
-                            Ui.Field("For", audience),
-                            Ui.Field("Format", format)),
-                        Bench.Group("What else is in it",
-                            changed,
-                            plan,
-                            split,
-                            pictures,
-                            Ui.Small("A picture moves your view while it runs and puts it back "
-                                     + "afterwards. On a board of two hundred groups that is two "
-                                     + "hundred renders, so it is off until you ask for it."))),
-                    foot,
-                    Ui.Stack(
-                        _results,
-                        _markers));
-            }
-
-            /// <summary>
-            /// What one symbol beside the press is for, in a window of its own.
-            ///
-            /// Titled with the section the symbol named. All three used to open the same
-            /// three-section window called "Report", so nothing about the window said which of
-            /// them had been pressed.
-            /// </summary>
-            /// <param name="section">Which section the symbol names.</param>
-            private void Configure(string section)
-            {
-                Ui.Page page;
-
-                switch (section)
-                {
-                    case "markers":
-                        page = new Ui.Page("Markers", Markers);
-                        break;
-
-                    case "file":
-                        page = new Ui.Page("Exchange file", Exchange);
-                        break;
-
-                    default:
-                        page = new Ui.Page("Where it goes", () => Bench.Group("Where it goes",
-                            Ui.PathField("Write to", _path, PathKind.Folder,
-                                         hint: "blank writes it beside the document"),
-                            Ui.Field("Name it", _template,
-                                     "carries " + string.Join(", ", Deliverable.Tokens))));
-                        break;
+                    Restate();
                 }
 
-                Ui.Configure(page.Name, null, page);
+                var document = Ui.Choice(new[] { FullReport, FieldPack, Penetration }, _mode, m =>
+                {
+                    _mode = m;
+                    Retune();
+                }, 200);
+
+                Retune();
+
+                // Locked: the document is the tool, so the picker is not a choice this window has.
+                var setup = Ui.Stack(
+                    Bench.Group(string.Empty,
+                        _locked == null ? Ui.Field("Document", document) : null,
+                        _what,
+                        Ui.Across(Ui.Field("Recipient", _for), Ui.Field("File format", format))),
+                    Bench.Group("What else is in it", _changed, plan, _split, pictures, cost),
+                    Bench.Group("Where it goes",
+                        Ui.PathField("Folder", _path, PathKind.Folder,
+                                     hint: "blank writes it to your Documents folder"),
+                        Ui.Field("File name", _template,
+                                 "tokens: " + string.Join(", ", Deliverable.Tokens))));
+
+                var help = Ui.Icon(Glyphs.Info, "What goes in each document", Help);
+                var markers = Ui.Icon(Glyphs.Sphere, "Markers in the model", Markers);
+
+                var write = _live == null
+                    ? Ui.Blocked("Write the report",
+                                 "A report is written from the board, which needs an open model.")
+                    : Ui.Runner("Write the report", _results, Write);
+
+                // The scope, the coverage and the way to load a board are kept out of _results:
+                // a runner clears its output panel on every press, so anything put there is gone
+                // the first time the button is used and never comes back.
+                var stage = Ui.Stack(
+                    _live == null
+                        ? Ui.Empty("No model is open.",
+                                   "The report is written from the clash board, which is built "
+                                   + "from the results in the open model.")
+                        : BoardState("Writing builds it fresh from the tests and the saved rules."),
+                    Say(Covers()),
+                    _shape,
+                    _results);
+
+                Restate();
+
+                return Bench.Surface(setup, Ui.Across(help, markers, write), stage, PanelWidth);
             }
 
             /// <summary>
-            /// The clashes, in the model.
+            /// What the press will produce, read off the board and the settings on the right.
             ///
-            /// A clash is a row on a board and a camera position, and both need somebody driving
-            /// the mouse. A walkthrough, a site meeting or a subcontractor's own copy of the model
-            /// needs the clash where the clash is: a ball hanging in the air where the duct meets
-            /// the beam, visible from across the room and still there tomorrow.
+            /// Every control on this screen is in the panel, so without this the stage carried a
+            /// scope line and a sentence and nothing else. It holds the document instead: how much
+            /// of the board this recipient gets, what goes into the file, which revision it
+            /// becomes, where it lands, and what has been issued before. Redrawn whenever a
+            /// setting changes, so a setting has somewhere to show its effect before the press.
             /// </summary>
-            private UIElement Markers()
+            private void Restate()
+            {
+                _shape.Children.Clear();
+
+                var session = _live;
+                var board = LastBoard;
+
+                if (session == null || board == null) return;
+
+                var regressed = Regressed();
+
+                // One file per party still reports on the whole board, split at the end, so the
+                // preview counts the board rather than one recipient's share of it.
+                var audience = _perParty ? Everyone : _audience;
+                var groups = Chosen(board, audience, regressed);
+
+                _shape.Children.Add(Title("In this issue"));
+
+                if (groups.Count == 0)
+                {
+                    _shape.Children.Add(Nothing());
+                    return;
+                }
+
+                var parties = groups
+                    .Select(g => g.AssignedTo)
+                    .Where(p => !string.IsNullOrWhiteSpace(p))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Count();
+
+                var unowned = groups.Count(g => g.AssignedTo == null);
+
+                _shape.Children.Add(Ui.Across(
+                    Ui.Figure(Tallied(groups.Count), "issues"),
+                    Ui.Figure(Tallied(groups.Sum(g => g.Items.Count)), "clashes"),
+                    Ui.Figure(Tallied(parties), "parties"),
+                    Ui.Figure(Tallied(unowned), "issues unassigned",
+                              unowned > 0 ? Tone.Warn : Tone.Good)));
+
+                foreach (var section in Sections()) _shape.Children.Add(Say("— " + section));
+
+                if (_perParty)
+                {
+                    _shape.Children.Add(Say(Ui.Count(parties + (unowned > 0 ? 1 : 0), "file")
+                        + ", one for each party on the board"
+                        + (unowned > 0 ? " and one for the unassigned issues" : string.Empty)
+                        + ". Each takes the next letter in that party's own sequence."));
+                }
+                else
+                {
+                    var was = LastIssue(session, audience);
+                    var revision = Deliverable.NextRevision(was?.Revision);
+                    var now = DateTimeOffset.UtcNow;
+
+                    _shape.Children.Add(Say("This issue is revision " + revision + ". "
+                        + (was == null
+                            ? "Nothing has been issued to this recipient before."
+                            : was.Supersedes)));
+
+                    _shape.Children.Add(Say(Lands(session, audience, revision, now)));
+                }
+
+                History(session);
+            }
+
+            /// <summary>
+            /// Where the file will be written, without the side effect of working it out for real.
+            ///
+            /// <see cref="Where"/> fills the folder box in when it is blank, which from here would
+            /// re-enter this method through that box's change handler.
+            /// </summary>
+            /// <param name="session">The live session, for the project name.</param>
+            /// <param name="audience">Who it is for.</param>
+            /// <param name="revision">The revision it will take.</param>
+            /// <param name="issued">When it goes out.</param>
+            private string Lands(Session session, string audience, string revision,
+                                 DateTimeOffset issued)
+            {
+                var typed = _path.Text.Trim();
+
+                if (typed.Length > 0) return "Writes to " + typed + ".";
+
+                var stem = Deliverable.Name(_template.Text, session.Profile.ProjectName,
+                                            audience == Everyone ? null : audience, revision, issued);
+
+                return "Writes " + stem + "." + _format.ToLowerInvariant()
+                       + " to your Documents folder.";
+            }
+
+            /// <summary>What the chosen document holds, in the order it holds it.</summary>
+            private IEnumerable<string> Sections()
+            {
+                if (_mode == Penetration)
+                {
+                    yield return "A cover naming the project, the recipient and the revision.";
+                    yield return "Every service the model shows passing through structure, with "
+                                 + "what it is and where.";
+                    yield break;
+                }
+
+                yield return "A cover naming the project, the recipient and the revision.";
+
+                if (_mode == FullReport)
+                {
+                    yield return "The funnel the board was narrowed by, and what changed since "
+                                 + "the last run.";
+
+                    if (_keyPlan) yield return "A site plan with every issue numbered on it.";
+
+                    yield return "Every issue with its clashes, party and priority.";
+                }
+                else
+                {
+                    yield return "One page per issue, in large type, with a line to sign against.";
+                }
+
+                if (_pictures) yield return "A rendered view of each issue.";
+            }
+
+            /// <summary>
+            /// What has gone out before, per recipient.
+            ///
+            /// The register is what the next revision letter is derived from, so it belongs where
+            /// the letter is stated rather than only on the cover of the file.
+            /// </summary>
+            /// <param name="session">The live session, whose project file holds the register.</param>
+            private void History(Session session)
+            {
+                var register = Deliverable.Read(
+                    session.Store.Section(ProjectStore.ClashSection)[ClashKeys.Issued]);
+
+                if (register.Count == 0) return;
+
+                _shape.Children.Add(Title("Issued so far"));
+
+                foreach (var entry in register.OrderBy(e => e.Key, StringComparer.OrdinalIgnoreCase))
+                    _shape.Children.Add(Say(entry.Key + " — revision " + entry.Value.Revision
+                        + ", issued "
+                        + entry.Value.IssuedUtc.UtcDateTime.ToString("d MMMM yyyy",
+                                                                     CultureInfo.InvariantCulture)
+                        + (string.IsNullOrWhiteSpace(entry.Value.File)
+                            ? "."
+                            : " as " + entry.Value.File + ".")));
+            }
+
+            /// <summary>A count as it reads beside a figure.</summary>
+            /// <param name="count">The count.</param>
+            private static string Tallied(int count) =>
+                count.ToString("N0", CultureInfo.InvariantCulture);
+
+            /// <summary>A section heading on the stage: sentence case, one size, one weight.</summary>
+            /// <param name="text">The heading.</param>
+            private static TextBlock Title(string text)
+            {
+                var head = Ui.Heading(text);
+                head.Margin = new Thickness(0, 18, 0, 6);
+                return head;
+            }
+
+            /// <summary>A line of orientation, capped at a readable measure.</summary>
+            /// <param name="text">The line.</param>
+            private static TextBlock Say(string text)
+            {
+                var line = Ui.Line(text, 0.75);
+                line.MaxWidth = TextWidth;
+                line.HorizontalAlignment = HorizontalAlignment.Left;
+                return line;
+            }
+
+            /// <summary>
+            /// What these documents cover, and what the project holds that they do not.
+            ///
+            /// The board is the clash results and the issues raised by hand on it. The clearance
+            /// and fall-hazard checks write into the same register and none of their findings
+            /// reach a report, so the count is stated here rather than left to be discovered by
+            /// whoever reads the PDF.
+            /// </summary>
+            private string Covers()
+            {
+                var covers = "Covers the clash board: clash results, and issues raised by hand.";
+
+                // The two kinds the Manage board carries beside clash. Health, IDS and compare
+                // findings are also in this register and belong to other apps, so naming them
+                // here would read as a list of everything this report is not.
+                var beside = new[] { FindingSource.Headroom, FindingSource.FallHazard };
+
+                var others = _seat.Findings.Findings.Present
+                    .Where(f => beside.Contains(f.Source, StringComparer.OrdinalIgnoreCase))
+                    .GroupBy(f => f.Source, StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(one => one.Key, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                if (others.Count == 0) return covers;
+
+                return covers + " Not in it: " + string.Join(", ", others.Select(one =>
+                    Ui.Count(one.Count(), Kind(one.Key) + " result"))) + ".";
+            }
+
+            /// <summary>What a check's findings are called, in that check's own words.</summary>
+            /// <param name="key">The finding's source.</param>
+            private string Kind(string key) =>
+                (_seat.Checks.Find(key)?.Name ?? key).ToLowerInvariant();
+
+            /// <summary>
+            /// The clashes as geometry: one marker per clash, written as an OBJ the host appends.
+            ///
+            /// Behind its own symbol rather than on the surface. It produces a model file rather
+            /// than a document, and it is set up once for a job rather than once per report.
+            /// </summary>
+            private void Markers() =>
+                Ui.Configure("Markers in the model", null,
+                             new Ui.Page("Markers in the model", MarkerSetup));
+
+            /// <summary>The marker settings and the run, inside the window the symbol opened.</summary>
+            private UIElement MarkerSetup()
             {
                 var recipe = new MarkerRecipe();
 
@@ -1464,33 +2367,38 @@ namespace CamelWorks.UI.Views
 
                 var units = Ui.Choice(Units, _units, pick => { _units = pick; _kept.Set("units", pick); }, 160);
 
-                var write = Ui.Runner("Make them", _markers, primary: false,
-                                      work: job => Mark(job, recipe));
+                // The run reports into this window. Its answers used to be written to a panel on
+                // the tab behind it, so nothing appeared until the window was closed.
+                var said = Ui.Stack();
 
-                // One marker per clash, grouped by test, as ordinary geometry the host can select,
-                // hide and remove. A setup group rather than its own card: the fields are inputs
-                // and the secondary runner sits at the group's foot, with its answer on the stage.
-                return Bench.Group("Put the clashes in the model",
+                return Ui.Stack(
+                    Say("One marker per clash on the board, grouped by test, written as an OBJ "
+                        + "file that can be appended to the model."),
                     Ui.Field("Shape", shape),
-                    Ui.Field("Across", size, "millimetres, on screen"),
-                    Ui.Field("The model is in", units,
-                             "only needed if the document does not say"),
-                    write);
+                    Ui.Field("Marker diameter (mm)", size),
+                    Ui.Field("Model units", units),
+                    Ui.Runner("Make the markers", said, job => Mark(job, recipe, said),
+                              primary: false),
+                    said);
             }
 
-            private void Mark(Job job, MarkerRecipe recipe)
+            /// <summary>Write the markers, reporting into the window the settings are in.</summary>
+            /// <param name="job">The run this is part of.</param>
+            /// <param name="recipe">The shape and size the settings above describe.</param>
+            /// <param name="said">Where this run reports, inside the markers window.</param>
+            private void Mark(Job job, MarkerRecipe recipe, Panel said)
             {
-                _markers.Children.Clear();
+                said.Children.Clear();
 
-                var session = Host.Current;
-                if (session == null) { _markers.Children.Add(Ui.Line(Host.NoModel)); return; }
+                var session = _live;
+                if (session == null) { said.Children.Add(Ui.Line(Host.NoModel)); return; }
 
                 var board = LastBoard;
 
                 if (board == null)
                 {
-                    _markers.Children.Add(LoadHere("The board has not been built yet, and this "
-                        + "marks what the board holds."));
+                    said.Children.Add(LoadHere("No board is loaded, and this marks what the "
+                        + "board holds."));
                     return;
                 }
 
@@ -1501,7 +2409,7 @@ namespace CamelWorks.UI.Views
 
                 if (metres == null)
                 {
-                    _markers.Children.Add(Ui.Problem("This document is in \"" + word + "\", which is "
+                    said.Children.Add(Ui.Problem("This document is in \"" + word + "\", which is "
                         + "not a unit CamelWorks converts. Say which unit it is in the box above, or "
                         + "the markers would land in the wrong place and look like an empty model."));
                     return;
@@ -1522,9 +2430,9 @@ namespace CamelWorks.UI.Views
                 var items = board.Groups.SelectMany(g => g.Items).ToList();
                 var mesh = ClashMarkers.Write(items, recipe);
 
-                if (mesh.Refusal != null) { _markers.Children.Add(Ui.Problem(mesh.Refusal)); return; }
+                if (mesh.Refusal != null) { said.Children.Add(Ui.Problem(mesh.Refusal)); return; }
 
-                foreach (var warning in mesh.Warnings) _markers.Children.Add(Ui.Note(warning));
+                foreach (var warning in mesh.Warnings) said.Children.Add(Ui.Note(warning));
 
                 var dialog = new Microsoft.Win32.SaveFileDialog
                 {
@@ -1553,24 +2461,24 @@ namespace CamelWorks.UI.Views
                 }
                 catch (Exception e)
                 {
-                    _markers.Children.Add(Ui.Problem("Could not write it: " + Ui.Describe(e)));
+                    said.Children.Add(Ui.Problem("Could not write it: " + Ui.Describe(e)));
                     return;
                 }
 
-                _markers.Children.Add(Ui.Done("Wrote " + mesh.Explain() + " to " + obj));
+                said.Children.Add(Ui.Done("Wrote " + mesh.Explain() + " to " + obj));
 
-                _markers.Children.Add(Ui.Actions(Ui.Primary("Bring them in", () =>
+                said.Children.Add(Ui.Actions(Ui.Primary("Bring them in", () =>
                 {
                     try
                     {
-                        _markers.Children.Add(session.Model.Document.TryAppendFile(obj)
+                        said.Children.Add(session.Model.Document.TryAppendFile(obj)
                             ? Ui.Done("Appended. They are in the Selection Tree under their tests, "
                                       + "and in the host's file list if you want them out again.")
                             : Ui.Problem("The host would not append that file."));
                     }
                     catch (Exception e)
                     {
-                        _markers.Children.Add(Ui.Problem("Could not append it: " + Ui.Describe(e)));
+                        said.Children.Add(Ui.Problem("Could not append it: " + Ui.Describe(e)));
                     }
                 })));
 
@@ -1581,47 +2489,73 @@ namespace CamelWorks.UI.Views
                 session.Record(ActivityKind.Export, "made clash markers: " + mesh.Explain(), obj);
             }
 
-            /// <summary>
-            /// The other half of a coordination cycle: the file the reviewer works in.
-            ///
-            /// A report is read and filed. A clash file is opened, worked through, and sent back -
-            /// and it is the only clash format the rest of the industry has agreed on. Without it
-            /// this tab ends at a PDF, and the answers come back as an email.
-            /// </summary>
-            private UIElement Exchange()
-            {
-                var open = Ui.Quiet("Clash file...", () =>
-                {
-                    var problem = ToolViews.Open("clashxml");
-                    if (problem != null) _results.Children.Add(Ui.Problem(problem));
-                });
-
-                // The clash file has its own tool; this is the way over to it, at the end of setup.
-                return Bench.Group("Exchange file",
-                    open,
-                    Ui.Small("BCF, which Solibri, BIMcollab, Revizto and every other reviewing "
-                             + "tool opens. A file that comes back lands on the elements it left "
-                             + "from."));
-            }
-
-            /// <summary>What the chosen template actually produces, in the reader's terms.</summary>
+            /// <summary>One line saying what the chosen document is, at the point it is chosen.</summary>
+            /// <param name="mode">Which document.</param>
             private static string Explain(string mode) => mode switch
             {
-                FieldPack => "The same board set for a site cabin: one issue per page, type big "
-                             + "enough to read one-handed, and a line to sign against.",
+                FieldPack => "One issue per page, in type big enough to read one-handed, with a "
+                             + "line to sign against.",
 
-                Penetration => "Every service that goes through structure - what the model says it "
-                               + "is and where. No opening size derived and no host thickness "
-                               + "inferred: those dimensions are used to cut concrete and must not be "
-                               + "estimated.",
+                Penetration => "Every service that passes through structure, as the model states "
+                               + "it — no opening size derived.",
 
-                _ => "The whole board, laid out for a desk: every issue with its clashes, party "
-                     + "and priority.",
+                _ => "Every issue on the board with its clashes, party and priority.",
             };
+
+            /// <summary>
+            /// The reference matter, behind one symbol rather than standing on the surface.
+            ///
+            /// Three documents, a revision rule and a coverage limit: each is read once and then
+            /// known, so none of them is worth a paragraph beside a control.
+            /// </summary>
+            private void Help() =>
+                Ui.Configure("What goes in each document", null,
+                    new Ui.Page("The three documents", () => Ui.Stack(
+                        Part("Full report",
+                             "The whole board laid out for a desk: the funnel the board was "
+                             + "narrowed by, what changed since the last run, then every issue "
+                             + "with its clashes, party and priority."),
+                        Part("Field pack",
+                             "The same board set for a site cabin: one issue per page, large "
+                             + "type, and a line to sign against."),
+                        Part("Penetration schedule",
+                             "Every service the model shows passing through structure, with what "
+                             + "it is and where. No opening size is derived and no host thickness "
+                             + "is inferred: those dimensions are used to cut concrete and are "
+                             + "not estimated here."))),
+                    new Ui.Page("Revisions and coverage", () => Ui.Stack(
+                        Part("Revisions",
+                             "Each issue takes the next revision letter and its cover names the "
+                             + "one it supersedes. Each party has its own sequence, so writing "
+                             + "one file per party moves only that party's letter on."),
+                        Part("What is covered",
+                             "The clash board: the clash results the engine reported and the "
+                             + "issues raised by hand on the board. Clearance and fall-hazard "
+                             + "findings are held in the same register and are not written into "
+                             + "any of these documents."),
+                        Part("Where it goes",
+                             "The folder and the file name are kept per project. A blank folder "
+                             + "writes to your Documents folder, and the name is filled in from "
+                             + "the tokens listed under it."))));
+
+            /// <summary>One passage of the help window: a sentence-case heading and its paragraph.</summary>
+            /// <param name="title">What it is about.</param>
+            /// <param name="text">The passage.</param>
+            private static UIElement Part(string title, string text)
+            {
+                var head = Ui.Heading(title);
+                head.Margin = new Thickness(0, 0, 0, 4);
+
+                var body = Ui.Small(text);
+                body.MaxWidth = TextWidth;
+                body.Margin = new Thickness(0, 0, 0, 16);
+
+                return Ui.Stack(head, body);
+            }
 
             private void Write(Job job)
             {
-                var session = Host.Current;
+                var session = _live;
                 if (session == null) { _results.Children.Add(Ui.Line(Host.NoModel)); return; }
 
                 var board = LastBoard;
@@ -1651,9 +2585,7 @@ namespace CamelWorks.UI.Views
 
                 if (groups.Count == 0)
                 {
-                    _results.Children.Add(Ui.Empty("Nothing to report.",
-                        "No group on the board matches this filter. Check the selected audience if "
-                        + "results were expected."));
+                    _results.Children.Add(Nothing());
                     return;
                 }
 
@@ -1680,7 +2612,7 @@ namespace CamelWorks.UI.Views
 
                 // Not after a penetration schedule: that goes to the structural engineer as the
                 // document it is, and nobody answers a pour list through a BCF tool.
-                if (_mode != Penetration) NextSteps(_results, "bcf", "clashxml");
+                if (_mode != Penetration) NextSteps(_results);
 
                 session.Record(ActivityKind.Report,
                     "wrote a " + _format + " clash report, revision " + revision, file);
@@ -1708,8 +2640,11 @@ namespace CamelWorks.UI.Views
 
                 if (parties.Count == 0)
                 {
-                    _results.Children.Add(Ui.Empty("No recipients.",
-                        "No group on the board is assigned, and there are no unassigned ones either."));
+                    _results.Children.Add(Ui.Empty(
+                        "No recipients.",
+                        "No issue on the board is assigned to a party, and there are no "
+                        + "unassigned ones either.",
+                        "Write one file instead", () => { if (_split != null) _split.IsChecked = false; }));
                     return;
                 }
 
@@ -1750,10 +2685,33 @@ namespace CamelWorks.UI.Views
 
                 _results.Children.Add(Ui.Line("Wrote " + Ui.Count(written, "file") + ".", 1, true));
 
-                if (written > 0 && _mode != Penetration) NextSteps(_results, "bcf", "clashxml");
+                if (written > 0 && _mode != Penetration) NextSteps(_results);
 
                 session.Record(ActivityKind.Report,
                     "wrote " + Ui.Count(written, "clash report") + ", one per party");
+            }
+
+            /// <summary>
+            /// Nothing matched, said against the setting that caused it and carrying the control
+            /// that undoes it.
+            /// </summary>
+            private UIElement Nothing()
+            {
+                if (_changedOnly)
+                    return Ui.Empty(
+                        "Nothing new to report.",
+                        "Every issue this filter would report was on the last run as well.",
+                        "Report the whole board",
+                        () => { if (_changed != null) _changed.IsChecked = false; });
+
+                if (_audience != Everyone)
+                    return Ui.Empty(
+                        "Nothing to report for " + _audience + ".",
+                        "No issue on the board is theirs.",
+                        "Report everyone",
+                        () => { if (_for != null) _for.SelectedItem = Everyone; });
+
+                return Ui.Empty("Nothing to report.", "The board holds no issues.");
             }
 
             /// <summary>Which groups belong in a report for this audience.</summary>

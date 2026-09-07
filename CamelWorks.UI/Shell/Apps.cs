@@ -7,10 +7,19 @@ namespace CamelWorks.UI.Shell
     /// <summary>One tab of an app: how it reads on the strip, and the tool it shows.</summary>
     public sealed class AppTab
     {
-        internal AppTab(string title, string toolId)
+        /// <summary>Name a tab.</summary>
+        /// <param name="title">How it reads on the strip.</param>
+        /// <param name="toolId">The tool it shows.</param>
+        /// <param name="aside">
+        /// True for a tool the job goes to and comes back from, rather than a step in it. The
+        /// strip draws these apart from the rest, so the order of the ones that remain reads as
+        /// the order of the work.
+        /// </param>
+        internal AppTab(string title, string toolId, bool aside = false)
         {
             Title = title;
             ToolId = toolId;
+            IsAside = aside;
         }
 
         /// <summary>How the tab reads on the strip — short, because twelve apps share one voice.</summary>
@@ -18,6 +27,16 @@ namespace CamelWorks.UI.Shell
 
         /// <summary>The tool the tab shows.</summary>
         public string ToolId { get; }
+
+        /// <summary>
+        /// True for a tool rather than a step: drawn apart from the tabs that carry the job.
+        ///
+        /// The Clash Manager's tabs are Create, Manage, Exchange and Report, in that order,
+        /// because that is the order the work happens in. The matrix and the settings are neither
+        /// first nor last in that job — they are gone to and come back from — so a strip that
+        /// listed them in line would read as two steps nobody takes in sequence.
+        /// </summary>
+        public bool IsAside { get; }
     }
 
     /// <summary>
@@ -79,12 +98,13 @@ namespace CamelWorks.UI.Shell
         {
             new App("clash", "Clash Manager",
                 "Find what fights, and decide it.", "Coordinate",
+                new AppTab("Create", "create"),
                 new AppTab("Manage", "manage"),
-                new AppTab("Clash matrix", "matrix"),
-                new AppTab("Checks", "checks"),
-                new AppTab("Filter Clashes", "rules"),
+                new AppTab("Filter", "rules"),
+                new AppTab("Exchange", "exchange"),
                 new AppTab("Report", "clashreport"),
-                new AppTab("Exchange", "exchange")),
+                new AppTab("Clash matrix", "matrix", aside: true),
+                new AppTab("Settings", "clashsettings", aside: true)),
 
             new App("issuemgr", "Issue Manager",
                 "Everything raised on this job, in one register.", "Coordinate",

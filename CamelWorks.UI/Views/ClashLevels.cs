@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Windows;
@@ -48,10 +49,10 @@ namespace CamelWorks.UI.Views
             // asking for 9.6 is asking somebody to convert every one of them by hand.
             var millimetres = false;
 
-            // The last storey taken out, kept until the next change so Remove can be undone.
-            // Remove is one click beside a row and there was no way back from it: the name and
-            // the height both had to be typed again from whatever the coordinator remembered.
-            LevelStorey? dropped = null;
+            // The storeys taken out by the last Remove, kept until the next change so it can be
+            // undone. Remove now acts on the picked rows, so what it takes out is a list: the
+            // alternative to putting them back is typing every name and height again.
+            var dropped = new List<LevelStorey>();
 
             bool Keep()
             {
@@ -66,72 +67,78 @@ namespace CamelWorks.UI.Views
             {
                 list.Children.Clear();
                 undo.Children.Clear();
+                foot.Children.Clear();
 
-                if (dropped != null)
+                if (dropped.Count > 0)
                 {
-                    var gone = dropped;
+                    var gone = dropped.ToList();
 
-                    var back = Ui.Link("Put “" + gone.Name + "” back", () => Ui.Safely(() =>
+                    var back = Ui.Link(gone.Count == 1
+                        ? "Put “" + gone[0].Name + "” back"
+                        : "Put these " + gone.Count.ToString(CultureInfo.InvariantCulture)
+                          + " back", () => Ui.Safely(() =>
                     {
-                        if (!plan.Add(gone.Name, gone.Elevation)) return;
+                        var any = false;
 
-                        dropped = null;
+                        foreach (var storey in gone)
+                            any |= plan.Add(storey.Name, storey.Elevation);
+
+                        if (!any) return;
+
+                        dropped.Clear();
 
                         if (Keep()) Redraw();
                     }));
 
-                    undo.Children.Add(Ui.Across(
-                        Ui.Small("Removed “" + gone.Name + "”, at "
-                                 + Shown(gone.Elevation, millimetres) + " "
-                                 + Unit(millimetres) + "."),
-                        back));
+                    undo.Children.Add(Ui.Across(Ui.Small(Removed(gone, millimetres)), back));
                 }
 
-                // Labelled, because two boxes side by side with nothing over them is a form
-                // where the second one has to be guessed at — and the guess that matters is
-                // whether the number is metres or millimetres.
-                if (!plan.IsEmpty) list.Children.Add(Headings(millimetres));
-
-                foreach (var storey in plan.Storeys.Reverse().ToList())
-                    list.Children.Add(Storey(plan, storey, millimetres, Keep, Redraw,
-                                             gone => dropped = gone));
-
                 if (plan.IsEmpty)
-                    list.Children.Add(Ui.Small(
-                        "None yet. Add the ground floor at its own height — usually zero — then "
-                        + "each storey above it. A clash between one storey's floor and the next "
-                        + "one's is on that storey."));
+                {
+                    // The state and the verb that ends it, together. A line of prose saying what
+                    // is missing leaves the button that fixes it somewhere else on the panel.
+                    list.Children.Add(Ui.Empty(
+                        "No levels yet",
+                        "Add the ground floor at its own height, usually zero, then each storey "
+                        + "above it.",
+                        "Add a level", Add));
 
-                foot.Children.Clear();
+                    return;
+                }
 
-                var add = Ui.Quiet("Add a level",
-                                   () => Ui.Safely(() => Adding(plan, near, millimetres,
-                                                                Keep, Redraw)));
+                var table = Table(plan, millimetres);
+
+                // The verbs are the bar's, not each row's. A Remove per row is one press per
+                // storey and no way to clear several; the bar carries the count, All and None,
+                // and a Remove that states how many it is about to take out.
+                list.Children.Add(Ui.Picking(table,
+                    new Ui.OnPicked("Rename", (picked, said) =>
+                        Rename(plan, near, picked, said, Keep, Redraw)),
+                    new Ui.OnPicked("Set height", (picked, said) =>
+                        Raise(plan, near, picked, said, millimetres, Keep, Redraw)),
+                    new Ui.OnPicked("Remove {n}", (picked, said) =>
+                        Drop(plan, near, picked, said, millimetres, Keep, Redraw,
+                             gone => { dropped.Clear(); dropped.AddRange(gone); }),
+                        danger: true)));
+
+                var add = Ui.Button("Add a level", Add);
 
                 add.HorizontalAlignment = HorizontalAlignment.Left;
-                add.Margin = new Thickness(0, 4, 0, 0);
+                add.Margin = new Thickness(0, 6, 0, 0);
 
                 foot.Children.Add(add);
 
-                if (plan.IsEmpty) return;
+                // How many there are is on the picking bar, so this says only what the order
+                // means and what the top row covers.
+                var says = Ui.Small("Listed top down. The top level runs to the top of the "
+                                    + "building.");
 
-                var says = Ui.Small(
-                    Ui.Count(plan.Storeys.Count, "level") + ", listed top down. The highest runs "
-                    + "to the top of the building, and a clash below the lowest is banded as such "
-                    + "rather than pushed into it.");
-
-                says.TextWrapping = TextWrapping.Wrap;
-                says.Margin = new Thickness(0, 6, 0, 0);
+                says.Margin = new Thickness(0, 8, 0, 0);
 
                 foot.Children.Add(says);
             }
 
-            var about = Ui.Small(
-                "The project's storeys. The board bands clashes by these, and they outrank the "
-                + "levels read off a coordination grid or a Level property.");
-
-            about.TextWrapping = TextWrapping.Wrap;
-            about.Margin = new Thickness(0, 0, 0, 8);
+            void Add() => Ui.Safely(() => Adding(plan, near, millimetres, Keep, Redraw));
 
             var unit = Ui.Choice(new[] { Metres, Millimetres },
                                  Metres, chosen =>
@@ -143,11 +150,20 @@ namespace CamelWorks.UI.Views
 
             var units = Ui.Field("Heights in", unit);
 
-            units.Margin = new Thickness(0, 0, 0, 10);
+            units.HorizontalAlignment = HorizontalAlignment.Left;
+            units.Margin = new Thickness(0, 0, 0, 12);
 
             Redraw();
 
-            held.Children.Add(about);
+            held.Children.Add(ClashSettingsViews.Head(
+                "Levels",
+                "The storeys this project declares. The board bands clashes by them.",
+                "These outrank the levels read off a coordination grid or a Level property, "
+                + "because a federation routinely has no grid and spells its storeys differently "
+                + "in each discipline. A storey runs from its own floor up to the next one's, so "
+                + "no height between the lowest and the highest is unclaimed. A clash below the "
+                + "lowest storey is banded as below it rather than pushed into it."));
+
             held.Children.Add(units);
             held.Children.Add(list);
             held.Children.Add(foot);
@@ -160,107 +176,123 @@ namespace CamelWorks.UI.Views
         /// <param name="plan">The storeys.</param>
         public static UIElement Drawn(LevelPlan plan) => Panel(plan, null);
 
-        /// <summary>The labels over the three columns.</summary>
-        /// <param name="millimetres">Whether heights are typed and read in millimetres.</param>
-        private static UIElement Headings(bool millimetres)
+        /// <summary>
+        /// The storeys as a table, top down.
+        ///
+        /// Each column carries its own unit, so the header states what the numbers under it are
+        /// in. The span is a column of its own because a column of floor heights is one somebody
+        /// has to subtract in their head to know what each storey covers.
+        /// </summary>
+        /// <param name="plan">The plan.</param>
+        /// <param name="millimetres">Whether heights are shown in millimetres.</param>
+        private static ListView Table(LevelPlan plan, bool millimetres)
         {
-            var row = Row();
-
-            var name = Ui.Eyebrow("Level");
-
-            name.Margin = new Thickness(0);
-
-            Grid.SetColumn(name, 0);
-            row.Children.Add(name);
-
-            var at = Ui.Eyebrow("Floor at, " + Unit(millimetres));
-
-            at.Margin = new Thickness(8, 0, 0, 0);
-
-            Grid.SetColumn(at, 1);
-            row.Children.Add(at);
-
-            var span = Ui.Eyebrow("Covers");
-
-            span.Margin = new Thickness(10, 0, 0, 0);
-
-            Grid.SetColumn(span, 2);
-            row.Children.Add(span);
-
-            row.Margin = new Thickness(0, 0, 0, 6);
-
-            return row;
-        }
-
-        /// <summary>The four columns every row of this editor sits in.</summary>
-        private static Grid Row()
-        {
-            var row = new Grid { Margin = new Thickness(0, 0, 0, 6) };
-
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(84) });
-            row.ColumnDefinitions.Add(new ColumnDefinition
+            var rows = plan.Storeys.Reverse().Select(storey =>
             {
-                Width = new GridLength(1, GridUnitType.Star),
-            });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                var ceiling = plan.Ceiling(storey.Name);
 
-            return row;
+                return new TableRow(storey,
+                    storey.Name,
+                    Shown(storey.Elevation, millimetres),
+                    ceiling == null
+                        ? Shown(storey.Elevation, millimetres) + " and above"
+                        : Shown(storey.Elevation, millimetres) + " to "
+                          + Shown(ceiling.Value, millimetres));
+            }).ToList();
+
+            return Ui.Table(rows,
+                            ("Level", 190),
+                            ("Floor height (" + Unit(millimetres) + ")", 120),
+                            ("Covers (" + Unit(millimetres) + ")", 0));
         }
 
-        /// <summary>One storey: its name, its floor height, and what it runs to.</summary>
-        /// <param name="plan">The plan it belongs to.</param>
-        /// <param name="storey">The storey.</param>
-        /// <param name="millimetres">Whether heights are typed and read in millimetres.</param>
-        /// <param name="onKeep">Writes the plan, and says whether it landed.</param>
-        /// <param name="onChange">Called after anything is edited.</param>
-        /// <param name="onDropped">Called with a storey that has just been removed.</param>
-        private static UIElement Storey(LevelPlan plan, LevelStorey storey, bool millimetres,
-                                        Func<bool> onKeep, Action onChange,
-                                        Action<LevelStorey> onDropped)
-        {
-            var row = Row();
+        /// <summary>The storeys behind the picked rows, in the order the table holds them.</summary>
+        /// <param name="picked">What the picking bar handed back.</param>
+        private static IReadOnlyList<LevelStorey> Storeys(IReadOnlyList<object> picked) =>
+            (picked ?? Array.Empty<object>()).OfType<LevelStorey>().ToList();
 
-            // Settled, not per keystroke: this row is rebuilt by what it reports, so a box
-            // that reported per keystroke threw itself away after the first letter.
-            var name = Ui.Settled(storey.Name, "Level 1", typed =>
+        /// <summary>Rename the one picked storey.</summary>
+        /// <param name="plan">The plan.</param>
+        /// <param name="near">What the prompt belongs to, or null in the harness.</param>
+        /// <param name="picked">The picked rows.</param>
+        /// <param name="said">Where the bar says what happened.</param>
+        /// <param name="onKeep">Writes the plan, and says whether it landed.</param>
+        /// <param name="onChange">Called after the plan changed.</param>
+        private static void Rename(LevelPlan plan, FrameworkElement? near,
+                                   IReadOnlyList<object> picked, Panel said,
+                                   Func<bool> onKeep, Action onChange)
+        {
+            var storeys = Storeys(picked);
+
+            said.Children.Clear();
+
+            if (storeys.Count != 1)
+            {
+                said.Children.Add(Ui.Note("Pick one level to rename."));
+                return;
+            }
+
+            if (near == null) return;
+
+            var storey = storeys[0];
+
+            Parts.Ask(near, "What is this level called?", storey.Name, "Rename", typed =>
             {
                 var wanted = (typed ?? string.Empty).Trim();
 
-                if (wanted.Length == 0 || string.Equals(wanted, storey.Name,
-                                                        StringComparison.Ordinal))
+                if (wanted.Length == 0
+                    || string.Equals(wanted, storey.Name, StringComparison.Ordinal))
                     return;
 
-                // Said, not swallowed. Rename returns false when the name is already used, and
-                // the row rebuilds from the plan either way - so a refused rename looked like
-                // the box had simply reverted.
                 if (!plan.Rename(storey.Name, wanted))
                 {
                     Ui.Told("There is already a level called “" + wanted + "”.");
-                    onChange();
                     return;
                 }
 
                 if (onKeep()) onChange();
-            }, 160);
+            });
+        }
 
-            name.VerticalAlignment = VerticalAlignment.Center;
+        /// <summary>Set the one picked storey's floor height.</summary>
+        /// <param name="plan">The plan.</param>
+        /// <param name="near">What the prompt belongs to, or null in the harness.</param>
+        /// <param name="picked">The picked rows.</param>
+        /// <param name="said">Where the bar says what happened.</param>
+        /// <param name="millimetres">Whether heights are typed in millimetres.</param>
+        /// <param name="onKeep">Writes the plan, and says whether it landed.</param>
+        /// <param name="onChange">Called after the plan changed.</param>
+        private static void Raise(LevelPlan plan, FrameworkElement? near,
+                                  IReadOnlyList<object> picked, Panel said, bool millimetres,
+                                  Func<bool> onKeep, Action onChange)
+        {
+            var storeys = Storeys(picked);
 
-            Grid.SetColumn(name, 0);
-            row.Children.Add(name);
+            said.Children.Clear();
 
-            var at = Ui.Settled(Shown(storey.Elevation, millimetres), "0", typed =>
+            if (storeys.Count != 1)
+            {
+                said.Children.Add(Ui.Note("Pick one level to set a height on."));
+                return;
+            }
+
+            if (near == null) return;
+
+            var storey = storeys[0];
+
+            Parts.Ask(near, "What height is " + storey.Name + "’s floor at, in "
+                            + Unit(millimetres) + "?",
+                      Shown(storey.Elevation, millimetres), "Set", typed =>
             {
                 if (!double.TryParse((typed ?? string.Empty).Trim(), NumberStyles.Float,
-                                     CultureInfo.InvariantCulture, out var said))
+                                     CultureInfo.InvariantCulture, out var height))
                 {
                     Ui.Told("A level's height is a number of " + Unit(millimetres)
                             + ", above the model's zero.");
-                    onChange();
                     return;
                 }
 
-                var wanted = Held(said, millimetres);
+                var wanted = Held(height, millimetres);
 
                 if (Math.Abs(wanted - storey.Elevation) < 0.0005) return;
 
@@ -269,52 +301,75 @@ namespace CamelWorks.UI.Views
                     Ui.Told("There is already a level at " + Shown(wanted, millimetres) + " "
                             + Unit(millimetres) + ". Two levels at one height would leave the "
                             + "upper one permanently empty.");
-                    onChange();
                     return;
                 }
 
                 if (onKeep()) onChange();
-            }, 76);
+            });
+        }
 
-            at.VerticalAlignment = VerticalAlignment.Center;
-            at.Margin = new Thickness(8, 0, 0, 0);
-            at.ToolTip = "The floor height in " + Unit(millimetres)
-                       + ", above the model's zero.";
+        /// <summary>
+        /// Take the picked storeys out, once the count has been confirmed.
+        ///
+        /// The confirmation states the count because the bar can be holding every row in the
+        /// table, and a plan with no storeys bands nothing on the board.
+        /// </summary>
+        /// <param name="plan">The plan.</param>
+        /// <param name="near">What the prompt belongs to, or null in the harness.</param>
+        /// <param name="picked">The picked rows.</param>
+        /// <param name="said">Where the bar says what happened.</param>
+        /// <param name="millimetres">Whether heights are shown in millimetres.</param>
+        /// <param name="onKeep">Writes the plan, and says whether it landed.</param>
+        /// <param name="onChange">Called after the plan changed.</param>
+        /// <param name="onDropped">Called with what was taken out, so it can be put back.</param>
+        private static void Drop(LevelPlan plan, FrameworkElement? near,
+                                 IReadOnlyList<object> picked, Panel said, bool millimetres,
+                                 Func<bool> onKeep, Action onChange,
+                                 Action<IReadOnlyList<LevelStorey>> onDropped)
+        {
+            var storeys = Storeys(picked);
 
-            Grid.SetColumn(at, 1);
-            row.Children.Add(at);
+            said.Children.Clear();
 
-            // The span, said outright. A column of floor heights is a column somebody has to
-            // subtract in their head to know what each storey actually covers.
-            var ceiling = plan.Ceiling(storey.Name);
+            if (storeys.Count == 0) return;
 
-            var span = Ui.Small(ceiling == null
-                ? Shown(storey.Elevation, millimetres) + " " + Unit(millimetres) + " and above"
-                : Shown(storey.Elevation, millimetres) + " to "
-                  + Shown(ceiling.Value, millimetres) + " " + Unit(millimetres));
-
-            span.VerticalAlignment = VerticalAlignment.Center;
-            span.Margin = new Thickness(10, 0, 0, 0);
-
-            Grid.SetColumn(span, 2);
-            row.Children.Add(span);
-
-            var drop = Ui.Quiet("Remove", () => Ui.Safely(() =>
+            void Take()
             {
-                if (!plan.Remove(storey.Name)) return;
+                var gone = new List<LevelStorey>();
 
-                onDropped(storey);
+                foreach (var storey in storeys)
+                    if (plan.Remove(storey.Name)) gone.Add(storey);
+
+                if (gone.Count == 0) return;
+
+                onDropped(gone);
 
                 if (onKeep()) onChange();
-            }));
+            }
 
-            drop.VerticalAlignment = VerticalAlignment.Center;
+            if (near == null) { Take(); return; }
 
-            Grid.SetColumn(drop, 3);
-            row.Children.Add(drop);
-
-            return row;
+            Parts.Sure(near,
+                       storeys.Count == 1
+                           ? "Remove “" + storeys[0].Name + "”, at "
+                             + Shown(storeys[0].Elevation, millimetres) + " "
+                             + Unit(millimetres) + "? Clashes banded by it move to the storey "
+                             + "below."
+                           : "Remove these " + storeys.Count.ToString(CultureInfo.InvariantCulture)
+                             + " levels? Clashes banded by them move to the storey below.",
+                       "Remove " + Ui.Count(storeys.Count, "level"),
+                       () => Ui.Safely(Take));
         }
+
+        /// <summary>What the undo line says about the last Remove.</summary>
+        /// <param name="gone">What was taken out.</param>
+        /// <param name="millimetres">Whether heights are shown in millimetres.</param>
+        private static string Removed(IReadOnlyList<LevelStorey> gone, bool millimetres) =>
+            gone.Count == 1
+                ? "Removed “" + gone[0].Name + "”, at "
+                  + Shown(gone[0].Elevation, millimetres) + "."
+                : "Removed " + Ui.Count(gone.Count, "level") + ": "
+                  + string.Join(", ", gone.Select(one => one.Name)) + ".";
 
         /// <summary>Ask for a storey's name and height, and add it.</summary>
         /// <param name="plan">The plan to add to.</param>

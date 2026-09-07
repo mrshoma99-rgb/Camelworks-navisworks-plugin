@@ -45,7 +45,7 @@ namespace CamelWorks.Studio
         /// from a Windows runner billed at twice the rate, twenty-eight of which nobody opens. Named
         /// pages are two.
         /// </summary>
-        private const string Only = "app-clash-manage,app-clash-finder,app-clash-matrix,app-clash-matrix-drawn,app-clash-matrix-fields,app-clash-matrix-read,app-clash-matrix-scrolled,app-clash-matrix-line,app-clash-exchange,app-clash-exchange-import,app-clash-levels,app-clash-naming-tests,app-clash-naming-patterns,app-clash-naming-write,app-clash-matrix-results,app-clash-matrix-priority";
+        private const string Only = "app-clash-manage,app-clash-finder,app-clash-matrix,app-clash-matrix-drawn,app-clash-matrix-fields,app-clash-matrix-read,app-clash-matrix-scrolled,app-clash-matrix-line,app-clash-exchange,app-clash-exchange-import,app-clash-naming-tests,app-clash-naming-patterns,app-clash-naming-write,app-clash-matrix-results,app-clash-matrix-priority";
 
         /// <summary>Run the harness.</summary>
         /// <param name="args">
@@ -230,20 +230,21 @@ namespace CamelWorks.Studio
 
             Skin.Apply(window);
 
-            // A build agent is not guaranteed a desktop to put a window on. Showing one is worth
-            // trying, because parts of WPF only behave once there is a presentation source, but it
-            // is not worth failing over: measure and arrange work either way.
-            var shown = false;
-
-            try
-            {
-                window.Show();
-                shown = true;
-            }
-            catch (Exception e)
-            {
-                Log("no window (" + e.GetType().Name + "), laying out headless");
-            }
+            // The window is never shown.
+            //
+            // It was, on the theory that parts of WPF only behave once there is a presentation
+            // source. The shoot's own log disproved it: only the first page of a run gets a real
+            // window - the app shuts down when that one closes, so every later Show is a no-op -
+            // and the first page is the one that comes back wrong, every time, while the pages that
+            // never got a window come back correct with their tables, rows and combo boxes intact.
+            //
+            // What a shown window costs is its size. A build agent's desktop is smaller than these
+            // pages: the window came up at 1044 px for a 1180 px sheet, the page measured itself
+            // against that, and the measurement survived being handed a bigger slot afterwards. The
+            // picture was the size asked for with the page laid out for a narrower one inside it.
+            //
+            // The Window object stays, unshown, so the page inherits its resources during the
+            // passes below; Snap puts the skin on the page itself before it cuts it loose.
 
             // Two layout passes with a pump between them. The first generates the item containers
             // a ListView only creates once it has been measured; the second lays out what that
@@ -261,10 +262,9 @@ namespace CamelWorks.Studio
                 Pump();
             }
 
-            // Anything that did not photograph itself gets taken here, settled.
+            // Anything that did not photograph itself gets taken here, settled. Snap takes the
+            // page off the window first, so nothing the window did to it is still on it.
             Shoot();
-
-            if (shown) window.Close();
         }
 
         /// <summary>Write one laid-out element to a PNG.</summary>
@@ -273,11 +273,62 @@ namespace CamelWorks.Studio
         /// <param name="path">Where to write it.</param>
         private static void Snap(Border host, int width, string path)
         {
-            host.Measure(new Size(width, double.PositiveInfinity));
+            // Off the window before anything is measured.
+            //
+            // While the page is the window's content the window owns its arrangement, and a
+            // window on a build agent is clamped to the agent's display: 1030 by 774 where the
+            // sheet asked for 1180 by 980. The measure and arrange below set the size the picture
+            // is taken at, but UpdateLayout runs whatever window pass is still outstanding, and
+            // that pass arranges the page back into the client area — which leaves the layout
+            // clip an undersized slot comes with sitting on the page itself, so the bitmap is the
+            // size asked for with the page cut off inside it. That is what the first page of every
+            // shoot has been getting: manage cut at x=1030 and y=774, header columns and footer
+            // buttons sliced, transparent pixels beyond. Detached, the page is its own layout root
+            // and these are the only measure and arrange it gets.
+            if (host.Parent is Window frame) frame.Content = null;
 
-            var height = (int)Math.Ceiling(Math.Max(host.ActualHeight, Math.Max(host.DesiredSize.Height, 1)));
-            host.Arrange(new Rect(0, 0, width, height));
-            host.UpdateLayout();
+            // The skin goes onto the page itself, whether or not it was still on a window when it
+            // got here. Styles are resolved by walking up from the element, and off the window that
+            // walk ends at the page: the second and third pages of a shoot came back in Windows'
+            // default controls, which looks enough like a deliberate design to be reviewed as one.
+            // Merging twice is a no-op, so this is unconditional rather than guarded on the parent.
+            Skin.Apply(host);
+
+            // Detaching is not enough on its own. Measure and arrange are skipped for a subtree
+            // that is not dirty, so the elements inside the page keep the layout clip the window's
+            // clamped arrange put on them and the picture comes back the size asked for with the
+            // page cut off inside it. Every element is marked dirty here so the passes below reach
+            // all of them.
+            Dirty(host);
+
+            // Measured, laid out, and measured again, because laying it out realises rows a
+            // virtualising list did not have before and those rows change how tall the page is.
+            // The second pass settles it; the third is the guard.
+            var height = 1;
+
+            for (var pass = 0; pass < 3; pass++)
+            {
+                host.Measure(new Size(width, double.PositiveInfinity));
+
+                var wanted = (int)Math.Ceiling(Math.Max(host.DesiredSize.Height, 1));
+
+                host.Arrange(new Rect(0, 0, width, wanted));
+                host.UpdateLayout();
+
+                if (wanted == height) break;
+
+                height = wanted;
+            }
+
+            // What the page came out as. A page whose desired width is under the width asked for
+            // was laid out for a narrower slot than the picture is taken at, which is the fault
+            // this harness has had twice; the number is in the log so the next one is one read
+            // rather than another run.
+            Log("  " + System.IO.Path.GetFileName(path) + ": desired "
+                + host.DesiredSize.Width.ToString("0", CultureInfo.InvariantCulture) + "x"
+                + host.DesiredSize.Height.ToString("0", CultureInfo.InvariantCulture)
+                + " into " + width.ToString(CultureInfo.InvariantCulture) + "x"
+                + height.ToString(CultureInfo.InvariantCulture));
 
             var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
             bitmap.Render(host);
@@ -286,6 +337,29 @@ namespace CamelWorks.Studio
             encoder.Frames.Add(BitmapFrame.Create(bitmap));
 
             using (var file = File.Create(path)) encoder.Save(file);
+        }
+
+        /// <summary>
+        /// Mark every element of a page for measure and arrange.
+        ///
+        /// Depth first over the visual tree, because a clip sits on whichever element was given
+        /// less room than it asked for and that is rarely the root.
+        /// </summary>
+        /// <param name="element">The page, or one element of it.</param>
+        private static void Dirty(DependencyObject element)
+        {
+            if (element is UIElement one)
+            {
+                // The clip as well as the passes. A clip set while the page was inside a clamped
+                // window is not undone by arranging it in a bigger slot.
+                one.Clip = null;
+                one.InvalidateMeasure();
+                one.InvalidateArrange();
+            }
+
+            var children = VisualTreeHelper.GetChildrenCount(element);
+
+            for (var at = 0; at < children; at++) Dirty(VisualTreeHelper.GetChild(element, at));
         }
 
         private static readonly List<string> _log = new List<string>();

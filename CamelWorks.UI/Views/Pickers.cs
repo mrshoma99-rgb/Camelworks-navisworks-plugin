@@ -161,6 +161,9 @@ namespace CamelWorks.UI.Views
             Lazy(current, onChanged, width, report => Categories(report),
                  onDemand: true, watching: "Reading what the elements are called");
 
+        /// <summary>The categories a bounded walk of the model finds, for a list rather than a picker.</summary>
+        public static IEnumerable<string> CategoryNames() => Categories(null);
+
         /// <summary>
         /// The categories a bounded walk of the model finds.
         ///

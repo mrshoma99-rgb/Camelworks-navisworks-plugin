@@ -23,6 +23,11 @@ namespace CamelWorks.UI.Views
     /// </summary>
     internal static class ClearanceSurfaces
     {
+        /// <summary>One slope, as the picker writes it.</summary>
+        /// <param name="degrees">The angle.</param>
+        private static string Degrees(double degrees) =>
+            degrees.ToString("0.#", System.Globalization.CultureInfo.CurrentCulture) + "°";
+
         /// <summary>How many rows of the list are drawn at once.</summary>
         private const int Shown = 500;
 
@@ -34,6 +39,15 @@ namespace CamelWorks.UI.Views
         /// The first is the detector's own default.
         /// </summary>
         private static readonly double[] Areas = { 0.05, 0.25, 1.0, 4.0, 10.0 };
+
+        /// <summary>
+        /// The slopes offered, in degrees.
+        ///
+        /// A floor laid to falls, a level-access ramp, the detector's own default, a car-park ramp
+        /// at 1:5, and a stair pitch. Degrees are the same number on every seat, so unlike the
+        /// areas these are typed the same way everywhere.
+        /// </summary>
+        private static readonly double[] Slopes = { 3.0, 5.0, 10.0, 12.0, 30.0 };
 
         // What was detected, held between visits: a federation sweep is a minute of traversal and
         // opening the window again must not cost it. Held with the run it was detected for, since
@@ -118,7 +132,23 @@ namespace CamelWorks.UI.Views
 
                 Redraw();
 
-                return Bench.Group(ClearanceSettings.Detected,
+                var stairs = Ui.Check("Leave stairs out",
+                                      settings.ExcludeStairs,
+                                      on => { _keep(one => one.ExcludeStairs = on); Stale(); });
+
+                stairs.ToolTip = "Detection makes one surface per tread, so the flight above "
+                                 + "reads as low headroom over the treads below it.";
+
+                return Bench.Group("Walkable surfaces",
+                    // The orientation is one sentence, over the list rather than under it: it says
+                    // what the list is before it is read, and the rest of what used to stand here
+                    // - what dropping a surface keeps, and why both ticks start off - was answering
+                    // a question nobody had yet asked.
+                    Ui.Small("Detection reads triangles and keeps every up-facing surface over "
+                             + _units.Area(settings.MinPatchAreaSquareMetres)
+                             + ", which is a floor, and is also a desk top, a worktop, a window "
+                             + "sill and the top of a wide duct: read the list and drop what is "
+                             + "not a floor."),
                     Ui.Field("Smallest surface kept",
                              Ui.Choice(Areas.Select(one => _units.Area(one)).ToList(),
                                        _units.Area(settings.MinPatchAreaSquareMetres),
@@ -132,34 +162,42 @@ namespace CamelWorks.UI.Views
 
                                            _keep(one => one.MinPatchAreaSquareMetres = chosen);
                                            Stale();
+                                       }, 160)),
+                    Ui.Field("Steepest surface still walked on",
+                             Ui.Choice(Slopes.Select(one => Degrees(one)).ToList(),
+                                       Degrees(settings.MaxSlopeDegrees),
+                                       pick =>
+                                       {
+                                           var chosen = Slopes.FirstOrDefault(
+                                               one => string.Equals(Degrees(one), pick,
+                                                                    StringComparison.Ordinal));
+
+                                           if (chosen <= 0) return;
+
+                                           _keep(one => one.MaxSlopeDegrees = chosen);
+                                           Stale();
                                        }, 160),
-                             "detection keeps nothing smaller"),
+                             "A floor laid to falls is under 3°. A level-access ramp is 5°. A "
+                             + "car-park ramp at 1:5 is 11.3°, and at anything under that it is "
+                             + "not a walkable surface and nothing over it is checked."),
                     Ui.Check("Prefer elements whose category names a floor",
                              settings.PreferFloorCategories,
                              on => { _keep(one => one.PreferFloorCategories = on); Stale(); }),
-                    Ui.Check("Leave stairs out — detection makes one surface per tread, and the "
-                             + "flight above then reads as low headroom over the treads below it",
-                             settings.ExcludeStairs,
-                             on => { _keep(one => one.ExcludeStairs = on); Stale(); }),
+                    stairs,
                     Ui.Runner("Find the surfaces", _log, primary: false, work: Find),
                     _log,
-                    _list,
-                    Ui.Small("Detection reads triangles: it keeps every up-facing surface over "
-                             + _units.Area(settings.MinPatchAreaSquareMetres)
-                             + ", which is a floor, and is also a desk top, a worktop, a window "
-                             + "sill and the top of a wide duct. Read the list before running "
-                             + "the check and drop what is not a floor."),
-                    Ui.Small("What is dropped is kept in the run's own settings, so the same desk "
-                             + "tops are not dropped again next time."),
-                    Ui.Small("Both ticks are off to start with: the geometric answer is the "
-                             + "default, and a stair with a soffit too low over it is still "
-                             + "worth reporting."));
+                    _list);
             }
 
             /// <summary>What was detected no longer answers what is being asked for.</summary>
             private void Stale()
             {
                 Forget();
+
+                // The dropped list goes too. A patch id is derived from the surface, so changing
+                // what detection keeps re-derives every one of them and the ids left behind name
+                // nothing: the drops would neither apply nor be visible to take back off.
+                _keep(one => one.Excluded.Clear());
 
                 _log.Children.Clear();
 
@@ -251,7 +289,7 @@ namespace CamelWorks.UI.Views
 
                 _list.Children.Add(Ui.Picking(table,
                     new Ui.OnPicked("Drop these {n}", (picked, said) => Drop(picked, said, dropping: true)),
-                    new Ui.OnPicked("Put these {n} back", (picked, said) => Drop(picked, said, dropping: false))));
+                    new Ui.OnPicked("Include these {n}", (picked, said) => Drop(picked, said, dropping: false))));
 
                 _list.Children.Add(Ui.Small(
                     Ui.Count(_patches.Count(patch => !settings.Excluded.Contains(patch.Id)), "surface")

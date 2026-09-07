@@ -85,6 +85,9 @@ namespace CamelWorks.Core.Checks
         /// <inheritdoc />
         public string ResultWord => "clash";
 
+        /// <summary>Two solids meeting, which is what a clash is.</summary>
+        public string Symbol => CheckSymbols.Clash;
+
         /// <inheritdoc />
         public bool IsAvailable => _source.IsAvailable;
 
@@ -92,6 +95,12 @@ namespace CamelWorks.Core.Checks
         public string? Unavailable =>
             IsAvailable ? null
             : _unavailable ?? "This Navisworks edition has no clash engine.";
+
+        /// <summary>
+        /// Nothing to report. The clash engine's own refusals are on the run it refused, and a
+        /// read here is off the register rather than a press that could stop part way.
+        /// </summary>
+        public IReadOnlyList<string> Notes => Array.Empty<string>();
 
         /// <summary>
         /// The two participants and how deep the clash is.
@@ -472,10 +481,17 @@ namespace CamelWorks.Core.Checks
             : trades.Count == 1 ? trades[0] + " against a selection this test does not name"
             : "two selections this test does not name";
 
-        /// <summary>What kind of test this is, in the words the matrix legend uses.</summary>
+        /// <summary>
+        /// What kind of test this is: the matrix legend's word, and the noun that says it is a clash.
+        ///
+        /// The noun is not decoration. Navisworks' proximity test is called a clearance test, and
+        /// this product also has a clearance check that measures headroom; unqualified, the two put
+        /// the same word in the same Kind column for two unrelated things. "Clearance clash" is a
+        /// clash and "Clearance" is the check, and neither reads as the other.
+        /// </summary>
         /// <param name="shape">The test's shape, or null.</param>
         private static string Kinded(ClashTestSides? shape) =>
-            MatrixNaming.Worded(MatrixDiff.Kinded(shape?.Kind));
+            MatrixNaming.Worded(MatrixDiff.Kinded(shape?.Kind)) + " clash";
 
         /// <summary>This test's tolerance in the units it was set in, or null when it has none.</summary>
         /// <param name="shape">The test's shape, or null.</param>

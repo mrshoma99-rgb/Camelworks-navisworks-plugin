@@ -360,9 +360,8 @@ namespace CamelWorks.UI.Views
             Ui.Line("Nothing in CamelWorks contacts a server - not to check a version, not to count "
                     + "an install, not to report a crash. That is a deliberate limit and it has a "
                     + "cost: you find out about a new build by looking.", 0.85),
-            Ui.Line("A newer build reads a project file this one wrote. An older build shown a file "
-                    + "from a newer one opens it read-only and says so, rather than writing a version "
-                    + "back over settings it does not understand.", 0.85));
+            Ui.Line("Project files are not versioned across releases. Run the build a project was "
+                    + "set up with, and upgrade a job's seats together.", 0.85));
 
         /// <summary>A path in the user's own folder, so the box is never empty.</summary>
         private static string Suggested(string file)

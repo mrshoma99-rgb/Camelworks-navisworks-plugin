@@ -395,29 +395,6 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void A_write_drops_the_previous_slot_an_earlier_build_left()
-        {
-            // A project file written before the second slot went away carries one. It is read by
-            // nothing, so the next run sheds it rather than keeping it for good.
-            var store = Project();
-            var slot = JsonValue.Object();
-
-            slot.Set(RunJournal.PreviousKey, Journal("older").ToJson());
-            slot.Set(RunJournal.CurrentKey, Journal("first").ToJson());
-
-            store.Section(CheckRunStore.Section)
-                 .Set(RunJournal.Key, JsonValue.Object().Set(RunJournal.Slot("Fake", "run-a"), slot));
-
-            Journal("second").Write(store);
-
-            Assert.Equal(new[] { RunJournal.CurrentKey },
-                         store.Section(CheckRunStore.Section)[RunJournal.Key]
-                              [RunJournal.Slot("Fake", "run-a")].Keys);
-
-            Assert.Equal(new[] { "second" }, RunJournal.Current(store, "Fake", "run-a")!.Statuses.Keys);
-        }
-
-        [Fact]
         public void A_merged_journal_takes_the_later_run_and_not_the_last_one_read()
         {
             // Two runs can hold one finding id. Taking whichever journal was enumerated last made
