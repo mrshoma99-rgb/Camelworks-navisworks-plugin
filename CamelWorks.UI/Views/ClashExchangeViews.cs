@@ -117,13 +117,19 @@ namespace CamelWorks.UI.Views
         /// harness, which cannot press a file dialog: without it the import mode can only ever be
         /// drawn with nothing chosen.
         /// </param>
+        /// <param name="seat">
+        /// Which checks this seat offers, for the Kind picker. Defaults to the session, which is
+        /// one; the harness has a seat but not a document, and without this the picker could only
+        /// ever be drawn with the one kind on it.
+        /// </param>
         public static UIElement Drawn(ProjectStore store, string? projectName = null,
                                       IReadOnlyList<ClashGroup>? board = null,
                                       bool importing = false, FindingStore? findings = null,
                                       Session? session = null,
-                                      IReadOnlyList<string>? returned = null) =>
+                                      IReadOnlyList<string>? returned = null,
+                                      ISeat? seat = null) =>
             new Desk(store, projectName ?? "Untitled project", board, importing, findings,
-                     session, returned).View;
+                     session, returned, seat).View;
 
         /// <summary>The two modes of the tab: writing packs out.</summary>
         private const string SendOut = "Export";
@@ -210,13 +216,16 @@ namespace CamelWorks.UI.Views
             /// <summary>The open document, or null when the desk was drawn from the project file.</summary>
             private readonly Session? _session;
 
+            /// <summary>Which checks this seat offers, for the Kind picker. A Session is one.</summary>
+            private readonly ISeat? _seat;
+
             /// <summary>Whether each topic carries a rendered picture. Needs a document.</summary>
             private bool _pictures;
 
             internal Desk(ProjectStore store, string projectName,
                           IReadOnlyList<ClashGroup>? board = null, bool importing = false,
                           FindingStore? findings = null, Session? session = null,
-                          IReadOnlyList<string>? returned = null)
+                          IReadOnlyList<string>? returned = null, ISeat? seat = null)
             {
                 _store = store;
                 _projectName = projectName;
@@ -224,6 +233,7 @@ namespace CamelWorks.UI.Views
                 _importing = importing;
                 _findings = findings;
                 _session = session;
+                _seat = seat ?? session;
 
                 Load();
 
@@ -480,6 +490,11 @@ namespace CamelWorks.UI.Views
                     {
                         Orientation = Orientation.Horizontal,
                         VerticalAlignment = VerticalAlignment.Center,
+
+                        // The width the picker would have taken. Without it the group sized this
+                        // column to the word, and "Clash" was clipped by the box beside it.
+                        MinWidth = Ui.Wide.Word,
+                        MinHeight = 31,
                         ToolTip = "This seat offers one kind of check, so there is nothing to "
                                 + "choose between.",
                     };
@@ -524,9 +539,9 @@ namespace CamelWorks.UI.Views
             {
                 var found = new List<string> { FindingSource.Clash };
 
-                if (_session == null) return found;
+                if (_seat == null) return found;
 
-                foreach (var one in _session.Checks.All)
+                foreach (var one in _seat.Checks.All)
                     if (!string.Equals(one.Key, FindingSource.Clash, StringComparison.OrdinalIgnoreCase)
                         && !found.Contains(one.Key, StringComparer.OrdinalIgnoreCase))
                         found.Add(one.Key);

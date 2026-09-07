@@ -119,7 +119,7 @@ namespace CamelWorks.Studio
                      // is a star, and a star row measured against an unbounded height draws the
                      // whole screen again below itself.
                      Height = 500,
-                     Child = ClashExchangeViews.Drawn(Filed(), "Riverside", Sent()),
+                     Child = ClashExchangeViews.Drawn(Filed(), "Riverside", Sent(), seat: Seated()),
                  })),
 
             // The other half of the round with nothing chosen, which is the state it opens in and
@@ -134,7 +134,7 @@ namespace CamelWorks.Studio
                  {
                      Height = 300,
                      Child = ClashExchangeViews.Drawn(Filed(), "Riverside", Sent(),
-                                                      importing: true),
+                                                      importing: true, seat: Seated()),
                  })),
 
             // The import mode in the state it is used in: two parties' packs read against the
@@ -146,7 +146,8 @@ namespace CamelWorks.Studio
                  {
                      Height = 500,
                      Child = ClashExchangeViews.Drawn(Filed(), "Riverside", Sent(),
-                                                      importing: true, returned: Returned()),
+                                                      importing: true, returned: Returned(),
+                                                      seat: Seated()),
                  })),
 
             // The Filter tab as a fresh project has it: three sections with nothing in them, the
