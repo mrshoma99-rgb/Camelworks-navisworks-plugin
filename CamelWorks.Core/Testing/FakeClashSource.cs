@@ -42,6 +42,9 @@ namespace CamelWorks.Core.Testing
             internal string? SetA { get; set; }
             internal string? SetB { get; set; }
             internal List<FakeResult> Results { get; } = new List<FakeResult>();
+
+            /// <summary>How many results the test reports that it does not hand over.</summary>
+            internal int Unkeyed { get; set; }
         }
 
         /// <summary>One result, as the host holds it.</summary>
@@ -128,6 +131,23 @@ namespace CamelWorks.Core.Testing
             result.Name = "Clash" + (test.Results.Count + 1).ToString(CultureInfo.InvariantCulture);
 
             test.Results.Add(result);
+
+            return this;
+        }
+
+        /// <summary>
+        /// Make the last test added report more results than it hands over.
+        ///
+        /// The adapter drops a result whose two elements it cannot identify in the model, but the
+        /// count on the test comes from the host and still includes them, so the two numbers
+        /// disagree. This is how a test reproduces that.
+        /// </summary>
+        /// <param name="many">How many results to report and not hand over.</param>
+        public FakeClashSource Unkeyed(int many)
+        {
+            if (_tests.Count == 0) throw new InvalidOperationException("add a test first");
+
+            _tests[_tests.Count - 1].Unkeyed += many;
 
             return this;
         }
@@ -701,8 +721,8 @@ namespace CamelWorks.Core.Testing
         // ---- Plumbing ---------------------------------------------------------------------
 
         private static ClashTestInfo Described(FakeTest test) =>
-            new ClashTestInfo(test.Id, test.Name, test.Folder, test.Results.Count,
-                              test.LastRunTicks);
+            new ClashTestInfo(test.Id, test.Name, test.Folder,
+                              test.Results.Count + test.Unkeyed, test.LastRunTicks);
 
         private FakeTest? Found(string? testId) =>
             _tests.FirstOrDefault(one => string.Equals(one.Id, testId,

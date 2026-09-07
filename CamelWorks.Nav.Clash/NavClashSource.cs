@@ -2464,10 +2464,60 @@ namespace CamelWorks.Nav.Clash
             }
         }
 
+        /// <summary>
+        /// How far to look for something keyable, down and then up.
+        ///
+        /// Small on purpose: this runs twice per clash result, and a federation's clash test holds
+        /// thousands. A composite whose identity is more than a few nodes away from it is not
+        /// going to be found by looking harder.
+        /// </summary>
+        private const int Reach = 8;
+
+        /// <summary>
+        /// The key for one side of a clash, from the item or from the nearest thing to it that
+        /// has one.
+        ///
+        /// The item the host names for a side is not always keyable. On some exports it is a
+        /// composite: a grouping node with no instance guid, no tree path the host will give up
+        /// and no geometry to size, standing over the parts that actually clashed. Keying only
+        /// that node dropped the whole result — and the drop was silent, so a test the host said
+        /// held nine hundred clashes arrived on the board holding forty.
+        ///
+        /// So the composite's own geometry is tried first, then what is above it. A key from a
+        /// parent is a worse answer than a key from the element, and both are better answers than
+        /// losing the clash.
+        /// </summary>
+        /// <param name="item">The side, as the host names it.</param>
         private static ElementKey KeyOf(ModelItem? item)
         {
             if (item == null) return default;
 
+            var key = Keyed(item);
+            if (!key.IsEmpty) return key;
+
+            foreach (var below in Under(item))
+            {
+                key = Keyed(below);
+                if (!key.IsEmpty) return key;
+            }
+
+            var up = Above(item);
+
+            for (var step = 0; up != null && step < Reach; step++)
+            {
+                key = Keyed(up);
+                if (!key.IsEmpty) return key;
+
+                up = Above(up);
+            }
+
+            return default;
+        }
+
+        /// <summary>One item's key, or the empty key where the host will not give one.</summary>
+        /// <param name="item">The item.</param>
+        private static ElementKey Keyed(ModelItem item)
+        {
             try
             {
                 return NavKeys.Of(item);
@@ -2475,6 +2525,85 @@ namespace CamelWorks.Nav.Clash
             catch (Exception)
             {
                 return default;
+            }
+        }
+
+        /// <summary>
+        /// The first few pieces of geometry under an item, nearest first.
+        ///
+        /// Breadth first and capped: the point is to find the thing that clashed, which on a
+        /// composite is a child or a grandchild, not to walk a branch of ten thousand.
+        /// </summary>
+        /// <param name="item">The item.</param>
+        private static IEnumerable<ModelItem> Under(ModelItem item)
+        {
+            var queue = new Queue<ModelItem>();
+
+            queue.Enqueue(item);
+
+            var seen = 0;
+            var opened = 0;
+
+            // Two budgets, not one. The first stops once enough geometry has been offered; the
+            // second stops a composite that holds none at all from walking its whole branch,
+            // which on a federation is what makes this cost per result rather than per model.
+            while (queue.Count > 0 && seen < Reach && opened < Reach * Reach)
+            {
+                var here = queue.Dequeue();
+
+                opened++;
+
+                List<ModelItem> children;
+
+                try
+                {
+                    children = here.Children.ToList();
+                }
+                catch (Exception)
+                {
+                    // A node the host will not open is a leaf as far as this is concerned. One
+                    // awkward node must not cost the result.
+                    continue;
+                }
+
+                foreach (var child in children)
+                {
+                    if (Geometric(child))
+                    {
+                        seen++;
+                        yield return child;
+                    }
+
+                    queue.Enqueue(child);
+                }
+            }
+        }
+
+        /// <summary>Whether an item carries geometry, guarded.</summary>
+        /// <param name="item">The item.</param>
+        private static bool Geometric(ModelItem item)
+        {
+            try
+            {
+                return item.HasGeometry;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>The item above one, or null at the top or where the host will not say.</summary>
+        /// <param name="item">The item.</param>
+        private static ModelItem? Above(ModelItem item)
+        {
+            try
+            {
+                return item.Parent;
+            }
+            catch (Exception)
+            {
+                return null;
             }
         }
 

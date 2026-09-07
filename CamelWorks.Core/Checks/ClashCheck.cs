@@ -339,6 +339,25 @@ namespace CamelWorks.Core.Checks
                 return new CheckRead(runs, findings, _ => false, notes);
             }
 
+            // What the host counted against what could be described. A result whose two sides
+            // will not both resolve to an element cannot be keyed, and the adapter drops it. That
+            // is a real answer, but a silent one: the board would say "678 results read" over a
+            // test the host says holds nine hundred, and the difference would look like the tool
+            // losing them.
+            var lost = 0;
+            var worst = new List<string>();
+
+            void Counted(ClashTestInfo test, int described)
+            {
+                var missing = test.ResultCount - described;
+
+                if (missing <= 0) return;
+
+                lost += missing;
+
+                if (worst.Count < 3) worst.Add(test.Name);
+            }
+
             if (runIds == null)
             {
                 foreach (var read in _source.ReadEverything(onProgress))
@@ -347,6 +366,8 @@ namespace CamelWorks.Core.Checks
 
                     runs.Add(Run(read.Test, read.Shape));
                     findings.AddRange(Found(read.Test, read.Results));
+
+                    Counted(read.Test, read.Results.Count);
                 }
             }
             else
@@ -372,11 +393,31 @@ namespace CamelWorks.Core.Checks
 
                     runs.Add(Run(test, Shape(test.Id, reread: true)));
                     findings.AddRange(Found(test, results));
+
+                    Counted(test, results.Count);
                 }
             }
 
+            if (lost > 0)
+                notes.Add(Lost(lost, worst));
+
             return new CheckRead(runs, findings, Scope(runs.Select(run => run.Id).ToList()), notes);
         }
+
+        /// <summary>
+        /// What the read could not describe, in one sentence.
+        ///
+        /// Named tests rather than a bare number: on a federation the loss is almost never spread
+        /// evenly, and the test it is concentrated in is the one whose selection needs looking at.
+        /// </summary>
+        /// <param name="lost">How many results the host counted that could not be described.</param>
+        /// <param name="worst">The first few tests it happened in.</param>
+        private static string Lost(int lost, IReadOnlyList<string> worst) =>
+            lost + (lost == 1 ? " result the tests report is not on the board" : " results the "
+                    + "tests report are not on the board")
+            + ", because one of the two items in each could not be identified in the model"
+            + (worst.Count == 0 ? "." : " \u2014 in " + string.Join(", ", worst)
+                                        + (worst.Count < 3 ? "." : " and others."));
 
         /// <summary>
         /// Which held findings a read of these tests speaks for.

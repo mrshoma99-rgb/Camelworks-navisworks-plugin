@@ -222,6 +222,40 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void Results_the_tests_report_but_do_not_hand_over_are_counted_in_a_note()
+        {
+            var seat = Seat().Unkeyed(4);
+
+            var read = new ClashCheck(seat).Read(null, null);
+
+            var note = Assert.Single(read.Notes);
+
+            Assert.StartsWith("4 results the tests report are not on the board", note,
+                              StringComparison.Ordinal);
+            Assert.Contains("L04 MEP v STR", note, StringComparison.Ordinal);
+            Assert.Equal(3, read.Findings.Count);
+        }
+
+        [Fact]
+        public void Reading_one_test_counts_what_that_test_did_not_hand_over()
+        {
+            var seat = Seat().Unkeyed(1);
+
+            var read = new ClashCheck(seat).Read(new[] { "t2" }, null);
+
+            var note = Assert.Single(read.Notes);
+
+            Assert.StartsWith("1 result the tests report is not on the board", note,
+                              StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_read_that_loses_nothing_says_nothing()
+        {
+            Assert.Empty(new ClashCheck(Seat()).Read(null, null).Notes);
+        }
+
+        [Fact]
         public void A_seat_with_no_clash_engine_reads_nothing_and_says_why()
         {
             var seat = Seat();
