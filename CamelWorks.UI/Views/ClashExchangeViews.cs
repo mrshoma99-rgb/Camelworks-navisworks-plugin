@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using CamelWorks.Core.Checks;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Data;
 using CamelWorks.Core.Identity;
@@ -478,6 +479,10 @@ namespace CamelWorks.UI.Views
                 link.VerticalAlignment = VerticalAlignment.Center;
                 link.Margin = new Thickness(10, 0, 0, 0);
 
+                // The symbol first, then the word. The same mark this kind carries in the Create
+                // list and the check picker, so the three screens name the kind the same way.
+                row.Children.Add(Ui.Glyph(Symbolled(CheckKey), 15, "Muted",
+                                          new Thickness(0, 0, 7, 0)));
                 row.Children.Add(named);
                 row.Children.Add(link);
 
@@ -529,6 +534,27 @@ namespace CamelWorks.UI.Views
                     case FindingSource.FallHazard: return "Fall hazard";
                     case FindingSource.Ids: return "IDS";
                     default: return string.IsNullOrWhiteSpace(checkKey) ? "Clash" : checkKey;
+                }
+            }
+
+            /// <summary>
+            /// The symbol for a kind of test, from its check key.
+            ///
+            /// Resolved from the key for the same reason <see cref="Named"/> is: this desk holds a
+            /// check key and not the check itself, so it cannot ask <see cref="ICheck.Symbol"/>.
+            /// A key with no symbol named here draws the fallback, as an unknown key already
+            /// draws its own name.
+            /// </summary>
+            /// <param name="checkKey">The check's key, as <see cref="FindingSource"/> spells it.</param>
+            private static string Symbolled(string checkKey)
+            {
+                switch (checkKey)
+                {
+                    case FindingSource.Headroom: return Ui.CheckSymbol(CheckSymbols.Clearance);
+                    case FindingSource.FallHazard: return Ui.CheckSymbol(CheckSymbols.Opening);
+                    case FindingSource.SetDrift:
+                    case FindingSource.Ids: return Ui.CheckSymbol(CheckSymbols.Check);
+                    default: return Ui.CheckSymbol(CheckSymbols.Clash);
                 }
             }
 

@@ -95,6 +95,9 @@ namespace CamelWorks.Core.Checks
         /// <inheritdoc />
         public string ResultWord => "breach";
 
+        /// <summary>A measured gap between a surface and what is over it.</summary>
+        public string Symbol => CheckSymbols.Clearance;
+
         /// <summary>
         /// True whenever a document is open. The check needs geometry and not a clash engine, so a
         /// Simulate seat runs it exactly as a Manage seat does.

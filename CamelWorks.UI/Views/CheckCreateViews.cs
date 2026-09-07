@@ -336,6 +336,10 @@ namespace CamelWorks.UI.Views
                                           folder.Length == 0 ? "Not filed" : folder, Found(one))
                     {
                         Tone = one.Is(PickedCheck, PickedRun) ? Tone.Good : Tone.Plain,
+
+                        // The check's own symbol, beside its own name. The list mixes kinds and
+                        // sorts by any column, so the kind has to be readable without reading.
+                        Symbol = Ui.CheckSymbol(one.Check.Symbol),
                     });
                 }
 
@@ -347,9 +351,11 @@ namespace CamelWorks.UI.Views
                 // under everything except the surfaces, in Level 03" - and no width this pane can
                 // give it is enough. It is on the settings panel beside the list, and the search
                 // still reads it.
+                // Kind is column 1, and it is the one column whose value is a kind rather than a
+                // measurement, so it is the one that carries the symbol.
                 var table = Ui.Table(rows,
-                                     ("Test", 0), ("Kind", 100), ("Folder", 120),
-                                     ("Last run", 160)).Multi();
+                                     ("Test", 0), ("Kind", 118), ("Folder", 120),
+                                     ("Last run", 160)).Multi().Symbolled(1);
 
                 _filling = true;
 
@@ -440,21 +446,21 @@ namespace CamelWorks.UI.Views
                     switch (check)
                     {
                         case ClearanceCheck clearance:
-                            made.Add(Parts.Entry.Saying(check.Name, Glyphs.Ruler,
+                            made.Add(Parts.Entry.Saying(check.Name, Ui.CheckSymbol(check.Symbol),
                                 "The clear height over the surfaces you name. A duct 1.9 m over a "
                                 + "corridor clashes with nothing.",
                                 () => NewClearance(clearance)));
                             break;
 
                         case FallCheck fall:
-                            made.Add(Parts.Entry.Saying(check.Name, Glyphs.Layers,
+                            made.Add(Parts.Entry.Saying(check.Name, Ui.CheckSymbol(check.Symbol),
                                 "Openings wide enough to fall through, and floor edges with no "
                                 + "handrail, at one elevation.",
                                 () => NewFall(fall)));
                             break;
 
                         default:
-                            made.Add(Parts.Entry.Saying(check.Name, Glyphs.Clash,
+                            made.Add(Parts.Entry.Saying(check.Name, Ui.CheckSymbol(check.Symbol),
                                 "Built on the Clash matrix, which resolves the two sides against "
                                 + "the model.",
                                 () => Ui.Told(Shell.AppWindow.Show("clash", "matrix"))));

@@ -126,6 +126,9 @@ namespace CamelWorks.Core.Testing
         /// <inheritdoc />
         public string ResultWord { get; set; } = "result";
 
+        /// <summary>Settable, so a test can drive a surface that draws one symbol per kind.</summary>
+        public string Symbol { get; set; } = CheckSymbols.Check;
+
         /// <inheritdoc />
         public bool IsAvailable { get; set; } = true;
 

@@ -482,12 +482,12 @@ namespace CamelWorks.UI.Views
                     + "one. What is set here overrides that. The matrix builds its two sides from "
                     + "these, the board groups by them, and Exchange splits an export by them."));
 
-                var rows = _seat.Profile.Settings
+                var models = _seat.Profile.Settings
                     .Where(one => one.Key.StartsWith(ProfileKeys.DisciplinePrefix,
                                                      StringComparison.Ordinal))
                     .ToList();
 
-                if (rows.Count == 0)
+                if (models.Count == 0)
                 {
                     held.Children.Add(Ui.Empty(
                         "No models loaded",
@@ -501,21 +501,39 @@ namespace CamelWorks.UI.Views
 
                 offered.AddRange(Disciplines.All);
 
-                foreach (var setting in rows)
-                {
-                    var key = setting.Key;
+                var rows = models.Select(one => new TableRow(one,
+                    one.Title,
+                    string.IsNullOrWhiteSpace(Read(one.Key)) ? NoDiscipline : Read(one.Key)!))
+                    .ToList();
 
-                    var value = string.IsNullOrWhiteSpace(Read(key))
-                        ? NoDiscipline
-                        : Read(key)!;
+                var table = Ui.Table(rows, ("Model", 0), ("Discipline", 180));
 
-                    var pick = Ui.Choice(offered, value, chosen =>
-                        Set(key, string.Equals(chosen, NoDiscipline, StringComparison.Ordinal)
-                                     ? null
-                                     : chosen), 200);
+                // A federation is twenty models and a discipline is set on most of them at once:
+                // a chooser per row is twenty menus to open. The chooser beside the verb is read
+                // by it, so a whole selection is set in one press.
+                var wanted = NoDiscipline;
 
-                    held.Children.Add(Ui.Field(setting.Title, pick));
-                }
+                var pick = Ui.Choice(offered, NoDiscipline, chosen => wanted = chosen, 180);
+
+                pick.VerticalAlignment = VerticalAlignment.Center;
+
+                held.Children.Add(Ui.Picking(table, Ui.Field("Set to", pick),
+                    new Ui.OnPicked("Set discipline on {n}", (picked, said) =>
+                    {
+                        var settings = picked.OfType<ProfileSetting>().ToList();
+
+                        said.Children.Clear();
+
+                        if (settings.Count == 0) return;
+
+                        foreach (var setting in settings)
+                            Set(setting.Key,
+                                string.Equals(wanted, NoDiscipline, StringComparison.Ordinal)
+                                    ? null
+                                    : wanted);
+
+                        Show(Part.Disciplines);
+                    })));
 
                 return held;
             }

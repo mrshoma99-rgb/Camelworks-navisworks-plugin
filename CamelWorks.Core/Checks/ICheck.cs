@@ -38,6 +38,20 @@ namespace CamelWorks.Core.Checks
         /// <summary>What one result is called: "clash", "breach", "opening", "failure".</summary>
         string ResultWord { get; }
 
+        /// <summary>
+        /// Which symbol stands for this check, as one of <see cref="CheckSymbols"/>.
+        ///
+        /// A key naming what the symbol depicts, not a drawing: Core is netstandard2.0 and
+        /// references only the framework, so the shape belongs to the surface exactly as it does
+        /// for <see cref="ColumnKind"/>. A key the surface does not recognise draws the fallback
+        /// symbol rather than nothing.
+        ///
+        /// Every list of tests draws this beside the kind's name and never instead of it. The
+        /// symbol separates the kinds at a glance; the word is what somebody who does not know the
+        /// symbols reads.
+        /// </summary>
+        string Symbol { get; }
+
         /// <summary>False when this seat cannot offer the check at all.</summary>
         bool IsAvailable { get; }
 

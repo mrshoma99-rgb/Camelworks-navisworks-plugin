@@ -89,6 +89,9 @@ namespace CamelWorks.Core.Checks
         /// <inheritdoc />
         public string ResultWord => "hazard";
 
+        /// <summary>A gap in a floor, which is what both this check's findings are about.</summary>
+        public string Symbol => CheckSymbols.Opening;
+
         /// <summary>True when a document is open and this seat gives triangles.</summary>
         public bool IsAvailable =>
             _document != null && !_document.IsEmpty

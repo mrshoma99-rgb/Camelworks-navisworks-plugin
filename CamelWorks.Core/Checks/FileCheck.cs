@@ -77,6 +77,9 @@ namespace CamelWorks.Core.Checks
         /// <inheritdoc />
         public string ResultWord => "clash";
 
+        /// <summary>The same symbol the document leg draws. The same check; the file is where it read from.</summary>
+        public string Symbol => CheckSymbols.Clash;
+
         /// <inheritdoc />
         public bool IsAvailable => _read.IsUsable;
 

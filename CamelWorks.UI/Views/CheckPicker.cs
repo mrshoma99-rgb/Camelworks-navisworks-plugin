@@ -32,7 +32,8 @@ namespace CamelWorks.UI.Views
         /// <param name="onPick">Called with the check somebody picked.</param>
         public static UIElement Draw(IReadOnlyList<ICheck> checks, ICheck? current,
                                      FindingRegister? register, Action<ICheck> onPick) =>
-            Parts.MenuButton(current?.Name ?? "No check", Glyphs.Layers,
+            Parts.MenuButton(current?.Name ?? "No check",
+                             current == null ? Glyphs.Layers : Ui.CheckSymbol(current.Symbol),
                              Entries(checks, current, register, onPick));
 
         /// <summary>
@@ -58,9 +59,14 @@ namespace CamelWorks.UI.Views
                 var one = check;
                 var said = Said(one, register);
 
+                // The check's own symbol on every line, including the unavailable ones and the
+                // one already showing. One glyph for the whole list left the kinds distinguishable
+                // only by their names, which is what this menu is for.
+                var symbol = Ui.CheckSymbol(one.Symbol);
+
                 if (!one.IsAvailable)
                 {
-                    lines.Add(Parts.Entry.Barred(said, Glyphs.Layers,
+                    lines.Add(Parts.Entry.Barred(said, symbol,
                                                  one.Unavailable ?? "This seat cannot offer it."));
 
                     continue;
@@ -70,8 +76,8 @@ namespace CamelWorks.UI.Views
                            && string.Equals(current.Key, one.Key, StringComparison.OrdinalIgnoreCase);
 
                 lines.Add(here
-                    ? Parts.Entry.Saying(said, Glyphs.Tick, "already showing", null)
-                    : Parts.Entry.Act(said, Glyphs.Layers, () => onPick?.Invoke(one)));
+                    ? Parts.Entry.Saying(said, symbol, "already showing", null)
+                    : Parts.Entry.Act(said, symbol, () => onPick?.Invoke(one)));
             }
 
             if (lines.Count == 0)

@@ -85,6 +85,9 @@ namespace CamelWorks.Core.Checks
         /// <inheritdoc />
         public string ResultWord => "clash";
 
+        /// <summary>Two solids meeting, which is what a clash is.</summary>
+        public string Symbol => CheckSymbols.Clash;
+
         /// <inheritdoc />
         public bool IsAvailable => _source.IsAvailable;
 

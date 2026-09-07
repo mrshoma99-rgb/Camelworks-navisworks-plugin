@@ -9,6 +9,7 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using CamelWorks.Core.Checks;
 using CamelWorks.Core.Data;
 using CamelWorks.Core.Identity;
 using ToggleButton = System.Windows.Controls.Primitives.ToggleButton;
@@ -48,6 +49,51 @@ namespace CamelWorks.UI.Views
             var whole = value is double number && number > 0 ? number : 0;
 
             return whole <= 0 ? Least : Math.Max(Least, whole * Of);
+        }
+
+        /// <inheritdoc />
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
+            Binding.DoNothing;
+    }
+
+    /// <summary>
+    /// One table cell drawn as a symbol and its text.
+    ///
+    /// A converter rather than a factory tree because a glyph is a stroked path on its own
+    /// 24-unit canvas inside a Viewbox, which <see cref="Ui.Glyph"/> already assembles; building
+    /// the same three elements again as a FrameworkElementFactory would be a second definition of
+    /// how a glyph is drawn.
+    /// </summary>
+    internal sealed class SymbolCell : IValueConverter
+    {
+        /// <summary>Make one.</summary>
+        /// <param name="column">Which of the row's cells supplies the text.</param>
+        internal SymbolCell(int column) => Column = column;
+
+        /// <summary>Which of the row's cells supplies the text.</summary>
+        internal int Column { get; }
+
+        /// <inheritdoc />
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (!(value is TableRow row)) return string.Empty;
+
+            var text = new TextBlock
+            {
+                Text = row[Column],
+                ToolTip = row[Column],
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            if (string.IsNullOrEmpty(row.Symbol)) return text;
+
+            var line = new StackPanel { Orientation = Orientation.Horizontal };
+
+            line.Children.Add(Ui.Glyph(row.Symbol!, 14, "Muted", new Thickness(0, 0, 7, 0)));
+            line.Children.Add(text);
+
+            return line;
         }
 
         /// <inheritdoc />
@@ -112,6 +158,14 @@ namespace CamelWorks.UI.Views
 
         /// <summary>How the row reads — used to tint it.</summary>
         public Tone Tone { get; set; }
+
+        /// <summary>
+        /// The symbol drawn beside one of this row's cells, or null for none.
+        ///
+        /// Path data in a 24-unit box, as <c>Glyphs</c> writes it. Which column it lands in is the
+        /// table's, not the row's: see <c>Symbolled</c>.
+        /// </summary>
+        public string? Symbol { get; set; }
 
         /// <summary>Cell text by column. Out-of-range is empty rather than an exception.</summary>
         /// <param name="index">Column index.</param>
@@ -3203,6 +3257,39 @@ namespace CamelWorks.UI.Views
             return table;
         }
 
+        /// <summary>
+        /// Draw one column as its row's <see cref="TableRow.Symbol"/> and then its text.
+        ///
+        /// For a column whose value is a kind rather than a measurement. A list of tests where
+        /// every row carries the same mark cannot be sorted by eye, and the kind has to be read
+        /// word by word; a mark per kind sorts the list at a glance and the word stays beside it
+        /// for anybody who does not know the marks.
+        ///
+        /// Rows with no symbol draw the text alone, so a table may mix kinds that have a mark with
+        /// kinds that do not.
+        /// </summary>
+        /// <param name="table">The table.</param>
+        /// <param name="column">Which column, from nought.</param>
+        public static ListView Symbolled(this ListView table, int column)
+        {
+            if (!(table.View is GridView grid) || column < 0 || column >= grid.Columns.Count)
+                return table;
+
+            var cell = new FrameworkElementFactory(typeof(ContentPresenter));
+
+            // The whole row, converted to a built visual, rather than a factory tree with the
+            // path bound: a glyph is a path on its own 24-unit canvas inside a Viewbox, and Glyph
+            // already assembles that. One assembly of it, used everywhere.
+            cell.SetBinding(ContentPresenter.ContentProperty, new Binding(".")
+            {
+                Converter = new SymbolCell(column),
+            });
+
+            grid.Columns[column].CellTemplate = new DataTemplate { VisualTree = cell };
+
+            return table;
+        }
+
         public static ListView Multi(this ListView table)
         {
             table.SelectionMode = SelectionMode.Extended;
@@ -3896,6 +3983,29 @@ namespace CamelWorks.UI.Views
             }
         }
 
+        /// <summary>
+        /// The symbol for a kind of check, from the key the check declares.
+        ///
+        /// One table, so every list of tests draws a clash test with the same mark: the Create
+        /// list, the check picker, the Manage rail and the exchange desk had one glyph between
+        /// them and the kind could only be read as text.
+        ///
+        /// A key with no shape here falls back to the checklist rather than to nothing, so a check
+        /// added later draws a mark from the day it is registered and gets its own by adding one
+        /// case.
+        /// </summary>
+        /// <param name="symbol">The key, as <see cref="CheckSymbols"/> spells it.</param>
+        public static string CheckSymbol(string? symbol)
+        {
+            switch ((symbol ?? string.Empty).Trim().ToLowerInvariant())
+            {
+                case CheckSymbols.Clash: return Glyphs.Clash;
+                case CheckSymbols.Clearance: return Glyphs.Clearance;
+                case CheckSymbols.Opening: return Glyphs.Opening;
+                default: return Glyphs.Checklist;
+            }
+        }
+
         // -----------------------------------------------------------------------------------
         // Running work
         // -----------------------------------------------------------------------------------
@@ -4384,6 +4494,17 @@ namespace CamelWorks.UI.Views
 
         /// <summary>Two shapes meeting: a clash.</summary>
         public const string Clash = "M4,12 L11,12 M13,12 L20,12 M12,4 L12,11 M12,13 L12,20 M9,9 L15,15 M15,9 L9,15";
+
+        /// <summary>
+        /// A soffit, a floor, and the height between them: a clearance.
+        ///
+        /// A section rather than a ruler. A ruler is any measured dimension, and this check
+        /// measures one dimension in particular — what is over a surface, and how far.
+        /// </summary>
+        public const string Clearance = "M4,6.5 L20,6.5 M4,19.5 L20,19.5 M12,8.5 L12,17.5 M9.6,10.9 L12,8.5 L14.4,10.9 M9.6,15.1 L12,17.5 L14.4,15.1";
+
+        /// <summary>A floor with a gap in it and a drop through the gap: a fall hazard.</summary>
+        public const string Opening = "M3,9.5 L9,9.5 M15,9.5 L21,9.5 M9,9.5 L9,12.5 M15,9.5 L15,12.5 M12,12 L12,20 M9.4,17.4 L12,20 L14.6,17.4";
 
         /// <summary>Two panels side by side: a comparison.</summary>
         public const string Compare = "M11,4 L11,20 M4,7 L8,7 L8,17 L4,17 Z M16,7 L20,7 L20,17 L16,17 Z";
