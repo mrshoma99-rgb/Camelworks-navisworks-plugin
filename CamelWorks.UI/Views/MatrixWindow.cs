@@ -2670,9 +2670,10 @@ namespace CamelWorks.UI.Views
 
                 ways.Children.Add(Ui.Row(
                     "From a spreadsheet",
-                    "The client's own workbook, with its own symbols and a key in the corner. "
-                    + "You say which tab it is on and where on the sheet it starts; the legend is "
-                    + "built from what it uses.",
+                    "The client's own workbook, with its own symbols. You say which tab it is on "
+                    + "and where on the sheet it starts. Its key is not read: every symbol arrives "
+                    + "as a hard clash at the default tolerance, and what each one means is set in "
+                    + "the legend afterwards.",
                     "Open a workbook",
                     FromSheet));
 
