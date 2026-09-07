@@ -3955,6 +3955,7 @@ namespace CamelWorks.UI.Views
                 case "try": return Glyphs.Play;
                 case "rename":
                 case "edit": return Glyphs.Pencil;
+                case "set": return Glyphs.Tune;
                 case "renumber": return Glyphs.Number;
                 case "move": return Glyphs.MoveIn;
                 case "compact": return Glyphs.Compact;

@@ -3409,19 +3409,19 @@ namespace CamelWorks.UI.Views
                     words.Children.Add(said.Wearing("Hint"));
                 }
 
-                // The title claims its width before the controls do.
+                // The title has a width of its own rather than whatever is left.
                 //
-                // It was added last, as the child that fills whatever the rest had left, and the
-                // rest are a search box, a five-part status strip and five symbols: on an ordinary
-                // pane the name of the test being worked came out as "L03 MEP v..." beside two
-                // hundred pixels of nothing. It is docked first now, between a floor and a
-                // ceiling, so it is the strip that gives way rather than the one thing on the row
-                // that says what is being looked at.
+                // It used to be the child that fills, and the rest of the row is a search box, a
+                // five-part status strip and five symbols: on an ordinary pane the name of the
+                // test being worked came out as "L03 MEP v..." beside two hundred pixels of
+                // nothing. It is docked, with a floor so it is always readable and a ceiling so a
+                // long name cannot push a symbol off the right edge - which is what a floor alone
+                // did, and losing a control is worse than losing the tail of a name.
                 var naming = new DockPanel
                 {
                     LastChildFill = true,
                     MinWidth = 150,
-                    MaxWidth = 320,
+                    MaxWidth = 250,
                     Margin = new Thickness(0, 0, 10, 0),
                 };
 
@@ -3442,8 +3442,11 @@ namespace CamelWorks.UI.Views
 
                 naming.Children.Add(head.Wearing("Head"));
 
+                // After the symbols, not before them: a DockPanel gives each child what is left
+                // in the order they were added, so the controls take their size first and the
+                // title takes what remains within its own two bounds.
                 DockPanel.SetDock(naming, Dock.Left);
-                row.Children.Insert(0, naming);
+                row.Children.Add(naming);
 
                 row.Children.Add(words);
 

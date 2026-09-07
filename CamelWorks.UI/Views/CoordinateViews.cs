@@ -1129,23 +1129,49 @@ namespace CamelWorks.UI.Views
                 _assigns.Children.Clear();
 
                 _filters.Children.Add(_rules.Filters.Count == 0
-                    ? Ui.Empty("No suppress or flag rules.",
-                               "Every clash result the tests report reaches stage 2.",
-                               "Add a suppress rule", () => Compose(ActSuppress))
+                    ? Nothing("No suppress or flag rules.",
+                              "Every clash result the tests report reaches stage 2.",
+                              "Add a suppress rule", () => Compose(ActSuppress))
                     : Filters());
 
                 _grouping.Children.Add(_rules.Grouping.Count == 0
-                    ? Ui.Empty("No grouping rules.",
-                               "The board groups by model pair, then level, then results within "
-                               + Metres(_seat.Profile.ClashProximity) + " of each other.",
-                               "Add a grouping rule", () => Compose(ActGroup))
+                    ? Nothing("No grouping rules.",
+                              "The board groups by model pair, then level, then results within "
+                              + Metres(_seat.Profile.ClashProximity) + " of each other.",
+                              "Add a grouping rule", () => Compose(ActGroup))
                     : Groups());
 
                 _assigns.Children.Add(_rules.Assigns.Count == 0
-                    ? Ui.Empty("No assignment rules.",
-                               "Groups reach the board with no party, and are assigned by hand there.",
-                               "Add an assignment rule", () => Compose(ActAssign))
+                    ? Nothing("No assignment rules.",
+                              "Groups reach the board with no party, and are assigned by hand there.",
+                              "Add an assignment rule", () => Compose(ActAssign))
                     : Assigns());
+            }
+
+            /// <summary>
+            /// One stage with no rules in it, drawn to the same edge and width as the others.
+            ///
+            /// The shared empty state centres itself and takes the width of its own sentence,
+            /// which is right for a whole pane with nothing in it. Three of them down one column
+            /// were three cards of three widths, none of them starting where the headings above
+            /// them start, and where a table will be once a rule exists.
+            /// </summary>
+            /// <param name="what">What the stage has none of.</param>
+            /// <param name="why">What happens in its absence.</param>
+            /// <param name="caption">What the way out says.</param>
+            /// <param name="onClick">The way out.</param>
+            private static UIElement Nothing(string what, string why, string caption, Action onClick)
+            {
+                var card = Ui.Empty(what, why, caption, onClick);
+
+                if (card is FrameworkElement frame)
+                {
+                    frame.HorizontalAlignment = HorizontalAlignment.Left;
+                    frame.MaxWidth = double.PositiveInfinity;
+                    frame.Width = 520;
+                }
+
+                return card;
             }
 
             /// <summary>
