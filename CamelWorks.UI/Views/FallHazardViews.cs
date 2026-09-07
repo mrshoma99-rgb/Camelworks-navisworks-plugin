@@ -1,572 +1,243 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using CamelWorks.Core.Checks;
+using CamelWorks.Core.Measurement;
 using CamelWorks.Core.Project;
 
 namespace CamelWorks.UI.Views
 {
     /// <summary>
-    /// Fall hazard: the set-up for a run that looks for holes in a floor and edges with no
-    /// handrail.
+    /// The settings panel for one fall-hazard test, drawn beside the list on the Create tab.
     ///
-    /// Its own tab, beside Clearance. The two were briefly one "Checks" tab with a check picker
-    /// inside it; a set-up tab per check is what the product asks for, and the common viewer is
-    /// the Manage tab, where the picker belongs.
+    /// Fall hazard had a tab of its own, holding a list of tests, a footer and these fields in two
+    /// windows off an action row. The list and the footer are the Create tab's; the fields are here
+    /// and are laid out to fit the panel without scrolling, which is what they did not do when each
+    /// of eleven of them held a whole row and a line of grey explanation.
     ///
-    /// Nine settings is why they are in windows off the action row: a tab that laid them beside the
-    /// run list would be a form somebody scrolls rather than a list of runs.
+    /// A fall-hazard test is a <see cref="CheckRunSpec"/> in the project file, so every field is
+    /// editable with no document open. The three side pickers read the document's sets and are
+    /// disabled with the reason when there is none.
     ///
-    /// The results are not here. An opening to cover and an edge to rail are places to argue
-    /// about, assign and close, so they are worked on the Manage board with everything else, and
-    /// pressing Run goes there.
-    ///
-    /// The runs are project-file state, so the screen is whole without a model. Nothing here
-    /// collapses to a notice: the runs are listed, and one can be made, renamed, edited and
-    /// deleted with nothing open. What needs a document — running the check and the pickers that
-    /// read the document's sets — is disabled and says why.
+    /// Results are not here. An opening to cover and an edge to rail are places to argue about,
+    /// assign and close, so they are worked on the Manage board with everything else.
     /// </summary>
     public static class FallHazardViews
     {
         /// <summary>
-        /// Which fall-hazard run the set-up screen is on, across a redraw.
-        ///
-        /// Its own, not the clearance screen's. The two screens shared one field, so picking a
-        /// fall-hazard run moved the clearance screen onto a run id it does not hold, and
-        /// <see cref="Drawn"/> moved it as a side effect of drawing a page for the harness.
-        /// </summary>
-        internal static string? Picked { get; set; }
-
-        /// <summary>
-        /// The surface, for a desk to bench.
+        /// One fall-hazard test's settings.
         /// </summary>
         /// <param name="seat">The seat this is running in.</param>
-        public static UIElement Setup(ISeat seat) => new Screen(seat).Build();
-
-        static FallHazardViews() => Host.WhenDocumentChanges(Forget);
-
-        /// <summary>
-        /// Forget which run was picked, so the next visit starts clean. The runs themselves are in
-        /// the project file and survive.
-        /// </summary>
-        internal static void Forget() => Picked = null;
-
-        /// <summary>
-        /// The two set-up windows' contents, one under the other, for the render harness.
-        ///
-        /// Drawn rather than shown: a window needs a screen to open on and the harness has none,
-        /// so without this the nine settings this check is configured by could only be looked at
-        /// on a licensed seat.
-        /// </summary>
-        /// <param name="seat">The seat this is running in.</param>
-        /// <param name="run">The saved run to show the settings of. It must already be saved.</param>
-        public static UIElement Drawn(ISeat seat, CheckRunSpec run)
+        /// <param name="check">The fall-hazard check that holds the test.</param>
+        /// <param name="run">The test being set up. It must already be saved.</param>
+        /// <param name="onChanged">Called after each edit, so the list beside this redraws.</param>
+        public static UIElement Settings(ISeat seat, FallCheck check, CheckRunSpec run,
+                                         Action onChanged)
         {
+            if (check == null) throw new ArgumentNullException(nameof(check));
             if (run == null) throw new ArgumentNullException(nameof(run));
 
-            // This screen's own pick, so drawing a page for the harness does not move another
-            // screen's.
-            Picked = run.Id;
-
-            var screen = new Screen(seat);
-
-            return Ui.Stack(screen.ReadPage(), screen.JudgePage());
+            return new Fields(seat, check, run, onChanged).Build();
         }
 
         // -----------------------------------------------------------------------------------
 
-        private sealed class Screen
+        private sealed class Fields
         {
             private readonly ISeat _seat;
+            private readonly FallCheck _check;
+            private readonly CheckRunSpec _run;
+            private readonly Action _onChanged;
 
             private readonly StackPanel _log = Ui.Stack();
-            private readonly StackPanel _runs = Ui.Stack();
-            private readonly StackPanel _head = Ui.Stack();
 
-            internal Screen(ISeat seat) => _seat = seat;
-
-            private Core.Measurement.Measure Units => _seat.Profile.Units;
-
-            /// <summary>The fall-hazard check, or null when this session registered none.</summary>
-            private FallCheck? Check => _seat.Checks.All.OfType<FallCheck>().FirstOrDefault();
-
-            /// <summary>Why the check cannot be run here, or null when it can.</summary>
-            private string? Blocked
+            internal Fields(ISeat seat, FallCheck check, CheckRunSpec run, Action onChanged)
             {
-                get
-                {
-                    var check = Check;
-
-                    if (check == null)
-                        return "This session registered no fall-hazard check, which is a fault in "
-                               + "this build.";
-
-                    return check.IsAvailable
-                        ? null
-                        : check.Unavailable ?? "This seat cannot offer it.";
-                }
+                _seat = seat;
+                _check = check;
+                _run = run;
+                _onChanged = onChanged;
             }
 
-            /// <summary>The run being set up, or null when none is picked.</summary>
-            private CheckRunSpec? Run() => Check?.Spec(Picked);
+            private Measure Units => _seat.Profile.Units;
+
+            /// <summary>Why the document cannot be read here, or null when it can.</summary>
+            private string? Blocked =>
+                _check.IsAvailable ? null : _check.Unavailable ?? "This seat cannot offer it.";
 
             internal UIElement Build()
             {
-                RedrawHead();
-                RedrawRuns();
-
-                return Bench.Surface(null, Foot(), Ui.Stack(_head, _log, _runs));
-            }
-
-            /// <summary>
-            /// The action row: run, then the windows the set-up lives in.
-            ///
-            /// Run is drawn disabled with its reason when the check cannot run. A primary button
-            /// over a notice saying there is nothing to read is a press that reports its own
-            /// failure.
-            /// </summary>
-            private UIElement Foot()
-            {
-                var row = new WrapPanel();
+                var settings = FallSettings.From(_run);
+                var sets = Sets();
                 var blocked = Blocked;
 
-                row.Children.Add(blocked == null
-                    ? (UIElement)Ui.Runner("Run", _log, RunNow)
-                    : Ui.Blocked("Run", blocked));
-
-                row.Children.Add(new Border { Width = 14 });
-
-                row.Children.Add(Ui.Icon(Glyphs.Layers, "What to read", () => Configure("read")));
-                row.Children.Add(Ui.Icon(Glyphs.Ruler, "How to judge it", () => Configure("judge")));
-
-                return row;
-            }
-
-            /// <summary>The one verb that makes a run, above the list of them.</summary>
-            private void RedrawHead()
-            {
-                _head.Children.Clear();
-
-                var row = new WrapPanel();
-
-                row.Children.Add(Ui.Icon(Glyphs.Add, "A new run", NewRun));
-
-                _head.Children.Add(Ui.Loose(row));
-            }
-
-            /// <summary>
-            /// The runs this check has saved, with what each covers and when it last ran.
-            /// </summary>
-            private void RedrawRuns()
-            {
-                _runs.Children.Clear();
-
-                var check = Check;
-
-                if (check == null)
-                {
-                    _runs.Children.Add(Ui.Empty("This session registered no fall-hazard check.",
-                        "Nothing here has set-up of its own, which is a fault in this build."));
-
-                    return;
-                }
-
-                // Said, not substituted for the list. The runs are in the project file, so a seat
-                // that cannot read a plan can still list them and set one up; only Run is blocked.
-                if (!check.IsAvailable)
-                    _runs.Children.Add(Ui.Info(check.Unavailable ?? "This seat cannot offer it."));
-
-                var saved = check.Runs();
-
-                if (saved.Count == 0)
-                {
-                    _runs.Children.Add(Bench.Ready(
-                        "Draws a plan of the floor at one level and lists every opening wide "
-                        + "enough to fall through and every floor edge with no handrail along it.",
-                        "A hole in a slab clashes with nothing and has no surface over it to "
-                        + "measure down from, so neither the clash tests nor the clearance check "
-                        + "report one. What this finds is worked on the Manage tab beside them."));
-
-                    _runs.Children.Add(Ui.Empty("No " + check.RunWord + "s yet.",
-                        "A " + check.RunWord + " is a name, a level, what to read the floor from "
-                        + "and the gap that needs a handrail. It is saved in the project, so "
-                        + "re-running it later is one press.",
-                        "New " + check.RunWord, NewRun));
-
-                    return;
-                }
-
-                var rows = saved.Select(one => new TableRow(one,
-                    one.Name,
-                    one.Folder ?? "—",
-                    one.Between,
-                    one.Threshold ?? "—",
-                    Ui.Count(one.ResultCount, check.ResultWord),
-                    When(one))
-                {
-                    Tone = string.Equals(one.Id, Picked, StringComparison.Ordinal)
-                        ? Tone.Good
-                        : Tone.Plain,
-                }).ToList();
-
-                var table = Ui.Table(rows,
-                                     ("Run", 0), ("Folder", 110), ("What it covers", 300),
-                                     ("Threshold", 130), ("Found", 110), ("Last run", 130));
-
-                table.SelectionChanged += (s, e) =>
-                {
-                    if (!(table.SelectedItem is TableRow row) || !(row.Source is CheckRun one)) return;
-
-                    Picked = one.Id;
-                };
-
-                _runs.Children.Add(table);
-
-                _runs.Children.Add(Ui.Picking(table,
-                    new Ui.OnPicked("Run these {n}", (picked, said) => RunPicked(picked, said)),
-                    new Ui.OnPicked("Rename this one...", (picked, said) => Rename(picked, said)),
-                    new Ui.OnPicked("Delete these {n}", (picked, said) => Delete(picked, said))));
-
-                var waiting = saved.Count(one => one.LastRunTicks == 0);
-
-                if (waiting > 0)
-                    _runs.Children.Add(Ui.Small(Ui.Count(waiting, check.RunWord)
-                        + " saved and not yet run."));
-            }
-
-            /// <summary>When a run last ran, or that it never has.</summary>
-            /// <param name="run">The run.</param>
-            private static string When(CheckRun run) =>
-                run.LastRunTicks == 0
-                    ? "not yet run"
-                    : new DateTime(run.LastRunTicks, DateTimeKind.Utc).ToLocalTime()
-                        .ToString("d MMM HH:mm", CultureInfo.CurrentCulture);
-
-            /// <summary>Save a new run and open the set-up on it.</summary>
-            private void NewRun()
-            {
-                var check = Check;
-
-                if (check == null) return;
-
-                var made = new CheckRunSpec(check.Key, Guid.NewGuid().ToString("N"),
-                                            "Fall hazard " + (check.Runs().Count + 1)
-                                                .ToString(CultureInfo.InvariantCulture));
-
-                new FallSettings().Write(made);
-
-                var problem = check.Put(made);
-
-                Picked = made.Id;
-
-                RedrawRuns();
-
-                if (problem != null) _log.Children.Add(Ui.Problem(problem));
-
-                Configure("read");
-            }
-
-            /// <summary>The runs a picking bar handed over.</summary>
-            /// <param name="picked">What was picked.</param>
-            private static List<CheckRun> Chosen(IReadOnlyList<object> picked) =>
-                picked.OfType<CheckRun>().ToList();
-
-            /// <summary>
-            /// Run these runs, one after another, and go to the board — which is where the results
-            /// are, so a run that finished lands on them rather than on a screen saying so.
-            /// </summary>
-            /// <param name="runIds">Which runs.</param>
-            /// <param name="onProgress">Called with how far it has got; returning false stops it.</param>
-            /// <param name="say">Where the outcome goes.</param>
-            private void Ran(IReadOnlyList<string> runIds, Func<int, bool>? onProgress, Panel say)
-            {
-                var check = Check;
-
-                if (check?.Runner == null || runIds.Count == 0)
-                {
-                    say.Children.Add(Ui.Problem("Pick a run first, or make one."));
-                    return;
-                }
-
-                if (!check.Runner.CanRun)
-                {
-                    say.Children.Add(Ui.Problem(check.Runner.CannotRun ?? "This run cannot run here."));
-                    return;
-                }
-
-                foreach (var id in runIds)
-                    if (!check.Runner.Run(id, onProgress)) break;
-
-                foreach (var note in check.Notes) say.Children.Add(Ui.Note(note));
-
-                RedrawRuns();
-
-                _seat.Record(ActivityKind.Regroup,
-                             "ran " + Ui.Count(runIds.Count, check.RunWord) + " of "
-                             + check.Name.ToLowerInvariant());
-
-                Onward(check, runIds);
-            }
-
-            /// <summary>Run whatever the run list has picked.</summary>
-            /// <param name="picked">The runs picked.</param>
-            /// <param name="said">Where the bar says what it did.</param>
-            private void RunPicked(IReadOnlyList<object> picked, Panel said)
-            {
-                var runs = Chosen(picked);
-
-                if (runs.Count > 0) Picked = runs[0].Id;
-
-                Ran(runs.Select(one => one.Id).ToList(), null, said);
-            }
-
-            /// <summary>Hand off to the board: this check picked, those runs selected.</summary>
-            /// <param name="check">The check.</param>
-            /// <param name="runIds">The runs to select.</param>
-            private static void Onward(ICheck check, IReadOnlyList<string> runIds)
-            {
-                ClashManageViews.Asked = new ClashManageViews.Request(check.Key, runIds);
-
-                Ui.Told(Shell.AppWindow.Show("clash", "manage"));
-            }
-
-            /// <summary>Rename one run.</summary>
-            /// <param name="picked">The runs picked.</param>
-            /// <param name="said">Where the bar says what it did.</param>
-            private void Rename(IReadOnlyList<object> picked, Panel said)
-            {
-                var runs = Chosen(picked);
-
-                if (runs.Count != 1)
-                {
-                    said.Children.Add(Ui.Note("Pick one run to rename."));
-                    return;
-                }
-
-                var one = runs[0];
-
-                Parts.Ask(said, "Call it", one.Name, "Rename", name =>
-                {
-                    if (Check?.Naming?.Rename(one.Id, name) != true) return;
-
-                    RedrawRuns();
-
-                    said.Children.Add(Ui.Done("Renamed. Its findings keep their decisions: the "
-                        + "run's id is what they are keyed on, not its name."));
-                });
-            }
-
-            /// <summary>Delete runs, and the findings that name them.</summary>
-            /// <param name="picked">The runs picked.</param>
-            /// <param name="said">Where the bar says what it did.</param>
-            private void Delete(IReadOnlyList<object> picked, Panel said)
-            {
-                var runs = Chosen(picked);
-
-                if (runs.Count == 0) return;
-
-                var found = runs.Sum(one => one.ResultCount);
-
-                Parts.Sure(said, "Delete " + Ui.Count(runs.Count, "run") + " and "
-                           + Ui.Count(found, "finding") + "?", "Delete", () =>
-                {
-                    Check?.Runner?.Delete(runs.Select(one => one.Id).ToList());
-
-                    if (runs.Any(one => string.Equals(one.Id, Picked,
-                                                      StringComparison.Ordinal)))
-                        Picked = null;
-
-                    RedrawRuns();
-
-                    said.Children.Add(Ui.Done(Ui.Count(runs.Count, "run") + " deleted."));
-                });
-            }
-
-            /// <summary>Run the picked run from the action row.</summary>
-            /// <param name="job">The job, for progress and a Stop.</param>
-            private void RunNow(Job job) =>
-                Ran(Picked == null
-                        ? Array.Empty<string>()
-                        : new[] { Picked! },
-                    read => job.Step(read, "steps"), _log);
-
-            /// <summary>What one symbol on the action row is for, in a window of its own.</summary>
-            /// <param name="section">Which section the symbol names.</param>
-            private void Configure(string section)
-            {
-                Ui.Page page;
-
-                switch (section)
-                {
-                    case "judge": page = new Ui.Page("How to judge it", JudgePage); break;
-                    default: page = new Ui.Page("What to read", ReadPage); break;
-                }
-
-                Ui.Configure(page.Name, () => Ui.Safely(RedrawRuns), page);
-            }
-
-            /// <summary>Write the settings back onto the run and into the project file.</summary>
-            /// <param name="change">What to change.</param>
-            private void Keep(Action<FallSettings> change)
-            {
-                var spec = Run();
-                var check = Check;
-
-                if (spec == null || check == null) return;
-
-                var settings = FallSettings.From(spec);
-
-                change(settings);
-                settings.Write(spec);
-
-                var problem = check.Put(spec);
-
-                if (problem != null) _log.Children.Add(Ui.Problem(problem));
-            }
-
-            /// <summary>What a set-up page says when there is no run to set up.</summary>
-            /// <param name="title">The page's own heading.</param>
-            private UIElement NoRun(string title) =>
-                Bench.Group(title, Ui.Empty("No run picked.",
-                    "The settings belong to a run, so there is nothing to change until there is "
-                    + "one.", "New run", NewRun));
-
-            internal UIElement ReadPage()
-            {
-                var spec = Run();
-
-                if (spec == null) return NoRun("What to read");
-
-                var settings = FallSettings.From(spec);
                 var sides = new List<string> { FallSettings.Loaded, FallSettings.Selected };
 
-                sides.AddRange(Sets());
+                sides.AddRange(sets);
 
                 var optional = new List<string> { FallSettings.Nothing };
 
                 optional.AddRange(sides);
 
                 return Ui.Stack(
-                    Bench.Group("The run",
-                        Ui.Field("Name", Ui.Text(spec.Name, name => Keep(_ => spec.Name = name), 220)),
-                        Ui.Field("Folder", Ui.Text(spec.Folder ?? string.Empty,
-                                                   folder => Keep(_ => spec.Folder =
-                                                       string.IsNullOrWhiteSpace(folder) ? null : folder),
-                                                   220),
-                                 "how the board's rail files it")),
+                    _log,
+                    blocked == null ? null : Ui.Note(blocked),
+                    Bench.Group("Test",
+                        Ui.Across(
+                            Sized(Ui.Field("Name", Ui.Settled(_run.Name, string.Empty,
+                                name => Keep(_ => _run.Name = name), 190)), 200),
+                            Sized(Ui.Field("Folder", Ui.Settled(_run.Folder ?? string.Empty,
+                                string.Empty,
+                                folder => Keep(_ => _run.Folder =
+                                    string.IsNullOrWhiteSpace(folder) ? null : folder),
+                                160)), 170))),
                     Bench.Group("What to read",
                         Ui.Field("Floor from",
                                  Reading(Ui.Choice(Offered(sides, settings.Floors), settings.Floors,
-                                                   pick => Keep(one => one.Floors = pick), 300)),
-                                 "the slabs the plan is drawn from"),
-                        Ui.Field("Handrails from",
-                                 Reading(Ui.Choice(Offered(optional, settings.Handrails),
-                                                   settings.Handrails,
-                                                   pick => Keep(one => one.Handrails = pick), 300)),
-                                 "what protects an edge"),
-                        Ui.Field("Obstructions from",
-                                 Reading(Ui.Choice(Offered(optional, settings.Obstructions),
-                                                   settings.Obstructions,
-                                                   pick => Keep(one => one.Obstructions = pick), 300)),
-                                 "equipment that plugs an opening"),
-                        Ui.Small("Every list is this model's own search sets and selection sets, "
-                                 + "the current selection, or everything loaded. Name a set of "
-                                 + "floors: everything loaded reads the whole federation at this "
-                                 + "level, walls and ducts included, and each of those projects "
-                                 + "its own outline onto the plan as though it were floor.")),
-                    Bench.Group("Where to cut the plan",
-                        Ui.Field("Level",
-                                 Ui.Text(Units.Bare(settings.LevelMetres),
-                                         text => Keep(one =>
-                                         {
-                                             if (Units.TryRead(text, out var metres))
-                                                 one.LevelMetres = metres;
-                                         }), 90),
-                                 "the elevation the plan is cut at, in " + Units.LengthUnit),
-                        Ui.Field("Band",
-                                 Ui.Text(Units.Bare(settings.BandMetres),
-                                         text => Keep(one =>
-                                         {
-                                             if (Units.TryRead(text, out var metres) && metres > 0)
-                                                 one.BandMetres = metres;
-                                         }), 90),
-                                 "how far above and below the level an element still counts"),
-                        Ui.Small("An element whose box reaches the band contributes its whole "
-                                 + "outline in plan, so the band does not have to match a slab "
-                                 + "thickness. It is also why a column or a stair through the "
-                                 + "band reads as solid floor rather than as a hole, which is the "
-                                 + "largest thing this check gets wrong and is written down."),
-                        Blocked != null
-                            ? Ui.Note("All three lists read the document, so they are fixed until "
-                                      + "a model is open. The name, the folder, the level and the "
-                                      + "band are the run's own and can be set now.")
-                            : Sets().Count == 0
-                                ? Ui.Note("This document holds no saved sets yet. Build one in Set "
-                                          + "Builder and it appears in all three lists.")
-                                : null));
+                                                   pick => Keep(one => one.Floors = pick), 380))),
+                        Ui.Across(
+                            Sized(Ui.Field("Handrails from",
+                                Reading(Ui.Choice(Offered(optional, settings.Handrails),
+                                                  settings.Handrails,
+                                                  pick => Keep(one => one.Handrails = pick), 180))), 190),
+                            Sized(Ui.Field("Obstructions from",
+                                Reading(Ui.Choice(Offered(optional, settings.Obstructions),
+                                                  settings.Obstructions,
+                                                  pick => Keep(one => one.Obstructions = pick), 180))), 190)),
+                        Ui.Across(
+                            Sized(Number("Cut elevation", settings.LevelMetres,
+                                         metres => true,
+                                         (one, metres) => one.LevelMetres = metres), 190),
+                            Sized(Number("Slice thickness", settings.BandMetres,
+                                         metres => metres > 0,
+                                         (one, metres) => one.BandMetres = metres), 190))),
+                    Bench.Group("How to judge it",
+                        Ui.Across(
+                            Sized(Number("Maximum unprotected gap", settings.LimitMetres,
+                                         metres => metres > 0,
+                                         (one, metres) => one.LimitMetres = metres), 190),
+                            Sized(Number("Grid resolution", settings.CellMetres,
+                                         metres => metres > 0,
+                                         (one, metres) => one.CellMetres = metres), 190)),
+                        Ui.Across(
+                            Sized(Number("Handrail coverage distance",
+                                         settings.HandrailToleranceMetres,
+                                         metres => metres >= 0,
+                                         (one, metres) => one.HandrailToleranceMetres = metres), 190),
+                            Sized(Number("Minimum reportable gap in protection",
+                                         settings.MinPassageMetres,
+                                         metres => metres >= 0,
+                                         (one, metres) => one.MinPassageMetres = metres), 190)),
+                        Coarse(settings), Open(settings)),
+                    blocked == null && sets.Count == 0
+                        ? Ui.Note("This document holds no saved sets yet. Build one in Set Builder "
+                                  + "and it appears in all three lists.")
+                        : null,
+                    Ui.Link("How the plan is drawn", Explain));
             }
 
-            internal UIElement JudgePage()
+            /// <summary>
+            /// The grid warning, shown only when the grid cannot resolve the gap being judged.
+            ///
+            /// A cell is judged at its centre, so a grid coarser than half the gap decides some
+            /// cells by rounding. Said as validation of a value rather than as standing text under
+            /// the field, because at a sensible grid there is nothing to say.
+            /// </summary>
+            /// <param name="settings">The test's settings.</param>
+            private UIElement? Coarse(FallSettings settings) =>
+                settings.CellMetres * 2 <= settings.LimitMetres
+                    ? null
+                    : Ui.Note("A " + Units.Length(settings.CellMetres) + " grid cannot tell a "
+                              + Units.Length(settings.LimitMetres) + " gap from solid floor. Set "
+                              + "the grid to a few times under the gap.");
+
+            /// <summary>The other risky value: nothing is too short to report.</summary>
+            /// <param name="settings">The test's settings.</param>
+            private static UIElement? Open(FallSettings settings) =>
+                settings.MinPassageMetres > 0
+                    ? null
+                    : Ui.Note("Every break in the protection is reported, however short.");
+
+            /// <summary>
+            /// The reference matter, behind one link rather than standing under the fields.
+            ///
+            /// Every sentence here answers "why would I change this", which is a question asked
+            /// once. Standing text answers it on every visit, and it was 1,340 px of it.
+            /// </summary>
+            private void Explain() =>
+                Ui.Configure("How the plan is drawn", null, new Ui.Page(
+                    "How the plan is drawn",
+                    () => Ui.Stack(
+                        Bench.Group("The slice",
+                            Ui.Small("An element whose box reaches the slice contributes its whole "
+                                     + "outline in plan, so the thickness does not have to match a "
+                                     + "slab. It is also why a column or a stair through the slice "
+                                     + "reads as solid floor rather than as a hole, which is the "
+                                     + "largest thing this check gets wrong."),
+                            Ui.Small("Name a set of floors. Everything loaded reads the whole "
+                                     + "federation at this elevation, walls and ducts included, "
+                                     + "and each of those projects its own outline as though it "
+                                     + "were floor.")),
+                        Bench.Group("The grid",
+                            Ui.Small("The plan is drawn cell by cell and a cell is judged at its "
+                                     + "centre, so anything thinner than one cell is decided by "
+                                     + "rounding."),
+                            Ui.Small("Halving the grid doubles the plan in each direction, so it "
+                                     + "costs four times the work. Over six million cells the run "
+                                     + "stops and says so rather than taking the session with "
+                                     + "it.")),
+                        Bench.Group("The two protection figures",
+                            Ui.Small("Handrail coverage distance is how close a rail has to be to "
+                                     + "count as protecting an edge."),
+                            Ui.Small("The minimum reportable gap in protection is the width of a "
+                                     + "person, not of the void: a 300 mm break between two "
+                                     + "handrails is too narrow to fall through.")))));
+
+            /// <summary>A short number field, with its unit in the label.</summary>
+            /// <param name="label">What the number is, without its unit.</param>
+            /// <param name="value">What it is now, in metres.</param>
+            /// <param name="allows">Whether a value read off the box may be written.</param>
+            /// <param name="write">Puts an accepted value onto the settings.</param>
+            private Panel Number(string label, double value, Func<double, bool> allows,
+                                 Action<FallSettings, double> write) =>
+                Ui.Field(label + " (" + Units.LengthUnit + ")",
+                         Ui.Settled(Units.Bare(value), string.Empty, text => Keep(one =>
+                         {
+                             if (Units.TryRead(text, out var metres) && allows(metres))
+                                 write(one, metres);
+                         }), 90));
+
+            /// <summary>A field capped to a readable width, so short fields sit two to a row.</summary>
+            /// <param name="field">The field.</param>
+            /// <param name="width">How wide it may be.</param>
+            private static UIElement Sized(Panel field, double width)
             {
-                var spec = Run();
+                field.Width = width;
 
-                if (spec == null) return NoRun("How to judge it");
+                return field;
+            }
 
-                var settings = FallSettings.From(spec);
+            /// <summary>Write the settings back onto the test and into the project file.</summary>
+            /// <param name="change">What to change.</param>
+            private void Keep(Action<FallSettings> change)
+            {
+                var settings = FallSettings.From(_run);
 
-                return Ui.Stack(
-                    Bench.Group("How to judge it",
-                        Ui.Field("Gap allowed",
-                                 Ui.Text(Units.Bare(settings.LimitMetres),
-                                         text => Keep(one =>
-                                         {
-                                             if (Units.TryRead(text, out var metres) && metres > 0)
-                                                 one.LimitMetres = metres;
-                                         }), 90),
-                                 "an edge facing a wider void needs a handrail"),
-                        Ui.Field("Cell size",
-                                 Ui.Text(Units.Bare(settings.CellMetres),
-                                         text => Keep(one =>
-                                         {
-                                             if (Units.TryRead(text, out var metres) && metres > 0)
-                                                 one.CellMetres = metres;
-                                         }), 90),
-                                 "how finely the plan is drawn"),
-                        Ui.Field("Handrail reach",
-                                 Ui.Text(Units.Bare(settings.HandrailToleranceMetres),
-                                         text => Keep(one =>
-                                         {
-                                             if (Units.TryRead(text, out var metres) && metres >= 0)
-                                                 one.HandrailToleranceMetres = metres;
-                                         }), 90),
-                                 "how close a rail must be to protect an edge"),
-                        Ui.Field("Smallest break",
-                                 Ui.Text(Units.Bare(settings.MinPassageMetres),
-                                         text => Keep(one =>
-                                         {
-                                             if (Units.TryRead(text, out var metres) && metres >= 0)
-                                                 one.MinPassageMetres = metres;
-                                         }), 90),
-                                 "a shorter break in the protection is not reported"),
-                        Ui.Small("The plan is drawn cell by cell and a cell is judged at its "
-                                 + "centre, so anything thinner than one cell is a coin flip. Set "
-                                 + "the cell size a few times under the gap being judged: a "
-                                 + "250 mm cell cannot tell a 200 mm gap from a solid floor."),
-                        Ui.Small("Halving the cell size doubles the plan in each direction, so it "
-                                 + "costs four times the work. Over six million cells the run "
-                                 + "stops and says so rather than taking the session with it."),
-                        Ui.Small("The smallest break is the width of a person, not of the gap: "
-                                 + "a 300 mm break between two handrails is too narrow to fall "
-                                 + "through. Leave it at nothing and every break is reported.")));
+                change(settings);
+                settings.Write(_run);
+
+                var problem = _check.Put(_run);
+
+                if (problem != null) _log.Children.Add(Ui.Problem(problem));
+
+                _onChanged();
             }
 
             /// <summary>
             /// A picker whose contents come off the document, greyed with the reason when there is
-            /// no document to read. Its list is empty in that state, and an empty list somebody can
-            /// still open says nothing about why.
+            /// no document to read.
             /// </summary>
             /// <param name="picker">The picker.</param>
             private ComboBox Reading(ComboBox picker)

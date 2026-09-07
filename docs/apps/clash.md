@@ -456,18 +456,47 @@ Manager's own **New issue**, working on any elements rather than only beside a c
   The matrix survives tab switches, and the legend's test type now actually reaches the host —
   it was silently Hard for every cell before.
 
-## Clearance — the set-up for the check no clash engine runs
+## Create — every test, of every kind, in one list
 
-The tab was "Clearance Check" and held both the set-up and its own copy of the board. It now holds
-the set-up only, for this project's clear-height runs. Its results are on Manage.
+The tab set is **Create · Manage · Clash matrix · Filter Clashes · Report · Exchange**. Create is
+where tests are made, edited and run; Manage is where every check's results are worked.
 
-- *Was wrong, and is undone:* both set-ups were briefly put behind one **Checks** tab with a check
-  picker inside it, on the argument that clearance and fall hazard are the same shape. The tab set
-  is now **Clearance** and **Fall hazard**, one set-up screen each, and the check picker is the
-  Manage tab's — Manage is the common viewer, and switching which check's results are being read
-  is what the picker is for. The single tab cost a `ContentControl` frame on the tab, a screen
-  dispatch in `ClearanceViews`, and one `Picked` run id shared between two screens that hold
-  different runs. All three are gone.
+**Three words, no synonyms.** On this tab a *test* is the configured thing, a *run* is one
+execution of it, and a *kind* is what sort of test it is. The product had been calling the
+configured thing a test, a check, a check kind and a run in different places on the same screen.
+
+**Two wrong shapes, in order.** The set-ups were first put behind one **Checks** tab with a check
+picker inside it; that was undone into a **Clearance** tab and a **Fall hazard** tab. Both were
+wrong for the same reason: a hazard, a clearance and a clash are each several tests with different
+settings, so the tab that matters is the one holding the list of them. One tab per kind duplicated
+the list, the verbs and the footer, and gave neither screen a way to run a mixed set. The check
+picker stays on Manage, where switching which results are being read is what it is for.
+
+**The anatomy.** A strip carrying **New test** (a menu of the kinds) and **From the matrix**, with
+the search box on the right. Left pane: every test of every kind, grouped by folder, multi-select,
+with the columns *Folder · Test · Kind · What it covers · Last run*, where the last of those reads
+*Never run*, *Clean, 3 Sep 14:20* or *18 clashes, 3 Sep 14:20*. Right pane: the picked test's
+settings and nothing else. Footer: the count on the left, **Run all** or **Run N selected**
+bottom-right, and after a run one line of what was found with a **View in Manage** link that hands
+the board the check and the runs.
+
+**The asymmetry is on screen.** A clearance or fall-hazard test is a `CheckRunSpec` in the project
+file and every field of it is edited in the panel. A clash test is in the Navisworks document, so
+its panel offers the three things the host takes — name, folder, tolerance — and says in one line
+that its two sides are set on the Clash matrix, with the button that goes there. `ICheck` has no
+member that makes a test, because only the two project-file checks can be handed a new spec: so
+**New test ▸ Clash detection** routes to the matrix and says why on the menu entry rather than
+opening a form whose edits would be dropped. What the host refuses is greyed with the host's own
+reason, not hidden.
+
+**The list is one host read.** Searching filters what was read; an edit to a project-file test
+redraws the list without re-walking the document's clash tests, which is two host calls per test.
+
+## Clearance — the check no clash engine runs
+
+Clearance was a tab holding both a set-up and its own copy of the board. The board went first; the
+list and the footer are now the Create tab's, and what is left in `ClearanceViews` is the settings
+panel. Its results are on Manage.
 
 - *Was wrong:* the tab was a second Manage board. `ClearanceViews` carried its own row type, its
   own banding, filtering, property columns, marker export, BCF export and issue attach.
@@ -485,6 +514,9 @@ the set-up only, for this project's clear-height runs. Its results are on Manage
 - *Held honestly:* two runs over different corridors meet at the same place. A breach's identity is
   its run, its surface, what is over it and the cell it is in, so two runs stay two findings and two
   decisions. The run's **name** is not in the identity, so renaming a run keeps its findings.
+- *Renamed:* "Clear height" is **Minimum clear height (m)** and "Report under" is **Ignore
+  shortfalls under (m)**. Both hint lines under them are gone: a label that needs a sentence under
+  it saying what it means is a label that failed, and the unit belongs in the label.
 - *Was thinner than a real job needs:* the set-up was two side pickers and a minimum, and the first
   federation run with no scope returns every soffit in the building. Added: **a tolerance band**
   distinct from the minimum (a 2.100 m corridor at 2.098 m is a survey difference; at 1.850 m it is
@@ -495,18 +527,20 @@ the set-up only, for this project's clear-height runs. Its results are on Manage
   found in on a licensed seat and described in words. The document itself is deliberately not on
   `ISeat`: what the set-up asks a document for is its models, its sets and a traversal, and the
   seat answers all three.
-- **The hand-off:** pressing Run goes to the Manage tab with that check picked and that run
-  selected, the same way the Exchange tab is handed its tests.
-- *Was wrong:* with no model open the screen collapsed to a single notice — no run list, no way to
-  make a run, and a live primary **Run** drawn under a line saying there was nothing to measure.
-  Runs are project-file state and nothing about listing or editing one needs a document. **Both
-  set-up tabs now keep the run list, the new-run verb and the picking bar in that state**, state
-  the reason once as a notice above the list, and grey what genuinely needs a document: Run, the
+- **The hand-off:** after a run the footer says what was found and offers **View in Manage**, which
+  opens the board with that check picked and those runs selected, the same way the Exchange tab is
+  handed its tests. It is a link rather than an automatic jump: a run of a mixed set ends on the
+  list it started from.
+- *Was wrong:* with no model open the screen collapsed to a single notice — no test list, no way
+  to make one, and a live primary **Run** drawn under a line saying there was nothing to measure.
+  Tests are project-file state and nothing about listing or editing one needs a document. The
+  Create tab keeps the list, the New-test menu and the picking bar in that state, states the reason
+  once as a notice above the settings, and greys what genuinely needs a document: Run, the
   detected-surfaces window, and the pickers fed by the document's sets, each carrying the reason.
   The same applies on a seat whose primitive reader refuses triangles, which is how the state is
   reachable with a model loaded.
 
-## Fall hazard — the second set-up tab
+## Fall hazard — the second kind
 
 A hole in a slab clashes with nothing, and the clearance check has no surface over it to measure
 down from, so neither reports one. Fall hazard draws a plan of one level from the floor triangles
@@ -555,19 +589,21 @@ every floor edge facing such an opening with no handrail along it.
   matched by proximity alone and are neither height- nor band-filtered, that the owner grid is
   first writer wins so a finish over a slab can be the element a finding names, and the flat
   six-million-cell cap.
-- *The set-up:* nine settings — the floor, handrail and obstruction sides, the level, the band,
-  the cell size, the gap that needs a handrail, the handrail reach and the smallest break worth
-  reporting. Nine is why they are in two windows off the action row and not laid beside the run
-  list, and why this screen has no fold. A run is a `CheckRunSpec` in the project file, like a
-  clearance run, and re-running is pressing Run on it.
+- *The set-up:* nine settings — the floor, handrail and obstruction sides, the cut elevation, the
+  slice thickness, the grid resolution, the maximum unprotected gap, the handrail coverage distance
+  and the minimum reportable gap in protection. They were eleven full-width fields, eleven grey
+  hint lines, four headings and three paragraphs in two windows off an action row: 1,340 px of
+  scroll for eight numbers and three dropdowns. They are now the Create tab's settings panel, in
+  rows of two, with the unit in each label, and they fit without scrolling. A test is a
+  `CheckRunSpec` in the project file, like a clearance test, and re-running is pressing Run on it.
 - *The results are on Manage*, like every other check's, with three declared columns: the opening's
   area, the widest gap and the length of edge with no handrail. An opening fills two of them and a
   dangerous run the other two.
 - **What adding this check touched.** One class implementing `ICheck`, one `CheckCatalogue.Add`
-  call per seat, a tab, a set-up screen and two harness pages. The board, the register, the
-  columns, the journal, the delta and the pack writer took no edit at all. A second check now
-  costs a tab entry, a tool entry and a `Surfaces.cs` case, which is the same cost every other
-  tab in the product carries.
+  call per seat, a settings panel and a harness page. The board, the register, the columns, the
+  journal, the delta and the pack writer took no edit at all. Since the Create tab, a third kind
+  costs a settings panel, one `case` in the New-test menu and one in the panel dispatch — no tab,
+  no tool entry and no `Surfaces.cs` case.
 - *Not verifiable here:* nothing in this check has been run against real geometry. The raster, the
   findings and the settings are covered by unit tests on synthetic meshes, and what a real
   federation's floors rasterise to at a real level is a licensed-seat check before release.

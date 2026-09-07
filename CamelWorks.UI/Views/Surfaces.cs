@@ -42,8 +42,7 @@ namespace CamelWorks.UI.Views
                 case "issuein": return OnModel(IssueViews.Import);
                 case "issueout": return OnModel(IssueViews.Export);
                 case "matrix": return OnModel(MatrixWindow.Surface);
-                case "clearance": return OnModel(ClearanceViews.Setup);
-                case "fallhazard": return OnModel(FallHazardViews.Setup);
+                case "create": return OnModel(CheckCreateViews.Create);
                 case "rules": return CoordinateViews.Rules();
                 case "clashreport": return CoordinateViews.Report();
                 case "exchange": return OnModel(ClashExchangeViews.Surface);

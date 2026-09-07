@@ -1359,23 +1359,17 @@ namespace CamelWorks.UI.Views
             /// itself, where the rows would have been.
             /// </summary>
             /// <summary>
-            /// Which tab sets this check's runs up, by its tool id and by the name on the tab.
+            /// Which tab sets this check's tests up, by its tool id and by the name on the tab.
             ///
-            /// Clearance and fall hazard each have a set-up tab of their own; they were briefly
-            /// one "Checks" tab. Everything else in this app is a clash test, and clash tests are
-            /// built on the matrix.
+            /// Every kind is set up on the Create tab. A clash test's two sides have to be
+            /// resolved against the document, which is the matrix, so a board with no clash test
+            /// is sent there instead.
             /// </summary>
             /// <param name="check">The check the board is showing.</param>
-            private static (string Id, string Tab) SetUpOn(ICheck check)
-            {
-                if (string.Equals(check.Key, FindingSource.Headroom, StringComparison.Ordinal))
-                    return ("clearance", "Clearance");
-
-                if (string.Equals(check.Key, FindingSource.FallHazard, StringComparison.Ordinal))
-                    return ("fallhazard", "Fall hazard");
-
-                return ("matrix", "Clash matrix");
-            }
+            private static (string Id, string Tab) SetUpOn(ICheck check) =>
+                string.Equals(check.Key, FindingSource.Clash, StringComparison.Ordinal)
+                    ? ("matrix", "Clash matrix")
+                    : ("create", "Create");
 
             private UIElement NothingYet()
             {

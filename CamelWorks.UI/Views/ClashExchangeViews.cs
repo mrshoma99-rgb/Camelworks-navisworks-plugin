@@ -914,7 +914,7 @@ namespace CamelWorks.UI.Views
             ///
             /// A chooser rather than a link, and named for what it does to the output: "one file
             /// per assigned to" writes the mechanical contractor's clashes into one pack and the
-            /// structural engineer's into another. "Nothing" writes them all into one.
+            /// structural engineer's into another. "One pack for everything" does not split.
             /// </summary>
             private UIElement Splitting()
             {
@@ -932,8 +932,8 @@ namespace CamelWorks.UI.Views
                     Rebuild();
                 }, 170);
 
-                box.ToolTip = "Writes one pack per value, each holding only that party's clashes. "
-                              + "Nothing writes a single pack.";
+                box.ToolTip = "Writes one pack per value, each holding only that party's "
+                              + "clashes.";
 
                 return box;
             }
@@ -972,7 +972,7 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>What the split chooser calls writing everything into one pack.</summary>
-            private const string Whole = "Nothing - one file";
+            private const string Whole = "One pack for everything";
 
             /// <summary>What the order chooser calls leaving the results as they came.</summary>
             private const string AsFound = "As they came";

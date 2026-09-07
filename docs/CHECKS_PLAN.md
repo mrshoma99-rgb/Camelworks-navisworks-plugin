@@ -1367,30 +1367,27 @@ noise; over everything loaded it is the whole story. So:
 
 ### 4.1 The tab set being aimed at
 
-`CamelWorks.UI/Shell/Apps.cs` declares the tabs. The Clash Manager holds six today:
-Manage, Clash matrix, Clearance Check, Filter Clashes, Report, Exchange. After the
-board move, "Clearance Check" contains only set-up and its results are on Manage,
-so the label lies.
+`CamelWorks.UI/Shell/Apps.cs` declares the tabs. The set is:
 
-The target set:
-
-| Tab | After |
+| Tab | What it is |
 |---|---|
+| **Create** | Every test of every kind in one list, with the picked test's settings beside it. |
 | Manage | Every check's results, under a picker. |
-| Clash matrix | Unchanged. |
-| **Clearance** | The set-up for this project's clear-height runs, replacing "Clearance Check". |
-| **Fall hazard** | The set-up for this project's fall-hazard runs. |
+| Clash matrix | Unchanged. It builds clash tests in bulk; they appear in Create's list. |
 | Filter Clashes | Unchanged, clash only. |
 | Report | Unchanged. |
 | Exchange | BCF in and out, following the Manage tab's check (4.4). |
 
-**The single "Checks" tab this section first specified was wrong.** It held both
-set-ups behind a check picker of its own, on the argument that clearance and fall
-hazard are the same shape. The owner asked for the opposite and it is what is built:
-a set-up tab per check, and the Manage tab as the one viewer where the picker
-switches which check's results are being read. The picker is a viewer control; it was
-never a way to swap set-up screens, and having it do both cost the Checks tab a
-frame, a screen dispatch and a run id shared between two screens.
+**Two shapes were specified here before, and both were wrong.** The first was a
+single "Checks" tab holding both set-ups behind a check picker of its own. The
+second, replacing it, was a set-up tab per check — a **Clearance** tab and a **Fall
+hazard** tab. Neither survives: a hazard, a clearance and a clash are each several
+tests with different settings, so the screen that matters is the one holding the list
+of them, and one tab per kind duplicated that list, its verbs and its footer while
+giving neither screen a way to run a mixed set. The shape is one **Create** tab: one
+list over every check's `Runs()`, a settings panel per kind beside it, and one footer
+that runs what is selected. The check picker stays on Manage, which is the one
+viewer.
 
 Files the relevant phases edit, named so nobody discovers them late:
 `CamelWorks.UI/Shell/Apps.cs` (the tab declarations),
@@ -1962,10 +1959,10 @@ issue, the relation both ways and a viewpoint.
   the set-up-to-results hand-off.
 - Attach-to-an-existing-issue on the set drift screen, deferred from Phase 1
   because it needs an issue picker rather than a mechanical edit.
-- The tab set of 4.1: "Clearance Check" becomes a **Clearance** tab and a **Fall
-  hazard** tab in `Apps.cs`, one set-up screen each; `Surfaces.cs` rewired. This
-  shipped first as one "Checks" tab with a check picker over the two set-up screens,
-  which was wrong and is corrected in 4.1.
+- The tab set of 4.1: "Clearance Check" becomes one **Create** tab in `Apps.cs`, with a
+  settings panel per kind; `Surfaces.cs` rewired. This shipped first as one "Checks"
+  tab with a check picker over two set-up screens, then as a **Clearance** tab and a
+  **Fall hazard** tab. Both are corrected in 4.1.
 - `ClearanceCheck : ICheck` with `HostEcho` null, `Grouping` null, `Naming` through
   `CheckRunStore`, a runner, geometry through the element locator, and four declared
   columns.
@@ -1997,10 +1994,10 @@ issue, the relation both ways and a viewpoint.
   document for are the model list and a traversal, and `ISeat.Models()` and
   `ISeat.Visible()` already answer both. `MatrixWindow.Surface(ISeat)` is the
   template that already works.
-- `Panels.cs` gains the set-up tab's page and the Manage board's picker; neither goes
-  in the `ui-shots` default. `docs/apps/clash.md` updated for both tabs. (The page
-  shipped as `app-clash-checks` and is now `app-clash-clearance`, following the tab
-  split in 4.1.)
+- `Panels.cs` gains the set-up pages and the Manage board's picker; none goes in the
+  `ui-shots` default. `docs/apps/clash.md` updated. (The page shipped as
+  `app-clash-checks`, then `app-clash-clearance`, and is now `app-clash-create`,
+  `app-clash-create-fall` and `app-clash-create-empty`, following 4.1.)
 
 **Done when.** In `Core.Tests`: two named clearance runs over overlapping geometry
 produce disjoint findings, and running one leaves the other's findings present; a
@@ -2011,8 +2008,8 @@ to this check's; a run saved and never run is distinguishable from a run that fo
 nothing, and both from a run that resolved to nothing and therefore marked nothing
 absent. In the harness:
 `validate-shots.py` and `validate-reachable-screens.py` pass with the new pages, and
-the Clearance tab draws over `ISeat` with no Navisworks assembly loaded, which is what
-`Setup(ISeat)` buys. `ClearanceViews.cs` is under 750 lines. Whether the Manage tab
+the Create tab draws over `ISeat` with no Navisworks assembly loaded, which is what
+`Create(ISeat)` buys. `ClearanceViews.cs` is under 750 lines. Whether the Manage tab
 draws clearance results correctly is not verifiable here and is a licensed-seat check
 before release.
 

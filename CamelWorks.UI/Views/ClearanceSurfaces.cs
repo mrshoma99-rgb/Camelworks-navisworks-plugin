@@ -251,7 +251,7 @@ namespace CamelWorks.UI.Views
 
                 _list.Children.Add(Ui.Picking(table,
                     new Ui.OnPicked("Drop these {n}", (picked, said) => Drop(picked, said, dropping: true)),
-                    new Ui.OnPicked("Put these {n} back", (picked, said) => Drop(picked, said, dropping: false))));
+                    new Ui.OnPicked("Include these {n}", (picked, said) => Drop(picked, said, dropping: false))));
 
                 _list.Children.Add(Ui.Small(
                     Ui.Count(_patches.Count(patch => !settings.Excluded.Contains(patch.Id)), "surface")

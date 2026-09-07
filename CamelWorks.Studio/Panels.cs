@@ -162,50 +162,90 @@ namespace CamelWorks.Studio
             Page("app-clash-matrix-priority", "Clash Manager · Matrix, priority", 820,
                  () => MatrixWindow.Surface(Seated(), Drawn(), MatrixWindow.Showing.Priority)),
 
-            // The clearance tab's floor side. The whole point of the page is the sentence the
-            // detected option is offered under and the list under it: detection cannot tell a floor
-            // from a desk top, and a screen that says "detected walkable surfaces" and stops there
-            // reads as though it could. Not in the render's default list; named on dispatch.
-            Page("app-clash-clearance-surfaces", "Clash Manager · Clearance, what to measure", 760,
+            // The detected-surface window, opened from a clearance test's settings panel. The
+            // whole point of the page is the sentence the detected option is offered under and the
+            // list under it: detection cannot tell a floor from a desk top, and a screen that says
+            // "detected walkable surfaces" and stops there reads as though it could.
+            // Not in the render's default list; named on dispatch.
+            Page("app-clash-clearance-surfaces", "Clash Manager · Detected walkable surfaces", 700,
                  Walkable),
 
-            // The Clearance tab itself, over a seat with nothing in it: the run list, the verb
-            // that makes a run, and the Run the seat cannot press with its reason. The shipping
-            // screen rather than a drawing of it, which is what Setup(ISeat) buys — before the
-            // widening this tab took a Session and could only be looked at on a licensed seat.
-            // Not in the render's default list; named on dispatch.
-            Page("app-clash-clearance", "Clash Manager · Clearance set-up", 760,
-                 () => ClearanceViews.Setup(Seated())),
+            // The Create tab, with a clearance test picked: the list of every kind on the left,
+            // that test's settings on the right, and the Run the seat cannot press with its
+            // reason. The shipping screen rather than a drawing of it, which is what Create(ISeat)
+            // buys. Not in the render's default list; named on dispatch.
+            Page("app-clash-create", "Clash Manager · Create, a clearance test picked", 760,
+                 () => Creating(FindingSource.Headroom)),
 
             // The Manage board's check picker, opened. A menu lives in a popup and a popup needs
             // a screen to open on, so the greyed entry and its reason — the state this control
             // exists for — had never been drawn.
             Page("app-clash-picker", "Clash Manager · The check picker", 420, Picker),
 
-            // The Fall hazard tab itself, over the same empty seat, for the same reason.
+            // The same tab with a fall-hazard test picked. The nine settings this check is
+            // configured by used to live in two windows off an action row, so they could only be
+            // looked at on a licensed seat; they are the panel now and this page draws them.
             // Not in the render's default list; named on dispatch.
-            Page("app-clash-fall", "Clash Manager · Fall hazard set-up", 760,
-                 () => FallHazardViews.Setup(Seated())),
+            Page("app-clash-create-fall", "Clash Manager · Create, a fall-hazard test picked",
+                 760, () => Creating(FindingSource.FallHazard)),
 
-            // Its nine settings, which live in two windows off that tab's action row. A window
-            // needs a screen to open on and this harness has none, so without this page the
-            // settings could only be looked at on a licensed seat.
+            // The same tab with nothing saved, which is the state a project starts in: the list
+            // says what is missing and carries the verb that fixes it, and the panel says the
+            // settings belong to a test.
             // Not in the render's default list; named on dispatch.
-            Page("app-clash-fall-settings", "Clash Manager · Fall hazard settings", 900, Falling),
+            Page("app-clash-create-empty", "Clash Manager · Create, no tests yet", 620,
+                 () => Creating(null)),
         };
 
         /// <summary>
-        /// Fall hazard ▸ what to read and how to judge it, over a saved run.
+        /// The Create tab, with a test of one kind picked.
         ///
-        /// A run is saved into the scratch project first, because the settings belong to a run and
-        /// the pages say so rather than drawing controls over nothing.
+        /// The tests are saved into the scratch project first, because the settings belong to a
+        /// test and the panel says so rather than drawing controls over nothing.
         /// </summary>
-        private static UIElement Falling()
+        /// <param name="checkKey">
+        /// Which kind's test to pick, or null for a project holding no test at all — which is the
+        /// state a project starts in and the one the empty states are written for.
+        /// </param>
+        private static UIElement Creating(string? checkKey)
         {
             var seat = Seated();
-            var check = seat.Checks.All.OfType<FallCheck>().First();
 
-            var spec = new CheckRunSpec(check.Key, "level3-openings", "Level 3 openings");
+            if (checkKey == null)
+            {
+                // The scratch project is shared by every page and this one has to show none, so
+                // it empties the project rather than taking a store of its own: the pages that
+                // need tests write them again on the way in, whatever order the harness draws in.
+                foreach (var one in seat.Checks.All)
+                    one.Runner?.Delete(one.Runs().Select(run => run.Id).ToList());
+
+                return Deck("clash", "create", CheckCreateViews.Drawn(seat, null, null));
+            }
+
+            var clearance = seat.Checks.All.OfType<ClearanceCheck>().First();
+            var fall = seat.Checks.All.OfType<FallCheck>().First();
+
+            var measured = new CheckRunSpec(clearance.Key, "l3-corridors", "Level 3 corridors")
+            {
+                Folder = "Weekly",
+            };
+
+            new ClearanceSettings
+            {
+                Surfaces = "Level 03 Floors",
+                Targets = ClearanceSettings.NotTheSurfaces,
+                MinimumMetres = 2.1,
+                ToleranceMetres = 0.05,
+                Zone = "Level 03",
+                WorstPerPatch = true,
+            }.Write(measured);
+
+            clearance.Put(measured);
+
+            var swept = new CheckRunSpec(fall.Key, "l3-openings", "Level 3 openings")
+            {
+                Folder = "Weekly",
+            };
 
             new FallSettings
             {
@@ -218,14 +258,18 @@ namespace CamelWorks.Studio
                 LimitMetres = 0.2,
                 HandrailToleranceMetres = 0.3,
                 MinPassageMetres = 0.5,
-            }.Write(spec);
+            }.Write(swept);
 
-            check.Put(spec);
+            fall.Put(swept);
 
-            return Deck("clash", "fallhazard",
-                        Bench.Surface(null, Ui.Runner("Run", Ui.Stack(), _ => { }),
-                                      FallHazardViews.Drawn(seat, spec)));
+            var picked = string.Equals(checkKey, FindingSource.Headroom, StringComparison.Ordinal)
+                ? measured
+                : swept;
+
+            return Deck("clash", "create",
+                        CheckCreateViews.Drawn(seat, picked.CheckKey, picked.Id));
         }
+
 
         /// <summary>
         /// The check picker's own menu, with an unavailable check in it.
@@ -683,38 +727,15 @@ namespace CamelWorks.Studio
             });
 
         /// <summary>
-        /// Clearance ▸ What to measure, with the detected surfaces listed.
+        /// The detected walkable surfaces, as the window off a clearance test's settings panel
+        /// draws them.
         ///
-        /// Drawn rather than shown: the tab is built from a Session, which needs a document, so
-        /// until this page existed nothing about this window had been looked at away from a
+        /// Drawn rather than shown: a window needs a screen to open on and this harness has none,
+        /// so until this page existed nothing about this window had been looked at away from a
         /// licensed seat.
         /// </summary>
         private static UIElement Walkable()
         {
-            // The option's own sentence, as the tab builds it from the minimum area in force.
-            var said = "Detected walkable surfaces — every up-facing surface over 0.05 m², "
-                     + "which includes desk tops and duct tops.";
-
-            var sources = new[]
-            {
-                said,
-                "Walking surfaces (a guess)",
-                "Current selection",
-                "Everything loaded",
-                "Level 03 Floors",
-            };
-
-            var measure = Bench.Group("What to measure",
-                Ui.Field("Clear height", Ui.Text("2.100", null, 90), "the minimum, in m"),
-                Ui.Field("Report under", Ui.Text("0.050", null, 90),
-                         "how far under the minimum is worth reporting"),
-                Ui.Field("Measure up from", Ui.Choice(sources, said, null, 420),
-                         "the walking surface"),
-                Ui.Field("Measure up to", Ui.Choice(
-                    new[] { "Everything except the surfaces", "Current selection", "MEP" },
-                    "Everything except the surfaces", null, 210),
-                    "what might be too low over it"));
-
             var rows = new[]
             {
                 new TableRow(null, "Level 03", "412.0 m²", "9.600 m", string.Empty),
@@ -739,20 +760,16 @@ namespace CamelWorks.Studio
                 table,
                 Ui.Picking(table,
                     new Ui.OnPicked("Drop these {n}", (picked, panel) => { }),
-                    new Ui.OnPicked("Put these {n} back", (picked, panel) => { })),
+                    new Ui.OnPicked("Include these {n}", (picked, panel) => { })),
                 Ui.Small("406 surfaces in the check, 2 dropped"),
-                Ui.Small("What is dropped is kept in the run's own settings, so the same desk "
-                         + "tops do not have to be dropped again next time."),
-                Ui.Small("Detection reads triangles: it keeps every up-facing surface over 0.05 m², "
-                         + "which is a floor, and is also a desk top, a worktop, a window sill and "
-                         + "the top of a wide duct. Read the list before running the check and drop "
-                         + "what is not a floor."),
-                Ui.Small("Both ticks are off to start with: the geometric answer is the default, "
-                         + "and a stair with a soffit too low over it is still worth reporting."));
+                Ui.Small("Detection reads triangles: it keeps every up-facing surface over "
+                         + "0.05 m², which is a floor, and is also a desk top, a worktop, a window "
+                         + "sill and the top of a wide duct. Read the list before running the test "
+                         + "and drop what is not a floor."));
 
-            return Deck("clash", "clearance",
-                        Bench.Surface(null, Ui.Runner("Run", Ui.Stack(), _ => { }),
-                                      Ui.Stack(measure, detected)));
+            // No footer: this is a window off the settings panel, not a tab, so it has no Run of
+            // its own. Edits here apply as they are made, as they do in every configure window.
+            return Deck("clash", "create", Bench.Surface(null, null, detected));
         }
 
         private static Sheet Page(string id, string title, int height, Func<UIElement> build) =>
