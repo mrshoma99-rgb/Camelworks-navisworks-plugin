@@ -53,6 +53,9 @@ namespace CamelWorks.UI.Views
 
             /// <summary>The fields, the patterns, and which pattern reads which test.</summary>
             Naming = 4,
+
+            /// <summary>How the board divides the results it is given.</summary>
+            Board = 5,
         }
 
         /// <summary>The tab.</summary>
@@ -169,8 +172,9 @@ namespace CamelWorks.UI.Views
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
-            private readonly List<System.Windows.Controls.Button> _tabs =
-                new List<System.Windows.Controls.Button>();
+            /// <summary>The rail's rows, by the section each opens.</summary>
+            private readonly Dictionary<Part, System.Windows.Controls.Button> _rows =
+                new Dictionary<Part, System.Windows.Controls.Button>();
 
             // The project's own data, read once and edited in place. Written by Keep, which is the
             // tab's one action.
@@ -204,26 +208,13 @@ namespace CamelWorks.UI.Views
 
                 var rail = new StackPanel { Margin = new Thickness(8, 10, 8, 10) };
 
-                foreach (var part in new[]
-                         {
-                             Part.Units, Part.Levels, Part.Disciplines, Part.Team, Part.Naming,
-                         })
-                {
-                    var here = part;
+                // What applies everywhere first, then a page per tab. A coordinator looking for a
+                // setting knows either what it is about or which screen it changes, and the rail
+                // answers both without them having to guess which tab hid it.
+                Railed(rail, "Everywhere",
+                       Part.Units, Part.Levels, Part.Disciplines, Part.Team);
 
-                    var row = new System.Windows.Controls.Button
-                    {
-                        Content = Titled(here),
-                        HorizontalContentAlignment = HorizontalAlignment.Left,
-                        Padding = new Thickness(10, 7, 10, 7),
-                        Margin = new Thickness(0, 0, 0, 2),
-                    };
-
-                    row.Click += (s, e) => Ui.Safely(() => Show(here));
-
-                    _tabs.Add(row);
-                    rail.Children.Add(row);
-                }
+                Railed(rail, "Per tab", Part.Naming, Part.Board);
 
                 var side = new Border
                 {
@@ -272,9 +263,40 @@ namespace CamelWorks.UI.Views
                 Part.Levels => "Levels",
                 Part.Disciplines => "Disciplines",
                 Part.Team => "Team",
-                Part.Naming => "Test naming",
+                Part.Naming => "Create",
+                Part.Board => "Manage",
                 _ => "Units and distances",
             };
+
+            /// <summary>One heading on the rail, and the sections under it.</summary>
+            /// <param name="rail">The rail.</param>
+            /// <param name="title">What the group is called.</param>
+            /// <param name="parts">Its sections, in the order they read.</param>
+            private void Railed(Panel rail, string title, params Part[] parts)
+            {
+                var head = Ui.Small(title.ToUpperInvariant());
+
+                head.Margin = new Thickness(10, rail.Children.Count == 0 ? 0 : 14, 10, 4);
+                rail.Children.Add(head);
+
+                foreach (var part in parts)
+                {
+                    var here = part;
+
+                    var row = new System.Windows.Controls.Button
+                    {
+                        Content = Titled(here),
+                        HorizontalContentAlignment = HorizontalAlignment.Left,
+                        Padding = new Thickness(10, 7, 10, 7),
+                        Margin = new Thickness(0, 0, 0, 2),
+                    };
+
+                    row.Click += (s, e) => Ui.Safely(() => Show(here));
+
+                    _rows[here] = row;
+                    rail.Children.Add(row);
+                }
+            }
 
             /// <summary>Draw one section, and mark it on the rail.</summary>
             /// <param name="part">The section.</param>
@@ -282,8 +304,10 @@ namespace CamelWorks.UI.Views
             {
                 _on = part;
 
-                for (var at = 0; at < _tabs.Count; at++)
-                    _tabs[at].Wearing(at == (int)part ? "RailRowOn" : "RailRow");
+                // Keyed on the section rather than on its place in the rail: the rail now carries
+                // headings as well as sections, so a row's index is no longer its section.
+                foreach (var row in _rows)
+                    row.Value.Wearing(row.Key == part ? "RailRowOn" : "RailRow");
 
                 try
                 {
@@ -293,6 +317,7 @@ namespace CamelWorks.UI.Views
                         Part.Disciplines => DisciplinesPart(),
                         Part.Team => TeamPart(),
                         Part.Naming => NamingPart(),
+                        Part.Board => BoardPart(),
                         _ => UnitsPart(),
                     };
                 }
@@ -461,12 +486,20 @@ namespace CamelWorks.UI.Views
                              Ui.Text(duplicate, typed => Set(ProfileKeys.DuplicateBand, typed),
                                      120))));
 
+                return held;
+            }
+
+            /// <summary>What the Manage tab's board does with the results it is given.</summary>
+            private UIElement BoardPart()
+            {
+                var held = Ui.Stack();
+
                 held.Children.Add(Head(
                     "Bands",
                     "How the board divides the results it is given into headings.",
                     "A band decides which heading a result is drawn under and changes nothing "
-                    + "about the result itself, which is why it is a setting here rather than a "
-                    + "rule on the Filter tab. The stack applies in order: the first band is the "
+                    + "about the result itself, which is why it is a setting rather than a rule "
+                    + "on the Filter tab. The stack applies in order: the first band is the "
                     + "outermost division of the board, and each one after it divides what the "
                     + "one above produced. With no bands the board divides by model pair, then "
                     + "level, then results within the grouping distance of each other."));
