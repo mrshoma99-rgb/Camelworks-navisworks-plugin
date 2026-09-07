@@ -4085,9 +4085,12 @@ namespace CamelWorks.UI.Views
                     // about. Everything else added to the board takes one.
                     var element = column != null && column.Kind == ColumnKind.Element;
 
+                    // Two shares, not three. At three the two columns fitted their names and the
+                    // table gained a horizontal scrollbar, which costs the row its last column —
+                    // and a board scrolled off its own verbs is worse than one that trims a name.
                     Named2(name,
-                           element ? 3 : 1,
-                           element ? (tight ? 120 : 150) : 76);
+                           element ? 2 : 1,
+                           element ? (tight ? 104 : 124) : 76);
                 }
 
                 // Four row buttons, at the tighter margin the bar below sets on them. The
