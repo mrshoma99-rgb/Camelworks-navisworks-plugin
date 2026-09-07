@@ -219,6 +219,19 @@ namespace CamelWorks.UI.Views
 
             private readonly StackPanel _verbs = new StackPanel { Orientation = Orientation.Horizontal };
 
+            /// <summary>
+            /// The blocking warnings, above the grid: what stops the matrix becoming tests.
+            ///
+            /// Held apart from the strip. The strip carried a seat notice, a legend fault, live
+            /// state, counts, navigation links and undo in one 20px row, so a warning that stops
+            /// every test being built was the same size and colour as the word "Saving". These
+            /// are the conditions that make the build produce nothing, each with the control that
+            /// clears it.
+            /// </summary>
+            private readonly StackPanel _alerts = Ui.Stack();
+
+            private readonly Border _alertBand = new Border();
+
             private readonly Border _grid = new Border();
 
             /// <summary>
@@ -244,7 +257,7 @@ namespace CamelWorks.UI.Views
             /// The panel must arm whatever the grid is drawing. In the priority view it holds the
             /// ranks, not the symbol legend.
             /// </summary>
-            private readonly TextBlock _paletteTitle = Ui.Eyebrow("Palette");
+            private readonly TextBlock _paletteTitle = Cap("Palette");
 
             /// <summary>Add, change and cover a symbol - which mean nothing but on the symbols.</summary>
             private UIElement? _legendActs;
@@ -271,8 +284,19 @@ namespace CamelWorks.UI.Views
 
             private readonly Border _actsPane = new Border();
 
-            /// <summary>How much of the matrix is decided, at the foot of the palette.</summary>
+            /// <summary>
+            /// How much of the matrix is decided, at the head of the panel.
+            ///
+            /// It is the screen's progress metric, so it is the first thing in the panel rather
+            /// than the last: at the foot it sat below a row's field boxes, its pair list and its
+            /// verbs, which on a row of any size is off the bottom.
+            /// </summary>
             private readonly StackPanel _progress = Ui.Stack();
+
+            /// <summary>Undo and redo, on the toolbar, kept so their state can be refreshed.</summary>
+            private System.Windows.Controls.Button? _undo;
+
+            private System.Windows.Controls.Button? _redo;
 
             /// <summary>
             /// The frozen header bands and the cells that scroll under them.
@@ -310,6 +334,9 @@ namespace CamelWorks.UI.Views
 
             /// <summary>The corner and the left band, whose width follows what the rows carry.</summary>
             private readonly Border _corner = new Border();
+
+            /// <summary>The gutter labels at the foot of the corner, refilled with the band.</summary>
+            private readonly Border _gutterBox = new Border();
 
             private readonly Border _side = new Border();
 
@@ -448,6 +475,20 @@ namespace CamelWorks.UI.Views
                 new System.Windows.Threading.DispatcherTimer
                 {
                     Interval = TimeSpan.FromSeconds(3),
+                };
+
+            /// <summary>
+            /// Settles the horizontal scroll on a column boundary once scrolling stops.
+            ///
+            /// A free horizontal offset leaves the last visible column cut down its middle, under
+            /// a rotated header that is cut with it, so the column at the edge cannot be read or
+            /// identified. Snapping while the wheel or the thumb is still moving fights the
+            /// gesture, so it is done after a short pause.
+            /// </summary>
+            private readonly System.Windows.Threading.DispatcherTimer _snap =
+                new System.Windows.Threading.DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(140),
                 };
 
             /// <summary>When the matrix was last written to the project file.</summary>
@@ -622,6 +663,16 @@ namespace CamelWorks.UI.Views
                 Add(Parts.MenuButton("Start from", Glyphs.Read, Starting()));
                 Add(Parts.MenuButton("Arrange", Glyphs.Sort, Arranging()));
 
+                // Undo and redo act on the whole matrix, so they belong with the verbs rather
+                // than among the counts on the strip over the grid.
+                _undo = Ui.Verb(Glyphs.Backward, "Undo", "Take back the last change", Undo);
+                _redo = Ui.Verb(Glyphs.Onward, "Redo", "Put back what undo took", Redo);
+
+                Add(_undo);
+                Add(_redo);
+
+                Steps();
+
                 Apart();
 
                 // Second group: how it is being viewed. Which of the three matrices is in the
@@ -764,17 +815,20 @@ namespace CamelWorks.UI.Views
             {
                 var panel = new DockPanel { LastChildFill = true };
 
-                var foot = new Border
+                // At the head of the panel, not its foot. How much of the matrix is decided is
+                // the screen's progress metric; below a row's fields, its pair list and its verbs
+                // it is off the bottom of the panel on any row with more than a few pairs.
+                var head = new Border
                 {
-                    BorderThickness = new Thickness(0, 1, 0, 0),
+                    BorderThickness = new Thickness(0, 0, 0, 1),
                     Padding = new Thickness(10, 8, 10, 9),
                     Child = Ui.Loose(_progress),
                 };
 
-                foot.Tint(Border.BorderBrushProperty, "Bd");
+                head.Tint(Border.BorderBrushProperty, "Bd");
 
-                DockPanel.SetDock(foot, Dock.Bottom);
-                panel.Children.Add(foot);
+                DockPanel.SetDock(head, Dock.Top);
+                panel.Children.Add(head);
 
                 var keys = Ui.Stack();
 
@@ -878,12 +932,131 @@ namespace CamelWorks.UI.Views
                 bar.Tint(Border.BackgroundProperty, "Card2");
                 bar.Tint(Border.BorderBrushProperty, "Bd");
 
+                _alertBand.BorderThickness = new Thickness(0, 0, 0, 1);
+                _alertBand.Padding = new Thickness(10, 6, 8, 7);
+                _alertBand.Visibility = Visibility.Collapsed;
+                _alertBand.Child = Ui.Loose(_alerts);
+
+                _alertBand.Tint(Border.BackgroundProperty, "Pane");
+                _alertBand.Tint(Border.BorderBrushProperty, "Bd");
+
+                DockPanel.SetDock(_alertBand, Dock.Top);
+                middle.Children.Add(Ui.Loose(_alertBand));
+
                 DockPanel.SetDock(bar, Dock.Top);
                 middle.Children.Add(bar);
 
                 middle.Children.Add(Frozen());
 
                 return middle;
+            }
+
+            /// <summary>
+            /// The warnings that stop the matrix building tests, above the grid.
+            ///
+            /// Each states the condition, what it costs, and carries the control that clears it.
+            /// The band is drawn only when there is one, so a sound matrix loses no height to it.
+            /// </summary>
+            private void RedrawAlerts()
+            {
+                _alerts.Children.Clear();
+
+                // A symbol in the grid that the legend does not explain builds no test for any
+                // cell that carries it. Said once here, with the action, rather than on every
+                // palette key, on the strip and again on the row panel.
+                var undefined = _legend.Unexplained(_board);
+
+                if (undefined.Count > 0)
+                {
+                    var makes = MatrixPlanner.Plan(_board, _legend, _pattern).Tests.Count;
+
+                    _alerts.Children.Add(Alert(
+                        makes == 0,
+                        Listed(undefined) + (undefined.Count == 1 ? " is" : " are")
+                        + " in the grid but not in the legend. "
+                        + (makes == 0
+                            ? "Every cell carries one of them, so this matrix builds no tests."
+                            : "Cells carrying " + (undefined.Count == 1 ? "it" : "them")
+                              + " are skipped when the tests are built."),
+                        "Add " + (undefined.Count == 1 ? "it" : "them")
+                        + " as hard clashes",
+                        CoverSymbols));
+                }
+
+                // Every line pointing at nothing is one condition, not twenty marks. The per-line
+                // mark is drawn only where it tells rows apart.
+                var lost = 0;
+                var lines = _board.Rows.Count + _board.Columns.Count;
+
+                foreach (var line in _board.Rows) if (line.IsUnbacked) lost++;
+                foreach (var line in _board.Columns) if (line.IsUnbacked) lost++;
+
+                if (lines > 0 && lost == lines)
+                    _alerts.Children.Add(Alert(
+                        false,
+                        "No row or column points at anything this model has. The matrix draws, "
+                        + "saves and exports; its tests need a model holding the sets, layers or "
+                        + "items the lines name.",
+                        "Check it against the model",
+                        Sanity));
+
+                // The seat's standing condition, dismissable for the life of the application: it
+                // is a property of the Navisworks edition, not of this matrix.
+                if (!_session.Clash.IsAvailable && !_hushed)
+                    _alerts.Children.Add(Alert(
+                        false,
+                        "This Navisworks edition has no clash engine, so the tests cannot be "
+                        + "built here. The matrix draws, saves and exports as it is. "
+                        + (_session.ClashProblem ?? string.Empty).Trim(),
+                        "Put this away",
+                        () => { _hushed = true; RedrawAlerts(); }));
+
+                _alertBand.Visibility = _alerts.Children.Count == 0
+                    ? Visibility.Collapsed
+                    : Visibility.Visible;
+            }
+
+            /// <summary>
+            /// One warning above the grid: what is wrong, and the control that puts it right.
+            ///
+            /// One line of text and one button, so a band of two warnings costs about 50px and
+            /// the grid keeps the rest. The mark carries the severity; the words carry the fact.
+            /// </summary>
+            /// <param name="stop">True when nothing at all can be built until it is fixed.</param>
+            /// <param name="says">The condition and what it costs, in one or two sentences.</param>
+            /// <param name="caption">What the control does.</param>
+            /// <param name="onPress">Doing it.</param>
+            private static UIElement Alert(bool stop, string says, string caption, Action onPress)
+            {
+                var row = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 2, 0, 2) };
+
+                var mark = Ui.Glyph(Glyphs.Warn, 13, stop ? "RedTx" : "AmberTx",
+                                    new Thickness(0, 0, 8, 0));
+
+                mark.VerticalAlignment = VerticalAlignment.Top;
+
+                DockPanel.SetDock(mark, Dock.Left);
+                row.Children.Add(mark);
+
+                var go = Ui.Quiet(caption, onPress);
+
+                go.VerticalAlignment = VerticalAlignment.Top;
+                go.Margin = new Thickness(12, -3, 0, 0);
+
+                DockPanel.SetDock(go, Dock.Right);
+                row.Children.Add(go);
+
+                var words = new TextBlock
+                {
+                    Text = says,
+                    FontSize = 12,
+                    TextWrapping = TextWrapping.Wrap,
+                    VerticalAlignment = VerticalAlignment.Center,
+                }.Wearing("Body");
+
+                row.Children.Add(words);
+
+                return row;
             }
 
             /// <summary>
@@ -995,7 +1168,30 @@ namespace CamelWorks.UI.Views
                     _side.Margin = new Thickness(0, 0, 0,
                         _scroll.ComputedHorizontalScrollBarVisibility == Visibility.Visible
                             ? SystemParameters.HorizontalScrollBarHeight : 0);
+
+                    if (Math.Abs(e.HorizontalChange) > 0.01) { _snap.Stop(); _snap.Start(); }
                 };
+
+                // Settling the offset raises another scroll change, which restarts the timer;
+                // the next tick finds the offset already on a boundary and does nothing, so this
+                // does not run on.
+                _snap.Tick += (s, e) => Ui.Safely(() =>
+                {
+                    _snap.Stop();
+
+                    var wide = CellWide;
+
+                    if (wide <= 0) return;
+
+                    var at = _scroll.HorizontalOffset;
+                    var onto = Math.Round(at / wide) * wide;
+
+                    onto = Math.Max(0, Math.Min(_scroll.ScrollableWidth, onto));
+
+                    if (Math.Abs(onto - at) < 0.5) return;
+
+                    _scroll.ScrollToHorizontalOffset(onto);
+                });
 
                 _scroll.PreviewKeyDown += (s, e) => Ui.Safely(() => Typed(e));
 
@@ -1403,7 +1599,11 @@ namespace CamelWorks.UI.Views
                     foreach (var line in _board.Columns)
                         longest = Math.Max(longest, Measured(line.Name));
 
-                    return Math.Max(64, Math.Min(200, longest + 14));
+                    // Capped at 132px. At 200 the header block was about a third of the window
+                    // above 30px rows, for names that are read as a column of marks and whose
+                    // full text is on the header's tooltip and in the panel. Longer names are
+                    // trimmed with an ellipsis at the far end.
+                    return Math.Max(64, Math.Min(132, longest + 14));
                 }
             }
 
@@ -1679,9 +1879,14 @@ namespace CamelWorks.UI.Views
             /// <param name="lines">The rows or the columns.</param>
             private static bool Unbacking(IReadOnlyList<MatrixLine> lines)
             {
-                foreach (var line in lines) if (line.IsUnbacked) return true;
+                var lost = 0;
 
-                return false;
+                foreach (var line in lines) if (line.IsUnbacked) lost++;
+
+                // A mark on every line marks nothing. With no document open every line points at
+                // nothing, so the gutter was twenty warning triangles down the side and twenty
+                // across the top; the condition is stated once, above the grid, instead.
+                return lost > 0 && lost < lines.Count;
             }
 
             /// <summary>
@@ -1937,6 +2142,8 @@ namespace CamelWorks.UI.Views
                     Put(_down, Marker(Number(r), row.Titled, row, rows: true), r, left);
                     Put(_down, RowHead(row, r), r, left + 1);
                 }
+
+                _gutterBox.Child = Gutters();
 
                 if (band > 0) Bands(_down, rows: true);
 
@@ -2439,18 +2646,20 @@ namespace CamelWorks.UI.Views
 
                 var sets = Sets().Count;
 
+                // Every card carries an action, including the one whose source is empty: a card
+                // saying only that there is nothing there is a dead end on a screen whose whole
+                // job is to offer a way in. With no sets, the action is to look again, because
+                // sets are made in Navisworks while this screen is open.
                 ways.Children.Add(Ui.Row(
                     "From saved sets",
                     sets == 0
-                        ? "This model has no saved selection or search sets yet."
+                        ? "This model has no saved selection or search sets. Make them in "
+                          + "Navisworks, then look again."
                         : Ui.Count(sets, "set") + " to choose from. Tick the ones that are the "
                           + "disciplines and each becomes a row, named after the set and already "
                           + "pointed at it.",
-                    sets == 0 ? null : "Choose the sets",
-                    sets == 0 ? (Action)(() => Warned(Ui.Problem(
-                        "This model has no saved selection or search sets. Make them in "
-                        + "Navisworks - or draw the matrix by hand and point the rows at "
-                        + "something else."))) : FromSets));
+                    sets == 0 ? "Look again" : "Choose the sets",
+                    sets == 0 ? (Action)Redraw : FromSets));
 
                 ways.Children.Add(Ui.Row(
                     "The tests this model already has",
@@ -2624,6 +2833,13 @@ namespace CamelWorks.UI.Views
                 DockPanel.SetDock(find, Dock.Top);
                 inside.Children.Add(find);
 
+                // The gutter labels sit at the foot of the corner, directly over the gutters they
+                // name, so the row header stops being four unlabelled columns of digits. In a box
+                // rather than built here: the corner is built once and the gutters change with
+                // the scheme, so the band redraw refills it.
+                DockPanel.SetDock(_gutterBox, Dock.Bottom);
+                inside.Children.Add(Ui.Loose(_gutterBox));
+
                 // The two axes, in one weight rather than two: they are one fact said twice, and
                 // an eyebrow over a small line read as a heading over a caption.
                 var axes = new StackPanel { VerticalAlignment = VerticalAlignment.Bottom };
@@ -2641,6 +2857,98 @@ namespace CamelWorks.UI.Views
                 corner.Child = follows;
 
                 return Ui.Loose(corner);
+            }
+
+            /// <summary>
+            /// The row header's gutters, named, at the foot of the corner.
+            ///
+            /// The header carried up to four columns of short values - the index, the line's own
+            /// number, a code, a project field - with nothing saying which was which, so an index
+            /// running 1-20 beside numbers running 10-200 read as two disagreeing counts. The
+            /// widths are the header's own, so the labels stand over the gutters they name.
+            /// </summary>
+            /// <returns>The strip, or null when the header has only the index and the name.</returns>
+            private UIElement? Gutters()
+            {
+                var numbered = Numbered(_board.Rows);
+                var coded = Coded(_board.Rows);
+                var carried = Carried(_board.Rows);
+
+                if (!numbered && !coded && carried.Count == 0) return null;
+
+                // The corner's own padding is cancelled, because these have to line up with a
+                // band that starts at the corner's edge rather than inside its padding.
+                var strip = new Grid { Margin = new Thickness(-8, 4, -8, -6) };
+
+                var folder = FolderWide;
+
+                if (folder > 0)
+                    strip.ColumnDefinitions.Add(new ColumnDefinition
+                    {
+                        Width = new GridLength(folder),
+                    });
+
+                strip.ColumnDefinitions.Add(new ColumnDefinition
+                {
+                    Width = new GridLength(IndexWide),
+                });
+
+                if (numbered)
+                    strip.ColumnDefinitions.Add(new ColumnDefinition
+                    {
+                        Width = new GridLength(NumberWide),
+                    });
+
+                if (coded)
+                    strip.ColumnDefinitions.Add(new ColumnDefinition
+                    {
+                        Width = new GridLength(CodeWide),
+                    });
+
+                foreach (var field in carried)
+                    strip.ColumnDefinitions.Add(new ColumnDefinition
+                    {
+                        Width = new GridLength(FieldWide(field, _board.Rows)),
+                    });
+
+                strip.ColumnDefinitions.Add(new ColumnDefinition
+                {
+                    Width = new GridLength(NameWide),
+                });
+
+                var column = 0;
+
+                void Label(string text, bool left = false)
+                {
+                    var said = new TextBlock
+                    {
+                        Text = text,
+                        FontSize = 9,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        TextWrapping = TextWrapping.NoWrap,
+                        TextAlignment = left ? TextAlignment.Left : TextAlignment.Center,
+                        Margin = new Thickness(left ? 2 : 1, 0, left ? 4 : 1, 0),
+                        VerticalAlignment = VerticalAlignment.Bottom,
+                    }.Wearing("Hint");
+
+                    Grid.SetColumn(said, column++);
+                    strip.Children.Add(said);
+                }
+
+                if (folder > 0) Label("Folder");
+
+                Label("#");
+
+                if (numbered)
+                    Label(_board.Scheme.Field(MatrixField.NumberKey)?.Title ?? "Number");
+
+                if (coded) Label(_board.Scheme.Field(MatrixField.CodeKey)?.Title ?? "Code");
+
+                foreach (var field in carried) Label(field.Title);
+
+                Label(_board.Scheme.Field(MatrixField.NameKey)?.Title ?? "Name", left: true);
+
+                return strip;
             }
 
             /// <summary>
@@ -4848,15 +5156,35 @@ namespace CamelWorks.UI.Views
 
             private void Recount()
             {
+                Counting();
+                Warnings();
+                RedrawProgress();
+            }
+
+            /// <summary>
+            /// The count on the strip, which is about whichever matrix is being drawn.
+            ///
+            /// One denominator per view, named. The results view previously stated the plan's
+            /// count here while the panel stated a count of tested pairs and a count of tests, so
+            /// three different totals of "how much of this matrix is covered" were on screen at
+            /// once and none of them said what it was counting.
+            /// </summary>
+            private void Counting()
+            {
+                if (_shown == Showing.Results)
+                {
+                    _count.Text = Ui.Count(_counts.Tests, "clash test") + " read back";
+                    _count.ToolTip = "What the document's own tests reported, counted onto the "
+                                     + "pairs they are between.";
+                    return;
+                }
+
                 var plan = MatrixPlanner.Plan(_board, _legend, _pattern);
 
                 _count.Text = plan.Explain();
                 _count.ToolTip = plan.Tests.Count == 0
                     ? null
                     : "First one: " + Quoted(plan.Tests[0].Name);
-
-                Warnings();
-                RedrawProgress();
             }
 
             /// <summary>
@@ -4890,9 +5218,16 @@ namespace CamelWorks.UI.Views
                 var barren = unknown.Count > 0
                               && MatrixPlanner.Plan(_board, _legend, _pattern).Tests.Count == 0;
 
-                _build.IsEnabled = !barren;
+                // An empty grid asks for no tests, so the screen's filled primary was live over
+                // a start screen and reported its own emptiness when pressed.
+                var bare = _board.Rows.Count == 0 || _board.Columns.Count == 0;
 
-                _build.ToolTip = barren
+                _build.IsEnabled = !barren && !bare;
+
+                _build.ToolTip = bare
+                    ? "Nothing to build yet. Draw the matrix first: the tests come from the "
+                      + "symbols in the grid."
+                    : barren
                     ? "This matrix builds no tests: "
                       + Listed(unknown) + " in the grid " + (unknown.Count == 1 ? "is" : "are")
                       + " not in the legend, so every cell using "
@@ -4973,7 +5308,7 @@ namespace CamelWorks.UI.Views
                     if (meaning != null && !meaning.Enabled) mute++;
                 }
 
-                _progress.Children.Add(Ui.Eyebrow("Decided"));
+                _progress.Children.Add(Cap("Decided"));
 
                 var track = new Border
                 {
@@ -5015,10 +5350,11 @@ namespace CamelWorks.UI.Views
                 var left = live - done;
 
                 _progress.Children.Add(Ui.Small(done.ToString(CultureInfo.InvariantCulture)
-                    + " of " + live.ToString(CultureInfo.InvariantCulture) + " pairs"
+                    + " of " + live.ToString(CultureInfo.InvariantCulture) + " pairs decided"
                     + (left == 0
-                        ? ". All of them."
-                        : ", " + left.ToString(CultureInfo.InvariantCulture) + " still open")));
+                        ? ", all of them"
+                        : ", " + left.ToString(CultureInfo.InvariantCulture)
+                          + " left to decide")));
 
                 if (ruled > 0)
                     _progress.Children.Add(Ui.Small(Ui.Count(ruled, "of them ruled out")));
@@ -6092,7 +6428,7 @@ namespace CamelWorks.UI.Views
                     if (open == 0) clear++;
                 }
 
-                _progress.Children.Add(Ui.Eyebrow("Cleared"));
+                _progress.Children.Add(Cap("Cleared"));
 
                 var track = new Border
                 {
@@ -6129,14 +6465,21 @@ namespace CamelWorks.UI.Views
 
                 _progress.Children.Add(track);
 
+                // One denominator, named: pairs that have a result. The second line counted
+                // against the number of tests instead, so the panel reported two totals and the
+                // strip a third.
                 _progress.Children.Add(Ui.Small(
                     clear.ToString(CultureInfo.InvariantCulture) + " of "
                     + covered.ToString(CultureInfo.InvariantCulture)
-                    + " tested pairs have nothing open"));
+                    + " checked pairs have nothing open"));
 
-                _progress.Children.Add(Ui.Small(
-                    Ui.Count(_counts.Open, "clash") + " open across "
-                    + Ui.Count(_counts.Tests, "test")));
+                var left = Ui.Small(Ui.Count(_counts.Open, "clash") + " still open, on the other "
+                                    + (covered - clear).ToString(CultureInfo.InvariantCulture)
+                                    + " of them");
+
+                left.TextWrapping = TextWrapping.Wrap;
+
+                _progress.Children.Add(left);
             }
 
             /// <summary>
@@ -6168,7 +6511,7 @@ namespace CamelWorks.UI.Views
                     one => !_board.IsSelfPair(one.Row, one.Column)
                            || _board.At(one.Row, one.Column) != null);
 
-                _progress.Children.Add(Ui.Eyebrow("Ranked"));
+                _progress.Children.Add(Cap("Ranked"));
 
                 var track = new Border
                 {
@@ -6213,12 +6556,12 @@ namespace CamelWorks.UI.Views
             {
                 _palette.Children.Clear();
 
-                // Upper-cased here, because Ui.Eyebrow does it to the text it is handed and
-                // this writes over that text - which is how the one eyebrow on the screen ended
-                // up in sentence case beside DECIDED and RANKED.
-                _paletteTitle.Text = _shown == Showing.Priority ? "PRIORITY"
-                    : _shown == Showing.Results ? "WHAT CAME BACK"
-                    : "PALETTE";
+                // Each title names the quantity the panel is a key to, because the priority
+                // colours and the results ramp are three hues each and neither is readable
+                // without being told what it encodes.
+                _paletteTitle.Text = _shown == Showing.Priority ? "Priority of a checked pair"
+                    : _shown == Showing.Results ? "Open clashes per pair"
+                    : "Symbols";
 
                 // The three things a legend button does - add a symbol, change one, give the
                 // unmeant ones meanings - are all about the symbols, so they go while the
@@ -6257,6 +6600,10 @@ namespace CamelWorks.UI.Views
                 // a cell to its definition.
                 var strangers = _legend.Unexplained(_board);
 
+                // Listed, not argued. The consequence and the action that fixes it are stated
+                // once, in the warning above the grid; repeating them on every key made four
+                // rows that all read "builds no test" and none of which said which symbol it
+                // was about or how much of the grid used it.
                 if (strangers.Count > 0)
                 {
                     var heading = Ui.Small("In the grid, not in the legend");
@@ -6272,21 +6619,14 @@ namespace CamelWorks.UI.Views
 
                         _palette.Children.Add(Swatch(
                             here,
-                            "Builds no test",
-                            "press to say what it means",
+                            "No test kind",
+                            Ui.Count(Using(here), "cell"),
                             string.Empty,
                             armed: false,
                             live: false,
                             onPress: () => Ui.Safely(() => Define(here)),
                             hue: -1));
                     }
-
-                    var cover = Ui.Link("Add all " + strangers.Count + " as hard clashes",
-                                        () => Ui.Safely(CoverSymbols));
-
-                    cover.Margin = new Thickness(4, 2, 4, 8);
-
-                    _palette.Children.Add(cover);
                 }
 
                 for (var at = 0; at < _legend.Symbols.Count; at++)
@@ -6332,24 +6672,31 @@ namespace CamelWorks.UI.Views
             {
                 var ranks = new[]
                 {
-                    (Rank: MatrixBoard.High, Says: "most urgent", Stroke: "1", Mark: "H"),
-                    (Rank: MatrixBoard.Medium, Says: "in the middle", Stroke: "2", Mark: "M"),
-                    (Rank: MatrixBoard.Low, Says: "when there is time", Stroke: "3", Mark: "L"),
+                    (Rank: MatrixBoard.High, Stroke: "1", Mark: "H"),
+                    (Rank: MatrixBoard.Medium, Stroke: "2", Mark: "M"),
+                    (Rank: MatrixBoard.Low, Stroke: "3", Mark: "L"),
                 };
 
+                // The line under each rank counts the pairs carrying it. It read "High - most
+                // urgent", "Medium - in the middle", which is the label said a second time in
+                // other words.
                 foreach (var one in ranks)
                 {
                     var wanted = one.Rank;
+                    var held = _board.Ranks().Count(pair => pair.Rank == wanted);
 
-                    _palette.Children.Add(Swatch(one.Mark, MatrixBoard.RankNamed(one.Rank),
-                                                 one.Says, one.Stroke, _rank == wanted, true,
+                    _palette.Children.Add(Swatch(one.Mark,
+                                                 MatrixBoard.RankNamed(one.Rank) + " priority",
+                                                 Ui.Count(held, "pair"), one.Stroke,
+                                                 _rank == wanted, true,
                                                  () => Arming(wanted),
                                                  paint: Ranked(one.Rank)));
                 }
 
                 // Below the three, the way the eraser sits below the symbols: it is not a rank,
                 // it takes one off.
-                _palette.Children.Add(Swatch("\u00d7", "Not set", "takes the rank off", "0",
+                _palette.Children.Add(Swatch("\u00d7", "Clear the priority",
+                                             "leaves the pair checked", "0",
                                              _rank == MatrixBoard.NotSet, false,
                                              () => Arming(MatrixBoard.NotSet)));
 
@@ -6424,17 +6771,18 @@ namespace CamelWorks.UI.Views
                     Margin = new Thickness(5, 0, 6, 4),
                 };
 
-                var most = Ui.Small(worst.ToString(CultureInfo.InvariantCulture) + " open");
+                var most = Ui.Small(worst.ToString(CultureInfo.InvariantCulture));
 
                 DockPanel.SetDock(most, Dock.Right);
                 ends.Children.Add(most);
-                ends.Children.Add(Ui.Small("1 open"));
+                ends.Children.Add(Ui.Small("1"));
 
                 _palette.Children.Add(bar);
                 _palette.Children.Add(ends);
 
-                var says = Ui.Small("The wash runs to the worst pair on this board, which is where "
-                                    + "a meeting goes first.");
+                var says = Ui.Small("Open clashes on one pair, from 1 to "
+                                    + worst.ToString(CultureInfo.InvariantCulture)
+                                    + ", which is the worst pair on this board.");
 
                 says.TextWrapping = TextWrapping.Wrap;
                 says.Margin = new Thickness(5, 0, 6, 4);
@@ -6742,6 +7090,10 @@ namespace CamelWorks.UI.Views
                 _strip.Children.Clear();
                 _verbs.Children.Clear();
 
+                // The blocking warnings are drawn with the strip and above it, so the two cannot
+                // disagree about what the screen currently is.
+                RedrawAlerts();
+
                 if (_board.Rows.Count == 0 && _board.Columns.Count == 0) return;
 
                 void Into(Panel panel, UIElement said, double left)
@@ -6768,117 +7120,11 @@ namespace CamelWorks.UI.Views
                 void Does(UIElement said, double left = StripGap) =>
                     Into(_verbs, said, _verbs.Children.Count == 0 ? 0 : left);
 
-                // The strip carries state that has a control attached to it, not commentary. It
-                // previously narrated the brush, the inspector's subject and the cursor position
-                // on every click, all of which are already visible elsewhere.
-                //
-                // The seat's standing notice lives here rather than in a band across the top,
-                // which pushed the matrix down by its own height on every open, or floating,
-                // which covered the content beneath. Six words here with the full sentence on the
-                // tooltip; a press dismisses it for the life of the application, since the
-                // condition is a property of the Navisworks edition.
-                if (!_session.Clash.IsAvailable && !_hushed)
-                {
-                    // Three words and a mark, because the strip is one line. Written out in
-                    // full, with a Dismiss control beside it, it pushed "Saving as you go" onto a
-                    // second line, which moves the matrix down.
-                    var told = new DockPanel
-                    {
-                        LastChildFill = true,
-                        Cursor = Cursors.Hand,
-                        Background = System.Windows.Media.Brushes.Transparent,
-                        ToolTip = "This Navisworks edition has no clash engine, so the matrix "
-                                  + "cannot be run into tests here - but everything else works. "
-                                  + "Draw it, save it, send it out as a spreadsheet, and build it "
-                                  + "on a seat that has one. "
-                                  + (_session.ClashProblem ?? string.Empty).Trim()
-                                  + "  Press to put this away.",
-                    };
-
-                    var mark = Ui.Glyph(Glyphs.Warn, 12, "AmberTx", new Thickness(0, 0, 5, 0));
-
-                    mark.VerticalAlignment = VerticalAlignment.Center;
-
-                    DockPanel.SetDock(mark, Dock.Left);
-                    told.Children.Add(mark);
-                    told.Children.Add(new TextBlock
-                    {
-                        Text = "No clash engine",
-                        FontSize = StripSize,
-                        VerticalAlignment = VerticalAlignment.Center,
-                    }.Wearing("Hint"));
-
-                    told.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
-                    {
-                        e.Handled = true;
-                        _hushed = true;
-                        RedrawStrip();
-                    });
-
-                    Reachable(told, "No clash engine on this seat. Press to put this away.", () =>
-                    {
-                        _hushed = true;
-                        RedrawStrip();
-                    });
-
-                    Say(told);
-                }
-
-                // The one state that makes the whole screen a waste of an afternoon, so it is on
-                // the strip in the danger colour and it is pressable: the press defines the
-                // missing symbols rather than merely explaining them.
-                var undefined = _legend.Unexplained(_board);
-
-                if (undefined.Count > 0)
-                {
-                    var makes = MatrixPlanner.Plan(_board, _legend, _pattern).Tests.Count;
-
-                    var told = new DockPanel
-                    {
-                        LastChildFill = true,
-                        Cursor = Cursors.Hand,
-                        Background = System.Windows.Media.Brushes.Transparent,
-                    };
-
-                    var mark = Ui.Glyph(Glyphs.Warn, 12, makes == 0 ? "RedTx" : "AmberTx",
-                                        new Thickness(0, 0, 5, 0));
-
-                    mark.VerticalAlignment = VerticalAlignment.Center;
-
-                    DockPanel.SetDock(mark, Dock.Left);
-                    told.Children.Add(mark);
-
-                    var words = new TextBlock
-                    {
-                        Text = Listed(undefined) + (undefined.Count == 1 ? " is" : " are")
-                               + " not in the legend",
-                        FontSize = StripSize,
-                        FontWeight = FontWeights.SemiBold,
-                        VerticalAlignment = VerticalAlignment.Center,
-                    };
-
-                    words.Tint(TextBlock.ForegroundProperty, makes == 0 ? "RedTx" : "AmberTx");
-                    told.Children.Add(words);
-
-                    var why = (makes == 0
-                                  ? "This matrix builds no tests at all. "
-                                  : "Cells using "
-                                    + (undefined.Count == 1 ? "it" : "them") + " build no tests. ")
-                              + "Press to add "
-                              + (undefined.Count == 1 ? "it" : "them")
-                              + " to the legend as ordinary hard clashes, then correct the ones "
-                              + "that are not.";
-
-                    told.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
-                    {
-                        e.Handled = true;
-                        CoverSymbols();
-                    });
-
-                    Reachable(told, why, CoverSymbols);
-
-                    Say(told);
-                }
+                // The strip carries live state and the counts, and nothing else: warnings are
+                // above the grid, undo and redo are in the toolbar, and commentary on what was
+                // just clicked is gone. It previously narrated the brush, the inspector's
+                // subject and the cursor position on every click, all of which are visible
+                // elsewhere on the screen.
 
                 // What is on the brush belongs on the strip only while the brush is what a
                 // press puts down. On the other two views it is a fact about a screen nobody is
@@ -6925,8 +7171,9 @@ namespace CamelWorks.UI.Views
                     laying.Children.Add(new TextBlock
                     {
                         Text = _rank == MatrixBoard.NotSet
-                            ? "Clearing ranks"
-                            : "Laying " + MatrixBoard.RankNamed(_rank).ToLowerInvariant(),
+                            ? "A press clears the priority"
+                            : "A press marks the pair "
+                              + MatrixBoard.RankNamed(_rank).ToLowerInvariant() + " priority",
                         FontSize = StripSize,
                         FontWeight = FontWeights.SemiBold,
                         VerticalAlignment = VerticalAlignment.Center,
@@ -6967,6 +7214,8 @@ namespace CamelWorks.UI.Views
 
                 // The tally and whether it is saved are both state, and both belong with the
                 // rest of the state - on the left, where a sentence is read from.
+                Counting();
+
                 Say(Ui.Loose(_count.Wearing("Hint")));
                 Say(Saying());
 
@@ -6992,23 +7241,29 @@ namespace CamelWorks.UI.Views
                     RedrawPanes();
                 }));
 
-                var back = Ui.Quiet("Undo", Undo);
+                // Undo and redo are in the toolbar with the other verbs, not here. They act on
+                // the whole matrix rather than on what the strip is reporting, and a history
+                // control among the counts is what made this row read as a mixed bag.
+                Steps();
+            }
 
-                back.IsEnabled = _past.Count > 0;
-                back.ToolTip = _past.Count == 0
-                    ? "Nothing to undo"
-                    : "Take back " + _past.Peek().What;
+            /// <summary>What undo and redo would take back, on the toolbar buttons.</summary>
+            private void Steps()
+            {
+                if (_undo != null)
+                {
+                    _undo.IsEnabled = _past.Count > 0;
+                    _undo.ToolTip = _past.Count == 0
+                        ? "Nothing to undo"
+                        : "Take back " + _past.Peek().What;
+                }
 
-                Does(back);
+                if (_redo == null) return;
 
-                var on = Ui.Quiet("Redo", Redo);
-
-                on.IsEnabled = _future.Count > 0;
-                on.ToolTip = _future.Count == 0
+                _redo.IsEnabled = _future.Count > 0;
+                _redo.ToolTip = _future.Count == 0
                     ? "Nothing to redo"
                     : "Redo " + _future.Peek().What;
-
-                Does(on, 4);
             }
 
             /// <summary>Everything the keyboard does over the grid, in one place.</summary>
@@ -7117,22 +7372,7 @@ namespace CamelWorks.UI.Views
                 else if (_atRow >= 0 && _atRow < _board.Rows.Count
                          && _atColumn >= 0 && _atColumn < _board.Columns.Count)
                     CellPage(_board.Rows[_atRow], _board.Columns[_atColumn]);
-                else
-                {
-                    _inspector.Children.Add(Ui.Eyebrow("Nothing selected"));
-
-                    var idle = Ui.Small("Press a row, a column, a symbol or a cell, and what it "
-                                        + "is and what can be done to it are here.");
-
-                    idle.TextWrapping = TextWrapping.Wrap;
-                    idle.Margin = new Thickness(0, 4, 0, 0);
-
-                    _inspector.Children.Add(idle);
-
-                    Verbs("Matrix actions",
-                        Doable(Glyphs.Next, "Go to the first undecided pair",
-                               Undecided));
-                }
+                else Summary();
 
                 // The verb strip is always present rather than collapsing when empty. The panel
                 // docks the palette below it, so a strip appearing and disappearing between a
@@ -7141,6 +7381,62 @@ namespace CamelWorks.UI.Views
                 _actsPane.Visibility = _acts.Children.Count == 0
                     ? Visibility.Collapsed
                     : Visibility.Visible;
+            }
+
+            /// <summary>
+            /// What the whole matrix is, when nothing in particular is selected.
+            ///
+            /// The panel's resting state is the one a reader sees most, so it carries the figures
+            /// somebody opens the screen to check rather than an instruction on how to fill the
+            /// panel. It said "Nothing selected. Press a row, a column, a symbol or a cell", which
+            /// is a caption on an empty box.
+            /// </summary>
+            private void Summary()
+            {
+                _inspector.Children.Add(Cap("This matrix"));
+
+                var facts = Ui.Stack();
+
+                facts.Margin = new Thickness(0, 6, 0, 0);
+
+                facts.Children.Add(Ui.Split("Rows",
+                    _board.Rows.Count.ToString(CultureInfo.InvariantCulture)));
+
+                facts.Children.Add(Ui.Split("Columns",
+                    _board.Columns.Count.ToString(CultureInfo.InvariantCulture)));
+
+                facts.Children.Add(Ui.Split("Symbols in the legend",
+                    _legend.Symbols.Count.ToString(CultureInfo.InvariantCulture)));
+
+                var strangers = _legend.Unexplained(_board);
+
+                if (strangers.Count > 0)
+                    facts.Children.Add(Ui.Split("Symbols with no meaning",
+                        strangers.Count.ToString(CultureInfo.InvariantCulture), Tone.Bad));
+
+                var plan = MatrixPlanner.Plan(_board, _legend, _pattern);
+
+                facts.Children.Add(Ui.Split("Tests it would build",
+                    plan.Tests.Count.ToString(CultureInfo.InvariantCulture)));
+
+                var lost = _board.Rows.Count(one => one.IsUnbacked)
+                           + _board.Columns.Count(one => one.IsUnbacked);
+
+                if (lost > 0)
+                    facts.Children.Add(Ui.Split("Lines pointing at nothing",
+                        lost.ToString(CultureInfo.InvariantCulture), Tone.Warn));
+
+                _inspector.Children.Add(facts);
+
+                var says = Ui.Small("Press a row, a column, a symbol or a cell to work on it.");
+
+                says.TextWrapping = TextWrapping.Wrap;
+                says.Margin = new Thickness(0, 8, 0, 0);
+
+                _inspector.Children.Add(says);
+
+                Verbs("Matrix actions",
+                    Doable(Glyphs.Next, "Go to the first undecided pair", Undecided));
             }
 
             /// <summary>A titled box in the inspector, label over control, tight.</summary>
@@ -7414,7 +7710,7 @@ namespace CamelWorks.UI.Views
 
                 var what = rows ? "row" : "column";
 
-                _inspector.Children.Add(Ui.Eyebrow(
+                _inspector.Children.Add(Cap(
                     (rows ? "Row " + Number(at) : "Column " + Letter(at))));
 
                 var gap = new Border { Height = 8 };
@@ -7714,8 +8010,10 @@ namespace CamelWorks.UI.Views
                     groups.Children.Add(Gathered(
                         ruled ? MatrixBoard.NotRequired : pair.Key, null, false,
                         ruled ? "Not required" : Quoted(pair.Key),
+                        // The consequence is stated once, above the grid. Here it is only which
+                        // pairs carry a symbol the legend does not explain.
                         ruled ? "agreed, and no test is made"
-                              : "not in the legend, so these make no test",
+                              : "not in the legend",
                         pair.Value));
                 }
 
@@ -7850,7 +8148,7 @@ namespace CamelWorks.UI.Views
             /// <param name="symbol">The symbol.</param>
             private void SymbolPage(MatrixSymbol symbol)
             {
-                _inspector.Children.Add(Ui.Eyebrow("Symbol " + symbol.Symbol));
+                _inspector.Children.Add(Cap("Symbol " + symbol.Symbol));
 
                 // Symbol editing happens in one place: the form opened by the pencil on the
                 // palette. This page previously offered five editable fields, making a second
@@ -8016,7 +8314,7 @@ namespace CamelWorks.UI.Views
             {
                 var here = _board.At(row, column);
 
-                _inspector.Children.Add(Ui.Eyebrow("Cell " + Where(row, column)));
+                _inspector.Children.Add(Cap("Cell " + Where(row, column)));
 
                 var named = Ui.Small(row.Titled + "  ×  " + column.Titled);
 
@@ -10209,7 +10507,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                Said(Ui.Eyebrow("What is wrong with this matrix"), hold: true);
+                Said(Cap("What is wrong with this matrix"), hold: true);
 
                 foreach (var fault in faults.Take(20))
                     Said(fault.Stops
@@ -10228,7 +10526,7 @@ namespace CamelWorks.UI.Views
 
                 if (plan.Skipped.Count == 0) return;
 
-                Said(Ui.Eyebrow("Cells that build no test"), hold: true);
+                Said(Cap("Cells that build no test"), hold: true);
 
                 foreach (var skip in plan.Skipped.Take(20))
                     Said(Ui.Small(skip.Cell + " — " + skip.Why), hold: true);
@@ -10252,7 +10550,7 @@ namespace CamelWorks.UI.Views
 
                 Quiet();
 
-                Said(Ui.Eyebrow("What building this would do"), hold: true);
+                Said(Cap("What building this would do"), hold: true);
 
                 Said(Ui.Line(
                     Ui.Count(MatrixDiff.Count(lines, MatrixChange.Added), "test") + " to make, "
@@ -11049,6 +11347,35 @@ namespace CamelWorks.UI.Views
 
                 return cell;
             }
+
+            /// <summary>How many cells of the worked half carry one symbol.</summary>
+            /// <param name="symbol">The symbol.</param>
+            private int Using(string symbol)
+            {
+                var held = 0;
+
+                foreach (var row in _board.Rows)
+                foreach (var column in _board.Columns)
+                {
+                    if (!_board.IsKeptHalf(row, column)) continue;
+
+                    if (string.Equals(_board.At(row, column), symbol, StringComparison.Ordinal))
+                        held++;
+                }
+
+                return held;
+            }
+
+            /// <summary>
+            /// A section label, in sentence case.
+            ///
+            /// <see cref="Ui.Eyebrow"/> upper-cases whatever it is handed, so every panel title on
+            /// this screen came out as an ALL-CAPS heading. This wears the same style without the
+            /// upper-casing. It is local because Ui.cs is shared and the fix belongs there.
+            /// </summary>
+            /// <param name="text">The label, written as it is to be read.</param>
+            private static TextBlock Cap(string text) =>
+                new TextBlock { Text = text ?? string.Empty }.Wearing("Caps");
 
             private static string Millimetres(double metres) =>
                 (metres * 1000).ToString("0.###", CultureInfo.InvariantCulture) + " mm";

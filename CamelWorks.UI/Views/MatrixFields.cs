@@ -27,9 +27,12 @@ namespace CamelWorks.UI.Views
     /// </summary>
     public static class MatrixFields
     {
-        private const string ByHand = "By hand";
-        private const string Counted = "Counted";
-        private const string Everywhere = "Same on all";
+        // The three ways a field is filled, named by what each one does to a line. "By hand",
+        // "Counted" and "Same on all" were the window's three central terms and none of them said
+        // what it acted on.
+        private const string ByHand = "Typed on each line";
+        private const string Counted = "Counted down the axis";
+        private const string Everywhere = "Same on every line";
 
         /// <summary>
         /// Show the fields and let them be changed.
@@ -112,21 +115,35 @@ namespace CamelWorks.UI.Views
             adding.HorizontalAlignment = HorizontalAlignment.Left;
             adding.Margin = new Thickness(0, 2, 0, 0);
 
-            var says = Ui.Small(
-                "A field is filled the same way on every row and column. Counted writes a series "
-                + "down the axis, so renumbering the whole matrix is one edit here rather than one "
-                + "per line. A line can be taken out of a field and held by hand from its header."
-                + "\n\nThe order is the order: it is what the panel lists and what the board lays "
-                + "out. The name, number, code and folder are drawn where Settings \u25b8 Grid, "
-                + "symbols and fields says; a field of your own says on its own card.");
+            // One sentence of orientation. The window opened on two reference paragraphs before
+            // any control, one of which sent the reader to a settings page mid-sentence; the rest
+            // of what they said is on the tooltip of the control it is about.
+            var says = Ui.Small("Every row and column carries these fields, in this order, and "
+                                + "each is filled the same way on all of them.");
 
             says.TextWrapping = TextWrapping.Wrap;
-            says.Margin = new Thickness(0, 0, 0, 10);
+
+            var help = Ui.Quiet("What these do", () => Ui.Told(
+                "A field is one value a row or a column carries: its name, its number, a code, "
+                + "or one of your own. The order here is the order the panel lists them in and "
+                + "the order the board lays its gutters out in.\n\n"
+                + "Counted writes a series down the axis, so renumbering the whole matrix is one "
+                + "edit here rather than one per line. A line can be taken out of a field and "
+                + "typed by hand from its own header.\n\n"
+                + "Where the name, number, code and folder are drawn is a board setting, under "
+                + "Settings, Grid, symbols and fields. A field of your own says on its own card."));
+
+            help.HorizontalAlignment = HorizontalAlignment.Left;
+            help.Margin = new Thickness(0, 2, 0, 10);
+
+            var head = Ui.Stack(Ui.Heading("Fields"), says, help);
+
+            head.Margin = new Thickness(0, 0, 0, 2);
 
             var body = new DockPanel { LastChildFill = true, Margin = new Thickness(16, 14, 16, 0) };
 
-            DockPanel.SetDock(says, Dock.Top);
-            body.Children.Add(says);
+            DockPanel.SetDock(head, Dock.Top);
+            body.Children.Add(head);
 
             var under = Ui.Stack(adding, foot);
 
@@ -155,7 +172,11 @@ namespace CamelWorks.UI.Views
             var acts = new Border
             {
                 Margin = new Thickness(16, 10, 16, 14),
-                Child = Ui.Actions(Ui.Primary("Done", () => onDone?.Invoke())),
+                // Done closes the window; it commits nothing, because every card writes as it is
+                // edited. A filled primary on a closing action is the loudest control on the
+                // screen doing the least.
+                Child = Ui.Actions(null, Ui.Button("Done", () => onDone?.Invoke())),
+                HorizontalAlignment = HorizontalAlignment.Right,
             };
 
             DockPanel.SetDock(acts, Dock.Bottom);
@@ -176,7 +197,8 @@ namespace CamelWorks.UI.Views
                 + Ui.Count(board.Columns.Count, "column") + " take these fields"
                 + (pinned == 0
                     ? "."
-                    : "  ·  " + Ui.Count(pinned, "line") + " hold a field by hand."));
+                    : "  ·  " + Ui.Count(pinned, "of them")
+                      + " keep a value typed by hand, outside these fields."));
 
             said.TextWrapping = TextWrapping.Wrap;
             said.Margin = new Thickness(0, 8, 0, 0);
@@ -235,12 +257,11 @@ namespace CamelWorks.UI.Views
         private static UIElement Head(MatrixBoard board, MatrixField field, int at, int of,
                                       Action onChange, bool inline)
         {
-            // A grid rather than a dock. Docked, the title, the chooser and the token each took
-            // the width they wanted and the chooser was the one that lost: on a field set to
-            // "Same on all" the selected segment was clipped away entirely, so the row did not
-            // say which of the three it was on. The star column takes the squeeze, and the token
-            // — the one part that can be read from the tooltip instead — trims before the
-            // control does.
+            // Two rows, not one. The title, the fill chooser and the token shared a line, and at
+            // the window's width the token was trimmed to "{row…" on six of seven cards while the
+            // chooser lost its selected segment. The chooser is now a row of its own, which is
+            // also what lets the three ways of filling a field carry names long enough to say
+            // what they do.
             var head = new Grid { Margin = new Thickness(0, 0, 0, inline ? 0 : 8) };
 
             head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
@@ -264,16 +285,8 @@ namespace CamelWorks.UI.Views
             Grid.SetColumn(title, 0);
             head.Children.Add(title);
 
-            var pick = Picker(field, onChange);
-
-            pick.Margin = new Thickness(10, 0, 0, 0);
-            pick.VerticalAlignment = VerticalAlignment.Center;
-
-            Grid.SetColumn(pick, 1);
-            head.Children.Add(pick);
-
             // One token rather than the pair. Both forms doubled the width for a value that is
-            // mechanical once the first is known, and the width was what squeezed the control.
+            // mechanical once the first is known.
             var token = new TextBlock
             {
                 Text = Tokened(field),
@@ -287,7 +300,7 @@ namespace CamelWorks.UI.Views
 
             token.Tint(TextBlock.ForegroundProperty, "Muted");
 
-            Grid.SetColumn(token, 2);
+            Grid.SetColumn(token, 1);
             head.Children.Add(token);
 
             // The order is the order. It is what the panel lists the boxes in and what the board
@@ -341,7 +354,14 @@ namespace CamelWorks.UI.Views
             Grid.SetColumn(moves, 3);
             head.Children.Add(moves);
 
-            return head;
+            var pick = Picker(field, onChange);
+
+            var filled = Ui.Field("Filled", pick, null);
+
+            filled.HorizontalAlignment = HorizontalAlignment.Left;
+            filled.Margin = new Thickness(0, 0, 0, inline ? 0 : 4);
+
+            return Ui.Stack(head, filled);
         }
 
         /// <summary>

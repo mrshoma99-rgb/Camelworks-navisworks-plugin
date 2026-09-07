@@ -172,7 +172,8 @@ namespace CamelWorks.UI.Views
 
             var body = Ui.Stack();
 
-            body.Children.Add(Ui.Eyebrow("The rules, in the order they are read"));
+            body.Children.Add(new TextBlock { Text = "The rules, in the order they are read" }
+                .Wearing("Caps"));
 
             var order = Ui.Small("The last one that covers a pair is the one that wins, so put "
                                  + "the exceptions below the general rule.");
@@ -188,7 +189,9 @@ namespace CamelWorks.UI.Views
             var foot = new Border
             {
                 Margin = new Thickness(0, 10, 0, 0),
-                Child = Ui.Actions(Ui.Primary("Done", () => window.Close())),
+                // Done closes the window; the rules are written as they are added and removed.
+                Child = Ui.Actions(null, Ui.Button("Done", () => window.Close())),
+                HorizontalAlignment = HorizontalAlignment.Right,
             };
 
             DockPanel.SetDock(foot, Dock.Bottom);
@@ -200,7 +203,7 @@ namespace CamelWorks.UI.Views
                 Padding = new Thickness(10, 9, 10, 10),
                 CornerRadius = new CornerRadius(8),
                 BorderThickness = new Thickness(1),
-                Child = Ui.Stack(Ui.Eyebrow("Add a rule"), adding),
+                Child = Ui.Stack(new TextBlock { Text = "Add a rule" }.Wearing("Caps"), adding),
             };
 
             writing.Tint(Border.BackgroundProperty, "Card2");

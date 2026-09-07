@@ -211,16 +211,16 @@ namespace CamelWorks.UI.Views
             var side = new DockPanel { LastChildFill = true, Width = 400,
                                        Margin = new Thickness(4, 0, 0, 0) };
 
-            var says = Ui.Small("A pattern is run over every test name and the result is shown "
-                                + "against each test as a proposal. Change any of them: what you "
-                                + "set is what reads the test. Reading replaces the matrix on "
-                                + "screen; the one in the project file is untouched until it is "
-                                + "saved.");
+            var says = Ui.Small("Each pattern is run over every test name; what it reads is shown "
+                                + "against the test, and can be changed there.");
 
             says.TextWrapping = TextWrapping.Wrap;
             says.Margin = new Thickness(0, 2, 0, 8);
 
-            var top = Ui.Stack(Ui.Eyebrow("Test name patterns"), says);
+            // Sentence case, because Ui.Eyebrow upper-cases what it is handed and that fix
+            // belongs in the shared file.
+            var top = Ui.Stack(
+                new TextBlock { Text = "Test name patterns" }.Wearing("Caps"), says);
 
             DockPanel.SetDock(top, Dock.Top);
             side.Children.Add(top);
@@ -320,10 +320,32 @@ namespace CamelWorks.UI.Views
 
             var root = new DockPanel { Margin = new Thickness(16, 14, 16, 14) };
 
+            // The screen had no title, so nothing on it said what it was. One line of orientation
+            // under it; what a pattern is belongs on the pattern column, which is where it is
+            // written.
+            var titled = Ui.Stack(
+                Ui.Heading("Read tests into a matrix"),
+                Ui.Sub("Every clash test in the document, and the row and column each one is "
+                       + "between."));
+
+            titled.Margin = new Thickness(0, 0, 0, 10);
+
+            DockPanel.SetDock(titled, Dock.Top);
+            root.Children.Add(titled);
+
             // The two read options belong beside the button that acts on them. They were at the
             // foot of the token palette, which is about writing a pattern and not about what a
             // read does with the tests the patterns do not cover.
-            var choices = Ui.Across(take, names);
+            // What a read does to work already on screen, beside the button that does it. It was
+            // the last sentence of a four-line paragraph at the top of the other column.
+            var warned = Ui.Small("Reading replaces the matrix on screen. The matrix in the "
+                                  + "project file changes only when this one is saved.");
+
+            warned.TextWrapping = TextWrapping.Wrap;
+            warned.MaxWidth = 420;
+            warned.Margin = new Thickness(0, 4, 0, 0);
+
+            var choices = Ui.Stack(Ui.Across(take, names), warned);
 
             choices.VerticalAlignment = VerticalAlignment.Center;
 
@@ -920,32 +942,95 @@ namespace CamelWorks.UI.Views
         /// <param name="box">The box the chips type into.</param>
         private static UIElement Palette(TextBox box)
         {
-            var chips = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
-
-            foreach (var token in MatrixNaming.Tokens)
-            {
-                var one = token;
-
-                chips.Children.Add(Chip(one, () =>
-                {
-                    var at = Math.Max(0, Math.Min(box.Text.Length, box.SelectionStart));
-
-                    box.Text = box.Text.Substring(0, at) + one.Token + box.Text.Substring(at);
-                    box.SelectionStart = at + one.Token.Length;
-
-                    box.Focus();
-                }));
-            }
-
-            var held = Ui.Stack(Ui.Eyebrow("Insert a token"), chips);
+            // Sentence case, because Ui.Eyebrow upper-cases what it is handed.
+            var held = Ui.Stack(new TextBlock { Text = "Insert a token" }.Wearing("Caps"));
 
             held.Margin = new Thickness(0, 8, 0, 0);
+
+            // Three groups, and each chip named by what it reads rather than by which side it
+            // reads it from. Fourteen chips in one block put "Row number" beside "Row, numbered"
+            // with nothing to tell them apart.
+            foreach (var group in new[] { "Row", "Column", "The pair" })
+            {
+                var chips = new WrapPanel { Margin = new Thickness(0, 2, 0, 6) };
+
+                foreach (var token in MatrixNaming.Tokens)
+                {
+                    var one = token;
+
+                    if (Grouped(one) != group) continue;
+
+                    chips.Children.Add(Chip(one, Named(one), () =>
+                    {
+                        var at = Math.Max(0, Math.Min(box.Text.Length, box.SelectionStart));
+
+                        box.Text = box.Text.Substring(0, at) + one.Token + box.Text.Substring(at);
+                        box.SelectionStart = at + one.Token.Length;
+
+                        box.Focus();
+                    }));
+                }
+
+                if (chips.Children.Count == 0) continue;
+
+                var said = Ui.Small(group);
+
+                said.Margin = new Thickness(0, 6, 0, 0);
+
+                held.Children.Add(said);
+                held.Children.Add(chips);
+            }
 
             return held;
         }
 
+        /// <summary>Which of the three groups a token belongs in.</summary>
+        /// <param name="token">The token.</param>
+        private static string Grouped(NameToken token) =>
+            token.Token.StartsWith("{row", StringComparison.Ordinal) ? "Row"
+            : token.Token.StartsWith("{column", StringComparison.Ordinal) ? "Column"
+            : "The pair";
+
+        /// <summary>
+        /// What a chip says inside its group.
+        ///
+        /// The token titles carry the side in the words - "Row number" and "Row, numbered" - which
+        /// under a heading that already says Row leaves two chips differing by a comma. Named from
+        /// the token here, because the titles are Core's and the naming pattern reads them.
+        /// </summary>
+        /// <param name="token">The token.</param>
+        private static string Named(NameToken token)
+        {
+            switch (token.Token)
+            {
+                case "{row}":
+                case "{column}": return "Name";
+                case "{rowNumber}":
+                case "{columnNumber}": return "Number";
+                case "{rowTitle}":
+                case "{columnTitle}": return "Number and name";
+                case "{rowCode}":
+                case "{columnCode}": return "Code";
+                case "{rowFolder}":
+                case "{columnFolder}": return "Folder";
+                case "{n}": return "Position in the build";
+                default: break;
+            }
+
+            // A field of the project's own is titled "Row phase" or "Column package" already.
+            var said = token.Title ?? string.Empty;
+
+            if (said.StartsWith("Row ", StringComparison.Ordinal)) return said.Substring(4);
+            if (said.StartsWith("Column ", StringComparison.Ordinal)) return said.Substring(7);
+
+            return said;
+        }
+
         /// <summary>Draws one token as a clickable chip.</summary>
-        private static UIElement Chip(NameToken token, Action onPress)
+        /// <param name="token">The token it inserts.</param>
+        /// <param name="says">What the chip reads, inside its group.</param>
+        /// <param name="onPress">Inserts it.</param>
+        private static UIElement Chip(NameToken token, string says, Action onPress)
         {
             var chip = new Border
             {
@@ -954,8 +1039,8 @@ namespace CamelWorks.UI.Views
                 CornerRadius = new CornerRadius(10),
                 BorderThickness = new Thickness(1),
                 Cursor = Cursors.Hand,
-                ToolTip = token.Why,
-                Child = new TextBlock { Text = token.Title, FontSize = 11 }.Wearing("Body"),
+                ToolTip = token.Why + "  " + token.Token,
+                Child = new TextBlock { Text = says, FontSize = 11 }.Wearing("Body"),
             };
 
             chip.Tint(Border.BackgroundProperty, "Card");
