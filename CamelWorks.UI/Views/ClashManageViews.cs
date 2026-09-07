@@ -2417,7 +2417,7 @@ namespace CamelWorks.UI.Views
                     BorderThickness = new Thickness(0, 0, 0, 1),
                     Cursor = System.Windows.Input.Cursors.Hand,
                     ToolTip = entry.Run.Name + " — " + entry.Run.Between + ", "
-                              + entry.Run.Kind.ToLowerInvariant() + " at " + Tolerance(entry)
+                              + Kinded(entry) + " at " + Tolerance(entry)
                               + (when.Length == 0 ? string.Empty : ", run " + when),
                     Child = tone,
                 };
@@ -3366,8 +3366,11 @@ namespace CamelWorks.UI.Views
                     // line of chrome the eye read once and then had to read past. It is on the
                     // title's tooltip, and the place beside the title now carries the one number
                     // that does change.
-                    ToolTip = entry.Run.Name + " — " + entry.Run.Between + ", hard clash at "
-                              + Tolerance(entry)
+                    // The check's own word for what this test is, not "hard clash". The board draws
+                    // clearance breaches and fall hazards as well, and every one of them said it
+                    // was a hard clash.
+                    ToolTip = entry.Run.Name + " — " + entry.Run.Between + ", "
+                              + Kinded(entry) + " at " + Tolerance(entry)
                               + (When(entry).Length == 0 ? string.Empty : ", run " + When(entry)),
                 };
 
@@ -3401,6 +3404,21 @@ namespace CamelWorks.UI.Views
 
                     DockPanel.SetDock(said, Dock.Right);
                     words.Children.Add(said.Wearing("Hint"));
+                }
+
+                // The kind's symbol before the name, so the board says what sort of thing it is
+                // showing without being read. The rail below it lists one kind, and the words for
+                // the kind are on the title's tooltip; this is the mark the eye finds first.
+                if (Check != null)
+                {
+                    var mark = Ui.Glyph(Ui.CheckSymbol(Check.Symbol), 15, "Muted");
+
+                    mark.VerticalAlignment = VerticalAlignment.Bottom;
+                    mark.Margin = new Thickness(0, 0, 8, 3);
+                    mark.ToolTip = Check.Name;
+
+                    DockPanel.SetDock(mark, Dock.Left);
+                    words.Children.Add(mark);
                 }
 
                 // The name last, so it is the child that fills what the rest have left and the
@@ -7601,6 +7619,19 @@ namespace CamelWorks.UI.Views
             private static string Tolerance(TestEntry entry) =>
                 entry.Run.Threshold ?? "the tolerance it was run at";
 
+            /// <summary>What kind of test this is, lower case, for the middle of a sentence.</summary>
+            /// <param name="entry">The test.</param>
+            private static string Kinded(TestEntry entry)
+            {
+                var kind = entry.Run.Kind;
+
+                if (string.IsNullOrWhiteSpace(kind)) return "run";
+
+                // Only the first letter. A kind is a short phrase the check words itself, and
+                // lower-casing the whole of it would turn a proper noun in one into a common one.
+                return char.ToLower(kind[0], CultureInfo.CurrentCulture) + kind.Substring(1);
+            }
+
             /// <summary>When the host last ran a test, or empty when it has never said.</summary>
             /// <param name="entry">The test.</param>
             private static string When(TestEntry entry)
@@ -8090,6 +8121,13 @@ namespace CamelWorks.UI.Views
                 if (!Plan.IsEmpty) held.Add(ByLevel);
 
                 held.AddRange(Tokened().Select(one => ByToken + one));
+
+                // The check's own columns, where the check said how to band one. A clearance
+                // board can band by clear height and a fall board by gap width because both
+                // declare a bucket; the menu offered neither, so the only columns that could be
+                // banded were the ones somebody added by hand.
+                held.AddRange(Declared().Where(c => c.Bucket != null).Select(c => ByColumn + c.Id));
+
                 held.AddRange(Added.Select(c => ByColumn + c.Id));
 
                 return held;
