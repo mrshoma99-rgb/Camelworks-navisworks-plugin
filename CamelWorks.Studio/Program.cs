@@ -273,11 +273,38 @@ namespace CamelWorks.Studio
         /// <param name="path">Where to write it.</param>
         private static void Snap(Border host, int width, string path)
         {
-            host.Measure(new Size(width, double.PositiveInfinity));
+            // Off the window before anything is measured.
+            //
+            // While the page is the window's content the window owns its arrangement, and a
+            // window on a build agent is clamped to the agent's display: 1030 by 774 where the
+            // sheet asked for 1180 by 980. The measure and arrange below set the size the picture
+            // is taken at, but UpdateLayout runs whatever window pass is still outstanding, and
+            // that pass arranges the page back into the client area — which leaves the layout
+            // clip an undersized slot comes with sitting on the page itself, so the bitmap is the
+            // size asked for with the page cut off inside it. That is what the first page of every
+            // shoot has been getting: manage cut at x=1030 and y=774, header columns and footer
+            // buttons sliced, transparent pixels beyond. Detached, the page is its own layout root
+            // and these are the only measure and arrange it gets.
+            if (host.Parent is Window frame) frame.Content = null;
 
-            var height = (int)Math.Ceiling(Math.Max(host.ActualHeight, Math.Max(host.DesiredSize.Height, 1)));
-            host.Arrange(new Rect(0, 0, width, height));
-            host.UpdateLayout();
+            // Measured, laid out, and measured again, because laying it out realises rows a
+            // virtualising list did not have before and those rows change how tall the page is.
+            // The second pass settles it; the third is the guard.
+            var height = 1;
+
+            for (var pass = 0; pass < 3; pass++)
+            {
+                host.Measure(new Size(width, double.PositiveInfinity));
+
+                var wanted = (int)Math.Ceiling(Math.Max(host.DesiredSize.Height, 1));
+
+                host.Arrange(new Rect(0, 0, width, wanted));
+                host.UpdateLayout();
+
+                if (wanted == height) break;
+
+                height = wanted;
+            }
 
             var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
             bitmap.Render(host);
