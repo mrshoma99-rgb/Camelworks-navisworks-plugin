@@ -195,6 +195,15 @@ namespace CamelWorks.UI.Views
                 RedrawPanel();
                 RedrawFoot();
 
+                // A first run is one card, not two panes.
+                //
+                // With no tests the screen said so four times: the empty card, a settings pane
+                // holding "A test's settings appear here", a footer saying there was nothing to
+                // run, and a search box over an empty list. It also drew "New test" twice, in
+                // two weights, four inches apart.
+                if (_all.Count == 0)
+                    return Bench.Surface(null, _foot, Ui.Stack(Empty()));
+
                 var left = Bench.Pane("Tests", null, Listing(), null, scrolls: false);
                 var right = Bench.Pane("Settings", null, _panel, null);
 
@@ -444,10 +453,18 @@ namespace CamelWorks.UI.Views
                     return Ui.Empty("No checks are registered in this session.",
                                     "This is a fault in this build rather than anything you did.");
 
-                return Ui.Empty("No tests yet.",
-                                "A test is a named set of settings, saved in this project and run "
-                                + "as often as you like.", "New test",
-                                () => Parts.PopMenu(_make, Kinds()));
+                // The matrix first, because it is what a project is set up with: a test for
+                // every pair of disciplines ticked, made in one press. Making them one at a time
+                // was the only route with a button on it, so every new user took the slow road.
+                return Ui.Empty(
+                    "No tests yet.",
+                    "The matrix is a grid of the project's disciplines: tick the pairs that have "
+                    + "to be checked and it makes a test for each. One at a time is the other "
+                    + "way, and it is the one to use for a single check of a single thing.",
+                    "Build them from the matrix",
+                    () => Ui.Told(Shell.AppWindow.Show("clash", "matrix")),
+                    "Make one test",
+                    () => Parts.PopMenu(_make, Kinds()));
             }
 
             // ---- Making one ----------------------------------------------------------------

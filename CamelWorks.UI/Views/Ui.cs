@@ -3037,7 +3037,24 @@ namespace CamelWorks.UI.Views
         /// <param name="why">Why there is nothing, or what to try.</param>
         /// <param name="caption">What the way out says, or null for none.</param>
         /// <param name="onClick">The way out.</param>
-        public static UIElement Empty(string what, string why, string? caption, Action? onClick)
+        public static UIElement Empty(string what, string why, string? caption, Action? onClick) =>
+            Empty(what, why, caption, onClick, null, null);
+
+        /// <summary>
+        /// The same, where the screen has two honest ways out rather than one.
+        ///
+        /// A first run of the Create tab is the case: a project's tests are made either one at a
+        /// time or twenty at a time from the matrix, and offering only the first sends every new
+        /// user down the slow road because it is the one with a button.
+        /// </summary>
+        /// <param name="what">What was looked for.</param>
+        /// <param name="why">Why there is nothing, or what to try.</param>
+        /// <param name="caption">What the way out says, or null for none.</param>
+        /// <param name="onClick">The way out.</param>
+        /// <param name="second">What the other way out says, or null for none.</param>
+        /// <param name="onSecond">The other way out.</param>
+        public static UIElement Empty(string what, string why, string? caption, Action? onClick,
+                                      string? second, Action? onSecond)
         {
             var text = Stack(
                 new TextBlock
@@ -3095,12 +3112,27 @@ namespace CamelWorks.UI.Views
             // The primary, not a secondary. This is the only thing to do on a screen with nothing
             // on it, and it was drawn quieter than the disabled press in the footer below it.
             if (caption != null && onClick != null)
-                text.Children.Add(new StackPanel
+            {
+                var ways = new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
                     Margin = new Thickness(0, 10, 0, 0),
-                    Children = { Primary(caption, onClick) },
-                });
+                };
+
+                ways.Children.Add(Primary(caption, onClick));
+
+                if (second != null && onSecond != null)
+                {
+                    var other = Quiet(second, onSecond);
+
+                    other.Margin = new Thickness(Gap, 0, 0, 0);
+                    other.VerticalAlignment = VerticalAlignment.Center;
+
+                    ways.Children.Add(other);
+                }
+
+                text.Children.Add(ways);
+            }
 
             frame.Tint(Border.BorderBrushProperty, "Bd");
             frame.Tint(Border.BackgroundProperty, "Card2");
