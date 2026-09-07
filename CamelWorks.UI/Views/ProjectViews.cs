@@ -949,9 +949,8 @@ namespace CamelWorks.UI.Views
 
             if (carried.Count > 0)
                 review.Watch(Check, Ui.Count(carried.Count, "model") + " carries a transform",
-                    "That is legitimate - it is how a survey-grid model is brought onto a project "
-                    + "grid - and it is worth knowing which ones, because a transform is also the "
-                    + "thing most easily overlooked.",
+                    "A transform is how a survey-grid model is brought onto a project grid. "
+                    + "These are the models that carry one.",
                     null,
                     carried.Select(m => m.DisplayName).ToList(), "model-transformed");
         }

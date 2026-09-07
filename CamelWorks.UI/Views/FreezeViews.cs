@@ -245,8 +245,8 @@ namespace CamelWorks.UI.Views
 
             if (missing > 0)
                 results.Children.Add(Ui.Note(Ui.Count(missing, "element")
-                    + " could not be found in the model and are not in the record. They cannot be "
-                    + "reported on later either, which is worth knowing now."));
+                    + " could not be found in the model and are not in the record, so no later "
+                    + "run reports on them."));
 
             session.Record(ActivityKind.Regroup, record.Describe());
 

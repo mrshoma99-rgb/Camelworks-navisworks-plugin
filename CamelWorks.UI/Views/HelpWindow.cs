@@ -224,7 +224,7 @@ namespace CamelWorks.UI.Views
                         + "lines of this project's activity log.", 0.85),
                 Ui.Line("What does not: any part of your model, any property value, any element, and "
                         + "the contents of no file. Model and project file paths are in it, because "
-                        + "half the faults worth reporting are about where a file is.", 0.85),
+                        + "half of all reported faults are about where a file is.", 0.85),
                 Ui.Note("It writes a file and sends nothing. Nothing in CamelWorks contacts a server, "
                         + "and a support bundle that uploaded itself would be the one place it did."),
                 Ui.PathField("Write to", path, PathKind.Save),

@@ -8,6 +8,10 @@ things that are mechanically detectable.
    does or what happened. They do not refer to an unnamed person, recount what the product
    used to do, or appeal to how things are generally done.
 
+   Nor do they judge on the reader's behalf ("categories not worth reporting") or name the
+   control instead of the thing ("find the walkable surfaces in it"). Both were reported from
+   a licensed seat, one screen at a time, four times. A label says what the field holds.
+
 2. Comments must not open with a bolded aphorism. `<b>...</b>` at the head of a comment is a
    rhetorical setup; a comment states the constraint, the reason for a non-obvious choice, or
    the failure mode being guarded against.
@@ -40,6 +44,16 @@ IN_STRINGS = [
     (re.compile(r'\bthe way (every|any)\b', re.I), "appeals to universal practice"),
     (re.compile(r'\bis not\b[^.]{0,30}\bit is\b', re.I), "rhetorical contrast"),
     (re.compile(r'\bthat is a real answer\b', re.I), "rhetorical"),
+
+    # Judging for the reader. A field says what it holds; whether a value is worth anything is
+    # the coordinator's call, not a label's.
+    (re.compile(r'\b(not )?worth (reporting|having|looking|knowing|the)\b', re.I),
+     "judges for the reader - say what the field holds"),
+
+    # Naming the control rather than the thing. "Find the walkable surfaces in it" describes
+    # what pressing does; the label has to say what the field is.
+    (re.compile(r'^(find|look for|search for) (the|a|an) .{3,}\b(in|on) (it|them|this)\b', re.I),
+     "describes the control rather than what the field holds"),
 ]
 
 # A skin key, glyph path, format string or identifier is not copy.
