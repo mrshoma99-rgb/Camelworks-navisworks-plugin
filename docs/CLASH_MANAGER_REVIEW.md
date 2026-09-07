@@ -1043,11 +1043,26 @@ The whole of the "everything looks the same" complaint is here.
 24. One page header; one command bar; one list footer and one selection noun;
     one empty-state card; one search field; a pane content-column token.
 
+**Done.** One selection noun — every tally that counts selected rows says
+*selected*, and `Ui.Worded` drops the count entirely when nothing is selected.
+One empty-state card — `Ui.Empty` is centred in its pane and its way out is the
+primary. One search field — a `Find` style with the magnifier inside the box,
+adopted at all eleven search call sites. One footer anatomy — Report was the
+last tab building its own; it now uses `Ui.Foot` like the rest. A control-width
+scale — `Ui.Wide`'s six content classes replace thirteen ad-hoc values across
+208 controls.
+
+**Not done.** One command bar: the tab strip, the matrix toolbar and the board's
+rail tools are still three grammars.
+
 ## Phase 6 — Reconcile with the web product
 
 25. Move the accent to the BIMCamel brand blue, reverse the hover direction,
     split the accent wash from the info tint, and make the primary gradient the
     brand's 135° blue-to-indigo.
+
+**Done**, all four. The app-family hue on the tab strip is unchanged: 1.3 states
+the argument against it but this phase does not prescribe a change.
 
 ## Phase 7 — Clear the dead system, and the faults of fact
 
@@ -1056,6 +1071,16 @@ The whole of the "everything looks the same" complaint is here.
 27. Fix every item in Part 3, and correct `docs/PRIMITIVES.md`.
 28. Repair the two harness fidelity defects so the renders cannot drift from the
     product again.
+
+**Done.** `Title` is wired up as the screen-title style, which is what phase 3
+asked for; `IconBtn`, `OptionCard` and `TabBtn` are deleted, as are `Veil`,
+`ConsoleBg` and `ConsoleTx`. The three badges and `AccentHover` were given
+callers earlier in this work. `docs/PRIMITIVES.md` records the real call counts.
+Faults 1 to 8 and 10 to 12 are fixed.
+
+**Not done.** The primitives with no callers: most candidates are extension
+methods, and a text search cannot tell an uncalled one from one called on its
+receiver. Fault 9, the Overlap column, is held for a licensed read.
 
 ## Then, screen by screen
 

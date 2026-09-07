@@ -2794,15 +2794,13 @@ namespace CamelWorks.UI.Views
 
                 // The corner is about 190 x 230px and previously held two lines of text. A matrix
                 // of forty rows needs a way to reach a row by name, which is placed here.
+                // The magnifier is inside the box, from the Find style, rather than a glyph
+                // beside it: this was the one search on the product drawn as an icon and a
+                // separate field.
                 var find = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 6) };
 
-                var glass = Ui.Glyph(Glyphs.Find, 12, "Muted", new Thickness(0, 0, 5, 0));
-
-                glass.VerticalAlignment = VerticalAlignment.Center;
-                DockPanel.SetDock(glass, Dock.Left);
-                find.Children.Add(glass);
-
-                _finder.Tag = "Find a row";
+                _finder.Wearing("Find");
+                _finder.Tag = "a row";
                 _finder.VerticalAlignment = VerticalAlignment.Center;
                 _finder.FontSize = 11;
 
