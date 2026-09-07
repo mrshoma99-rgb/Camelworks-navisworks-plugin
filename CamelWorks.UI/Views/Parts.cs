@@ -1480,6 +1480,9 @@ namespace CamelWorks.UI.Views
         }
 
 
+        /// <summary>How many entries a list may hold before it is given a box to narrow it.</summary>
+        private const int Searchable = 8;
+
         /// <summary>
         /// Ask which of a known set of things, with the option of a new one.
         ///
@@ -1533,23 +1536,63 @@ namespace CamelWorks.UI.Views
             body.Children.Add(label.Wearing("Body"));
 
             var list = new StackPanel();
+            var held = (known ?? Array.Empty<string>())
+                .Where(one => !string.IsNullOrWhiteSpace(one))
+                .ToList();
 
-            foreach (var one in known ?? Array.Empty<string>())
+            // A box that narrows the list, once there are more entries than can be read at a
+            // glance. A federation carries two hundred saved sets and finding one by scrolling a
+            // column of buttons is not finding it.
+            var find = held.Count > Searchable ? Ui.Text(string.Empty, "part of a name", null, 300)
+                                               : null;
+
+            void Fill()
             {
-                if (string.IsNullOrWhiteSpace(one)) continue;
+                list.Children.Clear();
 
-                var here = one;
-                var on = string.Equals(here, current, StringComparison.OrdinalIgnoreCase);
+                var query = (find?.Text ?? string.Empty).Trim();
 
-                var press = Ui.Quiet(on ? here + "  ·  where it is now" : here, () => Done(here));
+                var shown = held
+                    .Where(one => query.Length == 0
+                                  || one.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
+                    .ToList();
 
-                press.HorizontalAlignment = HorizontalAlignment.Stretch;
-                press.HorizontalContentAlignment = HorizontalAlignment.Left;
-                press.Margin = new Thickness(0, 0, 0, 4);
-                press.IsEnabled = !on;
+                if (shown.Count == 0)
+                {
+                    var none = Ui.Small("Nothing here contains \u201C" + query + "\u201D.");
 
-                list.Children.Add(press);
+                    none.Margin = new Thickness(2, 4, 2, 4);
+                    list.Children.Add(none);
+
+                    return;
+                }
+
+                foreach (var one in shown)
+                {
+                    var here = one;
+                    var on = string.Equals(here, current, StringComparison.OrdinalIgnoreCase);
+
+                    var press = Ui.Quiet(on ? here + "  \u00b7  where it is now" : here,
+                                         () => Done(here));
+
+                    press.HorizontalAlignment = HorizontalAlignment.Stretch;
+                    press.HorizontalContentAlignment = HorizontalAlignment.Left;
+                    press.Margin = new Thickness(0, 0, 0, 4);
+                    press.IsEnabled = !on;
+
+                    list.Children.Add(press);
+                }
             }
+
+            if (find != null)
+            {
+                find.Margin = new Thickness(0, 0, 0, 8);
+                find.TextChanged += (s, e) => Ui.Safely(Fill);
+
+                body.Children.Add(find);
+            }
+
+            Fill();
 
             // Scrolled rather than grown: a job with forty folders should not open a window taller
             // than the screen it is opening on.

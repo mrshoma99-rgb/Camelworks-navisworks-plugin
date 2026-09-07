@@ -122,10 +122,9 @@ namespace CamelWorks.UI.Views
                                       + "type the elevation the plan is cut at.")),
                     Bench.Group("What to read",
                         Sized(Ui.Field("Floor from",
-                                 Reading(Ui.Choice(Offered(sides, settings.Floors),
-                                                   settings.Floors,
-                                                   pick => Keep(one => one.Floors = pick),
-                                                   380)),
+                                 Source(Offered(sides, settings.Floors), settings.Floors,
+                                        "What the floor is read from",
+                                        pick => Keep(one => one.Floors = pick), 380),
                                  "A set of floors or slabs. Everything loaded reads the whole "
                                  + "federation at this elevation, and a wall or a duct through the "
                                  + "band projects its outline as though it were floor."),
@@ -136,15 +135,14 @@ namespace CamelWorks.UI.Views
                                       + "cannot run."),
                         Ui.Across(
                             Sized(Ui.Field("Handrails from",
-                                Reading(Ui.Choice(Offered(optional, settings.Handrails),
-                                                  settings.Handrails,
-                                                  pick => Keep(one => one.Handrails = pick),
-                                                  180))), 190),
+                                Source(Offered(optional, settings.Handrails), settings.Handrails,
+                                       "What the handrails are read from",
+                                       pick => Keep(one => one.Handrails = pick), 180)), 190),
                             Sized(Ui.Field("Obstructions from",
-                                Reading(Ui.Choice(Offered(optional, settings.Obstructions),
-                                                  settings.Obstructions,
-                                                  pick => Keep(one => one.Obstructions = pick),
-                                                  180))), 190)),
+                                Source(Offered(optional, settings.Obstructions),
+                                       settings.Obstructions,
+                                       "What the obstructions are read from",
+                                       pick => Keep(one => one.Obstructions = pick), 180)), 190)),
                         settings.HasHandrails
                             ? null
                             : Ui.Note("With no handrails named, every edge over the gap is "
@@ -387,21 +385,43 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// A picker whose contents come off the document, greyed with the reason when there is
-            /// no document to read.
+            /// One source, picked from a list that can be searched.
+            ///
+            /// A dropdown holding every saved set in the document is unusable on a federation
+            /// that carries two hundred of them: no box to narrow it, and the one that is wanted
+            /// is somewhere in a column that has to be scrolled past. This is a button saying
+            /// what the source is now, opening the list with a box over it.
             /// </summary>
-            /// <param name="picker">The picker.</param>
-            private ComboBox Reading(ComboBox picker)
+            /// <param name="offered">Everything that could be read from.</param>
+            /// <param name="chosen">What it is read from now.</param>
+            /// <param name="prompt">What the list asks.</param>
+            /// <param name="onPicked">Records the choice.</param>
+            /// <param name="width">How wide the button is.</param>
+            private UIElement Source(IReadOnlyList<string> offered, string chosen, string prompt,
+                                     Action<string> onPicked, double width)
             {
                 var blocked = Blocked;
 
-                if (blocked == null) return picker;
+                var press = Ui.Button(chosen, () => Parts.Choose(_log, prompt, offered, chosen,
+                                                                 null, null, picked =>
+                {
+                    if (picked.Length == 0) return;
 
-                picker.IsEnabled = false;
-                picker.ToolTip = blocked;
+                    onPicked(picked);
+                }));
 
-                return picker;
+                press.Width = width;
+                press.HorizontalContentAlignment = HorizontalAlignment.Left;
+
+                if (blocked != null)
+                {
+                    press.IsEnabled = false;
+                    press.ToolTip = blocked;
+                }
+
+                return press;
             }
+
 
             /// <summary>One side's list, with whatever it is set to kept in it.</summary>
             /// <param name="offered">What this build offers.</param>

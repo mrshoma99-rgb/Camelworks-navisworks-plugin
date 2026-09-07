@@ -140,12 +140,13 @@ namespace CamelWorks.UI.Views
                     // used to ask it third, under two numbers and two sides.
                     Bench.Group("Where",
                         Sized(Ui.Field("Zone",
-                                 Reading(Ui.Choice(Zones(sets, settings.Zone),
+                                 Source(Zones(sets, settings.Zone),
                                      string.IsNullOrWhiteSpace(settings.Zone)
                                          ? WholeModel : settings.Zone!,
+                                     "What the run is confined to",
                                      pick => Keep(one => one.Zone =
                                          string.Equals(pick, WholeModel, StringComparison.Ordinal)
-                                             ? null : pick), 230)),
+                                             ? null : pick), 230),
                                  "Narrows what is measured. Nothing named measures the whole "
                                  + "federation."),
                               380),
@@ -155,13 +156,13 @@ namespace CamelWorks.UI.Views
                                (one, drop) => one.Levels.Remove(drop))),
                     Bench.Group("What to measure",
                         Sized(Ui.Field("Measure up from",
-                                 Reading(Ui.Choice(from, settings.Surfaces,
-                                     pick => Keep(one => one.Surfaces = pick), 380))),
+                                 Source(from, settings.Surfaces, "What is measured up from",
+                                     pick => Keep(one => one.Surfaces = pick), 380)),
                               380),
                         Detecting(settings),
                         Sized(Ui.Field("Measure up to",
-                                 Reading(Ui.Choice(to, settings.Targets,
-                                                   pick => Keep(one => one.Targets = pick), 230))),
+                                 Source(to, settings.Targets, "What is measured up to",
+                                        pick => Keep(one => one.Targets = pick), 230)),
                               380),
                         // With the side it modifies. What counts as an obstruction is one decision,
                         // and it used to be split across two groups with the scope between them.
@@ -272,6 +273,44 @@ namespace CamelWorks.UI.Views
                 stack.Children.Add(Ui.Small(hint));
 
                 return Sized(stack, 380);
+            }
+
+            /// <summary>
+            /// One source, picked from a list that can be searched.
+            ///
+            /// A dropdown holding every saved set in the document is unusable on a federation
+            /// that carries two hundred of them: no box to narrow it, and the one that is wanted
+            /// is somewhere in a column that has to be scrolled past. This is a button saying
+            /// what the source is now, opening the list with a box over it.
+            /// </summary>
+            /// <param name="offered">Everything that could be read from.</param>
+            /// <param name="chosen">What it is read from now.</param>
+            /// <param name="prompt">What the list asks.</param>
+            /// <param name="onPicked">Records the choice.</param>
+            /// <param name="width">How wide the button is.</param>
+            private UIElement Source(IReadOnlyList<string> offered, string chosen, string prompt,
+                                     Action<string> onPicked, double width)
+            {
+                var blocked = Blocked;
+
+                var press = Ui.Button(chosen, () => Parts.Choose(_log, prompt, offered, chosen,
+                                                                 null, null, picked =>
+                {
+                    if (picked.Length == 0) return;
+
+                    onPicked(picked);
+                }));
+
+                press.Width = width;
+                press.HorizontalContentAlignment = HorizontalAlignment.Left;
+
+                if (blocked != null)
+                {
+                    press.IsEnabled = false;
+                    press.ToolTip = blocked;
+                }
+
+                return press;
             }
 
             /// <summary>What the level picker reads when no level narrows the run.</summary>
