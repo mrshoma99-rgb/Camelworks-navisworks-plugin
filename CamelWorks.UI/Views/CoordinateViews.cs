@@ -1090,6 +1090,13 @@ namespace CamelWorks.UI.Views
 
                 under.TextWrapping = TextWrapping.Wrap;
 
+                // Red ink on the one line in the list that says "deletes". A list of seven rules
+                // where the sixth assigns and the seventh deletes from the document read the same
+                // in both rows, and the difference between them is the only one worth seeing
+                // before pressing Run all rules.
+                if (card.Action == ClashActionKind.Remove)
+                    under.Tint(TextBlock.ForegroundProperty, "RedTx");
+
                 var tick = Ui.Check(string.Empty, card.IsEnabled, on =>
                 {
                     card.IsEnabled = on;

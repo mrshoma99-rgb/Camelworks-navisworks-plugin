@@ -780,17 +780,25 @@ namespace CamelWorks.UI.Views
             {
                 var held = Ui.Stack();
 
-                held.Children.Add(
-                    ClashNaming.Section(Book, Tests(), Rename, Opening(), _pane, Touched));
-
-                // Where the renumber went, said here rather than left to be looked for. It used
-                // to be a fourth pane on this section, and it writes the new names into the
-                // Navisworks document the moment it is pressed - under a tab whose footer says
-                // the settings are saved when you press Save.
-                held.Children.Add(Ui.Note(
+                // Where the renumber went, above the work rather than under it: somebody who
+                // opens this section looking for the renumber has their answer before they read
+                // the table. It used to be a fourth pane here, and it writes the new names into
+                // the Navisworks document the moment it is pressed - under a tab whose footer
+                // says the settings are saved when you press Save.
+                //
+                // Info rather than a warning. Nothing is wrong and there is nothing to be
+                // careful about on this screen; it is a pointer.
+                var said = Ui.Info(
                     "Renumbering the tests is on the Manage tab, under the test's own menu, "
                     + "beside the run and the compact. It writes the new names into the model "
-                    + "when you press it, so it is not one of the settings this tab holds."));
+                    + "when you press it, so it is not one of the settings this tab holds.");
+
+                if (said is FrameworkElement placed) placed.Margin = new Thickness(0, 0, 0, 12);
+
+                held.Children.Add(said);
+
+                held.Children.Add(
+                    ClashNaming.Section(Book, Tests(), Rename, Opening(), _pane, Touched));
 
                 return held;
             }
