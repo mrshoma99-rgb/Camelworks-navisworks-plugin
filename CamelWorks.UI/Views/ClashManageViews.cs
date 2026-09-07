@@ -1652,20 +1652,39 @@ namespace CamelWorks.UI.Views
                     Content = _rows,
                 };
 
-                Grid.SetRow(list, 1);
-                grid.Children.Add(list);
+                // Above the rows, inside the row the rows live in.
+                //
+                // It was drawn over them, which hid the list whose count it was changing: you
+                // could not see what a filter did while setting it. The reason it was an overlay
+                // is recorded and is real — put inside the head it pushed the test list down, so
+                // the rail's column headings and the board's stopped lining up the moment it
+                // opened, which is two panes of one table with their heads at different heights.
+                //
+                // That assumed the only alternative was the head. This is the third place: the
+                // body row holds the panel docked above the list, so the head never moves and the
+                // headings stay level, while the list shortens instead of being covered.
+                var body = new DockPanel { LastChildFill = true };
 
-                // The filter panel is drawn over the rows, not above them. Inside the head it
-                // pushed the test list down by its own height, so the rail's column headings and
-                // the board's stopped lining up the moment the panel was opened — two panes of one
-                // table with their heads at different heights.
-                _railPanel.Margin = new Thickness(10, 0, 10, 0);
-                _railPanel.VerticalAlignment = VerticalAlignment.Top;
+                _railPanel.Margin = new Thickness(10, 0, 10, 8);
                 _railPanel.HorizontalAlignment = HorizontalAlignment.Stretch;
 
-                Grid.SetRow(_railPanel, 1);
-                Panel.SetZIndex(_railPanel, 2);
-                grid.Children.Add(Ui.Loose(_railPanel));
+                // Capped, and it scrolls inside itself. A project with forty disciplines would
+                // otherwise hand the whole rail to chips and leave no list under them.
+                var narrowing = new ScrollViewer
+                {
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    MaxHeight = 280,
+                    Content = Ui.Loose(_railPanel),
+                };
+
+                DockPanel.SetDock(narrowing, Dock.Top);
+                body.Children.Add(narrowing);
+
+                body.Children.Add(list);
+
+                Grid.SetRow(body, 1);
+                grid.Children.Add(body);
 
                 Grid.SetRow(_railNotes, 2);
                 grid.Children.Add(Ui.Loose(_railNotes));
