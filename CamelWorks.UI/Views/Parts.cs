@@ -1483,6 +1483,173 @@ namespace CamelWorks.UI.Views
         /// <summary>How many entries a list may hold before it is given a box to narrow it.</summary>
         private const int Searchable = 8;
 
+        /// <summary>How tall a ticked list grows before it scrolls.</summary>
+        private const double TickedHeight = 190;
+
+        /// <summary>
+        /// Several things chosen out of a list, with a box that narrows it.
+        ///
+        /// Five screens built this: the sides of a clash test, which tests to read into a matrix,
+        /// which tests to act on, a facet's values on the board, and which tests a naming pattern
+        /// reads. Each had its own filter loop, its own empty state and its own idea of what to
+        /// say under the list, so the one that was fixed stayed fixed and the other four did not.
+        ///
+        /// The caller owns what is picked. This draws it and reports every change, because a
+        /// picked set is the screen's own state — saved with a rule, sent with an export — and a
+        /// control that held it would be a second copy to keep in step.
+        /// </summary>
+        /// <param name="offered">Everything that can be picked, in the order to show it.</param>
+        /// <param name="picked">What is picked now. Read on every redraw, never written to.</param>
+        /// <param name="onPicked">Given a line and whether it is now ticked.</param>
+        /// <param name="empty">What to say when the list itself is empty.</param>
+        /// <param name="onCleared">Clears the caller's selection, or null for no Clear.</param>
+        public static UIElement Ticked(IReadOnlyList<string> offered,
+                                       Func<string, bool> picked,
+                                       Action<string, bool> onPicked,
+                                       string empty,
+                                       Action? onCleared = null)
+        {
+            if (offered == null) throw new ArgumentNullException(nameof(offered));
+            if (picked == null) throw new ArgumentNullException(nameof(picked));
+            if (onPicked == null) throw new ArgumentNullException(nameof(onPicked));
+
+            var held = Ui.Stack();
+            var list = Ui.Stack();
+
+            // Only once there is more to read than fits, for the same reason a menu gets one:
+            // a box over four lines is a control asking to be used on something it cannot help.
+            var find = offered.Count > Searchable
+                ? Ui.Text(string.Empty, "part of a name", null, 200)
+                : null;
+
+            void Fill()
+            {
+                list.Children.Clear();
+
+                var query = (find?.Text ?? string.Empty).Trim();
+
+                if (offered.Count == 0)
+                {
+                    list.Children.Add(Ui.Small(empty));
+                    return;
+                }
+
+                var shown = offered
+                    .Where(one => query.Length == 0
+                                  || one.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
+                    .ToList();
+
+                if (shown.Count == 0)
+                {
+                    list.Children.Add(Ui.Small("Nothing here contains \u201c" + query + "\u201d."));
+                    return;
+                }
+
+                foreach (var one in shown)
+                {
+                    var line = one;
+
+                    var tick = Ui.Check(line, picked(line), on => Ui.Safely(() =>
+                    {
+                        onPicked(line, on);
+                        Fill();
+                    }));
+
+                    tick.Margin = new Thickness(0, 1, 0, 1);
+
+                    list.Children.Add(tick);
+                }
+            }
+
+            if (find != null || onCleared != null)
+            {
+                var bar = new DockPanel
+                {
+                    LastChildFill = true,
+                    Margin = new Thickness(0, 4, 0, 4),
+                };
+
+                if (onCleared != null)
+                {
+                    var clear = Ui.Quiet("Clear", () => Ui.Safely(() =>
+                    {
+                        onCleared();
+                        Fill();
+                    }));
+
+                    DockPanel.SetDock(clear, Dock.Right);
+                    bar.Children.Add(clear);
+                }
+
+                bar.Children.Add(find == null ? new Border() : (UIElement)Ui.Loose(find));
+
+                held.Children.Add(bar);
+            }
+
+            if (find != null) find.TextChanged += (s, e) => Ui.Safely(Fill);
+
+            Fill();
+
+            var scroller = new ScrollViewer
+            {
+                MaxHeight = TickedHeight,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = Ui.Loose(list),
+            };
+
+            Ui.WheelThrough(scroller);
+
+            held.Children.Add(scroller);
+
+            return held;
+        }
+
+        /// <summary>
+        /// What a run reads from, as a press naming it that opens the list.
+        ///
+        /// Four shapes did this: the clearance panel's three fields, the fall-hazard panel's
+        /// three, the two sides of a clash test, and an editable combo in Pickers that none of
+        /// them used. Each was reported unusable separately, on a federation carrying two hundred
+        /// saved sets with no way to narrow the list.
+        /// </summary>
+        /// <param name="near">The screen this belongs to, which owns the list window.</param>
+        /// <param name="offered">Everything that could be read from.</param>
+        /// <param name="chosen">What it is read from now.</param>
+        /// <param name="prompt">What the list asks.</param>
+        /// <param name="onPicked">Records the choice.</param>
+        /// <param name="width">How wide the press is.</param>
+        /// <param name="blocked">Why it cannot be changed, or null when it can.</param>
+        public static System.Windows.Controls.Button Source(FrameworkElement? near,
+                                                            IReadOnlyList<string> offered,
+                                                            string chosen, string prompt,
+                                                            Action<string> onPicked,
+                                                            double width = 380,
+                                                            string? blocked = null)
+        {
+            if (offered == null) throw new ArgumentNullException(nameof(offered));
+            if (onPicked == null) throw new ArgumentNullException(nameof(onPicked));
+
+            var press = Ui.Button(chosen, () => Choose(near!, prompt, offered, chosen, null, null,
+                                                       said =>
+            {
+                if (said.Length == 0) return;
+
+                onPicked(said);
+            }));
+
+            press.Width = width;
+            press.HorizontalContentAlignment = HorizontalAlignment.Left;
+
+            if (blocked != null)
+            {
+                press.IsEnabled = false;
+                press.ToolTip = blocked;
+            }
+
+            return press;
+        }
+
         /// <summary>
         /// Ask which of a known set of things, with the option of a new one.
         ///

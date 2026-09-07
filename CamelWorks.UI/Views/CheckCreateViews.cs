@@ -1189,12 +1189,7 @@ namespace CamelWorks.UI.Views
 
             /// <summary>The folders the tests are already filed in, for the move prompt.</summary>
             private IReadOnlyList<string> Folders() =>
-                _all.Select(one => one.Run.Folder)
-                    .Where(name => !string.IsNullOrWhiteSpace(name))
-                    .Select(name => name!)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
-                    .ToList();
+                Ui.Listed(_all.Select(one => one.Run.Folder));
 
             /// <summary>Delete tests, and the findings that name them.</summary>
             /// <param name="picked">The tests picked.</param>

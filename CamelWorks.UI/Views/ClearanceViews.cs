@@ -275,43 +275,15 @@ namespace CamelWorks.UI.Views
                 return Sized(stack, 380);
             }
 
-            /// <summary>
-            /// One source, picked from a list that can be searched.
-            ///
-            /// A dropdown holding every saved set in the document is unusable on a federation
-            /// that carries two hundred of them: no box to narrow it, and the one that is wanted
-            /// is somewhere in a column that has to be scrolled past. This is a button saying
-            /// what the source is now, opening the list with a box over it.
-            /// </summary>
+            /// <summary>One source, picked from the shared list.</summary>
             /// <param name="offered">Everything that could be read from.</param>
             /// <param name="chosen">What it is read from now.</param>
             /// <param name="prompt">What the list asks.</param>
             /// <param name="onPicked">Records the choice.</param>
-            /// <param name="width">How wide the button is.</param>
+            /// <param name="width">How wide the press is.</param>
             private UIElement Source(IReadOnlyList<string> offered, string chosen, string prompt,
-                                     Action<string> onPicked, double width)
-            {
-                var blocked = Blocked;
-
-                var press = Ui.Button(chosen, () => Parts.Choose(_log, prompt, offered, chosen,
-                                                                 null, null, picked =>
-                {
-                    if (picked.Length == 0) return;
-
-                    onPicked(picked);
-                }));
-
-                press.Width = width;
-                press.HorizontalContentAlignment = HorizontalAlignment.Left;
-
-                if (blocked != null)
-                {
-                    press.IsEnabled = false;
-                    press.ToolTip = blocked;
-                }
-
-                return press;
-            }
+                                     Action<string> onPicked, double width) =>
+                Parts.Source(_log, offered, chosen, prompt, onPicked, width, Blocked);
 
             /// <summary>What the level picker reads when no level narrows the run.</summary>
             private const string EveryLevel = "Every level";
@@ -459,10 +431,7 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>Every saved set this document holds, named once.</summary>
-            private List<string> Sets() =>
-                Named(() => _seat.Sets().Select(set => set.Name)
-                                 .Distinct(StringComparer.OrdinalIgnoreCase)
-                                 .OrderBy(name => name, StringComparer.OrdinalIgnoreCase));
+            private IReadOnlyList<string> Sets() => _seat.SetNames();
 
             /// <summary>
             /// The zone list: no zone, this document's sets, and whatever the run is set to.
@@ -494,43 +463,16 @@ namespace CamelWorks.UI.Views
             /// bounded scan reached one: a list that cannot show what a run is set to is a list
             /// that cannot take it back off.
             /// </summary>
-            private List<string> Categories()
-            {
-                var found = Named(() => Pickers.CategoryNames());
-
-                foreach (var one in ClearanceSettings.Unreported)
-                    if (!found.Contains(one, StringComparer.OrdinalIgnoreCase)) found.Add(one);
-
-                found.Sort(StringComparer.OrdinalIgnoreCase);
-
-                return found;
-            }
+            private IReadOnlyList<string> Categories() =>
+                Ui.Listed(Seated.Offer(() => Pickers.CategoryNames().ToList())
+                                .Concat(ClearanceSettings.Unreported));
 
             /// <summary>The storeys this project declares, for the level scope.</summary>
-            private List<string> Storeys() =>
-                Named(() => LevelPlan
+            private IReadOnlyList<string> Storeys() =>
+                Seated.Offer(() => LevelPlan
                     .FromJson(_seat.Store.Section(ProjectStore.ProfileSection)[LevelPlan.Key])
-                    .Storeys.Select(one => one.Name));
+                    .Storeys.Select(one => one.Name).ToList());
 
-            /// <summary>
-            /// Names off the document or the project file, or nothing when it will not answer: a
-            /// picker that cannot be filled is a picker with nothing in it, never a screen that
-            /// refuses to open.
-            /// </summary>
-            /// <param name="supply">Where the names come from.</param>
-            private static List<string> Named(Func<IEnumerable<string?>> supply)
-            {
-                try
-                {
-                    return supply().Where(name => !string.IsNullOrWhiteSpace(name))
-                                   .Select(name => name!)
-                                   .ToList();
-                }
-                catch (Exception)
-                {
-                    return new List<string>();
-                }
-            }
         }
     }
 }

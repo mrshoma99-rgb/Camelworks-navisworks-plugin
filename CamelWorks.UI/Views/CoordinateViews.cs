@@ -1483,7 +1483,7 @@ namespace CamelWorks.UI.Views
                         return Tests();
 
                     case ResultFields.Model:
-                        return Offering(Told(_seat.Models()));
+                        return Offering(_seat.ModelNames());
 
                     default:
                         // The rest are read off the results the board already holds, so a group,
@@ -1535,27 +1535,18 @@ namespace CamelWorks.UI.Views
                 switch (field)
                 {
                     case ResultFields.Group:
-                        return Told(Held().Select(one => one.Group));
+                        return Ui.Listed(Held().Select(one => one.Group));
 
                     case ResultFields.Stage:
-                        return Told(Held().Select(one => one.Stage));
+                        return Ui.Listed(Held().Select(one => one.Stage));
 
                     case ResultFields.Label:
-                        return Told(Held().SelectMany(one => one.Labels));
+                        return Ui.Listed(Held().SelectMany(one => one.Labels));
 
                     default:
                         return Array.Empty<string>();
                 }
             }
-
-            /// <summary>A list of values, without the empties, the repeats or the disorder.</summary>
-            /// <param name="values">What was found.</param>
-            private static IReadOnlyList<string> Told(IEnumerable<string?> values) =>
-                values.Where(one => !string.IsNullOrWhiteSpace(one))
-                      .Select(one => one!)
-                      .Distinct(StringComparer.OrdinalIgnoreCase)
-                      .OrderBy(one => one, StringComparer.OrdinalIgnoreCase)
-                      .ToList();
 
             /// <summary>The project's parties, never empty.</summary>
             private IReadOnlyList<string> Parties()

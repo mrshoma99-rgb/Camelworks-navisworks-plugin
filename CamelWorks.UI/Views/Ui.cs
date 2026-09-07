@@ -2934,6 +2934,23 @@ namespace CamelWorks.UI.Views
             && (delta < 0 ? inner.VerticalOffset < inner.ScrollableHeight
                           : inner.VerticalOffset > 0);
 
+        /// <summary>
+        /// A list of values with the empties, the repeats and the disorder taken out.
+        ///
+        /// Written out thirty-two times across fifteen files, each time as
+        /// <c>Where(non-empty).Distinct(OrdinalIgnoreCase).OrderBy(OrdinalIgnoreCase)</c>, and
+        /// each time a chance to leave one of the three out. Every picker filled from what a
+        /// document or a board actually holds comes through here.
+        /// </summary>
+        /// <param name="values">What was found, in any order, with anything in it.</param>
+        public static IReadOnlyList<string> Listed(IEnumerable<string?>? values) =>
+            (values ?? Array.Empty<string?>())
+                .Where(one => !string.IsNullOrWhiteSpace(one))
+                .Select(one => one!.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(one => one, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
         /// <summary>Say that this element's tables should fill the height they are given.</summary>
         /// <param name="element">The container.</param>
         /// <param name="on">True to let its tables grow.</param>

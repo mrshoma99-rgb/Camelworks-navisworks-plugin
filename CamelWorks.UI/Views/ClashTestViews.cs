@@ -141,7 +141,7 @@ namespace CamelWorks.UI.Views
             {
                 var blocked = Blocked;
                 var sets = Sets();
-                var models = Named(() => _seat.Models());
+                var models = _seat.ModelNames();
 
                 return Ui.Stack(
                     Bench.Group(string.Empty,
@@ -229,14 +229,7 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>The clash folders this document already has, named once each.</summary>
-            private IReadOnlyList<string> Folders() =>
-                Named(() => _check.Runs())
-                    .Select(one => one.Folder)
-                    .Where(one => !string.IsNullOrWhiteSpace(one))
-                    .Select(one => one!)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .OrderBy(one => one, StringComparer.OrdinalIgnoreCase)
-                    .ToList();
+            private IReadOnlyList<string> Folders() => Seated.Folders(_check);
 
             /// <summary>
             /// One side: which kind of source it is built from, and which of them.
@@ -269,7 +262,7 @@ namespace CamelWorks.UI.Views
 
                 if (string.Equals(side.From, FromSelection, StringComparison.Ordinal))
                 {
-                    var keys = Named(() => _seat.Selected());
+                    var keys = Seated.Offer(() => _seat.Selected());
 
                     side.Keys = keys.ToList();
 
@@ -282,61 +275,12 @@ namespace CamelWorks.UI.Views
                     return Framed(held, blocked);
                 }
 
-                // The list, with a box that narrows it. A federation carries two hundred sets and
-                // finding one by scrolling is the reason this was reported as unusable.
-                var list = Ui.Stack();
-                var find = Ui.Text(string.Empty, "part of a name", null, 200);
+                // The shared ticked list: one filter loop, one empty state, one thing to fix.
+                var models_ = string.Equals(side.From, FromModels, StringComparison.Ordinal);
 
-                // Whether the document offers anything of this kind at all, so the line under the
-                // list does not say "nothing picked yet" under a list that says there is nothing
-                // to pick.
-                var offers = false;
-
-                void Fill()
-                {
-                    list.Children.Clear();
-
-                    var query = (find.Text ?? string.Empty).Trim();
-
-                    List<Line> lines = string.Equals(side.From, FromModels, StringComparison.Ordinal)
-                        ? models.Select(one => new Line(one, one, null)).ToList()
-                        : sets.Select(one => new Line(Full(one), one.Name,
-                            (one.IsSearch ? "search set" : "selection set")
-                            + ", " + Ui.Count(one.Members, "element"))).ToList();
-
-                    offers = lines.Count > 0;
-
-                    var shown = lines
-                        .Where(one => query.Length == 0
-                                      || one.Said.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
-                        .ToList();
-
-                    if (shown.Count == 0)
-                    {
-                        list.Children.Add(Ui.Small(lines.Count == 0
-                            ? "This document has none."
-                            : "Nothing here contains “" + query + "”."));
-
-                        return;
-                    }
-
-                    foreach (var one in shown)
-                    {
-                        var line = one;
-
-                        var tick = Ui.Check(line.Said, side.Has(line.Said), on =>
-                        {
-                            side.Put(line.Said, on);
-                            Said();
-                        });
-
-                        tick.Margin = new Thickness(0, 1, 0, 1);
-
-                        if (line.Why != null) tick.ToolTip = line.Why;
-
-                        list.Children.Add(tick);
-                    }
-                }
+                var lines = models_
+                    ? models.ToList()
+                    : sets.Select(Full).ToList();
 
                 var says = Ui.Small(string.Empty);
 
@@ -345,44 +289,19 @@ namespace CamelWorks.UI.Views
                     var count = side.Picked.Count;
 
                     says.Text = count == 0
-                        ? offers ? "Nothing picked yet." : string.Empty
+                        ? lines.Count == 0 ? string.Empty : "Nothing picked yet."
                         : count == 1
                             ? side.Picked[0]
                             : Ui.Count(count, "of them") + ": " + string.Join(", ", side.Picked);
                 }
 
-                find.TextChanged += (s, e) => Ui.Safely(Fill);
+                held.Children.Add(Parts.Ticked(lines, side.Has,
+                    (line, on) => { side.Put(line, on); Said(); },
+                    models_ ? "Nothing is loaded." : "This document holds no saved sets.",
+                    () => { side.Picked.Clear(); Said(); }));
 
-                Fill();
                 Said();
 
-                var acts = Ui.Across(
-                    Ui.Quiet("Clear", () =>
-                    {
-                        side.Picked.Clear();
-                        Fill();
-                        Said();
-                    }));
-
-                var bar = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 4, 0, 4) };
-
-                DockPanel.SetDock(acts, Dock.Right);
-                bar.Children.Add(acts);
-                bar.Children.Add(Ui.Loose(find));
-
-                held.Children.Add(bar);
-
-                var scroller = new ScrollViewer
-                {
-                    MaxHeight = ListHeight,
-                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                    Content = Ui.Loose(list),
-                };
-
-                Ui.WheelThrough(scroller);
-
-                held.Children.Add(scroller);
                 held.Children.Add(says);
 
                 return Framed(held, blocked);
@@ -468,9 +387,7 @@ namespace CamelWorks.UI.Views
 
                 if (string.Equals(side.From, FromModels, StringComparison.Ordinal))
                 {
-                    var scopes = Named(() => _seat.Models())
-                        .Where(one => side.Has(one))
-                        .ToList();
+                    var scopes = _seat.ModelNames().Where(side.Has).ToList();
 
                     return scopes.Count == 0 ? null : ClashSide.Models(scopes);
                 }
@@ -503,25 +420,7 @@ namespace CamelWorks.UI.Views
                 set.Folder.Length == 0 ? set.Name : set.Folder + " / " + set.Name;
 
             /// <summary>Every saved set the document holds, or none when it will not say.</summary>
-            private IReadOnlyList<SeatSet> Sets() => Named(() => _seat.Sets());
-
-            /// <summary>
-            /// Whatever the document answers, or nothing when it will not: a picker that cannot be
-            /// filled is a picker with nothing in it, never a screen that refuses to open.
-            /// </summary>
-            /// <typeparam name="T">What is being read.</typeparam>
-            /// <param name="supply">Where it comes from.</param>
-            private static IReadOnlyList<T> Named<T>(Func<IReadOnlyList<T>> supply)
-            {
-                try
-                {
-                    return supply();
-                }
-                catch (Exception)
-                {
-                    return Array.Empty<T>();
-                }
-            }
+            private IReadOnlyList<SeatSet> Sets() => _seat.Sets();
 
             /// <summary>A field capped to a readable width, so short fields sit two to a row.</summary>
             /// <param name="field">The field.</param>
@@ -532,26 +431,6 @@ namespace CamelWorks.UI.Views
                 field.HorizontalAlignment = HorizontalAlignment.Left;
 
                 return field;
-            }
-
-            /// <summary>One line in a side's list: what it says, its name, and what it is.</summary>
-            private sealed class Line
-            {
-                internal Line(string said, string name, string? why)
-                {
-                    Said = said;
-                    Name = name;
-                    Why = why;
-                }
-
-                /// <summary>The whole line, which is what a tick is remembered by.</summary>
-                internal string Said { get; }
-
-                /// <summary>Its name alone.</summary>
-                internal string Name { get; }
-
-                /// <summary>What it is, for the tooltip. Null when there is nothing to add.</summary>
-                internal string? Why { get; }
             }
 
             /// <summary>One side as the form holds it: which kind of source, and which of them.</summary>

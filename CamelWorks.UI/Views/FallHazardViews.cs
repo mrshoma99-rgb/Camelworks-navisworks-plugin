@@ -384,43 +384,15 @@ namespace CamelWorks.UI.Views
                 _onChanged();
             }
 
-            /// <summary>
-            /// One source, picked from a list that can be searched.
-            ///
-            /// A dropdown holding every saved set in the document is unusable on a federation
-            /// that carries two hundred of them: no box to narrow it, and the one that is wanted
-            /// is somewhere in a column that has to be scrolled past. This is a button saying
-            /// what the source is now, opening the list with a box over it.
-            /// </summary>
+            /// <summary>One source, picked from the shared list.</summary>
             /// <param name="offered">Everything that could be read from.</param>
             /// <param name="chosen">What it is read from now.</param>
             /// <param name="prompt">What the list asks.</param>
             /// <param name="onPicked">Records the choice.</param>
-            /// <param name="width">How wide the button is.</param>
+            /// <param name="width">How wide the press is.</param>
             private UIElement Source(IReadOnlyList<string> offered, string chosen, string prompt,
-                                     Action<string> onPicked, double width)
-            {
-                var blocked = Blocked;
-
-                var press = Ui.Button(chosen, () => Parts.Choose(_log, prompt, offered, chosen,
-                                                                 null, null, picked =>
-                {
-                    if (picked.Length == 0) return;
-
-                    onPicked(picked);
-                }));
-
-                press.Width = width;
-                press.HorizontalContentAlignment = HorizontalAlignment.Left;
-
-                if (blocked != null)
-                {
-                    press.IsEnabled = false;
-                    press.ToolTip = blocked;
-                }
-
-                return press;
-            }
+                                     Action<string> onPicked, double width) =>
+                Parts.Source(_log, offered, chosen, prompt, onPicked, width, Blocked);
 
 
             /// <summary>One side's list, with whatever it is set to kept in it.</summary>
@@ -440,21 +412,7 @@ namespace CamelWorks.UI.Views
             /// answer: a picker that cannot be filled is a picker with nothing in it, never a
             /// screen that refuses to open.
             /// </summary>
-            private List<string> Sets()
-            {
-                try
-                {
-                    return _seat.Sets().Select(set => set.Name)
-                                .Where(name => !string.IsNullOrWhiteSpace(name))
-                                .Distinct(StringComparer.OrdinalIgnoreCase)
-                                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
-                                .ToList();
-                }
-                catch (Exception)
-                {
-                    return new List<string>();
-                }
-            }
+            private IReadOnlyList<string> Sets() => _seat.SetNames();
         }
     }
 }
