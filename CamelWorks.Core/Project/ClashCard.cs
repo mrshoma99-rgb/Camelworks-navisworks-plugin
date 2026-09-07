@@ -143,6 +143,20 @@ namespace CamelWorks.Core.Project
             }
         }
 
+        /// <summary>
+        /// Another rule like this one, under a new name.
+        ///
+        /// The search is copied through its own serialiser rather than field by field: it is a
+        /// tree, and a copy that shared a branch with the rule it came from would edit both.
+        /// </summary>
+        /// <param name="name">What the copy is called.</param>
+        public ClashCard Copy(string name) =>
+            new ClashCard(name, ResultQuery.FromJson(When.ToJson(), out _), Action)
+            {
+                Value = Value,
+                IsEnabled = IsEnabled,
+            };
+
         /// <summary>Serialise.</summary>
         public JsonValue ToJson()
         {

@@ -1101,6 +1101,12 @@ namespace CamelWorks.UI.Views
 
                 DockPanel.SetDock(tick, Dock.Left);
                 body.Children.Add(tick);
+
+                var verbs = Verbs(card);
+
+                DockPanel.SetDock(verbs, Dock.Right);
+                body.Children.Add(verbs);
+
                 body.Children.Add(Ui.Loose(Ui.Stack(title, under)));
 
                 line.Child = body;
@@ -1118,6 +1124,66 @@ namespace CamelWorks.UI.Views
                 Dragging(line, card);
 
                 return line;
+            }
+
+            /// <summary>
+            /// What a rule can be told to do from its own row.
+            ///
+            /// Run, copy and delete, on the row rather than only in the panel beside it. Opening a
+            /// rule to delete it is two presses and a read to check it is the one meant; the row
+            /// already says which rule it is.
+            /// </summary>
+            /// <param name="card">The rule.</param>
+            private UIElement Verbs(ClashCard card)
+            {
+                var verbs = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(8, 0, 0, 0),
+                };
+
+                if (_live == null)
+                {
+                    var stopped = Ui.Icon(Glyphs.Play, "Running a rule reads and writes the clash "
+                                                       + "results, so it needs an open model",
+                                          () => { });
+
+                    stopped.IsEnabled = false;
+                    verbs.Children.Add(stopped);
+                }
+                else
+                {
+                    verbs.Children.Add(Ui.Icon(Glyphs.Play, "Run this rule on its own",
+                        () => Ui.Run(_preview, job => Play(_live, job, card))));
+                }
+
+                verbs.Children.Add(Ui.Icon(Glyphs.Copy, "Make another rule like this one",
+                    () => Clone(card)));
+
+                verbs.Children.Add(Ui.Icon(Glyphs.Bin, "Delete this rule", () => Forget(card)));
+
+                // The row itself opens the rule and can be dragged. A press on one of these is
+                // neither, so it must not reach the row underneath it.
+                foreach (var one in verbs.Children.OfType<UIElement>())
+                    one.PreviewMouseLeftButtonDown += (s, e) => e.Handled = false;
+
+                return verbs;
+            }
+
+            /// <summary>Copy a rule in under the one it came from, and open the copy.</summary>
+            /// <param name="card">The rule to copy.</param>
+            private void Clone(ClashCard card)
+            {
+                var copy = card.Copy(Untaken(card.Name + " copy"));
+                var at = _rules.Cards.IndexOf(card);
+
+                _rules.Cards.Insert(at < 0 ? _rules.Cards.Count : at + 1, copy);
+
+                _open = copy;
+
+                Touched();
+                Redraw();
             }
 
             /// <summary>
@@ -1384,16 +1450,27 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>A name no rule in the list is using.</summary>
-            private string Untaken()
+            /// <param name="wanted">What to call it, or null for the next numbered name.</param>
+            private string Untaken(string? wanted = null)
             {
-                for (var n = _rules.Cards.Count + 1; ; n++)
-                {
-                    var tried = "Rule " + n.ToString(CultureInfo.InvariantCulture);
+                var stem = string.IsNullOrWhiteSpace(wanted)
+                    ? "Rule " + (_rules.Cards.Count + 1).ToString(CultureInfo.InvariantCulture)
+                    : wanted!.Trim();
 
-                    if (!_rules.Cards.Any(one => string.Equals(one.Name, tried, StringComparison.Ordinal)))
-                        return tried;
+                if (!Taken(stem)) return stem;
+
+                for (var n = 2; ; n++)
+                {
+                    var tried = stem + " " + n.ToString(CultureInfo.InvariantCulture);
+
+                    if (!Taken(tried)) return tried;
                 }
             }
+
+            /// <summary>Whether a rule in the list is already called this.</summary>
+            /// <param name="name">The name.</param>
+            private bool Taken(string name) =>
+                _rules.Cards.Any(one => string.Equals(one.Name, name, StringComparison.Ordinal));
 
             /// <summary>Take one rule out of the list.</summary>
             /// <param name="card">The rule.</param>

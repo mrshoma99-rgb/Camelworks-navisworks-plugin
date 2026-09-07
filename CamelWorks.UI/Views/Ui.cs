@@ -4102,8 +4102,18 @@ namespace CamelWorks.UI.Views
             return Stack(runner, detail, gate, done);
         }
 
-        /// <summary>Run an action under a job, reporting into <paramref name="output"/>.</summary>
-        private static void Run(Panel output, Action<Job> work)
+        /// <summary>
+        /// Run work with no button of its own, reporting into <paramref name="output"/>.
+        ///
+        /// A list of fifteen rules cannot carry fifteen runners: a runner is a button, a Stop and
+        /// a progress block, and repeated down a list it is more chrome than list. A row carries a
+        /// symbol instead and presses this, so the work still goes through the same guards — one
+        /// host operation at a time, the wait cursor, and an exception shown in the pane rather
+        /// than thrown at the host.
+        /// </summary>
+        /// <param name="output">Where the work writes. Cleared first, and given the progress bar.</param>
+        /// <param name="work">The work.</param>
+        public static void Run(Panel output, Action<Job> work)
         {
             if (IsBusy)
             {
@@ -4469,6 +4479,7 @@ namespace CamelWorks.UI.Views
 
         /// <summary>A bin: delete this.</summary>
         public const string Bin = "M5,7 L19,7 M10,7 L10,4 L14,4 L14,7 M6.5,7 L7.7,20 L16.3,20 L17.5,7";
+
 
         /// <summary>A magnifier: find something.</summary>
         public const string Find = "M11,4 A7,7 0 1 0 11.01,4 M16.2,16.2 L21,21";
