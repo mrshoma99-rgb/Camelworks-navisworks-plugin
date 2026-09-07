@@ -1370,7 +1370,22 @@ namespace CamelWorks.UI.Views
                             Ui.Text(card.Value, typed => { card.Value = typed; Touched(); }, 240));
 
                     case ClashActionKind.Assign:
-                        return Ui.Field("Assign to", Picker(card, Parties()));
+                    {
+                        var parties = Parties();
+
+                        // A project that names nobody cannot be assigned to. The picker used to be
+                        // handed a one-item list holding the word "Unassigned", write it onto the
+                        // card on sight, and present it as a chosen party - so a rule that
+                        // assigns to no party read as a rule that assigns.
+                        if (parties.Count == 0)
+                            return Ui.Field("Assign to",
+                                Ui.Blocked("No parties named",
+                                           "This project names no parties. Add them under "
+                                           + "Settings, Team."),
+                                null, Need.Required);
+
+                        return Ui.Field("Assign to", Picker(card, parties), null, Need.Required);
+                    }
 
                     case ClashActionKind.Status:
                         return Ui.Field("Status", Picker(card, FindingStatusWords.Words));
@@ -1525,11 +1540,10 @@ namespace CamelWorks.UI.Views
             /// <summary>The project's parties, never empty.</summary>
             private IReadOnlyList<string> Parties()
             {
-                var parties = _seat.Profile.Parties.ToList();
-
-                if (parties.Count == 0) parties.Add("Unassigned");
-
-                return parties;
+                // Empty when the project names no parties, rather than a made-up single option. The
+                // caller says so on screen; a list holding only "Unassigned" made every new
+                // Assign rule silently assign to nobody.
+                return _seat.Profile.Parties.ToList();
             }
 
             /// <summary>What one action is called on screen.</summary>
