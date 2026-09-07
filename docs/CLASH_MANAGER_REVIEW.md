@@ -297,9 +297,10 @@ does not stage four rows for action. Footer facts derived, never typed.
 2. Two columns are empty on all 16 rows and a third on 14 — 243px, 30% of the
    board, while Name is squeezed to 157px. The empty cell is also rendered two
    ways: a clash row draws nothing, a group row draws an em-dash.
-3. The Overlap column shows bare integers with no unit, and 5 + 3 + 8 = 16, the
-   result count — so it may be printing member counts under a distance heading.
-   To be verified against a real read before anything else here is touched.
+3. A bare integer sits beside the Overlap figure on group rows. It is the
+   member count at the right of a name cell that spans the element columns, not
+   a value in the Overlap column, and beside a real measurement it reads as a
+   second one. Spelt out now (fault 9).
 4. Two unlabelled play buttons, 740px apart, meaning different things: "run all
    tests" and "run this test". The most expensive and least reversible act in the
    product, and the wider-scoped one is the quieter.
@@ -983,9 +984,15 @@ These are not judgment calls. Each was verified in source.
    the list describes as assigning to Mechanical, so one of the two is wrong.
 8. **The Bands composer is presented as the current setting.** The pane states
    twice that banding is by model pair while the band stack is empty.
-9. **The Manage board's Overlap column** shows bare integers with no unit, and
-   they sum to the result count — so it may be printing member counts under a
-   distance heading. To be verified against a licensed read before it is changed.
+9. ~~**The Manage board's Overlap column** shows bare integers with no unit.~~
+   **Settled, and this review had it wrong.** They are member counts, and they
+   are not in the Overlap column: a group row's name cell spans the element
+   columns, and the count sits at its right edge, which ends a few pixels short
+   of Overlap. The fault is real but different — a bare number reads as a second
+   measurement of the row when it lands beside a real one — and it needed no
+   licensed read, only a fixture that put element names on the board so the
+   columns were not all empty. It is spelt out now, as the loose band beside it
+   already was.
 
 Three defects in the review instrument itself:
 
@@ -1103,7 +1110,8 @@ Faults 1 to 8 and 10 to 12 are fixed.
 
 **Not done.** The primitives with no callers: most candidates are extension
 methods, and a text search cannot tell an uncalled one from one called on its
-receiver. Fault 9, the Overlap column, is held for a licensed read.
+receiver. Fault 9 is settled: it was a member count, and this document's guess
+about where it sat was wrong.
 
 ## Then, screen by screen
 

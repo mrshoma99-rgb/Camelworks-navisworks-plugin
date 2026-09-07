@@ -5176,12 +5176,16 @@ namespace CamelWorks.UI.Views
                 });
 
                 // The member count, at the right of the name's own cell. It had a column of its
-                // own, which carried an em-dash on every clash row. The figure alone, with the
-                // word on its tooltip: "7 clashes" spelt out took most of a 110-pixel column and
-                // left the group's name showing one letter.
+                // own, which carried an em-dash on every clash row.
+                //
+                // Spelt out, as the loose band beside it already does. It was the figure alone on
+                // the reasoning that "7 clashes" took most of a 110-pixel column and left the
+                // group's name showing one letter — but a group row's name cell spans the element
+                // columns now, so there is room, and a bare number sitting a few pixels from the
+                // Overlap column reads as a second measurement of the same thing.
                 var many = new TextBlock
                 {
-                    Text = Skin.Num(row.Rows.Count),
+                    Text = Ui.Count(row.Rows.Count, Result),
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(8, 0, 0, 0),
                     TextAlignment = TextAlignment.Right,
