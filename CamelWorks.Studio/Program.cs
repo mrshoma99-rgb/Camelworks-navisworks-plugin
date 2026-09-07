@@ -261,7 +261,24 @@ namespace CamelWorks.Studio
                 Pump();
             }
 
-            // Anything that did not photograph itself gets taken here, settled.
+            // The window goes before the picture is taken, for a page that did not take its own.
+            //
+            // Detaching alone was not enough: the first page of every shoot still came back cut at
+            // the agent's display width with transparent pixels beyond, because a shown window is
+            // clamped to the work area and the clip that comes with that survived the page being
+            // handed a bigger slot. A closed window has nothing to clamp to.
+            //
+            // A page that photographs itself mid-run has already been taken by here and still
+            // needs the window alive while it does, which is what the guard below is for.
+            if (!taken)
+            {
+                if (host.Parent is Window still) still.Content = null;
+
+                if (shown) window.Close();
+
+                shown = false;
+            }
+
             Shoot();
 
             if (shown) window.Close();
@@ -342,6 +359,9 @@ namespace CamelWorks.Studio
         {
             if (element is UIElement one)
             {
+                // The clip as well as the passes. A clip set while the page was inside a clamped
+                // window is not undone by arranging it in a bigger slot.
+                one.Clip = null;
                 one.InvalidateMeasure();
                 one.InvalidateArrange();
             }
