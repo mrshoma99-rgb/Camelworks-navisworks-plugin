@@ -158,7 +158,7 @@ namespace CamelWorks.UI.Views
             /// <summary>Clashes left out by hand, on top of what the filter already removed.</summary>
             private readonly HashSet<Core.Identity.ClashKey> _dropped =
                 new HashSet<Core.Identity.ClashKey>();
-            private readonly TextBox _find = Ui.Text(string.Empty, "a test or a folder", null, 200);
+            private readonly TextBox _find = Ui.Find("a test or a folder", null, 200);
 
             private readonly TextBox _named = Ui.Text("Everything", null, 180);
 

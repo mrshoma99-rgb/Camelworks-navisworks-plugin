@@ -1525,7 +1525,7 @@ namespace CamelWorks.UI.Views
             // Only once there is more to read than fits, for the same reason a menu gets one:
             // a box over four lines is a control asking to be used on something it cannot help.
             var find = offered.Count > Searchable
-                ? Ui.Text(string.Empty, "part of a name", null, 200)
+                ? Ui.Find("part of a name", null, 200)
                 : null;
 
             void Fill()
@@ -1803,8 +1803,7 @@ namespace CamelWorks.UI.Views
             // A box that narrows the list, once there are more entries than can be read at a
             // glance. A federation carries two hundred saved sets and finding one by scrolling a
             // column of buttons is not finding it.
-            var find = held.Count > Searchable ? Ui.Text(string.Empty, "part of a name", null, 300)
-                                               : null;
+            var find = held.Count > Searchable ? Ui.Find("part of a name", null, 300) : null;
 
             void Fill()
             {
@@ -1997,7 +1996,7 @@ namespace CamelWorks.UI.Views
             DockPanel.SetDock(label.Wearing("Body"), Dock.Top);
             body.Children.Add(label);
 
-            var box = Ui.Text(string.Empty, "Search", null, 0);
+            var box = Ui.Find("part of a name", null, 0);
             box.Margin = new Thickness(0, 0, 0, 10);
             box.HorizontalAlignment = HorizontalAlignment.Stretch;
             DockPanel.SetDock(box, Dock.Top);

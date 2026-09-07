@@ -1171,7 +1171,7 @@ namespace CamelWorks.UI.Views
                 // rail's tools, its filter panel, every row and its foot, so typing a six-letter
                 // discipline did all of that six times — five of them for a string nobody was
                 // looking for yet.
-                _railBox = Ui.Text(string.Empty, "Search tests by name or discipline", text =>
+                _railBox = Ui.Find("a test name or discipline", text =>
                 {
                     State.RailFind = text;
 
@@ -1186,7 +1186,7 @@ namespace CamelWorks.UI.Views
                     RedrawRail();
                 });
 
-                _boardBox = Ui.Text(string.Empty, "Search", text =>
+                _boardBox = Ui.Find("anything on the board", text =>
                 {
                     State.BoardFind = text;
 

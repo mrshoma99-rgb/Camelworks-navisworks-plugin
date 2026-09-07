@@ -157,7 +157,7 @@ namespace CamelWorks.UI.Views
             var strip = Ui.Stack();
             var trouble = Ui.Stack();
 
-            var find = Ui.Text(string.Empty, "part of a name", null, 220);
+            var find = Ui.Find("part of a name", null, 220);
             var take = Ui.Check("Use saved sets for unmatched tests", true, null);
             var names = Ui.Check("Prefer parsed names over set names", true, null);
 

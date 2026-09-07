@@ -322,7 +322,7 @@ namespace CamelWorks.UI.Views
             var find = string.Empty;
             var list = Ui.Stack();
 
-            var box = Ui.Text(string.Empty, "Find a test", typed => { }, 240);
+            var box = Ui.Find("a test name", typed => { }, 240);
 
             box.HorizontalAlignment = HorizontalAlignment.Stretch;
 

@@ -1739,7 +1739,7 @@ namespace CamelWorks.UI.Views
 
             // The register runs to thirty-odd rows and somebody arriving is nearly always after
             // one of them by name. A search at the top of the list, not a scroll.
-            var find = Ui.Text(string.Empty, "search the register", null, 220);
+            var find = Ui.Find("a name in the register", null, 220);
 
             void Fill()
             {

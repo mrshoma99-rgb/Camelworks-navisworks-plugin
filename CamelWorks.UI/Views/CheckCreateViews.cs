@@ -147,7 +147,7 @@ namespace CamelWorks.UI.Views
             {
                 _seat = seat;
 
-                _search = Ui.Text(string.Empty, "Search tests", text =>
+                _search = Ui.Find("a test name or folder", text =>
                 {
                     _query = text ?? string.Empty;
 

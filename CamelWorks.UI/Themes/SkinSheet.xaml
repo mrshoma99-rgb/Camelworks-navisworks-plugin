@@ -360,6 +360,69 @@
     </Setter>
   </Style>
 
+  <!-- A search field, which is a text box with a job. Six screens searched with a plain box
+       and six different placeholders, so nothing on the screen said "this one filters the list
+       below it" until something had been typed into it. The magnifier sits inside the field's
+       own bounds, in a gutter reserved for it, so the box keeps one geometry and one focus ring.
+       Ui.Find clears it on Escape. -->
+  <Style x:Key="Find" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+    <Setter Property="Padding" Value="30,0,9,0"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="TextBox">
+          <Grid>
+            <Border x:Name="ring" Margin="-3" CornerRadius="9" BorderThickness="2"
+                    BorderBrush="{DynamicResource Focus}" Opacity="0.55"
+                    Visibility="Collapsed" SnapsToDevicePixels="True"/>
+            <Border x:Name="b" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="{StaticResource Radius.Field}"
+                    SnapsToDevicePixels="True">
+              <Grid>
+                <Path x:Name="lens" Data="M11,4 A7,7 0 1 0 11.01,4 M16.2,16.2 L21,21"
+                      Stroke="{DynamicResource Muted}" StrokeThickness="1.8"
+                      StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                      Stretch="Uniform" Width="13" Height="13"
+                      HorizontalAlignment="Left" VerticalAlignment="Center"
+                      Margin="9,0,0,0" IsHitTestVisible="False"/>
+                <TextBlock x:Name="ph" Text="{TemplateBinding Tag}" Margin="{TemplateBinding Padding}"
+                           Foreground="{TemplateBinding Foreground}" Opacity="0.55" FontSize="{TemplateBinding FontSize}"
+                           VerticalAlignment="Center" IsHitTestVisible="False" Visibility="Collapsed"
+                           TextTrimming="CharacterEllipsis"/>
+                <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                              VerticalAlignment="Center" Background="Transparent"/>
+              </Grid>
+            </Border>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <MultiTrigger>
+              <MultiTrigger.Conditions>
+                <Condition Property="Text" Value=""/>
+                <Condition Property="IsKeyboardFocused" Value="False"/>
+              </MultiTrigger.Conditions>
+              <Setter TargetName="ph" Property="Visibility" Value="Visible"/>
+            </MultiTrigger>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource BdStrong}"/>
+            </Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource Focus}"/>
+              <Setter TargetName="ring" Property="Visibility" Value="Visible"/>
+              <Setter TargetName="lens" Property="Stroke" Value="{DynamicResource Accent}"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter TargetName="b" Property="Background" Value="Transparent"/>
+              <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource Bd}"/>
+              <Setter TargetName="lens" Property="Stroke" Value="{DynamicResource Faint}"/>
+              <Setter Property="Foreground" Value="{DynamicResource Faint}"/>
+              <Setter Property="Cursor" Value="Arrow"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <!-- ════════════════════════════════ Buttons ════════════════════════════════
        Four weights, because a screen where Run, Save and Remove look identical makes the user
        read all three every time. Default (unkeyed) is the secondary weight, so the eighty-odd

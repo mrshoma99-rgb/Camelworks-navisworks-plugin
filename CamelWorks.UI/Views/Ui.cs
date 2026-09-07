@@ -2180,6 +2180,40 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
+        /// A search field: the box that narrows the list under it.
+        ///
+        /// Six screens searched with a plain text box and six different placeholders — "Search",
+        /// "Search tests", "Find a test", "part of a name", "a test or a folder", "search the
+        /// register" — so nothing distinguished a filter from a field you fill in until something
+        /// had been typed. This carries the magnifier inside its own bounds and clears on Escape.
+        ///
+        /// The placeholder is what is being searched, not the word "search": the magnifier says
+        /// that part.
+        /// </summary>
+        /// <param name="placeholder">What can be typed in, e.g. "a test or a folder".</param>
+        /// <param name="onChanged">Called on each keystroke, including on the clear.</param>
+        /// <param name="width">The narrowest it may be.</param>
+        public static TextBox Find(string placeholder, Action<string>? onChanged, double width = 200)
+        {
+            var box = Text(string.Empty, placeholder, onChanged, width);
+
+            box.Wearing("Find");
+
+            // Escape clears it, because a filter with no way out leaves a list that looks empty
+            // and a box the eye has stopped seeing. Handled, or the key travels on and closes the
+            // window the search is in.
+            box.PreviewKeyDown += (s, e) =>
+            {
+                if (e.Key != Key.Escape || box.Text.Length == 0) return;
+
+                box.Clear();
+                e.Handled = true;
+            };
+
+            return box;
+        }
+
+        /// <summary>
         /// A text box that reports what was typed once, when the caret leaves it or Enter is
         /// pressed — not on every keystroke.
         ///
