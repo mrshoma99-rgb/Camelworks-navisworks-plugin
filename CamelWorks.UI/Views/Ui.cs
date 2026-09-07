@@ -700,6 +700,17 @@ namespace CamelWorks.UI.Views
         public static TextBlock Eyebrow(string text) =>
             new TextBlock { Text = text ?? string.Empty }.Wearing("Caps");
 
+        /// <summary>
+        /// A group's heading: what the fields under it are for.
+        ///
+        /// Above the labels it governs, not below them. As an eyebrow it was 11px bold against
+        /// 12px labels and 13px values, so the heading was the smallest type in its own group and
+        /// a panel of four groups read as one undifferentiated column.
+        /// </summary>
+        /// <param name="text">The heading.</param>
+        public static TextBlock Grouping(string text) =>
+            new TextBlock { Text = text ?? string.Empty }.Wearing("Section");
+
         /// <summary>A number and its label, for a scoreboard.</summary>
         /// <param name="value">The number, already formatted.</param>
         /// <param name="label">What it counts.</param>

@@ -564,9 +564,12 @@ namespace CamelWorks.UI.Views
 
             if (!string.IsNullOrEmpty(label))
             {
-                var eyebrow = Ui.Eyebrow(label);
-                eyebrow.Margin = new Thickness(0, 0, 0, 6);
-                stack.Children.Add(eyebrow);
+                // A heading, not an eyebrow. At 11px bold it was smaller than the 12px labels
+                // beneath it, so "What is checked" did not read as governing the three fields
+                // under it.
+                var heading = Ui.Grouping(label);
+                heading.Margin = new Thickness(0, 0, 0, 8);
+                stack.Children.Add(heading);
             }
 
             var row = across ? new WrapPanel() : null;

@@ -114,8 +114,12 @@
   <sys:Double x:Key="Size.Caption">11</sys:Double>
   <sys:Double x:Key="Size.Small">12</sys:Double>
   <sys:Double x:Key="Size.Body">13</sys:Double>
+  <!-- The rung a group heading sits on. Without it a heading was Caps at 11px against 12px field
+       labels - a heading drawn smaller than the labels it governs, which cannot organise them -
+       and the whole ramp was 16/13/12/11: four steps inside five points. -->
+  <sys:Double x:Key="Size.Section">14</sys:Double>
   <sys:Double x:Key="Size.Head">16</sys:Double>
-  <sys:Double x:Key="Size.Title">18</sys:Double>
+  <sys:Double x:Key="Size.Title">20</sys:Double>
 
   <FontFamily x:Key="MonoFace">Consolas, Cascadia Mono, Courier New</FontFamily>
 
@@ -144,6 +148,15 @@
        in the product read as shouting. -->
   <!-- Muted, not Faint. Faint is reasoned about against the large-text floor and this is eleven
        pixels: 3.86:1 on a pane, which is every eyebrow on every panel in the product. -->
+  <!-- A group's heading: what the fields under it are for. Sentence case at a size above the
+       labels, rather than small caps below them. -->
+  <Style x:Key="Section" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="{DynamicResource Size.Section}"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Foreground" Value="{DynamicResource Text}"/>
+    <Setter Property="TextWrapping" Value="Wrap"/>
+  </Style>
+
   <Style x:Key="Caps" TargetType="TextBlock">
     <Setter Property="Foreground" Value="{DynamicResource Muted}"/>
     <Setter Property="FontSize" Value="{DynamicResource Size.Caption}"/>
@@ -157,6 +170,12 @@
     <Setter Property="FontSize" Value="{DynamicResource Size.Body}"/>
     <Setter Property="TextWrapping" Value="Wrap"/>
     <Setter Property="LineHeight" Value="18"/>
+  </Style>
+
+  <!-- Body copy that has to carry weight, so a screen does not reach for an inline FontWeight to
+       get it. Sixty-four call sites did. -->
+  <Style x:Key="Strong" TargetType="TextBlock" BasedOn="{StaticResource Body}">
+    <Setter Property="FontWeight" Value="SemiBold"/>
   </Style>
 
   <Style x:Key="Lbl" TargetType="TextBlock">
