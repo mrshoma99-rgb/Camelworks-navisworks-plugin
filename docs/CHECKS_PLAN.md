@@ -1276,15 +1276,23 @@ Also fixed now:
   opening's gap two different ways in two outputs. Core takes metres and `Measure`
   is the only unit authority, as everywhere else in this product.
 - **Diagonal runs are measured as paths.** Edge length is a cell count times cell
-  size today, so a 45-degree run under-reports by about √2 and a two-cell-thick
-  stretch double-counts. `DangerousLength` is one of three numbers this check
-  reports and `minPassage` is judged on the same quantity.
+  size today. Under the eight-neighbour test a 45-degree rim is a staircase two
+  cells thick, so counting its cells **over**-reports it by about √2, and stepping
+  along it one cell at a time under-reports it by the same factor. (This bullet had
+  the two the wrong way round; the implementation measures the path and is right.)
+  `DangerousLength` is one of three numbers this check reports and `minPassage` is
+  judged on the same quantity.
 - **The 16-sweep cap reports.** `ChamferThroughMask` stops at 16 sweeps and leaves
   stale distances that read as safe, silently. It now iterates to convergence and,
   if it hits a raised cap, says so in the read's notes.
-- **The colour ramp's documentation is made to match the code.** The source's
-  comments describe ramping the gap width; the code ramps the clearance. The code is
-  right; the words are rewritten.
+- **The colour ramp pivots on the gap the limit allows.** The source's comments
+  describe ramping the gap width and its code ramps the clearance, which is half the
+  gap, against the whole limit — so the yellow landed at a gap of twice the limit.
+  The ramp divides by half the limit and the words match it.
+- **One limit means one thing on both passes.** The source has two parameters on two
+  functions and reads them differently: the edge pass tests the clearance against
+  half the limit, the openings pass tests it against the whole limit. The check puts
+  one typed setting into both, so both take the threshold from `CoreThreshold`.
 
 Recorded and deferred:
 
@@ -1297,7 +1305,8 @@ Recorded and deferred:
 - **Bounding-box spanning selects elements far too coarsely.** One grouped "Floors"
   item spanning a building passes the band test and drags every floor onto one plan.
 - **Cell-centre point sampling** loses anything thinner than a cell: a slab edge, a
-  rail, a thin plate. At the default cell size that is a coin flip under 250 mm.
+  rail, a thin plate. At the 100 mm default cell that is a coin flip under 100 mm,
+  which is most railings.
 - **Openings are only found when fully enclosed**, by a four-connected fill from the
   grid border. A stair void at a slab edge, a mezzanine perimeter and a
   double-height overlook are classed as exterior and never analysed, and one
@@ -1308,6 +1317,9 @@ Recorded and deferred:
   distance transform would remove both; the constants are pinned by tests and left.
 - **Handrails are neither height- nor band-filtered**, and matching is proximity
   only: a rail 300 mm across the void protects the edge as well as one on it.
+- **The owner grid is first writer wins**, in traversal order. Where a finish covers
+  a structural slab the finding names whichever the traversal reached first, so it
+  can name the covering element and not the one the hole is cut in.
 - **The cell cap** at six million cells, which at a 100 mm cell is a 245 m square.
 
 ### 3.5 What the clearance floor-side screen must say

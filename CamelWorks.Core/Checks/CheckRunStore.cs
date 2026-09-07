@@ -53,6 +53,26 @@ namespace CamelWorks.Core.Checks
         /// <summary>When it last ran, as UTC ticks, or zero for a run saved and never run.</summary>
         public long LastRunTicks { get; set; }
 
+        /// <summary>
+        /// What the last run of this run could not do, in its own words.
+        ///
+        /// Per run and saved with it, because a caveat belongs to the answer it qualifies. A check
+        /// that held these in a field of its own lost run A's caveat the moment run B started, and
+        /// showed A's caveat to somebody reading B. They are written by
+        /// <see cref="ICheckRunner.Run"/> and read back by <c>Read</c>.
+        /// </summary>
+        public IList<string> Notes { get; } = new List<string>();
+
+        /// <summary>Replace what the last run of this run said with what this one said.</summary>
+        /// <param name="notes">What it could not do. Null or empty leaves it saying nothing.</param>
+        public void Said(IEnumerable<string>? notes)
+        {
+            Notes.Clear();
+
+            foreach (var note in notes ?? Array.Empty<string>())
+                if (!string.IsNullOrWhiteSpace(note)) Notes.Add(note);
+        }
+
         /// <summary>Serialise.</summary>
         public JsonValue ToJson()
         {
@@ -68,6 +88,15 @@ namespace CamelWorks.Core.Checks
 
             if (Folder != null) json.Set("folder", Folder);
             if (LastRunTicks != 0) json.Set("lastRun", LastRunTicks);
+
+            if (Notes.Count > 0)
+            {
+                var notes = JsonValue.Array();
+
+                foreach (var note in Notes) notes.Add(JsonValue.String(note));
+
+                json.Set("notes", notes);
+            }
 
             return json.Set("settings", settings);
         }
@@ -93,6 +122,13 @@ namespace CamelWorks.Core.Checks
                 Folder = json["folder"].AsString(),
                 LastRunTicks = json["lastRun"].AsLong(),
             };
+
+            foreach (var note in json["notes"].Items)
+            {
+                var said = note.AsString();
+
+                if (!string.IsNullOrWhiteSpace(said)) spec.Notes.Add(said!);
+            }
 
             var settings = json["settings"];
 

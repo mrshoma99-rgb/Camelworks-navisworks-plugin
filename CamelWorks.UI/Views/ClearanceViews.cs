@@ -90,6 +90,7 @@ namespace CamelWorks.UI.Views
         {
             _checkKey = check.Key;
             Picked = null;
+            FallHazardViews.Forget();
 
             Draw(frame, seat);
         }

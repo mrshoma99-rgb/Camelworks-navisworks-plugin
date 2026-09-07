@@ -364,10 +364,41 @@ namespace CamelWorks.Core.Tests
 
             Assert.Null(check.HostEcho);
             Assert.Null(check.Grouping);
-            Assert.Null(check.Properties);
             Assert.NotNull(check.Runner);
             Assert.NotNull(check.Naming);
             Assert.NotNull(check.Geometry);
+
+            // A property reader, because a hazard names ordinary elements. The board gates the
+            // property columns on this, so a null left every added column blank.
+            Assert.NotNull(check.Properties);
+
+            // And null with no document, which is the one state with nothing to resolve against.
+            Assert.Null(new FallCheck(new FindingRegister(), new CheckRunStore()).Properties);
+        }
+
+        [Fact]
+        public void A_property_column_reads_a_value_off_the_slab_the_opening_is_in()
+        {
+            var register = new FindingRegister();
+            var runs = new CheckRunStore();
+            var document = Model(out var west, out _);
+
+            document.Traverse(TraversalScope.WholeDocument).OfType<FakeItem>()
+                    .First(one => one.Key.ToString() == west.ToString())
+                    .WithProperty("Element", "Fire rating", "REI 60");
+
+            runs.Put(Spec("level3", "Level 3 openings"));
+
+            var check = Check(register, runs, document);
+
+            Assert.True(check.Runner!.Run("level3", null));
+
+            var opening = check.Read(null, null).Findings
+                               .First(one => !FallHazardFindings.IsEdge(one));
+
+            var values = check.Properties!.ValuesFor(opening, -1, "Element", "Fire rating");
+
+            Assert.Contains(values, one => one.Value == "REI 60");
         }
 
         [Fact]
@@ -412,6 +443,127 @@ namespace CamelWorks.Core.Tests
                                            Array.Empty<ElementKey>(), "0,0/opening", "another");
 
             Assert.Null(check.Geometry.Snapshot(elsewhere, 400, 400));
+        }
+
+        [Fact]
+        public void A_runs_caveat_stays_on_that_run_and_survives_a_reload()
+        {
+            var document = new FakeDocument();
+            var model = document.AddModel("Struct", @"C:\job\Struct.nwc");
+            var floor = FallHazardTests.Serpentine(200, out var span);
+
+            var slab = document.AddItem(model, "Serpentine slab", "Floors", "Concrete",
+                                        new BoundingBox(0, 0, -0.2, span.Item1, span.Item2, 0));
+
+            Lay(document, slab.Key, floor, 0);
+
+            // The winding void hits the sweep cap; the second run is over a plain slab and does
+            // not. The cap note is what the read has to carry, so it must stay on the run it
+            // belongs to.
+            var register = new FindingRegister();
+            var runs = new CheckRunStore();
+
+            runs.Put(Spec("snake", "The winding void"));
+            runs.Put(Spec("quiet", "The plain slab", cell: 0.5));
+
+            var check = Check(register, runs, document);
+
+            Assert.True(check.Runner!.Run("snake", null));
+            Assert.True(check.Runner.Run("quiet", null));
+
+            // Running the second run used to clear the first run's caveat and hand it to whoever
+            // read the second.
+            Assert.Contains(check.Read(new[] { "snake" }, null).Notes,
+                            note => note.Contains("still changing"));
+
+            Assert.DoesNotContain(check.Read(new[] { "quiet" }, null).Notes,
+                                  note => note.Contains("still changing"));
+
+            // And it is on the run, so a project written now and read back tomorrow still has it.
+            var json = runs.Find(FindingSource.FallHazard, "snake")!.ToJson();
+            var back = CheckRunSpec.FromJson(json)!;
+
+            Assert.Contains(back.Notes, note => note.Contains("still changing"));
+        }
+
+        [Fact]
+        public void Severity_has_no_measure_where_the_run_allowed_no_gap()
+        {
+            var check = Check(new FindingRegister(), new CheckRunStore(), Model());
+
+            var opening = new FloorOpening(1, 1, 4, 2, 0, 0, 2, 2, 400);
+            var finding = FallHazardFindings.FromOpening(opening, null, null, 0, 0.0);
+
+            // A limit of nothing is not a limit of zero: dividing by it would make every hazard
+            // infinitely bad, and the run should not have been runnable in the first place.
+            Assert.Null(check.Severity(finding));
+            Assert.Equal("no measure", check.SeverityBand(check.Severity(finding)));
+
+            // The three bands, each of which a reported hazard can reach.
+            Assert.Equal("just over the gap allowed", check.SeverityBand(1.5));
+            Assert.Equal("over the gap allowed", check.SeverityBand(2.0));
+            Assert.Equal("far over the gap allowed", check.SeverityBand(4.0));
+        }
+
+        [Fact]
+        public void The_gap_column_marks_a_gap_over_what_the_run_allowed()
+        {
+            var gap = FallColumns.Declare().Single(one => one.Key == FallHazardFindings.WidestGap);
+
+            var opening = new FloorOpening(1, 1, 4, 2, 0, 0, 2, 2, 400);
+            var over = FallHazardFindings.FromOpening(opening, null, null, 0, 0.5);
+            var under = FallHazardFindings.FromOpening(opening, null, null, 0, 3.0);
+            var nothing = FallHazardFindings.FromOpening(opening, null, null, 0, 0.0);
+
+            Assert.True(gap.IsBad!(over));            // a 2 m gap where 0.5 m was allowed
+            Assert.False(gap.IsBad!(under));          // the same gap where 3 m was allowed
+            Assert.False(gap.IsBad!(nothing));        // and no limit is no judgement
+
+            // The band the range filter groups on is the tenth the number falls in.
+            Assert.Equal(2.0, gap.Number!(over)!.Value, 6);
+            Assert.Equal("2.0", gap.Bucket!(2.04));
+            Assert.Equal("1.9", gap.Bucket!(1.99));
+            Assert.Equal("2 m", gap.Format!(2.0));
+        }
+
+        // --------------------------------------------------------------------- The settings
+
+        [Theory]
+        [InlineData("cell", "cell size")]
+        [InlineData("band", "band")]
+        [InlineData("limit", "gap that needs a handrail")]
+        public void A_setting_of_nothing_or_less_refuses_the_run(string key, string said)
+        {
+            var settings = new FallSettings { Floors = FallSettings.Loaded };
+
+            Assert.Null(settings.Wrong());
+
+            switch (key)
+            {
+                case "cell": settings.CellMetres = 0; break;
+                case "band": settings.BandMetres = 0; break;
+                default: settings.LimitMetres = -1; break;
+            }
+
+            Assert.Contains(said, settings.Wrong());
+        }
+
+        [Fact]
+        public void A_run_keeps_the_settings_this_build_does_not_know_about()
+        {
+            var spec = new CheckRunSpec(FindingSource.FallHazard, "level3", "Level 3");
+
+            // A newer build wrote this. Reading a run and writing it back must not drop it, or
+            // opening a project in an older build would quietly delete half of somebody's run.
+            spec.Settings["ceilingHeight"] = "2.4";
+
+            var settings = FallSettings.From(spec);
+
+            settings.LimitMetres = 0.4;
+            settings.Write(spec);
+
+            Assert.Equal("2.4", spec.Settings["ceilingHeight"]);
+            Assert.Equal(0.4, FallSettings.From(spec).LimitMetres, 6);
         }
 
         [Fact]

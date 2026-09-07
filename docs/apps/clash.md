@@ -498,7 +498,7 @@ down from, so neither reports one. Fall hazard draws a plan of one level from th
 and reports two things: every opening enclosed by floor that is wide enough to fall through, and
 every floor edge facing such an opening with no handrail along it.
 
-- *Ported rather than written.* The engine is the fall-hazard rasteriser from the owner's own
+- *Ported, not written.* The engine is the fall-hazard rasteriser from the owner's own
   graph product, whose pure half was already host-free, and its own test file came with it: the
   cell-size-independent clearance, the slot judged by its width and not its length, the corners of
   a wide opening, and the break too short to fall through. Every one of those pins a defect found
@@ -514,9 +514,18 @@ every floor edge facing such an opening with no handrail along it.
 - *Fixed in the port:* the per-opening and per-run records survive. The source computed both and
   kept three aggregate lengths, so an edge that needed a handrail could be reported as a number of
   metres and never as a place. A dangerous run is the per-edge finding.
-- *Fixed in the port:* a run's length is measured along the void it faces rather than counted in
-  cells. A 45-degree rim is a staircase two cells wide, so counting cells reported about √2 more
-  than the truth — and the smallest-break setting is judged on the same quantity.
+- *Fixed in the port:* a run's length is measured along the void it faces, not counted in cells.
+  A 45-degree rim is a staircase two cells wide, so counting cells reported about √2 more than the
+  truth — and the smallest-break setting is judged on the same quantity.
+- *Fixed after the port:* **one setting means one thing on both passes.** The source had two
+  parameters on two functions and read them differently, and the check puts one typed setting into
+  both, so every opening between one and two times the gap allowed was left off the board while the
+  edge around it was reported as dangerous. Both passes take the threshold from one expression now.
+  The heat plan's ramp pivots on the same gap, so a gap at the limit is the yellow.
+- *Fixed after the port:* **two hazards in one place stay two findings.** A position quantised to
+  2 m is what lets an identity survive a model that moves a little, and it also put a row of small
+  penetrations in one slab under one id, where one silently replaced the other. Hazards that share
+  a cell are ordered across then along and carry that place in their identity.
 - *Fixed in the port:* the distance through a void is swept to convergence and **says so when it
   hits the cap**. The source stopped at sixteen sweeps and left stale distances that read as safe,
   silently. Hitting the cap now appears in the read's notes on the board.
@@ -524,15 +533,16 @@ every floor edge facing such an opening with no handrail along it.
   it matters. The largest is the plan silhouette: an element whose box reaches the band contributes
   its whole outline, so a column, a riser or a stair through the level reads as solid floor. That
   was a deliberate trade — reading a thin Z band instead left equipment cap faces out, and
-  equipment then read as open floor rather than as a plug — and undoing it is a change to the
-  algorithm rather than a port of it. Also recorded: bounding-box spanning selects far too
-  coarsely, cells are sampled at their centres so anything thinner than a cell is a coin flip, an
-  opening is only found when it is fully enclosed, the chamfer's two hand-tuned constants, that
-  handrails are matched by proximity alone and are neither height- nor band-filtered, and the flat
+  equipment then read as open floor and not as a plug — and undoing it is a change to the
+  algorithm and not a port of it. Also recorded: bounding-box spanning selects far too coarsely,
+  cells are sampled at their centres so anything thinner than a cell is a coin flip, an opening is
+  only found when it is fully enclosed, the chamfer's two hand-tuned constants, that handrails are
+  matched by proximity alone and are neither height- nor band-filtered, that the owner grid is
+  first writer wins so a finish over a slab can be the element a finding names, and the flat
   six-million-cell cap.
 - *The set-up:* nine settings — the floor, handrail and obstruction sides, the level, the band,
   the cell size, the gap that needs a handrail, the handrail reach and the smallest break worth
-  reporting. Nine is why they are in two windows off the action row rather than laid beside the run
+  reporting. Nine is why they are in two windows off the action row and not laid beside the run
   list, and why this screen has no fold. A run is a `CheckRunSpec` in the project file, like a
   clearance run, and re-running is pressing Run on it.
 - *The results are on Manage*, like every other check's, with three declared columns: the opening's

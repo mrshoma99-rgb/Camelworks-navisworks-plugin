@@ -36,6 +36,23 @@ namespace CamelWorks.UI.Views
             new Screen(seat, frame).Build();
 
         /// <summary>
+        /// Which fall-hazard run the set-up screen is on, across a redraw.
+        ///
+        /// Its own, not the clearance screen's. The two screens shared one field, so picking a
+        /// fall-hazard run moved the clearance screen onto a run id it does not hold, and
+        /// <see cref="Drawn"/> moved it as a side effect of drawing a page for the harness.
+        /// </summary>
+        internal static string? Picked { get; set; }
+
+        static FallHazardViews() => Host.WhenDocumentChanges(Forget);
+
+        /// <summary>
+        /// Forget which run was picked, so the next visit starts clean. The runs themselves are in
+        /// the project file and survive.
+        /// </summary>
+        internal static void Forget() => Picked = null;
+
+        /// <summary>
         /// The two set-up windows' contents, one under the other, for the render harness.
         ///
         /// Drawn rather than shown: a window needs a screen to open on and the harness has none,
@@ -48,7 +65,9 @@ namespace CamelWorks.UI.Views
         {
             if (run == null) throw new ArgumentNullException(nameof(run));
 
-            ClearanceViews.Picked = run.Id;
+            // This screen's own pick, so drawing a page for the harness does not move another
+            // screen's.
+            Picked = run.Id;
 
             var screen = new Screen(seat, null);
 
@@ -78,7 +97,7 @@ namespace CamelWorks.UI.Views
             private FallCheck? Check => _seat.Checks.All.OfType<FallCheck>().FirstOrDefault();
 
             /// <summary>The run being set up, or null when none is picked.</summary>
-            private CheckRunSpec? Run() => Check?.Spec(ClearanceViews.Picked);
+            private CheckRunSpec? Run() => Check?.Spec(Picked);
 
             internal UIElement Build()
             {
@@ -175,7 +194,7 @@ namespace CamelWorks.UI.Views
                     Ui.Count(one.ResultCount, check.ResultWord),
                     When(one))
                 {
-                    Tone = string.Equals(one.Id, ClearanceViews.Picked, StringComparison.Ordinal)
+                    Tone = string.Equals(one.Id, Picked, StringComparison.Ordinal)
                         ? Tone.Good
                         : Tone.Plain,
                 }).ToList();
@@ -188,7 +207,7 @@ namespace CamelWorks.UI.Views
                 {
                     if (!(table.SelectedItem is TableRow row) || !(row.Source is CheckRun one)) return;
 
-                    ClearanceViews.Picked = one.Id;
+                    Picked = one.Id;
                 };
 
                 _runs.Children.Add(table);
@@ -228,7 +247,7 @@ namespace CamelWorks.UI.Views
 
                 var problem = check.Put(made);
 
-                ClearanceViews.Picked = made.Id;
+                Picked = made.Id;
 
                 RedrawRuns();
 
@@ -286,7 +305,7 @@ namespace CamelWorks.UI.Views
             {
                 var runs = Chosen(picked);
 
-                if (runs.Count > 0) ClearanceViews.Picked = runs[0].Id;
+                if (runs.Count > 0) Picked = runs[0].Id;
 
                 Ran(runs.Select(one => one.Id).ToList(), null, said);
             }
@@ -343,9 +362,9 @@ namespace CamelWorks.UI.Views
                 {
                     Check?.Runner?.Delete(runs.Select(one => one.Id).ToList());
 
-                    if (runs.Any(one => string.Equals(one.Id, ClearanceViews.Picked,
+                    if (runs.Any(one => string.Equals(one.Id, Picked,
                                                       StringComparison.Ordinal)))
-                        ClearanceViews.Picked = null;
+                        Picked = null;
 
                     RedrawRuns();
 
@@ -356,10 +375,10 @@ namespace CamelWorks.UI.Views
             /// <summary>Run the picked run from the action row.</summary>
             /// <param name="job">The job, for progress and a Stop.</param>
             private void RunNow(Job job) =>
-                Ran(ClearanceViews.Picked == null
+                Ran(Picked == null
                         ? Array.Empty<string>()
-                        : new[] { ClearanceViews.Picked! },
-                    read => job.Step(read, "elements read"), _log);
+                        : new[] { Picked! },
+                    read => job.Step(read, "steps"), _log);
 
             /// <summary>What one symbol on the action row is for, in a window of its own.</summary>
             /// <param name="section">Which section the symbol names.</param>

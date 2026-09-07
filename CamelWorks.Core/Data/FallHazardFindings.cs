@@ -15,10 +15,19 @@ namespace CamelWorks.Core.Data
     /// and nothing else — nothing to focus, isolate, attach an issue to or send in a pack, which
     /// is what the source produced.
     ///
-    /// Identity: the run, the elements, where it is, and which pass found it. The run is in the
-    /// identity because two runs over the same floor at different limits are two judgements; the
-    /// pass is in it because an opening and the edge around it sit at the same place and are two
-    /// pieces of work — one is a hole to cover and the other is a handrail to fit.
+    /// Identity: the run, the elements, where it is, which pass found it, and which of the hazards
+    /// in that place it is. The run is in the identity because two runs over the same floor at
+    /// different limits are two judgements; the pass is in it because an opening and the edge
+    /// around it sit at the same place and are two pieces of work — one is a hole to cover and the
+    /// other is a handrail to fit.
+    ///
+    /// The last part is what stops two hazards becoming one. Quantising the position is what makes
+    /// an identity survive a model that moves a little, and it also puts two hazards in one cell
+    /// under one id: a row of small penetrations 1 to 2 m apart in one slab shares a cell and
+    /// shares its elements, so one silently replaced the other in the register and an unstable sort
+    /// decided which. Hazards that share a cell are now ordered across then along and the second
+    /// and later ones carry that place in the discriminator, so the common case — one hazard to a
+    /// cell — keeps the id it had, and no two hazards can ever collapse into one row.
     ///
     /// The limit a run asked for is a fact and not part of the identity, for the reason it is on a
     /// clearance breach: re-running at a stricter limit must not lose last week's judgement.
@@ -52,7 +61,7 @@ namespace CamelWorks.Core.Data
         /// How big a cell the position is quantised into, in metres.
         ///
         /// Two metres, as a clearance breach is: an opening is an area somebody could fall
-        /// through rather than a point, so one that drifts by less than its own width as the model
+        /// through and not a point, so one that drifts by less than its own width as the model
         /// moves is still the same opening.
         /// </summary>
         public const double DefaultCell = 2.0;
@@ -61,12 +70,22 @@ namespace CamelWorks.Core.Data
         /// How many elements a finding names.
         ///
         /// A rim can touch a dozen slabs where a floor is modelled in bays, and a Focus that
-        /// selects a dozen slabs frames the storey rather than the hole. The commonest few are the
+        /// selects a dozen slabs frames the storey and not the hole. The commonest few are the
         /// ones the opening is actually cut in.
+        ///
+        /// The elements are hashed into the identity, so a change in which eight are the commonest
+        /// re-derives the id and detaches the status, the assignee, the comments and any issue
+        /// link. That is recorded on <see cref="CamelWorks.Core.Checks.FallCheck.Aliases"/>.
         /// </summary>
         public const int MostElements = 8;
 
-        /// <summary>The discriminator that separates one hazard from another under the same run.</summary>
+        /// <summary>What the discriminator calls a hazard from the openings pass.</summary>
+        public const string OpeningKind = "opening";
+
+        /// <summary>What the discriminator calls a hazard from the edge pass.</summary>
+        public const string EdgeKind = "edge";
+
+        /// <summary>The cell a position falls in, as the discriminator spells it.</summary>
         /// <param name="x">Where it is, across, in metres.</param>
         /// <param name="y">Where it is, along, in metres.</param>
         /// <param name="cell">The cell size, in metres.</param>
@@ -76,6 +95,71 @@ namespace CamelWorks.Core.Data
 
             return ((int)Math.Floor(x / size)).ToString(CultureInfo.InvariantCulture) + ","
                    + ((int)Math.Floor(y / size)).ToString(CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// The discriminator that separates one hazard from another under the same run: the cell,
+        /// the pass, and which of the hazards in that cell this is.
+        ///
+        /// The ordinal is left off the first hazard in a cell, which is every hazard on a plan
+        /// with no two in one cell, so those ids are the ones this check has always produced.
+        /// </summary>
+        /// <param name="x">Where it is, across, in metres.</param>
+        /// <param name="y">Where it is, along, in metres.</param>
+        /// <param name="kind">Which pass found it: <see cref="OpeningKind"/> or <see cref="EdgeKind"/>.</param>
+        /// <param name="cell">The cell size, in metres.</param>
+        /// <param name="ordinal">Which of the hazards in that cell this is, counting from zero.</param>
+        public static string Placed(double x, double y, string kind, double cell = DefaultCell,
+                                    int ordinal = 0) =>
+            CellOf(x, y, cell) + "/" + (kind ?? string.Empty)
+            + (ordinal > 0
+                ? "#" + (ordinal + 1).ToString(CultureInfo.InvariantCulture)
+                : string.Empty);
+
+        /// <summary>
+        /// Which place in its cell each hazard takes, in the order they were handed over.
+        ///
+        /// Zero for the only hazard in a cell. Where two or more share one they are ordered across
+        /// then along, so which is second is decided by where they are and not by the order the
+        /// raster happened to find them in.
+        /// </summary>
+        /// <param name="places">Where each hazard is: across, then along, in metres.</param>
+        /// <param name="cell">The cell size, in metres.</param>
+        public static int[] Ranks(IReadOnlyList<KeyValuePair<double, double>>? places,
+                                  double cell = DefaultCell)
+        {
+            var found = places ?? Array.Empty<KeyValuePair<double, double>>();
+            var ranks = new int[found.Count];
+            var byCell = new Dictionary<string, List<int>>(StringComparer.Ordinal);
+
+            for (var i = 0; i < found.Count; i++)
+            {
+                var key = CellOf(found[i].Key, found[i].Value, cell);
+
+                if (!byCell.TryGetValue(key, out var here))
+                {
+                    here = new List<int>();
+                    byCell[key] = here;
+                }
+
+                here.Add(i);
+            }
+
+            foreach (var here in byCell.Values)
+            {
+                if (here.Count == 1) continue;
+
+                here.Sort((a, b) =>
+                {
+                    var by = found[a].Key.CompareTo(found[b].Key);
+
+                    return by != 0 ? by : found[a].Value.CompareTo(found[b].Value);
+                });
+
+                for (var at = 0; at < here.Count; at++) ranks[here[at]] = at;
+            }
+
+            return ranks;
         }
 
         /// <summary>
@@ -89,16 +173,21 @@ namespace CamelWorks.Core.Data
         /// <param name="cell">The cell size the position is quantised into, in metres.</param>
         /// <param name="runId">The run's stable id, which is part of the finding's identity.</param>
         /// <param name="runName">What the run is called, which is the finding's rule.</param>
+        /// <param name="ordinal">
+        /// Which of the openings in its cell this is, counting from zero, as
+        /// <see cref="Ranks"/> works it out. Zero is the only opening in its cell.
+        /// </param>
         public static Finding FromOpening(FloorOpening opening, IReadOnlyList<ElementKey>? elements,
                                           IReadOnlyList<string?>? names, double levelMetres,
                                           double limitMetres, double cell = DefaultCell,
-                                          string? runId = null, string? runName = null)
+                                          string? runId = null, string? runName = null,
+                                          int ordinal = 0)
         {
             if (opening == null) throw new ArgumentNullException(nameof(opening));
 
             var finding = Made(elements, runId, runName,
                                Printed(opening.WidestGapMetres) + " m opening in " + Named(names),
-                               CellOf(opening.CentreX, opening.CentreY, cell) + "/opening");
+                               Placed(opening.CentreX, opening.CentreY, OpeningKind, cell, ordinal));
 
             finding.X = opening.CentreX;
             finding.Y = opening.CentreY;
@@ -128,16 +217,21 @@ namespace CamelWorks.Core.Data
         /// <param name="cell">The cell size the position is quantised into, in metres.</param>
         /// <param name="runId">The run's stable id, which is part of the finding's identity.</param>
         /// <param name="runName">What the run is called, which is the finding's rule.</param>
+        /// <param name="ordinal">
+        /// Which of the runs in its cell this is, counting from zero, as <see cref="Ranks"/> works
+        /// it out. Zero is the only run in its cell.
+        /// </param>
         public static Finding FromEdge(EdgeRun run, IReadOnlyList<ElementKey>? elements,
                                        IReadOnlyList<string?>? names, double levelMetres,
                                        double cell = DefaultCell,
-                                       string? runId = null, string? runName = null)
+                                       string? runId = null, string? runName = null,
+                                       int ordinal = 0)
         {
             if (run == null) throw new ArgumentNullException(nameof(run));
 
             var finding = Made(elements, runId, runName,
                                Printed(run.LengthMetres) + " m of unprotected edge on " + Named(names),
-                               CellOf(run.CentreX, run.CentreY, cell) + "/edge");
+                               Placed(run.CentreX, run.CentreY, EdgeKind, cell, ordinal));
 
             finding.X = run.CentreX;
             finding.Y = run.CentreY;
@@ -179,18 +273,27 @@ namespace CamelWorks.Core.Data
 
             if (grid == null) return found;
 
+            var flagged = new List<FloorOpening>();
+
             foreach (var opening in grid.Openings)
-            {
-                if (!opening.Flagged) continue;
+                if (opening.Flagged) flagged.Add(opening);
 
-                found.Add(FromOpening(opening, Elements(opening.Owners, owners),
-                                      Names(opening.Owners, names), levelMetres, limitMetres,
-                                      cell, runId, runName));
-            }
+            var runs = edges?.Runs ?? Array.Empty<EdgeRun>();
 
-            foreach (var run in edges?.Runs ?? Array.Empty<EdgeRun>())
-                found.Add(FromEdge(run, Elements(run.Owners, owners), Names(run.Owners, names),
-                                   levelMetres, cell, runId, runName));
+            // Worked out per pass, because the pass is already in the discriminator: an opening
+            // and the edge around it share a cell and are two findings without any of this.
+            var openingRanks = Ranks(Places(flagged, one => one.CentreX, one => one.CentreY), cell);
+            var runRanks = Ranks(Places(runs, one => one.CentreX, one => one.CentreY), cell);
+
+            for (var at = 0; at < flagged.Count; at++)
+                found.Add(FromOpening(flagged[at], Elements(flagged[at].Owners, owners),
+                                      Names(flagged[at].Owners, names), levelMetres, limitMetres,
+                                      cell, runId, runName, openingRanks[at]));
+
+            for (var at = 0; at < runs.Count; at++)
+                found.Add(FromEdge(runs[at], Elements(runs[at].Owners, owners),
+                                   Names(runs[at].Owners, names), levelMetres, cell, runId,
+                                   runName, runRanks[at]));
 
             return found;
         }
@@ -254,6 +357,22 @@ namespace CamelWorks.Core.Data
             return finding;
         }
 
+        /// <summary>Where each of a set of hazards is, for <see cref="Ranks"/>.</summary>
+        /// <param name="hazards">The hazards.</param>
+        /// <param name="x">Where one is, across, in metres.</param>
+        /// <param name="y">Where one is, along, in metres.</param>
+        /// <typeparam name="T">An opening or an edge run.</typeparam>
+        private static IReadOnlyList<KeyValuePair<double, double>> Places<T>(
+            IReadOnlyList<T> hazards, Func<T, double> x, Func<T, double> y)
+        {
+            var found = new List<KeyValuePair<double, double>>(hazards.Count);
+
+            foreach (var hazard in hazards)
+                found.Add(new KeyValuePair<double, double>(x(hazard), y(hazard)));
+
+            return found;
+        }
+
         /// <summary>The elements a set of owner indices stands for.</summary>
         /// <param name="owners">The owner indices.</param>
         /// <param name="keys">The element behind each owner index, in owner order.</param>
@@ -295,8 +414,10 @@ namespace CamelWorks.Core.Data
         {
             var kept = new List<string>();
 
+            // Capped where the finding is capped. Counting the whole list titled a rim touching
+            // twelve slabs "Slab A and 11 others" on a finding that names eight of them.
             foreach (var name in names ?? Array.Empty<string?>())
-                if (!string.IsNullOrWhiteSpace(name)) kept.Add(name!);
+                if (!string.IsNullOrWhiteSpace(name) && kept.Count < MostElements) kept.Add(name!);
 
             if (kept.Count == 0) return "the floor";
             if (kept.Count == 1) return kept[0];

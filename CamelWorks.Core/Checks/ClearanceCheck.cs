@@ -294,10 +294,18 @@ namespace CamelWorks.Core.Checks
                 found.Add(finding);
             }
 
-            var notes = new List<string>(_notes);
+            // Off each run, not off the last press: a caveat belongs to the answer it qualifies,
+            // so reading run B does not show run A's, and A's stays on A.
+            var notes = new List<string>();
 
-            foreach (var run in runs.Where(run => run.LastRunTicks == 0))
-                notes.Add(run.Name + " has not been run yet.");
+            foreach (var run in runs)
+            {
+                var spec = _runs.Find(Key, run.Id);
+
+                if (spec != null) notes.AddRange(spec.Notes);
+
+                if (run.LastRunTicks == 0) notes.Add(run.Name + " has not been run yet.");
+            }
 
             return new CheckRead(runs, found, CheckFacts.ScopeOf(ids), notes);
         }
@@ -324,9 +332,10 @@ namespace CamelWorks.Core.Checks
         /// <summary>
         /// Measure one saved run and record what it found.
         ///
-        /// Every step is stated rather than assumed: a run whose surface side resolves to nothing
-        /// reports that in the read's notes and marks nothing absent, because a run that measured
-        /// nothing is not evidence that yesterday's breaches are fixed.
+        /// Every step is stated: a run whose surface side resolves to nothing reports that in the
+        /// read's notes and marks nothing absent, because a run that measured nothing is not
+        /// evidence that yesterday's breaches are fixed. Whatever it could not do is written onto
+        /// the run, so a read reports it against the run it belongs to.
         /// </summary>
         /// <param name="runId">Which run.</param>
         /// <param name="onProgress">Called with how far it has got; returning false stops it.</param>
@@ -343,10 +352,7 @@ namespace CamelWorks.Core.Checks
             }
 
             if (_document == null || _document.IsEmpty)
-            {
-                _notes.Add(Unavailable ?? "There is nothing to measure.");
-                return false;
-            }
+                return Told(spec, Unavailable ?? "There is nothing to measure.");
 
             var settings = ClearanceSettings.From(spec);
             var zone = Zone(settings);
@@ -358,25 +364,22 @@ namespace CamelWorks.Core.Checks
 
             var whole = Whole(settings, onProgress);
 
-            if (whole == null) return false;
+            if (whole == null) return Stopped(spec);
 
             var surfaces = settings.IsDetecting
                 ? patches!.Select(patch => Standing(patch)).ToList()
                 : Side(settings.Surfaces, whole, null, zone, onProgress);
 
-            if (surfaces == null) return false;
+            if (surfaces == null) return Stopped(spec);
 
             // A run that measured nothing is not evidence that yesterday's breaches are fixed, so
             // it reports what happened and marks nothing absent. An empty zone, a detection that
             // found no patch and a named set the document no longer holds all land here.
             if (surfaces.Count == 0)
-            {
-                _notes.Add(spec.Name + " resolved to no surface to measure from, so nothing was "
-                           + "measured and nothing was marked as fixed. Check the run's surface "
-                           + "side and its zone.");
-
-                return false;
-            }
+                return Told(spec,
+                            spec.Name + " resolved to no surface to measure from, so nothing was "
+                            + "measured and nothing was marked as fixed. Check the run's surface "
+                            + "side and its zone.");
 
             var already = settings.IsDetecting
                 ? new HashSet<string>(patches!.Select(patch => patch.Source.ToString()), StringComparer.Ordinal)
@@ -384,7 +387,7 @@ namespace CamelWorks.Core.Checks
 
             var above = Side(settings.Targets, whole, already, zone, onProgress);
 
-            if (above == null) return false;
+            if (above == null) return Stopped(spec);
 
             // The same rule on the other side, for a side that named something. A set the document
             // no longer holds and an empty selection resolve to nothing, and a run that measured
@@ -392,13 +395,10 @@ namespace CamelWorks.Core.Checks
             // answers are not covered: over a model with nothing above the floors they honestly
             // measure nothing.
             if (above.Count == 0 && !NeedsWhole(settings.Targets))
-            {
-                _notes.Add(spec.Name + " resolved to nothing over the surfaces, so nothing was "
-                           + "measured and nothing was marked as fixed. Check what the run "
-                           + "measures up to.");
-
-                return false;
-            }
+                return Told(spec,
+                            spec.Name + " resolved to nothing over the surfaces, so nothing was "
+                            + "measured and nothing was marked as fixed. Check what the run "
+                            + "measures up to.");
 
             above = above.Where(one => !settings.Ignores(one.Category)).ToList();
 
@@ -454,11 +454,41 @@ namespace CamelWorks.Core.Checks
 
             spec.LastRunTicks = DateTime.UtcNow.Ticks;
 
+            // Onto the run before the save, so the project file carries what this run could not do.
+            spec.Said(_notes);
+
             var problem = Kept();
 
+            // The save's own problem is about the save and not about the run, so it stays on the
+            // press and is not written onto the run as one of its caveats.
             if (problem != null) _notes.Add(problem);
 
             return true;
+        }
+
+        /// <summary>Say why the run stopped short, on the run itself, and give up on it.</summary>
+        /// <param name="spec">The run.</param>
+        /// <param name="note">Why.</param>
+        private bool Told(CheckRunSpec spec, string note)
+        {
+            _notes.Add(note);
+
+            return Stopped(spec);
+        }
+
+        /// <summary>Keep what the run said about itself, and report that it did not finish.</summary>
+        /// <param name="spec">The run.</param>
+        private bool Stopped(CheckRunSpec spec)
+        {
+            // Only where this press had something to say. A run somebody stopped observed nothing,
+            // so the last run's findings are still what this run stands on and its caveats still
+            // qualify them.
+            if (_notes.Count == 0) return false;
+
+            spec.Said(_notes);
+            Kept();
+
+            return false;
         }
 
         /// <summary>The detected surfaces this run measures from, less the ones somebody dropped.</summary>

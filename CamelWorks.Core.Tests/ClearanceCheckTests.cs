@@ -188,6 +188,40 @@ namespace CamelWorks.Core.Tests
             Assert.Equal("Slab L3", surface.Show(one));
         }
 
+        [Fact]
+        public void A_runs_caveat_stays_on_that_run_and_survives_a_reload()
+        {
+            var register = new FindingRegister();
+            var runs = new CheckRunStore();
+            var broken = Spec("broken", "Corridors, 2.1 m");
+            var settings = ClearanceSettings.From(broken);
+
+            settings.Zone = "Level 3 corridros";
+            settings.Write(broken);
+
+            runs.Put(broken);
+            runs.Put(Spec("fine", "Plant room, 2.1 m"));
+
+            var check = Check(register, runs, Model());
+
+            Assert.False(check.Runner!.Run("broken", null));
+            Assert.True(check.Runner.Run("fine", null));
+
+            // Running the second run used to clear the first run's caveat, so the note saying
+            // the first had measured nothing was lost while its stale findings stayed present.
+            Assert.Contains(check.Read(new[] { "broken" }, null).Notes,
+                            note => note.Contains("resolved to no surface", StringComparison.Ordinal));
+
+            Assert.DoesNotContain(check.Read(new[] { "fine" }, null).Notes,
+                                  note => note.Contains("resolved to no surface", StringComparison.Ordinal));
+
+            // And it is on the run, so a project written now and read back tomorrow still has it.
+            var back = CheckRunSpec.FromJson(runs.Find(FindingSource.Headroom, "broken")!.ToJson())!;
+
+            Assert.Contains(back.Notes,
+                            note => note.Contains("resolved to no surface", StringComparison.Ordinal));
+        }
+
         // ---------------------------------------------------------------------------------
         // The empty states
         // ---------------------------------------------------------------------------------

@@ -155,7 +155,7 @@ surface each type will be reached through rather than a screen that exists today
 | Engine | Surface |
 |---|---|
 | `ReportDocument` + blocks, `PdfReportWriter`, `XlsxWriter`, `HtmlReportWriter`, `KeyPlan`, `Deliverable` | Clash Report |
-| `PngWriter` | **Clash Manager ▸ Manage ▸ a fall-hazard snapshot**, and the report and pack writers through it — an RGBA raster as PNG bytes, beside `PngImage` which reads one. Every consumer of a picture in this product already takes PNG, so a raster handed out raw would make each of them grow an encoder. |
+| `PngWriter` | **Clash Manager ▸ Manage ▸ a fall-hazard snapshot** — an RGBA raster as PNG bytes, beside `PngImage` which reads one. That snapshot is its only caller today: nothing routes a fall-hazard plan into the report or the pack writer. It returns PNG because every consumer of a picture in this product already takes PNG, so a raster handed out raw would make each of them grow an encoder. |
 | `BcfWriter`, `BcfReader`, `BcfViewpoint`, `BcfCamera`, `BcfComponent`, `BcfColouring`, `BcfComment`, `BcfProject`, `BcfGuid`, `BcfFraming`, `ViewFraming` | **Clash Manager ▸ Exchange** and **Issue Manager ▸ Import / Export** |
 | `BcfResponse`, `BcfResponseReport`, `IssueSheet` | **Clash Manager ▸ Exchange ▸ Take back** — where a returned status leaves a clash: an explicit re-open is honoured downwards, everything else is promote-only so a stale answer cannot undo a decision made since the pack went out. |
 

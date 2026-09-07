@@ -12,7 +12,7 @@ namespace CamelWorks.Core.Checks
     /// left in the bag untouched. Every length is metres.
     ///
     /// Nine settings, which is why the set-up screen puts them in windows off the action row
-    /// rather than laying them beside the run list.
+    /// and does not lay them beside the run list.
     /// </summary>
     public sealed class FallSettings
     {
@@ -56,11 +56,11 @@ namespace CamelWorks.Core.Checks
         public string Floors { get; set; } = Loaded;
 
         /// <summary>
-        /// What the run treats as handrail.
+        /// What the run treats as handrail. Nothing by default.
         ///
-        /// Nothing by default, which is the honest first answer: a run with no handrails named
-        /// reports every edge over the limit as unprotected, and that is the state a coordinator
-        /// starts from rather than one the check should guess its way out of.
+        /// A run with no handrails named reports every edge over the limit as unprotected, which
+        /// is the state a model without modelled rails is actually in. Guessing at a rail set
+        /// would report edges as protected on no evidence.
         /// </summary>
         public string Handrails { get; set; } = Nothing;
 
@@ -164,7 +164,7 @@ namespace CamelWorks.Core.Checks
             return null;
         }
 
-        /// <summary>Whether a side names something to read rather than nothing.</summary>
+        /// <summary>Whether a side names something to read.</summary>
         /// <param name="side">What the side is set to.</param>
         private static bool Names(string? side) =>
             !string.IsNullOrWhiteSpace(side)

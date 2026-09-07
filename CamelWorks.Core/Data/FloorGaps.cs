@@ -74,7 +74,12 @@ namespace CamelWorks.Core.Data
         /// </summary>
         public IReadOnlyList<int> Owners { get; }
 
-        /// <summary>True when its widest gap reaches the limit the run asked for.</summary>
+        /// <summary>
+        /// True when the void is locally wide enough to fall through at the limit the run asked
+        /// for: it holds a point at least <see cref="FloorGaps.CoreThreshold"/> from any solid.
+        ///
+        /// The same test the edge pass makes, so the two passes cannot disagree about one gap.
+        /// </summary>
         public bool Flagged { get; internal set; }
 
         /// <inheritdoc />
@@ -306,11 +311,8 @@ namespace CamelWorks.Core.Data
         public IReadOnlyList<EdgeRun> Runs { get; }
 
         /// <summary>
-        /// What the classification could not do — today, only the sweep cap.
-        ///
-        /// The distance through the void is swept to convergence, and a domain convoluted enough
-        /// to still be changing at the cap leaves distances that read as safe. It used to stop at
-        /// sixteen sweeps and say nothing at all, so the answer was wrong and looked right.
+        /// What the classification could not do. Today that is only the sweep cap: a domain still
+        /// changing at <see cref="FloorGaps.SweepCap"/> leaves distances that read as safe.
         /// </summary>
         public IReadOnlyList<string> Notes { get; }
 
@@ -330,7 +332,7 @@ namespace CamelWorks.Core.Data
     /// hole, each void is graded by how far its deepest point sits from the nearest solid, and
     /// the floor cells facing a void are classified as safe, handrail-protected or dangerous.
     ///
-    /// Five things the port fixes, each of which the source got wrong:
+    /// Six things the port fixes, each of which the source got wrong:
     ///
     ///   * Every length is metres. The source worked in document units and printed the same
     ///     opening's gap two different ways in two of its own outputs.
@@ -339,29 +341,33 @@ namespace CamelWorks.Core.Data
     ///     source lost element identity the moment triangles arrived as one undifferentiated list.
     ///   * The per-opening and per-run records survive. The source computed both and kept three
     ///     aggregate numbers.
-    ///   * A run's length is measured along the void it faces rather than counted in cells. A
-    ///     45-degree rim is a staircase two cells wide, so counting its cells over-reports by
-    ///     about √2 and stepping along them one at a time under-reports by the same factor. The
-    ///     minimum passage is judged on the same quantity, so the error was in both numbers.
+    ///   * A run's length is measured along the void it faces, not counted in cells. A 45-degree
+    ///     rim is a staircase two cells wide, so counting its cells over-reports by about √2 and
+    ///     stepping along them one at a time under-reports by the same factor. The minimum passage
+    ///     is judged on the same quantity, so the error was in both numbers.
     ///   * The distance through the void is swept to convergence and says so when it hits the
     ///     cap. The source stopped at sixteen sweeps and left stale distances that read as safe.
+    ///   * One limit means one thing on both passes, through <see cref="CoreThreshold"/>. The
+    ///     source had two parameters on two functions and read them differently — the edge pass
+    ///     against half the limit, the openings pass against the whole of it — and the check puts
+    ///     one setting into both.
     ///
-    /// Recorded and deferred, in the order they matter. Each is a limit of the algorithm rather
-    /// than of this port, and every one of them is visible in what the check reports:
+    /// Recorded and deferred, in the order they matter. Each is a limit of the algorithm and not
+    /// of this port, and every one of them is visible in what the check reports:
     ///
     ///   * Deferred — the plan silhouette is every triangle of every spanning element. A
     ///     column, a riser or a stair whose box merely reaches into the band projects its full
     ///     height as solid floor. This is the largest fidelity problem here, and it was a
     ///     deliberate trade: reading only the triangles inside a thin Z band left equipment cap
-    ///     faces out, and equipment then read as open floor rather than as a plug. Fixing it
-    ///     needs a real Z band on triangles with an explicit cap-face rule, which is a change to
-    ///     the algorithm and not a port of it.
+    ///     faces out, and equipment then read as open floor and not as a plug. Fixing it needs a
+    ///     real Z band on triangles with an explicit cap-face rule, which is a change to the
+    ///     algorithm and not a port of it.
     ///   * Deferred — bounding-box spanning selects elements far too coarsely. One grouped
     ///     "Floors" item spanning a building passes the band test and drags every floor in it onto
     ///     one plan.
     ///   * Deferred — cells are sampled at their centres. Anything thinner than a cell —
-    ///     a slab edge, a rail, a thin plate — is a coin flip, which at a 250 mm cell is most
-    ///     railings.
+    ///     a slab edge, a rail, a thin plate — is a coin flip, which at the 100 mm default cell
+    ///     is most railings.
     ///   * Deferred — an opening is only found when it is fully enclosed, by a
     ///     four-connected fill from the grid border. A stair void at a slab edge, a mezzanine
     ///     perimeter and a double-height overlook are classed as exterior and never analysed, and
@@ -377,8 +383,12 @@ namespace CamelWorks.Core.Data
     ///     it wants. Two edges either side of a one-cell floor strip between two voids are two
     ///     runs and are measured as two, which is right for the rail count and wrong for anyone
     ///     reading the total as a length of floor.
+    ///   * Deferred — the owner grid is first writer wins, in traversal order. Where a finish
+    ///     covers a structural slab, the finding names whichever the traversal reached first, so
+    ///     it can name the covering element and not the one the hole is cut in. Nothing in a plan
+    ///     projection says which of two coincident elements a hole belongs to.
     ///   * Deferred — the cell cap is a flat six million (<see cref="MaxCells"/>), which at
-    ///     a 100 mm cell is a 245 m square. Over it the analysis refuses rather than degrading.
+    ///     a 100 mm cell is a 245 m square. Over it the analysis refuses and does not degrade.
     /// </summary>
     public static class FloorGaps
     {
@@ -389,12 +399,32 @@ namespace CamelWorks.Core.Data
         /// How many sweeps the distance through the void may take before it gives up.
         ///
         /// Raised from the source's sixteen, which a plan with a few re-entrant voids reaches
-        /// routinely. Hitting it is reported rather than swallowed.
+        /// routinely. Hitting it is reported and not swallowed.
         /// </summary>
         public const int SweepCap = 64;
 
         private static readonly int[] NeighbourRow = { -1, 1, 0, 0, -1, -1, 1, 1 };
         private static readonly int[] NeighbourCol = { 0, 0, -1, 1, -1, 1, -1, 1 };
+
+        /// <summary>
+        /// How far a void cell must sit from the nearest solid for the void there to be wide
+        /// enough to fall through at this limit, in metres.
+        ///
+        /// Half the limit, plus half a cell. The chamfer measures centre to centre and overstates
+        /// the distance to the solid boundary by half a cell, and the half cell on the threshold
+        /// cancels it: a gap narrower than the limit never reads dangerous. A gap within one cell
+        /// above the limit may read safe, which is the resolution the cell size buys.
+        ///
+        /// Both passes take the meaning of the limit from here. They disagreed by a factor of two
+        /// until this was one expression: the edge pass tested the clearance against half the
+        /// limit and the openings pass tested it against the whole limit, so an opening between
+        /// one and two times the limit was left off the results while the edge around it was
+        /// reported as dangerous.
+        /// </summary>
+        /// <param name="limitMetres">The gap that needs covering, in metres.</param>
+        /// <param name="cellMetres">How wide one cell is, in metres.</param>
+        public static double CoreThreshold(double limitMetres, double cellMetres) =>
+            (limitMetres / 2.0) + (0.5 * cellMetres);
 
         /// <summary>
         /// Rasterise a plan and find the openings enclosed by floor.
@@ -411,7 +441,10 @@ namespace CamelWorks.Core.Data
         /// the triangles, or null, leaves the cells it does not reach unowned; nothing here reads
         /// what an index means.
         /// </param>
-        /// <param name="minGapMetres">An opening whose widest gap reaches this is flagged.</param>
+        /// <param name="minGapMetres">
+        /// The gap that needs covering, in metres. An opening the raster finds locally this wide
+        /// is flagged, by <see cref="CoreThreshold"/> — the test the edge pass makes.
+        /// </param>
         /// <exception cref="ArgumentOutOfRangeException">The cell size is not positive.</exception>
         /// <exception cref="ArgumentException">The region is empty on an axis.</exception>
         /// <exception cref="InvalidOperationException">The grid would be over <see cref="MaxCells"/>.</exception>
@@ -452,7 +485,7 @@ namespace CamelWorks.Core.Data
             Rasterize(plugs, null, minX, minY, cellMetres, cols, rows, plugMask, null);
 
             // Open is neither floor nor obstruction. An open cell the border cannot reach through
-            // other open cells is a hole inside the slab rather than the world outside it.
+            // other open cells is a hole inside the slab and not the world outside it.
             var hazard = EnclosedOpens(floorMask, plugMask, cols, rows);
 
             var clearance = ChamferClearance(hazard, cols, rows, cellMetres, out var maxClearance);
@@ -486,13 +519,21 @@ namespace CamelWorks.Core.Data
         /// <param name="minPassageMetres">
         /// A dangerous stretch shorter than this is safe. Zero disables it.
         /// </param>
-        public static FloorEdgeResult AnalyzeEdges(FloorGapGrid grid,
-                                                   IReadOnlyList<Tri2>? handrails,
-                                                   double limitMetres,
-                                                   double toleranceMetres,
-                                                   double minPassageMetres = 0.0)
+        /// <param name="onProgress">
+        /// Called with how many cells have been classified so far; returning false stops the
+        /// classification and makes this return null. Null never stops.
+        /// </param>
+        /// <returns>The classification, or null when <paramref name="onProgress"/> stopped it.</returns>
+        public static FloorEdgeResult? AnalyzeEdges(FloorGapGrid grid,
+                                                    IReadOnlyList<Tri2>? handrails,
+                                                    double limitMetres,
+                                                    double toleranceMetres,
+                                                    double minPassageMetres = 0.0,
+                                                    Func<int, bool>? onProgress = null)
         {
             if (grid == null) throw new ArgumentNullException(nameof(grid));
+
+            var watch = new Watch(onProgress);
 
             var cols = grid.Cols;
             var rows = grid.Rows;
@@ -508,18 +549,17 @@ namespace CamelWorks.Core.Data
             var handrailDistance = ChamferFromSeeds(handrail, cols, rows, cell);
 
             // The fall-through core: the void cells where the void is locally wide enough to fall
-            // through. The chamfer measures centre to centre, which overstates the distance to the
-            // solid boundary by half a cell, and the half-cell on the threshold cancels it: a gap
-            // narrower than the limit never reads dangerous. A gap within one cell above the limit
-            // may read safe, which is the resolution the cell size buys.
+            // through, on the threshold the openings pass flags on.
             var core = new bool[count];
-            var coreThreshold = (limitMetres / 2.0) + (0.5 * cell);
+            var coreThreshold = CoreThreshold(limitMetres, cell);
 
             for (var i = 0; i < count; i++)
                 core[i] = hazard[i] && grid.ClearanceMetres[i] >= coreThreshold;
 
             var notes = new List<string>();
-            var coreDistance = ChamferThroughMask(core, hazard, cols, rows, cell, out var hitCap);
+            var coreDistance = ChamferThroughMask(core, hazard, cols, rows, cell, watch, out var hitCap);
+
+            if (watch.Stopped) return null;
 
             if (hitCap)
                 notes.Add("The distance through the voids was still changing after " + SweepCap
@@ -540,6 +580,8 @@ namespace CamelWorks.Core.Data
 
             for (var r = 0; r < rows; r++)
             {
+                if (!watch.Step(cols)) return null;
+
                 for (var c = 0; c < cols; c++)
                 {
                     var idx = (r * cols) + c;
@@ -578,7 +620,9 @@ namespace CamelWorks.Core.Data
                 }
             }
 
-            var runs = Dangerous(grid, edges, limitMetres, minPassageMetres);
+            var runs = Dangerous(grid, edges, limitMetres, minPassageMetres, watch);
+
+            if (watch.Stopped) return null;
 
             // The three lengths from the final classification, so a run reclassified by the
             // minimum passage leaves no residue in the totals.
@@ -586,9 +630,45 @@ namespace CamelWorks.Core.Data
 
             foreach (var run in runs) dangerous += run.LengthMetres;
 
-            return new FloorEdgeResult(grid, edges, dangerous,
-                                       Measured(grid, edges, EdgeClass.Protected),
-                                       Measured(grid, edges, EdgeClass.SafeGap), runs, notes);
+            var covered = Measured(grid, edges, EdgeClass.Protected, watch);
+            var safe = Measured(grid, edges, EdgeClass.SafeGap, watch);
+
+            return watch.Stopped
+                ? null
+                : new FloorEdgeResult(grid, edges, dangerous, covered, safe, runs, notes);
+        }
+
+        /// <summary>
+        /// How far the classification has got, and whether it has been asked to stop.
+        ///
+        /// The edge pass is the expensive half of this check — a plan at the cell cap is six
+        /// million cells and the distance through the voids sweeps all of them — so Stop has to
+        /// reach inside it. Once stopped it stays stopped, so a caller that reports progress from
+        /// a UI thread is not asked again after it has said no.
+        /// </summary>
+        private sealed class Watch
+        {
+            private readonly Func<int, bool>? _onProgress;
+
+            private int _done;
+
+            internal Watch(Func<int, bool>? onProgress) => _onProgress = onProgress;
+
+            /// <summary>True once the caller has asked it to stop.</summary>
+            internal bool Stopped { get; private set; }
+
+            /// <summary>Report more cells done. False once somebody has asked it to stop.</summary>
+            /// <param name="cells">How many more cells have been dealt with.</param>
+            internal bool Step(int cells)
+            {
+                if (Stopped) return false;
+
+                _done += cells;
+
+                if (_onProgress != null && !_onProgress(_done)) Stopped = true;
+
+                return !Stopped;
+            }
         }
 
         /// <summary>
@@ -598,13 +678,17 @@ namespace CamelWorks.Core.Data
         /// <param name="edges">The classification, edited in place where a run is dropped.</param>
         /// <param name="limitMetres">The limit the runs were judged against.</param>
         /// <param name="minPassageMetres">A run shorter than this is reclassified safe.</param>
+        /// <param name="watch">How far it has got, and whether it has been asked to stop.</param>
         private static IReadOnlyList<EdgeRun> Dangerous(FloorGapGrid grid, EdgeClass[] edges,
-                                                        double limitMetres, double minPassageMetres)
+                                                        double limitMetres, double minPassageMetres,
+                                                        Watch watch)
         {
             var found = new List<EdgeRun>();
 
             foreach (var run in Runs(edges, EdgeClass.Dangerous, grid.Cols, grid.Rows))
             {
+                if (!watch.Step(run.Count)) return found;
+
                 var length = Along(run, grid.Hazard, grid.Cols, grid.Rows, grid.CellMetres);
 
                 if (minPassageMetres > 0.0 && length < minPassageMetres)
@@ -648,7 +732,19 @@ namespace CamelWorks.Core.Data
                                       limitMetres, run.Count, Commonest(owners)));
             }
 
-            found.Sort((a, b) => b.LengthMetres.CompareTo(a.LengthMetres));
+            // Longest first, then by where it is: a plain length comparison is not a total order,
+            // and List.Sort is unstable, so two runs of the same length swapped places between
+            // reads of the same model and the board resorted itself under the reader.
+            found.Sort((a, b) =>
+            {
+                var by = b.LengthMetres.CompareTo(a.LengthMetres);
+
+                if (by != 0) return by;
+
+                by = a.CentreX.CompareTo(b.CentreX);
+
+                return by != 0 ? by : a.CentreY.CompareTo(b.CentreY);
+            });
 
             return found;
         }
@@ -657,12 +753,18 @@ namespace CamelWorks.Core.Data
         /// <param name="grid">The plan.</param>
         /// <param name="edges">The classification.</param>
         /// <param name="wanted">Which class.</param>
-        private static double Measured(FloorGapGrid grid, EdgeClass[] edges, EdgeClass wanted)
+        /// <param name="watch">How far it has got, and whether it has been asked to stop.</param>
+        private static double Measured(FloorGapGrid grid, EdgeClass[] edges, EdgeClass wanted,
+                                       Watch watch)
         {
             var total = 0.0;
 
             foreach (var run in Runs(edges, wanted, grid.Cols, grid.Rows))
+            {
+                if (!watch.Step(run.Count)) return total;
+
                 total += Along(run, grid.Hazard, grid.Cols, grid.Rows, grid.CellMetres);
+            }
 
             return total;
         }
@@ -731,6 +833,13 @@ namespace CamelWorks.Core.Data
         ///
         /// The filtered cells can fall into more than one piece where a run turns a tight corner,
         /// so the tree is grown per piece and each piece pays its own end allowance.
+        ///
+        /// Kruskal rather than Prim, because the graph has two edge weights and nothing else: an
+        /// orthogonal step of one cell and a diagonal step of √2. Taking every orthogonal edge
+        /// before any diagonal one is Kruskal's non-decreasing order, so the forest and its total
+        /// weight are the same as Prim's, and union-find makes it linear in the edges. Prim with a
+        /// linear scan for the next cell was quadratic in the run's cells, and one run of a
+        /// serpentine void at 25 mm cells took forty seconds of a single press.
         /// </summary>
         /// <param name="run">The run's cells.</param>
         /// <param name="hazard">Per-cell enclosed void, for which cells face it through a face.</param>
@@ -748,57 +857,60 @@ namespace CamelWorks.Core.Data
 
             for (var i = 0; i < cells.Count; i++) at[cells[i]] = i;
 
-            var joined = new bool[cells.Count];
-            var best = new double[cells.Count];
+            var parent = new int[cells.Count];
 
-            for (var i = 0; i < cells.Count; i++) best[i] = double.PositiveInfinity;
+            for (var i = 0; i < cells.Count; i++) parent[i] = i;
 
-            var total = 0.0;
-            var pieces = 0;
-            var diagonal = Math.Sqrt(2.0);
-
-            // Prim over the run's own cells. The graph is at most eight-regular, so the plain
-            // scan is linear in its edges and needs no heap.
-            for (var taken = 0; taken < cells.Count; taken++)
+            int Root(int i)
             {
-                var next = -1;
-
-                for (var i = 0; i < cells.Count; i++)
-                    if (!joined[i] && (next < 0 || best[i] < best[next]))
-                        next = i;
-
-                if (next < 0) break;
-
-                if (double.IsPositiveInfinity(best[next]))
+                while (parent[i] != i)
                 {
-                    best[next] = 0.0;
-                    pieces++;
+                    parent[i] = parent[parent[i]];      // halve the path on the way up
+                    i = parent[i];
                 }
 
-                joined[next] = true;
-                total += best[next];
+                return i;
+            }
 
-                var idx = cells[next];
-                var r = idx / cols;
-                var c = idx % cols;
+            var total = 0.0;
+            var joins = 0;
 
-                for (var d = 0; d < 8; d++)
+            // Orthogonal edges first, then diagonal: the two weights in non-decreasing order.
+            for (var pass = 0; pass < 2; pass++)
+            {
+                var from = pass == 0 ? 0 : 4;
+                var to = pass == 0 ? 4 : 8;
+                var step = pass == 0 ? 1.0 : Math.Sqrt(2.0);
+
+                for (var i = 0; i < cells.Count; i++)
                 {
-                    var nr = r + NeighbourRow[d];
-                    var nc = c + NeighbourCol[d];
+                    var idx = cells[i];
+                    var r = idx / cols;
+                    var c = idx % cols;
 
-                    if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
+                    for (var d = from; d < to; d++)
+                    {
+                        var nr = r + NeighbourRow[d];
+                        var nc = c + NeighbourCol[d];
 
-                    if (!at.TryGetValue((nr * cols) + nc, out var neighbour) || joined[neighbour])
-                        continue;
+                        if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
 
-                    var step = d < 4 ? 1.0 : diagonal;
+                        if (!at.TryGetValue((nr * cols) + nc, out var neighbour)) continue;
 
-                    if (step < best[neighbour]) best[neighbour] = step;
+                        var mine = Root(i);
+                        var theirs = Root(neighbour);
+
+                        if (mine == theirs) continue;
+
+                        parent[mine] = theirs;
+                        total += step;
+                        joins++;
+                    }
                 }
             }
 
-            return (total + pieces) * cellMetres;
+            // One end allowance per piece, for the two half cells at its ends.
+            return (total + (cells.Count - joins)) * cellMetres;
         }
 
         /// <summary>
@@ -866,6 +978,13 @@ namespace CamelWorks.Core.Data
         /// <summary>
         /// Mark every cell whose centre falls inside a triangle, and record which triangle's owner
         /// got there first.
+        ///
+        /// First writer wins, and the order is the order the triangles were read in. Where a
+        /// finish covers a structural slab the owner is whichever of the two the traversal reached
+        /// first, so a finding can name the covering element and not the one the hole is cut in.
+        /// It is a decision and not an oversight: nothing in a plan projection says which of two
+        /// coincident elements a hole belongs to, and picking by area or by category would be a
+        /// guess this check cannot defend. It is recorded on the class doc as a deferral.
         /// </summary>
         /// <param name="triangles">The triangles, in plan.</param>
         /// <param name="owners">One owner index per triangle, or null when nothing owns them.</param>
@@ -1053,7 +1172,7 @@ namespace CamelWorks.Core.Data
         /// How far each cell is from the nearest seed, in metres, going only through the passable
         /// cells — the distance through the void, so danger cannot leak across floor or equipment.
         ///
-        /// Swept to convergence rather than a fixed number of times: a masked, non-convex domain
+        /// Swept to convergence and not a fixed number of times: a masked, non-convex domain
         /// needs as many sweeps as it has re-entrant turns, and a sweep count that runs out leaves
         /// stale distances that read as safe.
         /// </summary>
@@ -1062,9 +1181,10 @@ namespace CamelWorks.Core.Data
         /// <param name="cols">Grid width in cells.</param>
         /// <param name="rows">Grid height in cells.</param>
         /// <param name="cellMetres">How wide one cell is, in metres.</param>
+        /// <param name="watch">How far it has got, and whether it has been asked to stop.</param>
         /// <param name="hitCap">True when it was still changing at <see cref="SweepCap"/>.</param>
         private static double[] ChamferThroughMask(bool[] seeds, bool[] passable, int cols, int rows,
-                                                   double cellMetres, out bool hitCap)
+                                                   double cellMetres, Watch watch, out bool hitCap)
         {
             var count = cols * rows;
             var dist = new double[count];
@@ -1102,6 +1222,8 @@ namespace CamelWorks.Core.Data
             {
                 changed = false;
                 sweeps++;
+
+                if (!watch.Step(count)) return dist;
 
                 for (var r = 0; r < rows; r++)
                 {
@@ -1240,7 +1362,7 @@ namespace CamelWorks.Core.Data
         /// <param name="cellMetres">How wide one cell is, in metres.</param>
         /// <param name="cols">Grid width in cells.</param>
         /// <param name="rows">Grid height in cells.</param>
-        /// <param name="minGapMetres">An opening whose widest gap reaches this is flagged.</param>
+        /// <param name="minGapMetres">The gap that needs covering, in metres.</param>
         /// <param name="openingIndex">Per-cell index into the openings returned, -1 elsewhere.</param>
         private static IReadOnlyList<FloorOpening> LabelOpenings(
             bool[] hazard, double[] clearance, bool[] floor, int[] owner,
@@ -1310,15 +1432,15 @@ namespace CamelWorks.Core.Data
                 }
 
                 // The peak clearance is how far the opening's deepest point sits from any solid;
-                // the widest clear span across it is about twice that. It is flagged when that
-                // deepest point is further than the limit from anything solid.
+                // the widest clear span across it is about twice that. Flagged on the same
+                // threshold the edge pass uses, so one setting means one thing on both passes.
                 openings.Add(new FloorOpening(
                     sumX / cells, sumY / cells, cells * cellMetres * cellMetres, peak * 2.0,
                     originX + (minC * cellMetres), originY + (minR * cellMetres),
                     originX + ((maxC + 1) * cellMetres), originY + ((maxR + 1) * cellMetres),
                     (int)cells, Commonest(owners))
                 {
-                    Flagged = peak >= minGapMetres,
+                    Flagged = peak >= CoreThreshold(minGapMetres, cellMetres),
                 });
             }
 
@@ -1327,7 +1449,19 @@ namespace CamelWorks.Core.Data
 
             for (var i = 0; i < openings.Count; i++) order.Add(i);
 
-            order.Sort((a, b) => openings[b].WidestGapMetres.CompareTo(openings[a].WidestGapMetres));
+            // Widest first, then by where it is: comparing the gap alone is not a total order and
+            // List.Sort is unstable, so two openings of the same width changed places between reads
+            // of one model, and the per-cell indices remapped below moved with them.
+            order.Sort((a, b) =>
+            {
+                var by = openings[b].WidestGapMetres.CompareTo(openings[a].WidestGapMetres);
+
+                if (by != 0) return by;
+
+                by = openings[a].CentreX.CompareTo(openings[b].CentreX);
+
+                return by != 0 ? by : openings[a].CentreY.CompareTo(openings[b].CentreY);
+            });
 
             var moved = new int[openings.Count];
             var sorted = new List<FloorOpening>(openings.Count);

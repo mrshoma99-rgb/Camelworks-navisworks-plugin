@@ -9357,11 +9357,13 @@ namespace CamelWorks.UI.Views
 
                         if (finding != null) IssueFindings.Attach(issue, new[] { finding });
 
-                        if (!row.A.IsEmpty && !issue.Elements.Contains(row.A))
-                            issue.Elements.Add(row.A);
-
-                        if (!row.B.IsEmpty && !issue.Elements.Contains(row.B))
-                            issue.Elements.Add(row.B);
+                        // Every element the result names, not the first two. A clash names two and
+                        // that is where the pair came from; a fall hazard names the slabs round an
+                        // opening, and taking two of eight sent an issue that could not select the
+                        // rest of them.
+                        foreach (var key in row.Fact.AllElements())
+                            if (!key.IsEmpty && !issue.Elements.Contains(key))
+                                issue.Elements.Add(key);
                     }
 
                     return issue;
@@ -10511,8 +10513,10 @@ namespace CamelWorks.UI.Views
 
                 if (OnFile)
                 {
-                    Warned(Ui.Problem("Snapshots are rendered by the clash engine, so "
-                        + "they need the model source."));
+                    // Not the clash engine's reason on every board: a fall-hazard plan is drawn
+                    // from the raster its last run kept, which a file board does not have either.
+                    Warned(Ui.Problem("A board read from a file has nothing behind it to draw a "
+                        + "picture from. Read from the model and these can be pictured."));
                     return;
                 }
 
@@ -10579,10 +10583,19 @@ namespace CamelWorks.UI.Views
                     }
                 });
 
+                // The check's own reason where it has one. A check with no host echo has no host
+                // to blame: a fall-hazard plan is only kept for the run last run in this session.
+                var nothing = failed.Length > 0
+                    ? "Nothing could be written: " + failed
+                    : Check?.HostEcho?.LastProblem
+                      ?? (Check?.HostEcho == null
+                          ? "None of these could be pictured. " + (Check?.Name ?? "This check")
+                            + " draws the plan its last run kept, so a result read back from an "
+                            + "earlier session has none until its run is run again."
+                          : "The host rendered none of them.");
+
                 Warned(written == 0
-                    ? (UIElement)Ui.Problem(failed.Length > 0
-                        ? "Nothing could be written: " + failed
-                        : Check?.HostEcho?.LastProblem ?? "The host rendered none of them.")
+                    ? (UIElement)Ui.Problem(nothing)
                     : Ui.Done(Ui.Count(written, "snapshot") + " written to " + folder + "."));
             }
 
@@ -10692,6 +10705,17 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
+            /// Whether a row names at least one element by key, which is what an exported topic
+            /// needs to be selectable in the receiving tool.
+            ///
+            /// One is enough. The test was both sides, which is a clash's shape and not every
+            /// check's: an opening inside a single slab names one element, so on a floor where
+            /// every opening sits in one slab the baseline said nothing could be written.
+            /// </summary>
+            /// <param name="row">The row.</param>
+            private static bool Keyed(Row row) => row.Fact.AllElements().Any(key => !key.IsEmpty);
+
+            /// <summary>
             /// Write the current state - picked tests, or everything - as a baseline file, at
             /// full fidelity: statuses, assignees, the whole comment trail, and the groups.
             /// </summary>
@@ -10710,7 +10734,7 @@ namespace CamelWorks.UI.Views
                 var going = new List<Finding>();
 
                 foreach (var row in read.SelectMany(e => e.Rows))
-                    if (!row.A.IsEmpty && !row.B.IsEmpty)
+                    if (Keyed(row))
                         going.Add(row.Fact);
 
                 if (going.Count == 0)
@@ -10737,7 +10761,7 @@ namespace CamelWorks.UI.Views
                     StringComparer.Ordinal);
 
                 foreach (var row in read.SelectMany(e => e.Rows))
-                    if (!row.A.IsEmpty && !row.B.IsEmpty)
+                    if (Keyed(row))
                         drawnFrom[row.Fact.Id] = (row.TestId, row.Id);
 
                 // The folders as the board has them, which is what the rules made and not what

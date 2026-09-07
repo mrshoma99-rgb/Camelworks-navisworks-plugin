@@ -71,6 +71,7 @@ namespace CamelWorks.Core.Checks
             _project = project;
 
             Columns = FallColumns.Declare();
+            Properties = document == null ? null : new DocumentProperties(document);
             Runner = new Sweep(this);
             Naming = new Names(this);
             Geometry = new Sight(this);
@@ -128,15 +129,25 @@ namespace CamelWorks.Core.Checks
         public ICheckNaming? Naming { get; }
 
         /// <summary>
-        /// No element-property reader of its own. A hazard names ordinary elements and the board
-        /// reads properties off them through the document.
+        /// Property columns, read off the elements the owner grid named.
+        ///
+        /// The same reader clearance uses: a hazard names ordinary elements, so resolving the keys
+        /// in the document is all a property column needs. This was null, and the board gates the
+        /// column on the capability, so every added column stayed blank on a fall-hazard board.
+        /// Null when no document is open, which is the only state with nothing to resolve against.
         /// </summary>
-        public ICheckProperties? Properties => null;
+        public ICheckProperties? Properties { get; }
 
         /// <inheritdoc />
         public ICheckGeometry? Geometry { get; }
 
-        /// <summary>What the last run could not do. Cleared when a run starts.</summary>
+        /// <summary>
+        /// What the run just pressed could not do. Cleared when a run starts.
+        ///
+        /// The set-up screen's own view of the last press. What a read reports comes off each run
+        /// instead — see <see cref="CheckRunSpec.Notes"/> — so a caveat stays with the run it
+        /// qualifies.
+        /// </summary>
         public IReadOnlyList<string> Notes => _notes;
 
         /// <summary>
@@ -156,17 +167,26 @@ namespace CamelWorks.Core.Checks
             return gap.Value / limit.Value;
         }
 
-        /// <summary>What a band is called, in this check's own words.</summary>
+        /// <summary>
+        /// What a band is called, in this check's own words.
+        ///
+        /// Every hazard reported is over the gap allowed — that is what got it reported — so the
+        /// bands split the overage and do not test whether there is one. The lowest band said "at
+        /// the gap allowed" and no finding could reach it.
+        /// </summary>
         /// <param name="severity">The severity, as <see cref="Severity"/> returned it.</param>
         public string SeverityBand(double? severity) =>
             severity == null ? "no measure"
             : severity.Value >= 4.0 ? "far over the gap allowed"
-            : severity.Value > 1.0 ? "over the gap allowed"
-            : "at the gap allowed";
+            : severity.Value >= 2.0 ? "over the gap allowed"
+            : "just over the gap allowed";
 
         /// <summary>
-        /// No aliases. A hazard is matched by its own id, and one whose floor moved far enough to
-        /// change its cell is reported as one gone and one new.
+        /// No aliases. A hazard is matched by its own id, and three things change one: crossing a
+        /// cell boundary, which a millimetre of drift can do; a change in which elements are the
+        /// commonest around it, because <see cref="FallHazardFindings.MostElements"/> of them are
+        /// in the id; and a change in how many hazards share its cell. Each is reported as one
+        /// gone and one new.
         /// </summary>
         /// <param name="finding">The finding.</param>
         public IEnumerable<string> Aliases(Finding finding)
@@ -206,7 +226,7 @@ namespace CamelWorks.Core.Checks
         /// <summary>
         /// What the register holds for these runs.
         ///
-        /// A fall hazard lives nowhere but the register, so a read is what was kept rather than a
+        /// A fall hazard lives nowhere but the register, so a read is what was kept and not a
         /// fresh rasterisation. Rasterising again is <see cref="ICheckRunner.Run"/>, which is a
         /// press somebody makes.
         /// </summary>
@@ -237,10 +257,18 @@ namespace CamelWorks.Core.Checks
                 found.Add(finding);
             }
 
-            var notes = new List<string>(_notes);
+            // Off each run, not off the last press: a caveat belongs to the answer it qualifies,
+            // so reading run B does not show run A's, and A's stays on A.
+            var notes = new List<string>();
 
-            foreach (var run in runs.Where(run => run.LastRunTicks == 0))
-                notes.Add(run.Name + " has not been run yet.");
+            foreach (var run in runs)
+            {
+                var spec = _runs.Find(Key, run.Id);
+
+                if (spec != null) notes.AddRange(spec.Notes);
+
+                if (run.LastRunTicks == 0) notes.Add(run.Name + " has not been run yet.");
+            }
 
             return new CheckRead(runs, found, CheckFacts.ScopeOf(ids), notes);
         }
@@ -270,9 +298,10 @@ namespace CamelWorks.Core.Checks
         /// <summary>
         /// Rasterise one saved run's plan and record what it found.
         ///
-        /// Every step that could not be taken is stated rather than assumed: a run whose floor
-        /// side resolves to no triangles reports that and marks nothing absent, because a run that
-        /// read nothing is not evidence that yesterday's openings have been covered.
+        /// Every step that could not be taken is stated: a run whose floor side resolves to no
+        /// triangles reports that and marks nothing absent, because a run that read nothing is not
+        /// evidence that yesterday's openings have been covered. Whatever it could not do is
+        /// written onto the run, so a read reports it against the run it belongs to.
         /// </summary>
         /// <param name="runId">Which run.</param>
         /// <param name="onProgress">Called with how far it has got; returning false stops it.</param>
@@ -288,48 +317,37 @@ namespace CamelWorks.Core.Checks
                 return false;
             }
 
-            if (!IsAvailable)
-            {
-                _notes.Add(Unavailable ?? "There is nothing to read.");
-                return false;
-            }
+            if (!IsAvailable) return Told(spec, Unavailable ?? "There is nothing to read.");
 
             var settings = FallSettings.From(spec);
             var wrong = settings.Wrong();
 
-            if (wrong != null)
-            {
-                _notes.Add(wrong);
-                return false;
-            }
+            if (wrong != null) return Told(spec, wrong);
 
             var read = 0;
             var floor = new Side(this, settings.LevelMetres, settings.BandMetres);
 
-            if (!floor.Take(settings.Floors, true, ref read, onProgress)) return false;
+            if (!floor.Take(settings.Floors, true, ref read, onProgress)) return Stopped(spec);
 
             if (floor.Triangles.Count == 0)
-            {
-                _notes.Add("Nothing under \"" + settings.Floors + "\" gave triangles within "
-                           + Printed(settings.BandMetres) + " m of " + Printed(settings.LevelMetres)
-                           + " m, so there is no plan to analyse. " + floor.Why());
-
-                return false;
-            }
+                return Told(spec,
+                            "Nothing under \"" + settings.Floors + "\" gave triangles within "
+                            + Printed(settings.BandMetres) + " m of " + Printed(settings.LevelMetres)
+                            + " m, so there is no plan to analyse. " + floor.Why());
 
             var plugs = new Side(this, settings.LevelMetres, settings.BandMetres);
 
             if (settings.HasObstructions && !plugs.Take(settings.Obstructions, true, ref read, onProgress))
-                return false;
+                return Stopped(spec);
 
-            // Handrails are not band-filtered: they sit above the floor rather than through it, so
+            // Handrails are not band-filtered: they sit above the floor and not through it, so
             // a band around the level leaves every one of them out. Everything under what was
             // picked is read and projected flat, which is also why a rail 300 mm across the void
             // protects an edge as well as one on it.
             var rails = new Side(this, settings.LevelMetres, settings.BandMetres);
 
             if (settings.HasHandrails && !rails.Take(settings.Handrails, false, ref read, onProgress))
-                return false;
+                return Stopped(spec);
 
             var pad = settings.CellMetres * 2.0;
             var span = floor.Span().Box;
@@ -344,13 +362,19 @@ namespace CamelWorks.Core.Checks
             }
             catch (InvalidOperationException over)
             {
-                _notes.Add(over.Message);
-                return false;
+                return Told(spec, over.Message);
             }
 
+            // The edge pass is where the time goes, so Stop reaches into it: the count carries on
+            // from the elements read and then counts cells.
             var edges = FloorGaps.AnalyzeEdges(grid, rails.Triangles, settings.LimitMetres,
                                                settings.HandrailToleranceMetres,
-                                               settings.MinPassageMetres);
+                                               settings.MinPassageMetres,
+                                               onProgress == null
+                                                   ? (Func<int, bool>?)null
+                                                   : cells => onProgress(read + cells));
+
+            if (edges == null) return Stopped(spec);
 
             foreach (var note in edges.Notes) _notes.Add(note);
 
@@ -369,12 +393,44 @@ namespace CamelWorks.Core.Checks
 
             spec.LastRunTicks = DateTime.UtcNow.Ticks;
 
+            // Onto the run before the save, so the project file carries what this run could not do.
+            spec.Said(_notes);
+
             var problem = Kept();
 
+            // The save's own problem is about the save and not about the run, so it stays on the
+            // press and is not written onto the run as one of its caveats.
             if (problem != null) _notes.Add(problem);
 
             return true;
         }
+
+        /// <summary>Say why the run stopped short, on the run itself, and give up on it.</summary>
+        /// <param name="spec">The run.</param>
+        /// <param name="note">Why.</param>
+        private bool Told(CheckRunSpec spec, string note)
+        {
+            _notes.Add(note);
+
+            return Stopped(spec);
+        }
+
+        /// <summary>Keep what the run said about itself, and report that it did not finish.</summary>
+        /// <param name="spec">The run.</param>
+        private bool Stopped(CheckRunSpec spec)
+        {
+            // Only where this press had something to say. A run somebody stopped observed nothing,
+            // so the last run's findings are still what this run stands on and its caveats still
+            // qualify them.
+            if (_notes.Count == 0) return false;
+
+            spec.Said(_notes);
+            Kept();
+
+            return false;
+        }
+
+
 
         /// <summary>A length as a sentence prints it.</summary>
         /// <param name="metres">The length.</param>
@@ -605,7 +661,7 @@ namespace CamelWorks.Core.Checks
             /// <summary>
             /// Drop what the runs found, keeping the runs.
             ///
-            /// Marked absent rather than removed, because a finding somebody closed is the record
+            /// Marked absent and not removed, because a finding somebody closed is the record
             /// of the fix and an issue may point at it.
             /// </summary>
             /// <param name="runIds">Which runs.</param>
@@ -675,9 +731,9 @@ namespace CamelWorks.Core.Checks
         /// Pointing at a hazard.
         ///
         /// Nothing to select and no viewpoint to apply: no engine holds these results, and the run
-        /// that found them recorded a place rather than a camera. What it does answer is where the
-        /// elements are, and a picture — which for this check is the plan itself rather than a
-        /// camera view, and is the one check in the product that can produce one on a seat with no
+        /// that found them recorded a place and not a camera. What it does answer is where the
+        /// elements are, and a picture — which for this check is the plan itself and not a camera
+        /// view, and is the one check in the product that can produce one on a seat with no
         /// renderer.
         /// </summary>
         private sealed class Sight : ICheckGeometry

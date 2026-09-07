@@ -52,16 +52,17 @@ namespace CamelWorks.Core.Data
         /// <summary>
         /// The voids, coloured by how far each point is from the nearest solid.
         ///
-        /// The ramp pivots on the limit: below it blue through green, at it yellow, above it
-        /// orange to red, saturating at twice the limit. So a gap narrower than the limit never
-        /// reads as red, which is the property the picture is read for.
+        /// The ramp pivots on the gap the limit allows: a gap under it is blue through green, one
+        /// at it is yellow, and a wider one runs orange to red and saturates at twice the limit. So
+        /// a gap narrower than the limit never reads as red, which is the property the picture is
+        /// read for.
         ///
-        /// The source's comments said the ramp took the gap width and its code took the clearance.
-        /// The code is right — the clearance is what the limit is a threshold on — and the words
-        /// here are the code's.
+        /// The ramp is drawn from the clearance, which is half the gap, so the pivot sits at half
+        /// the limit. It pivoted on the whole limit, which put the yellow at a gap of twice the
+        /// limit and left every gap between one and two times it reading green.
         /// </summary>
         /// <param name="grid">The plan.</param>
-        /// <param name="limitMetres">The limit the ramp pivots on. Zero ramps over the range found.</param>
+        /// <param name="limitMetres">The gap the ramp pivots on. Zero ramps over the range found.</param>
         /// <param name="pixelsPerCell">How many pixels one cell spans.</param>
         public static FallRaster Heat(FloorGapGrid grid, double limitMetres, int pixelsPerCell = 4)
         {
@@ -169,10 +170,11 @@ namespace CamelWorks.Core.Data
         }
 
         /// <summary>
-        /// A clearance on the ramp: blue, cyan, green, yellow at the limit, then orange and red.
+        /// A clearance on the ramp: blue, cyan, green, yellow at a gap of the limit, then orange
+        /// and red.
         /// </summary>
         /// <param name="clearanceMetres">How far this point is from the nearest solid.</param>
-        /// <param name="limitMetres">The limit the ramp pivots on, or zero for the range found.</param>
+        /// <param name="limitMetres">The gap the ramp pivots on, or zero for the range found.</param>
         /// <param name="maxClearanceMetres">The largest clearance, for the no-limit ramp.</param>
         /// <param name="red">The red channel.</param>
         /// <param name="green">The green channel.</param>
@@ -185,7 +187,8 @@ namespace CamelWorks.Core.Data
 
             if (limitMetres > 1e-9)
             {
-                var ratio = clearanceMetres / limitMetres;
+                // Against half the limit: the clearance is half the gap, and the limit is a gap.
+                var ratio = clearanceMetres / (limitMetres / 2.0);
 
                 at = ratio <= 1.0
                     ? 0.5 * Math.Max(0.0, ratio)
@@ -228,9 +231,9 @@ namespace CamelWorks.Core.Data
             new[] { 0.00, 40, 70, 190 },    // no clearance at all
             new[] { 0.25, 40, 180, 200 },
             new[] { 0.42, 80, 190, 80 },
-            new[] { 0.50, 245, 225, 50 },   // at the limit
+            new[] { 0.50, 245, 225, 50 },   // a gap at the limit
             new[] { 0.75, 242, 120, 30 },
-            new[] { 1.00, 210, 30, 30 },    // twice the limit or worse
+            new[] { 1.00, 210, 30, 30 },    // a gap of twice the limit or worse
         };
     }
 }

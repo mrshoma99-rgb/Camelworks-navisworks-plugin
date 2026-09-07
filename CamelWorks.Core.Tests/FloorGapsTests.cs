@@ -15,8 +15,8 @@ namespace CamelWorks.Core.Tests
     /// reading safe while its sides read dangerous, and a break in the handrails nobody could fit
     /// through counted as unprotected edge.
     ///
-    /// The port's own four fixes — metres, the owner grid, the surviving records and the
-    /// path-measured runs — are asserted in <see cref="FallHazardTests"/>.
+    /// What the port adds on top is asserted in <see cref="FallHazardTests"/>, and listed once,
+    /// on <see cref="FloorGaps"/> itself.
     /// </summary>
     public class FloorGapsTests
     {
@@ -90,13 +90,79 @@ namespace CamelWorks.Core.Tests
         }
 
         [Theory]
-        [InlineData(0.5, true)]   // the deepest point is about 0.875 m from an edge
-        [InlineData(1.5, false)]  // 0.875 m is within reach of an edge at this limit
+        [InlineData(0.5, true)]   // a 2 m hole against a 0.5 m gap allowed
+        [InlineData(1.5, true)]   // and against a 1.5 m one: still wider than the gap allowed
+        [InlineData(3.0, false)]  // a 3 m gap allowed is wider than the hole
         public void Analyze_flags_an_opening_by_the_threshold(double minGap, bool expectFlagged)
         {
+            // CHANGED FROM THE SOURCE. This case came over as (1.5, false), because the source's
+            // two functions read their thresholds differently: the openings pass compared the
+            // clearance — half the gap — against the whole limit, so it took a 2 m hole to be
+            // safe under a 1.5 m limit while the edge pass called its rim dangerous. Both passes
+            // now flag on FloorGaps.CoreThreshold, and the assertion below holds them together.
             var grid = Analyze(0, 0, 10, 10, 0.5, DonutSlab(), Array.Empty<Tri2>(), minGap);
+            var edges = FloorGaps.AnalyzeEdges(grid, Array.Empty<Tri2>(), minGap, 0.3)!;
 
             Assert.Equal(expectFlagged, Assert.Single(grid.Openings).Flagged);
+
+            // The one setting, read the same way by both passes: an opening that is flagged has a
+            // dangerous rim, and one that is not has none.
+            Assert.Equal(expectFlagged, edges!.DangerousLengthMetres > 0);
+        }
+
+        [Fact]
+        public void Analyze_and_AnalyzeEdges_agree_about_a_gap_over_the_limit()
+        {
+            // A 0.7 m x 3 m slot against a 0.5 m limit. The openings pass required twice the
+            // limit, so this read flagged = false while the edge pass reported 7.46 m of
+            // dangerous edge around it: every opening between one and two times the limit was
+            // missing from the board with its own edge reported as a hazard.
+            var slab = new List<Tri2>();
+
+            slab.AddRange(Rect(0, 0, 4, 10));          // left of the slot
+            slab.AddRange(Rect(4.7, 0, 10, 10));       // right of it
+            slab.AddRange(Rect(4, 0, 4.7, 3));         // below it
+            slab.AddRange(Rect(4, 6, 4.7, 10));        // above it, leaving [4,4.7] x [3,6]
+
+            var grid = Analyze(0, 0, 10, 10, 0.05, slab, Array.Empty<Tri2>(), 0.5);
+            var edges = FloorGaps.AnalyzeEdges(grid, Array.Empty<Tri2>(), 0.5, 0.3)!;
+
+            var slot = Assert.Single(grid.Openings);
+
+            Assert.InRange(slot.WidestGapMetres, 0.6, 0.8);
+            Assert.True(slot.Flagged, "a 0.7 m gap is over the 0.5 m allowed");
+            Assert.True(edges!.DangerousLengthMetres > 0);
+        }
+
+        [Fact]
+        public void AnalyzeEdges_stops_when_it_is_asked_to()
+        {
+            var grid = Analyze(0, 0, 10, 10, 0.05, DonutSlab(), Array.Empty<Tri2>(), 0.5);
+
+            var seen = 0;
+
+            // Stop at the first report. Nothing is returned, because a half-classified plan is
+            // not an answer about anything.
+            Assert.Null(FloorGaps.AnalyzeEdges(grid, Array.Empty<Tri2>(), 0.5, 0.3, 0.0,
+                                               cells =>
+                                               {
+                                                   seen = cells;
+                                                   return false;
+                                               }));
+
+            Assert.True(seen > 0, "it reported how far it had got before it was stopped");
+
+            // And it runs to the end when nothing stops it, reporting as it goes.
+            var reported = 0;
+
+            Assert.NotNull(FloorGaps.AnalyzeEdges(grid, Array.Empty<Tri2>(), 0.5, 0.3, 0.0,
+                                                  cells =>
+                                                  {
+                                                      reported = cells;
+                                                      return true;
+                                                  }));
+
+            Assert.True(reported >= grid.Cols * grid.Rows);
         }
 
         [Fact]
@@ -152,7 +218,7 @@ namespace CamelWorks.Core.Tests
         public void AnalyzeEdges_calls_every_edge_of_an_unrailed_wide_void_dangerous()
         {
             var grid = Analyze(0, 0, 10, 10, 0.5, DonutSlab(), Array.Empty<Tri2>(), 0.2);
-            var edges = FloorGaps.AnalyzeEdges(grid, Array.Empty<Tri2>(), 0.5, 0.3);
+            var edges = FloorGaps.AnalyzeEdges(grid, Array.Empty<Tri2>(), 0.5, 0.3)!;
 
             Assert.True(edges.DangerousLengthMetres > 0);   // a 2 m gap against a 0.5 m limit
             Assert.Equal(0.0, edges.ProtectedLengthMetres);
@@ -163,7 +229,7 @@ namespace CamelWorks.Core.Tests
         public void AnalyzeEdges_calls_every_edge_safe_when_the_limit_is_over_the_gap()
         {
             var grid = Analyze(0, 0, 10, 10, 0.5, DonutSlab(), Array.Empty<Tri2>(), 0.2);
-            var edges = FloorGaps.AnalyzeEdges(grid, Array.Empty<Tri2>(), 3.0, 0.3);
+            var edges = FloorGaps.AnalyzeEdges(grid, Array.Empty<Tri2>(), 3.0, 0.3)!;
 
             Assert.True(edges.SafeLengthMetres > 0);        // a 2 m hole against a 3 m limit
             Assert.Equal(0.0, edges.DangerousLengthMetres);
@@ -177,7 +243,7 @@ namespace CamelWorks.Core.Tests
 
             // A rail along the hole's bottom edge, spanning its width.
             var rail = Rect(4, 3.7, 6, 4.0).ToList();
-            var edges = FloorGaps.AnalyzeEdges(grid, rail, 0.5, 0.4);
+            var edges = FloorGaps.AnalyzeEdges(grid, rail, 0.5, 0.4)!;
 
             Assert.True(edges.ProtectedLengthMetres > 0);   // the railed edge
             Assert.True(edges.DangerousLengthMetres > 0);   // the other three sides
@@ -200,7 +266,7 @@ namespace CamelWorks.Core.Tests
             slab.AddRange(Rect(3, 6, 3.2, 10));      // above it, leaving [3,3.2] × [3,6]
 
             var grid = Analyze(0, 0, 10, 10, 0.05, slab, Array.Empty<Tri2>(), limit);
-            var edges = FloorGaps.AnalyzeEdges(grid, Array.Empty<Tri2>(), limit, 0.3);
+            var edges = FloorGaps.AnalyzeEdges(grid, Array.Empty<Tri2>(), limit, 0.3)!;
 
             if (expectDanger)
             {
@@ -239,7 +305,7 @@ namespace CamelWorks.Core.Tests
             const double cell = 0.05;
 
             var grid = Analyze(0, 0, 10, 10, cell, slab, box, limit);
-            var edges = FloorGaps.AnalyzeEdges(grid, Array.Empty<Tri2>(), limit, 0.3);
+            var edges = FloorGaps.AnalyzeEdges(grid, Array.Empty<Tri2>(), limit, 0.3)!;
 
             string Probe(double x, double y)
             {
@@ -291,7 +357,7 @@ namespace CamelWorks.Core.Tests
             const double cell = 0.05;
 
             var grid = Analyze(0, 0, 10, 10, cell, slab, Array.Empty<Tri2>(), 0.5);
-            var edges = FloorGaps.AnalyzeEdges(grid, Array.Empty<Tri2>(), 0.5, 0.3);
+            var edges = FloorGaps.AnalyzeEdges(grid, Array.Empty<Tri2>(), 0.5, 0.3)!;
 
             foreach (var at in new[] { (2 - cell, 2 - cell), (2 + cell, 2 - cell), (2 - cell, 2 + cell) })
             {
@@ -330,7 +396,7 @@ namespace CamelWorks.Core.Tests
             rails.AddRange(Rect(8.0, 1.9, 8.1, 6.1));    // east rim
 
             var grid = Analyze(0, 0, 10, 10, 0.05, slab, Array.Empty<Tri2>(), 0.5);
-            var edges = FloorGaps.AnalyzeEdges(grid, rails, 0.5, 0.1, minPassage);
+            var edges = FloorGaps.AnalyzeEdges(grid, rails, 0.5, 0.1, minPassage)!;
 
             if (expectSafe)
             {
@@ -358,7 +424,7 @@ namespace CamelWorks.Core.Tests
             slab.AddRange(Rect(8, 2, 10, 8));
 
             var grid = Analyze(0, 0, 10, 10, 0.05, slab, Array.Empty<Tri2>(), 0.5);
-            var edges = FloorGaps.AnalyzeEdges(grid, Array.Empty<Tri2>(), 0.5, 0.3);
+            var edges = FloorGaps.AnalyzeEdges(grid, Array.Empty<Tri2>(), 0.5, 0.3)!;
 
             var run = Assert.Single(edges.Runs);
 
