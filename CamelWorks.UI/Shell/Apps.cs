@@ -103,7 +103,8 @@ namespace CamelWorks.UI.Shell
                 new AppTab("Filter", "rules"),
                 new AppTab("Exchange", "exchange"),
                 new AppTab("Report", "clashreport"),
-                new AppTab("Clash matrix", "matrix", aside: true)),
+                new AppTab("Clash matrix", "matrix", aside: true),
+                new AppTab("Settings", "clashsettings", aside: true)),
 
             new App("issuemgr", "Issue Manager",
                 "Everything raised on this job, in one register.", "Coordinate",

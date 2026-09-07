@@ -73,6 +73,13 @@ namespace CamelWorks.UI.Shell
                         "will a person fit under that", "is that edge railed",
                         "where are the holes in this floor" }),
 
+            ["clashsettings"] = (new[] { "levels", "storeys", "zones", "team", "roster",
+                                         "disciplines", "naming", "patterns", "renumber",
+                                         "units", "grouping distance" },
+                new[] { "which floor is this clash on", "who can I assign this to",
+                        "the models are on the wrong discipline",
+                        "our tests are named differently", "set the project up once" }),
+
             ["rules"] = (new[] { "filters", "ignore", "suppress", "auto-assign", "grouping rules" },
                 new[] { "the same false positives every week", "insulation touching a wall",
                         "I keep ignoring the same things" }),

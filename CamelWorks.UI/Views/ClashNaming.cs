@@ -120,6 +120,24 @@ namespace CamelWorks.UI.Views
             Body(book, Held(tests), (id, name) => { _ = id; _ = name; return true; },
                  start, null, null, null, issued);
 
+        /// <summary>
+        /// The naming as a section of the Settings tab, rather than a window.
+        /// </summary>
+        /// <param name="book">The project's naming, edited in place.</param>
+        /// <param name="tests">The tests, in the order they are counted.</param>
+        /// <param name="rename">Renames one test, and says whether it landed.</param>
+        /// <param name="start">Which pane to draw first.</param>
+        /// <param name="near">What a prompt belongs to.</param>
+        /// <param name="onTouched">Called when something was changed, so the tab can save it.</param>
+        /// <param name="issued">Test names that have already gone out to somebody.</param>
+        internal static UIElement Section(NamingBook book,
+                                          IReadOnlyList<(string Id, string Name)> tests,
+                                          Func<string, string, bool> rename,
+                                          NamingPane start, FrameworkElement? near,
+                                          Action? onTouched,
+                                          IReadOnlyList<string>? issued = null) =>
+            Body(book, Held(tests), rename, start, near, onTouched, null, issued);
+
         /// <summary>The tests as lines this window can rename in place.</summary>
         private static List<Line> Held(IReadOnlyList<(string Id, string Name)>? tests) =>
             (tests ?? Array.Empty<(string, string)>())
@@ -160,9 +178,17 @@ namespace CamelWorks.UI.Views
             {
                 acts.Children.Clear();
 
+                // Done closes a window; it does not commit anything, so it is never the filled
+                // button. Drawn as a panel there is nothing to close and it is not drawn at all.
+                var done = onDone == null
+                    ? null
+                    : Ui.Quiet("Done", () => onDone.Invoke());
+
+                if (verb == null && done == null) return;
+
                 acts.Children.Add(verb == null
-                    ? Ui.Actions(Ui.Primary("Done", () => onDone?.Invoke()))
-                    : Ui.Actions(verb, Ui.Quiet("Done", () => onDone?.Invoke())));
+                    ? Ui.Actions(done)
+                    : Ui.Actions(verb, done));
             }
 
             void Redraw()
@@ -210,15 +236,18 @@ namespace CamelWorks.UI.Views
 
             Redraw();
 
-            var says = Ui.Small(
-                "A pattern says how a test's name is put together, in fields the project names. "
-                + "Once a test is on a pattern, the manager can band, filter and sort by any "
-                + "field the name carries, and renumber the tests by rewriting one of them.");
-
-            says.TextWrapping = TextWrapping.Wrap;
-            says.Margin = new Thickness(0, 0, 0, 10);
-
-            var top = Ui.Stack(says, head);
+            var top = Ui.Stack(
+                ClashSettingsViews.Head(
+                    "Test naming",
+                    "How this project's test names are put together, and which pattern reads "
+                    + "which test.",
+                    "A pattern is a test's name with its changing parts written as fields the "
+                    + "project names. Once a test is on a pattern the manager can band, filter "
+                    + "and sort by any field that name carries, and renumber a run of tests by "
+                    + "rewriting one field of each. The four panes are the order the work "
+                    + "happens in: name the fields, write the patterns, put each test on one, "
+                    + "then renumber."),
+                head);
 
             top.Margin = new Thickness(0, 0, 0, 10);
 
@@ -263,7 +292,10 @@ namespace CamelWorks.UI.Views
                 _ => TestsPane,
             };
 
-            var pick = Ui.Segmented(new[] { TestsPane, PatternsPane, FieldsPane, WritePane },
+            // Fields, then patterns, then which pattern reads which test, then the renumber the
+            // other three make possible. The Tests pane shows nothing to assign until a pattern
+            // exists, so leading with it opened the window on an empty list.
+            var pick = Ui.Segmented(new[] { FieldsPane, PatternsPane, TestsPane, WritePane },
                                     chosen, onChanged);
 
             if (pick is FrameworkElement held) held.HorizontalAlignment = HorizontalAlignment.Left;
@@ -315,6 +347,8 @@ namespace CamelWorks.UI.Views
 
                     return;
                 }
+
+                list.Children.Add(TestHeadings());
 
                 foreach (var line in shown) list.Children.Add(Row(book, line, touch, Fill, Foot));
 
@@ -382,7 +416,59 @@ namespace CamelWorks.UI.Views
             into.Children.Add(list);
         }
 
-        /// <summary>One test: its name, its pattern, and what that pattern reads.</summary>
+        /// <summary>The three column widths the tests table's heading and rows share.</summary>
+        private static Grid TestRow()
+        {
+            var row = new Grid();
+
+            row.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(1.2, GridUnitType.Star),
+                MinWidth = 120,
+            });
+
+            row.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(2, GridUnitType.Star),
+                MinWidth = 140,
+            });
+
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(132) });
+
+            return row;
+        }
+
+        /// <summary>The labels over the tests table.</summary>
+        private static UIElement TestHeadings()
+        {
+            var row = TestRow();
+
+            var name = Ui.Small("Test");
+            Grid.SetColumn(name, 0);
+            row.Children.Add(name);
+
+            var reads = Ui.Small("What its pattern reads");
+            reads.Margin = new Thickness(10, 0, 0, 0);
+            Grid.SetColumn(reads, 1);
+            row.Children.Add(reads);
+
+            var on = Ui.Small("Pattern");
+            on.Margin = new Thickness(10, 0, 0, 0);
+            Grid.SetColumn(on, 2);
+            row.Children.Add(on);
+
+            row.Margin = new Thickness(0, 0, 0, 4);
+
+            return row;
+        }
+
+        /// <summary>
+        /// One test: its name, what its pattern reads out of that name, and the pattern itself.
+        ///
+        /// A row of a table rather than a card. Twenty-one cards is sixteen hundred pixels of
+        /// scroll for three facts per test, and the fields the pattern read were a full-width
+        /// line under the name that was trimmed on nearly every row.
+        /// </summary>
         private static UIElement Row(NamingBook book, Line line, Action touch, Action redraw,
                                      Action foot)
         {
@@ -390,23 +476,56 @@ namespace CamelWorks.UI.Views
             var bound = book.Bound.TryGetValue(line.Id, out var at) ? at : 0;
             var fits = bound == 0 ? book.Fitting(line.Name) : 0;
 
-            var card = new Border
+            var row = TestRow();
+
+            row.Margin = new Thickness(0, 0, 0, 2);
+
+            var name = new TextBlock
             {
-                Margin = new Thickness(0, 0, 0, 6),
-                Padding = new Thickness(10, 8, 10, 9),
-                CornerRadius = new CornerRadius(8),
-                BorderThickness = new Thickness(1),
-            };
+                Text = line.Name,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center,
+                ToolTip = line.Name,
+            }.Wearing("Body");
 
-            card.Tint(Border.BackgroundProperty, "Card2");
-            card.Tint(Border.BorderBrushProperty, "Bd");
+            name.TextWrapping = TextWrapping.NoWrap;
 
-            var top = new DockPanel { LastChildFill = true };
+            Grid.SetColumn(name, 0);
+            row.Children.Add(name);
+
+            var said = read == null
+                ? (bound == 0
+                    ? "No pattern reads this name."
+                    : "Pattern " + Numbered(bound) + " does not fit this name.")
+                : Reads(book, read, book.Compiled(read.Pattern));
+
+            var under = new TextBlock
+            {
+                Text = said,
+                FontSize = 11,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(10, 0, 0, 0),
+                ToolTip = said,
+            }.Wearing("Body");
+
+            // Set after the style, which turns wrapping on: without this the line still wrapped
+            // to a second row and the trimming never came into it.
+            under.TextWrapping = TextWrapping.NoWrap;
+
+            under.Tint(TextBlock.ForegroundProperty, "Muted");
+
+            Grid.SetColumn(under, 1);
+            row.Children.Add(under);
 
             var chip = Chip(bound == 0
                                 ? (fits > 0 ? "Pattern " + Numbered(fits) + " fits" : "No pattern")
                                 : "Pattern " + Numbered(bound),
                             bound != 0);
+
+            chip.HorizontalAlignment = HorizontalAlignment.Left;
+            chip.VerticalAlignment = VerticalAlignment.Center;
+            chip.Margin = new Thickness(10, 0, 0, 0);
 
             chip.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
             {
@@ -420,50 +539,12 @@ namespace CamelWorks.UI.Views
                 }));
             });
 
-            DockPanel.SetDock(chip, Dock.Right);
-            top.Children.Add(chip);
-
-            top.Children.Add(new TextBlock
-            {
-                Text = line.Name,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 8, 0),
-            }.Wearing("Body"));
-
-            var stack = Ui.Stack(top);
-
-            var said = read == null
-                ? (bound == 0
-                    ? "No pattern reads this name."
-                    : "Pattern " + Numbered(bound) + " does not fit this name.")
-                : Reads(book, read, book.Compiled(read.Pattern));
-
-            // One line, trimmed, with the whole of it on the tip. Six fields wrapped to a second
-            // line under every row, which doubled the height of the list and buried the names
-            // the list is about.
-            var under = new TextBlock
-            {
-                Text = said,
-                FontSize = 11,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                Margin = new Thickness(0, 4, 0, 0),
-                ToolTip = said,
-            }.Wearing("Body");
-
-            // Set after the style, which turns wrapping on: without this the line still wrapped
-            // to a second row and the trimming never came into it.
-            under.TextWrapping = TextWrapping.NoWrap;
-
-            under.Tint(TextBlock.ForegroundProperty, "Muted");
-
-            stack.Children.Add(under);
-
-            card.Child = stack;
+            Grid.SetColumn(chip, 2);
+            row.Children.Add(chip);
 
             foot();
 
-            return card;
+            return row;
         }
 
         /// <summary>
@@ -747,11 +828,11 @@ namespace CamelWorks.UI.Views
             // theirs.
             if (own.Count > 0)
             {
-                held.Children.Add(Ui.Eyebrow("This project's fields"));
+                held.Children.Add(Ui.Small("This project's fields"));
                 held.Children.Add(Chips(own));
             }
 
-            held.Children.Add(Ui.Eyebrow(own.Count > 0 ? "Always available" : "Insert a field"));
+            held.Children.Add(Ui.Small(own.Count > 0 ? "Always available" : "Insert a field"));
             held.Children.Add(Chips(rest));
 
             held.Margin = new Thickness(0, 8, 0, 0);
@@ -994,11 +1075,23 @@ namespace CamelWorks.UI.Views
 
                 preview.Children.Clear();
 
-                preview.Children.Add(Ui.Eyebrow(
-                    "What it would write  ·  " + Ui.Count(changing, "rename")
-                    + (refused == 0
-                        ? string.Empty
-                        : "  ·  " + refused + " left alone")));
+                // Every row drawn is accounted for. The count was renames and refusals only, so
+                // a plan of twenty-one tests announced nine and nine and drew twenty-one rows.
+                var same = plan.Count - changing - refused;
+
+                var counts = new List<string> { Ui.Count(plan.Count, "test") };
+
+                counts.Add(changing + " renamed");
+
+                if (same > 0) counts.Add(same + " already right");
+                if (refused > 0) counts.Add(refused + " the naming cannot write");
+
+                var title = Ui.Line("What it would write", 1, true);
+
+                title.Margin = new Thickness(0, 0, 0, 2);
+
+                preview.Children.Add(title);
+                preview.Children.Add(Ui.Small(string.Join("  ·  ", counts)));
 
                 var rows = Ui.Stack();
 
@@ -1098,6 +1191,14 @@ namespace CamelWorks.UI.Views
 
             setting.Children.Add(counted);
 
+            // Said once, on the pane it applies to. Everything else the naming holds is project
+            // data; this one act writes the names the host is holding.
+            var writes = Ui.Small("Renaming writes the new names into the document's clash "
+                                  + "tests.");
+
+            writes.Margin = new Thickness(0, 0, 0, 10);
+
+            into.Children.Add(writes);
             into.Children.Add(top);
             into.Children.Add(bottom);
 
@@ -1128,7 +1229,7 @@ namespace CamelWorks.UI.Views
         /// <summary>A heading over a column of the plan.</summary>
         private static TextBlock Quiet(string said)
         {
-            var made = Ui.Eyebrow(said);
+            var made = Ui.Small(said);
 
             made.Margin = new Thickness(0);
 
@@ -1165,7 +1266,7 @@ namespace CamelWorks.UI.Views
 
             if (title != null)
             {
-                var said = Ui.Eyebrow(title);
+                var said = Ui.Line(title, 1, true);
 
                 said.Margin = new Thickness(0, 0, 0, 8);
                 stack.Children.Add(said);

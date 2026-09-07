@@ -32,8 +32,8 @@ namespace CamelWorks.UI.Views
         /// The person's own copy wins on a name they both hold, because it is the one they have
         /// been correcting. The project only fills in people they have never met.
         /// </summary>
-        /// <param name="session">The session whose project may carry a roster.</param>
-        internal static TeamRoster Read(Session? session)
+        /// <param name="session">The seat whose project may carry a roster.</param>
+        internal static TeamRoster Read(ISeat? session)
         {
             var mine = TeamRoster.Mine();
 
@@ -66,9 +66,9 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>Write it to both homes, and say where it did not reach.</summary>
-        /// <param name="session">The session whose project also keeps a copy.</param>
+        /// <param name="session">The seat whose project also keeps a copy.</param>
         /// <param name="roster">The roster.</param>
-        internal static string? Keep(Session? session, TeamRoster roster)
+        internal static string? Keep(ISeat? session, TeamRoster roster)
         {
             var carried = roster.Keep();
 
@@ -98,9 +98,9 @@ namespace CamelWorks.UI.Views
         /// wants to redraw once, after the person is done, not eleven times while they type.
         /// </summary>
         /// <param name="near">The screen it belongs to; the window is owned by the host.</param>
-        /// <param name="session">The session, for the project's copy.</param>
+        /// <param name="session">The seat, for the project's copy.</param>
         /// <param name="onChanged">Called once, when something was changed.</param>
-        internal static void Show(FrameworkElement near, Session? session, Action? onChanged)
+        internal static void Show(FrameworkElement near, ISeat? session, Action? onChanged)
         {
             _ = near;
 
@@ -150,7 +150,7 @@ namespace CamelWorks.UI.Views
             var body = new DockPanel { Margin = new Thickness(18, 16, 18, 16), LastChildFill = true };
 
             var head = Ui.Stack(
-                Ui.Eyebrow("The team"),
+                Ui.Heading("The team"),
                 Ui.Small("Kept beside you rather than inside one job, so the same people are here "
                          + "the next time you open a model — and written into this project as "
                          + "well, so whoever opens it next gets the team with it."));
@@ -167,12 +167,12 @@ namespace CamelWorks.UI.Views
             headings.Margin = new Thickness(0, 12, 0, 4);
 
 
-            Put(headings, Ui.Eyebrow("Name"), 0);
-            Put(headings, Ui.Eyebrow("Role"), 1);
-            Put(headings, Ui.Eyebrow("Team"), 2);
-            Put(headings, Ui.Eyebrow("Company"), 3);
-            Put(headings, Ui.Eyebrow("Email"), 4);
-            Put(headings, Ui.Eyebrow("BCF folder"), 5);
+            Put(headings, Ui.Small("Name"), 0);
+            Put(headings, Ui.Small("Role"), 1);
+            Put(headings, Ui.Small("Team"), 2);
+            Put(headings, Ui.Small("Company"), 3);
+            Put(headings, Ui.Small("Email"), 4);
+            Put(headings, Ui.Small("BCF folder"), 5);
 
             DockPanel.SetDock(headings, Dock.Top);
             body.Children.Add(headings);
@@ -195,7 +195,8 @@ namespace CamelWorks.UI.Views
 
             var foot = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 10, 0, 0) };
 
-            var close = Ui.Primary("Done", () => window.Close());
+            // Quiet, not filled. Done closes the window; the writes have already happened.
+            var close = Ui.Quiet("Done", () => window.Close());
             close.MinWidth = 92;
 
             DockPanel.SetDock(close, Dock.Right);
@@ -267,6 +268,68 @@ namespace CamelWorks.UI.Views
             window.ShowDialog();
 
             if (changed) onChanged?.Invoke();
+        }
+
+        /// <summary>
+        /// The roster as a panel, for a tab that hosts it rather than a window that opens it.
+        /// </summary>
+        /// <param name="roster">The team, edited in place.</param>
+        /// <param name="onEdit">Called after every edit, so the tab can save it.</param>
+        internal static UIElement Panel(TeamRoster roster, Action onEdit)
+        {
+            var held = Ui.Stack();
+            var rows = Ui.Stack();
+
+            void Fill()
+            {
+                rows.Children.Clear();
+
+                foreach (var member in roster.Members
+                             .OrderBy(m => m.Name, StringComparer.CurrentCulture)
+                             .ToList())
+                    rows.Children.Add(Line(roster, member, Fill, onEdit));
+
+                if (roster.Members.Count == 0)
+                    rows.Children.Add(Ui.Empty(
+                        "No members yet",
+                        "Until the roster has members, an assignment is whatever name was typed "
+                        + "on the board.",
+                        "Add the first member", () => Ui.Safely(() =>
+                        {
+                            roster.Add(Fresh(roster));
+                            onEdit();
+                            Fill();
+                        })));
+            }
+
+            var headings = Columns();
+
+            headings.Margin = new Thickness(0, 0, 0, 4);
+
+            Put(headings, Ui.Small("Name"), 0);
+            Put(headings, Ui.Small("Role"), 1);
+            Put(headings, Ui.Small("Team"), 2);
+            Put(headings, Ui.Small("Company"), 3);
+            Put(headings, Ui.Small("Email"), 4);
+            Put(headings, Ui.Small("BCF folder"), 5);
+
+            Fill();
+
+            var adding = Ui.Button("Add member", () => Ui.Safely(() =>
+            {
+                roster.Add(Fresh(roster));
+                onEdit();
+                Fill();
+            }));
+
+            adding.HorizontalAlignment = HorizontalAlignment.Left;
+            adding.Margin = new Thickness(0, 10, 0, 0);
+
+            held.Children.Add(headings);
+            held.Children.Add(rows);
+            held.Children.Add(adding);
+
+            return held;
         }
 
         /// <summary>

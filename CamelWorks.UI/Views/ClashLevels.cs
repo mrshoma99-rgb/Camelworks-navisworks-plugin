@@ -82,56 +82,50 @@ namespace CamelWorks.UI.Views
 
                     undo.Children.Add(Ui.Across(
                         Ui.Small("Removed “" + gone.Name + "”, at "
-                                 + Shown(gone.Elevation, millimetres) + " "
-                                 + Unit(millimetres) + "."),
+                                 + Shown(gone.Elevation, millimetres) + "."),
                         back));
                 }
 
-                // Labelled, because two boxes side by side with nothing over them is a form
-                // where the second one has to be guessed at — and the guess that matters is
-                // whether the number is metres or millimetres.
-                if (!plan.IsEmpty) list.Children.Add(Headings(millimetres));
+                foot.Children.Clear();
+
+                if (plan.IsEmpty)
+                {
+                    // The state and the verb that ends it, together. A line of prose saying what
+                    // is missing leaves the button that fixes it somewhere else on the panel.
+                    list.Children.Add(Ui.Empty(
+                        "No levels yet",
+                        "Add the ground floor at its own height, usually zero, then each storey "
+                        + "above it.",
+                        "Add a level", Add));
+
+                    return;
+                }
+
+                // Labelled, because two boxes side by side with nothing over them is a form where
+                // the second one has to be guessed at.
+                list.Children.Add(Headings());
 
                 foreach (var storey in plan.Storeys.Reverse().ToList())
                     list.Children.Add(Storey(plan, storey, millimetres, Keep, Redraw,
                                              gone => dropped = gone));
 
-                if (plan.IsEmpty)
-                    list.Children.Add(Ui.Small(
-                        "None yet. Add the ground floor at its own height — usually zero — then "
-                        + "each storey above it. A clash between one storey's floor and the next "
-                        + "one's is on that storey."));
-
-                foot.Children.Clear();
-
-                var add = Ui.Quiet("Add a level",
-                                   () => Ui.Safely(() => Adding(plan, near, millimetres,
-                                                                Keep, Redraw)));
+                var add = Ui.Button("Add a level", Add);
 
                 add.HorizontalAlignment = HorizontalAlignment.Left;
-                add.Margin = new Thickness(0, 4, 0, 0);
+                add.Margin = new Thickness(0, 6, 0, 0);
 
                 foot.Children.Add(add);
 
-                if (plan.IsEmpty) return;
+                var says = Ui.Small(Ui.Count(plan.Storeys.Count, "level")
+                                    + ", listed top down. The top one runs to the top of the "
+                                    + "building.");
 
-                var says = Ui.Small(
-                    Ui.Count(plan.Storeys.Count, "level") + ", listed top down. The highest runs "
-                    + "to the top of the building, and a clash below the lowest is banded as such "
-                    + "rather than pushed into it.");
-
-                says.TextWrapping = TextWrapping.Wrap;
-                says.Margin = new Thickness(0, 6, 0, 0);
+                says.Margin = new Thickness(0, 8, 0, 0);
 
                 foot.Children.Add(says);
             }
 
-            var about = Ui.Small(
-                "The project's storeys. The board bands clashes by these, and they outrank the "
-                + "levels read off a coordination grid or a Level property.");
-
-            about.TextWrapping = TextWrapping.Wrap;
-            about.Margin = new Thickness(0, 0, 0, 8);
+            void Add() => Ui.Safely(() => Adding(plan, near, millimetres, Keep, Redraw));
 
             var unit = Ui.Choice(new[] { Metres, Millimetres },
                                  Metres, chosen =>
@@ -143,11 +137,20 @@ namespace CamelWorks.UI.Views
 
             var units = Ui.Field("Heights in", unit);
 
-            units.Margin = new Thickness(0, 0, 0, 10);
+            units.HorizontalAlignment = HorizontalAlignment.Left;
+            units.Margin = new Thickness(0, 0, 0, 12);
 
             Redraw();
 
-            held.Children.Add(about);
+            held.Children.Add(ClashSettingsViews.Head(
+                "Levels",
+                "The storeys this project declares. The board bands clashes by them.",
+                "These outrank the levels read off a coordination grid or a Level property, "
+                + "because a federation routinely has no grid and spells its storeys differently "
+                + "in each discipline. A storey runs from its own floor up to the next one's, so "
+                + "no height between the lowest and the highest is unclaimed. A clash below the "
+                + "lowest storey is banded as below it rather than pushed into it."));
+
             held.Children.Add(units);
             held.Children.Add(list);
             held.Children.Add(foot);
@@ -160,49 +163,61 @@ namespace CamelWorks.UI.Views
         /// <param name="plan">The storeys.</param>
         public static UIElement Drawn(LevelPlan plan) => Panel(plan, null);
 
-        /// <summary>The labels over the three columns.</summary>
-        /// <param name="millimetres">Whether heights are typed and read in millimetres.</param>
-        private static UIElement Headings(bool millimetres)
+        /// <summary>
+        /// The labels over the three columns.
+        ///
+        /// No unit in any of them. The unit is stated once, by the selector that sets it, and a
+        /// header carrying it as well is a second answer to the same question. The left margins
+        /// are the text box's own padding, so a heading starts where the text under it does.
+        /// </summary>
+        private static UIElement Headings()
         {
             var row = Row();
 
-            var name = Ui.Eyebrow("Level");
+            var name = Ui.Small("Level");
 
-            name.Margin = new Thickness(0);
+            name.Margin = new Thickness(Inset, 0, 0, 0);
 
             Grid.SetColumn(name, 0);
             row.Children.Add(name);
 
-            var at = Ui.Eyebrow("Floor at, " + Unit(millimetres));
+            var at = Ui.Small("Floor height");
 
-            at.Margin = new Thickness(8, 0, 0, 0);
+            at.Margin = new Thickness(Gap + Inset, 0, 0, 0);
 
             Grid.SetColumn(at, 1);
             row.Children.Add(at);
 
-            var span = Ui.Eyebrow("Covers");
+            var span = Ui.Small("Covers");
 
-            span.Margin = new Thickness(10, 0, 0, 0);
+            span.Margin = new Thickness(Gap, 0, 0, 0);
 
             Grid.SetColumn(span, 2);
             row.Children.Add(span);
 
-            row.Margin = new Thickness(0, 0, 0, 6);
+            row.Margin = new Thickness(0, 0, 0, 4);
 
             return row;
         }
 
-        /// <summary>The four columns every row of this editor sits in.</summary>
+        /// <summary>
+        /// The four columns every row of this editor sits in.
+        ///
+        /// Fixed widths, left-aligned. The columns were a star and a wide tab stretched the table
+        /// to the width of the window, which put each row's own Remove seven hundred pixels from
+        /// the row it removes.
+        /// </summary>
         private static Grid Row()
         {
-            var row = new Grid { Margin = new Thickness(0, 0, 0, 6) };
-
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(84) });
-            row.ColumnDefinitions.Add(new ColumnDefinition
+            var row = new Grid
             {
-                Width = new GridLength(1, GridUnitType.Star),
-            });
+                Margin = new Thickness(0, 0, 0, 4),
+                HorizontalAlignment = HorizontalAlignment.Left,
+            };
+
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(NameWidth) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(HeightWidth + Gap) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(SpanWidth) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             return row;
@@ -242,7 +257,7 @@ namespace CamelWorks.UI.Views
                 }
 
                 if (onKeep()) onChange();
-            }, 160);
+            }, NameWidth);
 
             name.VerticalAlignment = VerticalAlignment.Center;
 
@@ -274,10 +289,10 @@ namespace CamelWorks.UI.Views
                 }
 
                 if (onKeep()) onChange();
-            }, 76);
+            }, HeightWidth);
 
             at.VerticalAlignment = VerticalAlignment.Center;
-            at.Margin = new Thickness(8, 0, 0, 0);
+            at.Margin = new Thickness(Gap, 0, 0, 0);
             at.ToolTip = "The floor height in " + Unit(millimetres)
                        + ", above the model's zero.";
 
@@ -289,12 +304,12 @@ namespace CamelWorks.UI.Views
             var ceiling = plan.Ceiling(storey.Name);
 
             var span = Ui.Small(ceiling == null
-                ? Shown(storey.Elevation, millimetres) + " " + Unit(millimetres) + " and above"
+                ? Shown(storey.Elevation, millimetres) + " and above"
                 : Shown(storey.Elevation, millimetres) + " to "
-                  + Shown(ceiling.Value, millimetres) + " " + Unit(millimetres));
+                  + Shown(ceiling.Value, millimetres));
 
             span.VerticalAlignment = VerticalAlignment.Center;
-            span.Margin = new Thickness(10, 0, 0, 0);
+            span.Margin = new Thickness(Gap, 0, 0, 0);
 
             Grid.SetColumn(span, 2);
             row.Children.Add(span);
@@ -384,6 +399,15 @@ namespace CamelWorks.UI.Views
         /// <summary>The two units a height can be typed in.</summary>
         private const string Metres = "Metres";
         private const string Millimetres = "Millimetres";
+
+        /// <summary>The table's column widths, and the space between two columns.</summary>
+        private const double NameWidth = 170;
+        private const double HeightWidth = 84;
+        private const double SpanWidth = 160;
+        private const double Gap = 8;
+
+        /// <summary>Where a text box's own padding puts the first character.</summary>
+        private const double Inset = 10;
 
         /// <summary>The unit's short form, for a label or a sentence.</summary>
         /// <param name="millimetres">Whether millimetres are in force.</param>
