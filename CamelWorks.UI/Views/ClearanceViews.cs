@@ -36,7 +36,7 @@ namespace CamelWorks.UI.Views
         internal static void Forget() => ClearanceSurfaces.Forget();
 
         /// <summary>What the detection tick says, caveat included.</summary>
-        internal static string DetectSaid => "Find the walkable surfaces in it";
+        internal static string DetectSaid => "Walkable surfaces only";
 
         /// <summary>
         /// What detection will keep, said in the seat's units.
@@ -49,9 +49,10 @@ namespace CamelWorks.UI.Views
         /// <param name="maxSlopeDegrees">How far a surface may tilt and still be walked on.</param>
         internal static string DetectHint(Measure units, double minimumAreaSquareMetres,
                                           double maxSlopeDegrees) =>
-            "Every up-facing surface over " + units.Area(minimumAreaSquareMetres) + " tilted no more "
-            + "than " + Whole(maxSlopeDegrees) + "°, which includes desk tops and duct tops. Off, "
-            + "the source's elements are the surfaces.";
+            "A walkable surface is any up-facing surface over "
+            + units.Area(minimumAreaSquareMetres) + " tilted no more than "
+            + Whole(maxSlopeDegrees) + "\u00b0. That includes desk tops and duct tops, so the "
+            + "list is worth reviewing.";
 
         /// <summary>A degree count without a trailing zero.</summary>
         /// <param name="degrees">The angle.</param>
@@ -136,97 +137,40 @@ namespace CamelWorks.UI.Views
                                 folder => Keep(_ => _run.Folder =
                                     string.IsNullOrWhiteSpace(folder) ? null : folder),
                                 160)), 170))),
-                    // Scope first. It is the decision that makes the answer usable, and the panel
-                    // used to ask it third, under two numbers and two sides.
-                    Bench.Group("Where",
-                        Sized(Ui.Field("Zone",
-                                 Source(Zones(sets, settings.Zone),
-                                     string.IsNullOrWhiteSpace(settings.Zone)
-                                         ? WholeModel : settings.Zone!,
-                                     "What the run is confined to",
-                                     pick => Keep(one => one.Zone =
-                                         string.Equals(pick, WholeModel, StringComparison.Ordinal)
-                                             ? null : pick), 230),
-                                 "Narrows what is measured. Nothing named measures the whole "
-                                 + "federation."),
-                              380),
-                        Chosen("Levels", settings.Levels, storeys, EveryLevel,
-                               "Narrows what is reported, by the storey a surface stands on.",
-                               (one, add) => one.Levels.Add(add),
-                               (one, drop) => one.Levels.Remove(drop))),
-                    Bench.Group("What to measure",
-                        Sized(Ui.Field("Measure up from",
-                                 Source(from, settings.Surfaces, "What is measured up from",
+
+                    // The two sides, then what narrows them, then the two numbers. Five fields,
+                    // which is the whole of what a clearance test is.
+                    Bench.Group("What is checked",
+                        Sized(Ui.Field("Search for walkable surfaces in",
+                                 Source(from, settings.Surfaces,
+                                     "Where to look for walkable surfaces",
                                      pick => Keep(one => one.Surfaces = pick), 380)),
                               380),
-                        Detecting(settings),
-                        Sized(Ui.Field("Measure up to",
-                                 Source(to, settings.Targets, "What is measured up to",
-                                        pick => Keep(one => one.Targets = pick), 230)),
+                        Sized(Ui.Field("Search against",
+                                 Source(to, settings.Targets, "What the height is measured to",
+                                        pick => Keep(one => one.Targets = pick), 380)),
                               380),
-                        // With the side it modifies. What counts as an obstruction is one decision,
-                        // and it used to be split across two groups with the scope between them.
-                        Chosen("Categories not worth reporting", settings.Ignore, Categories(),
-                               NoCategories,
-                               "Matched anywhere in the category name, so \"Duct\" also leaves out "
-                               + "\"Duct Fittings\".",
-                               (one, add) => one.Ignore.Add(add),
-                               (one, drop) => one.Ignore.Remove(drop))),
-                    Bench.Group("How much clearance",
+                        Chosen("Levels", settings.Levels, storeys, EveryLevel,
+                               "Optional. Reports only the surfaces on the storeys named.",
+                               (one, add) => one.Levels.Add(add),
+                               (one, drop) => one.Levels.Remove(drop))),
+
+                    Bench.Group("How much room",
                         Ui.Across(
-                            Sized(Number("Minimum clear height", settings.MinimumMetres,
+                            Sized(Number("Height", settings.MinimumMetres,
                                          metres => metres > 0,
                                          (one, metres) => one.MinimumMetres = metres), 190),
-                            Sized(Number("Ignore shortfalls under", settings.ToleranceMetres,
+                            Sized(Number("Tolerance", settings.ToleranceMetres,
                                          metres => metres >= 0,
                                          (one, metres) => one.ToleranceMetres = metres), 190)),
                         settings.ToleranceMetres > 0
                             ? null
                             : Ui.Note("Every shortfall is reported, however small.")),
-                    Bench.Group("What to report",
-                        Ui.Check("One row per surface — its worst obstruction only",
-                                 settings.WorstPerPatch,
-                                 on => Keep(one => one.WorstPerPatch = on))),
+
                     Notices(blocked, storeys.Count, sets.Count),
-                    Ui.Link("How clearance is measured", Explain));
+                    Ui.Link("More about how this is measured", () => More(settings)));
             }
 
-            /// <summary>
-            /// The detection tick and, when it is on, the way into what it found.
-            ///
-            /// A tick over the source rather than an entry in the source list. Detection refines
-            /// what the source names; as a list entry it replaced it, so a run scoped to a floors
-            /// set swept the whole federation and threw the set away.
-            /// </summary>
-            /// <param name="settings">The run's settings as they stand.</param>
-            private UIElement Detecting(ClearanceSettings settings)
-            {
-                var blocked = Blocked;
-
-                // Never greyed. It is a setting on the run, editable with no document open like
-                // every other field on this panel; what needs a document is looking at what
-                // detection found, and that is the link below.
-                var tick = Ui.Check(DetectSaid, settings.DetectSurfaces,
-                                    on => Keep(one => one.DetectSurfaces = on));
-
-                if (!settings.DetectSurfaces)
-                    return Ui.Stack(tick, Ui.Small(DetectHint(Units, settings.MinPatchAreaSquareMetres,
-                                                              settings.MaxSlopeDegrees)));
-
-                var link = Ui.Link("Review what detection found, and how it looks", () =>
-                    Ui.Configure("Walkable surfaces", () => Ui.Safely(_onChanged),
-                                 new Ui.Page("Walkable surfaces",
-                                             () => ClearanceSurfaces.Page(_check, Units, _run.Id, Keep))));
-
-                link.IsEnabled = blocked == null;
-
-                if (blocked != null) link.ToolTip = blocked;
-
-                return Ui.Stack(tick,
-                                Ui.Small(DetectHint(Units, settings.MinPatchAreaSquareMetres,
-                                                    settings.MaxSlopeDegrees)),
-                                link);
-            }
 
             /// <summary>
             /// A list-valued setting: what is chosen, as chips that come off, and one picker to add.
@@ -291,9 +235,6 @@ namespace CamelWorks.UI.Views
             /// <summary>What the category picker reads when nothing is left out.</summary>
             private const string NoCategories = "Everything is reported";
 
-            /// <summary>What the zone picker reads when the run is not confined to a set.</summary>
-            private const string WholeModel = "The whole model";
-
             /// <summary>What a list picker reads once it holds something.</summary>
             private const string Add = "Add another";
 
@@ -317,7 +258,7 @@ namespace CamelWorks.UI.Views
                 var said = new List<string>();
 
                 if (storeys == 0)
-                    said.Add("This project declares no storeys yet. Levels & Zones works them out "
+                    said.Add("This project declares no storeys yet. Settings works them out "
                              + "from the geometry and they appear in Level.");
 
                 if (sets == 0)
@@ -333,39 +274,35 @@ namespace CamelWorks.UI.Views
             /// Every sentence here answers "why would I change this", which is a question asked
             /// once. Standing text answers it on every visit and pushes the fields off the panel.
             /// </summary>
-            private void Explain() =>
-                Ui.Configure("How clearance is measured", null, new Ui.Page(
-                    "How clearance is measured",
+            private void More(ClearanceSettings settings) =>
+                Ui.Configure("How this is measured", () => Ui.Safely(_onChanged), new Ui.Page(
+                    "How this is measured",
                     () => Ui.Stack(
+                        Bench.Group("What is left out",
+                            Chosen("Categories to leave out", settings.Ignore, Categories(),
+                                   NoCategories,
+                                   "Matched anywhere in the category name, so \u201cDuct\u201d also "
+                                   + "leaves out \u201cDuct Fittings\u201d.",
+                                   (one, add) => one.Ignore.Add(add),
+                                   (one, drop) => one.Ignore.Remove(drop)),
+                            Ui.Check("One row per surface, its worst obstruction only",
+                                     settings.WorstPerPatch,
+                                     on => Keep(one => one.WorstPerPatch = on))),
+                        Bench.Group("What counts as walkable",
+                            Ui.Small(DetectHint(Units, settings.MinPatchAreaSquareMetres,
+                                                settings.MaxSlopeDegrees)),
+                            Blocked != null ? null : Ui.Link(
+                                "Review what was found, and how it looks",
+                                () => Ui.Configure("Walkable surfaces",
+                                         () => Ui.Safely(_onChanged),
+                                         new Ui.Page("Walkable surfaces",
+                                             () => ClearanceSurfaces.Page(_check, Units, _run.Id,
+                                                                          Keep))))),
                         Bench.Group("The two heights",
-                            Ui.Small("The minimum clear height is what the design requires. "
-                                     + "\"Ignore shortfalls under\" is how far below it earns a "
-                                     + "row: a 2.100 m corridor measured at 2.098 m is a survey "
-                                     + "difference and the same corridor at 1.850 m is a "
-                                     + "coordination issue.")),
-                        Bench.Group("The two sides",
-                            Ui.Small("Apart from the fixed entries, both lists are this model's "
-                                     + "own search sets and selection sets."),
-                            Ui.Small("Detection reads the model's triangles. It cannot tell a "
-                                     + "floor from a desk top or a duct top, which is why what it "
-                                     + "found can be reviewed and dropped. It refines the source "
-                                     + "rather than replacing it: naming a floors set and leaving "
-                                     + "the tick on sweeps that set, not the federation.")),
-                        Bench.Group("Scope",
-                            Ui.Small("Without a scope the first federation run returns every "
-                                     + "soffit in the building. A zone narrows what is measured; "
-                                     + "levels narrow what is reported. Both take more than one "
-                                     + "value."),
-                            Ui.Small("An ignored category is matched anywhere in the category "
-                                     + "name, so \"Duct\" also leaves out \"Duct Fittings\" and "
-                                     + "\"Duct Insulation\". Sprinklers, lighting and fire alarm "
-                                     + "devices start in the list because every one of them is "
-                                     + "under the minimum somewhere.")),
-                        Bench.Group("What to report",
-                            Ui.Small("A slab under a plant room has a thousand things above it "
-                                     + "and one of them is the lowest. Turn the one-row setting "
-                                     + "off when the answer wanted is every obstruction rather "
-                                     + "than the one that has to move.")))));
+                            Ui.Small("The height is what the design requires. The tolerance is "
+                                     + "how far below it a surface has to fall before it is "
+                                     + "reported, so a slab 3 mm out of level is not a hundred "
+                                     + "results.")))));
 
             /// <summary>A short number field, with its unit in the label.</summary>
             /// <param name="label">What the number is, without its unit.</param>
@@ -389,7 +326,7 @@ namespace CamelWorks.UI.Views
                 field.Width = width;
 
                 // Left, not the default stretch. A stretched element given a fixed width is
-                // centred in what is left over, so Ignore category started under Zone with an
+                // centred in what is left over, so a chip row started under the picker with an
                 // empty cell to its left.
                 field.HorizontalAlignment = HorizontalAlignment.Left;
 
@@ -432,29 +369,6 @@ namespace CamelWorks.UI.Views
 
             /// <summary>Every saved set this document holds, named once.</summary>
             private IReadOnlyList<string> Sets() => _seat.SetNames();
-
-            /// <summary>
-            /// The zone list: no zone, this document's sets, and whatever the run is set to.
-            ///
-            /// The run's own value is kept in the list whether the document offers it or not. A
-            /// test written against last week's federation names a set this one may not hold, and
-            /// a picker that drops it shows an empty box: the reader cannot tell a run with no
-            /// zone from one whose zone this document cannot resolve.
-            /// </summary>
-            /// <param name="sets">The document's saved sets.</param>
-            /// <param name="zone">What the run is confined to, or null.</param>
-            private static List<string> Zones(IEnumerable<string> sets, string? zone)
-            {
-                var list = new List<string> { WholeModel };
-
-                list.AddRange(sets);
-
-                if (!string.IsNullOrWhiteSpace(zone)
-                    && !list.Contains(zone!, StringComparer.OrdinalIgnoreCase))
-                    list.Add(zone!);
-
-                return list;
-            }
 
             /// <summary>
             /// The categories this document's elements carry, for the ignore list.

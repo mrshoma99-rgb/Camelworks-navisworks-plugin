@@ -199,7 +199,7 @@ namespace CamelWorks.Core.Tests
             var broken = Spec("broken", "Corridors, 2.1 m");
             var settings = ClearanceSettings.From(broken);
 
-            settings.Zone = "Level 3 corridros";
+            settings.Surfaces = "Level 3 corridros";
             settings.Write(broken);
 
             runs.Put(broken);
@@ -444,10 +444,10 @@ namespace CamelWorks.Core.Tests
 
             Assert.NotEmpty(found);
 
-            // One typo in the zone picker: the run now resolves to nothing.
+            // One typo in the set the run searches in: it now resolves to nothing.
             var settings = ClearanceSettings.From(spec);
 
-            settings.Zone = "Level 3 corridros";
+            settings.Surfaces = "Level 3 corridros";
             settings.Write(spec);
 
             Assert.False(check.Runner!.Run("corridor", null));
@@ -458,7 +458,7 @@ namespace CamelWorks.Core.Tests
 
             // And it is told apart from a run that measured and found nothing, which does mark its
             // findings absent.
-            settings.Zone = null;
+            settings.Surfaces = ClearanceSettings.Loaded;
             settings.MinimumMetres = 0.5;
             settings.Write(spec);
 
@@ -606,7 +606,7 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void A_run_confined_to_a_zone_measures_only_what_is_in_it()
+        public void A_run_measures_only_what_the_two_sides_name()
         {
             var register = new FindingRegister();
             var runs = new CheckRunStore();
@@ -628,7 +628,11 @@ namespace CamelWorks.Core.Tests
             var spec = Spec("corridor", "Corridors, 2.1 m");
             var settings = ClearanceSettings.From(spec);
 
-            settings.Zone = "West corridor";
+            // Both sides, named. A run confined to one part of the building says so twice —
+            // what it searches in, and what it searches against — rather than through a third
+            // field that narrowed both and was consulted only when the first was left alone.
+            settings.Surfaces = "West corridor";
+            settings.Targets = "West corridor";
             settings.Write(spec);
             runs.Put(spec);
 
@@ -704,9 +708,8 @@ namespace CamelWorks.Core.Tests
             var settings = new ClearanceSettings
             {
                 MinimumMetres = 2.1,
-                Surfaces = ClearanceSettings.Loaded,
+                Surfaces = "West corridor",
                 DetectSurfaces = true,
-                Zone = "West corridor",
             };
 
             var check = new ClearanceCheck(register, runs, document, document);
@@ -977,7 +980,6 @@ namespace CamelWorks.Core.Tests
                 ToleranceMetres = 0.15,
                 Surfaces = ClearanceSettings.Loaded,
                 Targets = "Services",
-                Zone = "West corridor",
                 WorstPerPatch = false,
                 ExcludeStairs = true,
                 PreferFloorCategories = true,
@@ -1005,7 +1007,6 @@ namespace CamelWorks.Core.Tests
             Assert.Equal(ClearanceSettings.Loaded, again.Surfaces);
             Assert.True(again.DetectSurfaces);
             Assert.Equal("Services", again.Targets);
-            Assert.Equal("West corridor", again.Zone);
             Assert.Equal(new[] { "Level 03", "Level 04" }, again.Levels);
             Assert.Equal(new[] { "Sprinklers", "Lighting Fixtures" }, again.Ignore);
             Assert.False(again.WorstPerPatch);

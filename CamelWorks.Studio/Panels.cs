@@ -318,7 +318,6 @@ namespace CamelWorks.Studio
                 MinimumMetres = 2.1,
                 ToleranceMetres = 0.05,
                 DetectSurfaces = true,
-                Zone = "Level 03",
                 WorstPerPatch = true,
             };
 
