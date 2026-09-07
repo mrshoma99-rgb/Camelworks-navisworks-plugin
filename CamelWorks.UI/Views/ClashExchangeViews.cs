@@ -701,15 +701,7 @@ namespace CamelWorks.UI.Views
                     new Ui.OnPicked("Exclude {n} tests", (picked, said) =>
                         Included(picked, said, on: false)));
 
-                // The verb bar takes its line at the bottom of the pane and the table fills what
-                // is left, so a table longer than the pane scrolls instead of being cut off at
-                // the bottom edge. Ui.Picking returns the table stacked above its own bar, and a
-                // stack gives the table the height it asks for, which is the whole of it - so the
-                // table is taken back out of that stack and docked as the filling child.
-                DockPanel.SetDock(verbs, Dock.Bottom);
-
-                _tests.Children.Add(verbs);
-                _tests.Children.Add(Ui.Loose(table));
+                Bench.Listed(_tests, table, verbs);
 
                 DrawTestsSaid();
             }
@@ -796,6 +788,9 @@ namespace CamelWorks.UI.Views
 
                 var filters = Filters();
 
+                // Docked top here, and again by Bench.Listed once there is a table: the empty
+                // states below add themselves to this same panel, so the filter bar has to be on
+                // it before them and cannot wait for the listing.
                 DockPanel.SetDock(filters, Dock.Top);
                 _results.Children.Add(filters);
 
@@ -845,25 +840,12 @@ namespace CamelWorks.UI.Views
                         Redraw();
                     }));
 
-                DockPanel.SetDock(verbs, Dock.Bottom);
+                var dropped = _dropped.Count == 0 ? null : Ui.Across(
+                    Ui.Small(Ui.Count(_dropped.Count, "clash") + " left out by hand."),
+                    Ui.Link("Put them back",
+                            () => Ui.Safely(() => { _dropped.Clear(); Rebuild(); })));
 
-                if (_dropped.Count > 0)
-                {
-                    var dropped = Ui.Across(
-                        Ui.Small(Ui.Count(_dropped.Count, "clash") + " left out by hand."),
-                        Ui.Link("Put them back",
-                                () => Ui.Safely(() => { _dropped.Clear(); Rebuild(); })));
-
-                    // Docked first, so it lands under the verb bar rather than over it.
-                    DockPanel.SetDock(dropped, Dock.Bottom);
-                    _results.Children.Add(dropped);
-                }
-
-                _results.Children.Add(verbs);
-
-                // Last, and taken back out of the stack Ui.Picking put it in, so the table fills
-                // what the docked rows left and scrolls in it.
-                _results.Children.Add(Ui.Loose(table));
+                Bench.Listed(_results, table, verbs, dropped, filters);
 
                 var rounds = Rounds(scope);
 
@@ -1812,10 +1794,7 @@ namespace CamelWorks.UI.Views
                         else Receive(null);
                     }));
 
-                DockPanel.SetDock(verbs, Dock.Bottom);
-
-                _files.Children.Add(verbs);
-                _files.Children.Add(Ui.Loose(table));
+                Bench.Listed(_files, table, verbs);
 
                 _packsSaid.Children.Add(Ui.Small(
                     _reading == null
@@ -2083,13 +2062,7 @@ namespace CamelWorks.UI.Views
 
                 DrawStatusMapping(under);
 
-                // Docked first, so what the answers become lands under the verb bar.
-                DockPanel.SetDock(under, Dock.Bottom);
-                DockPanel.SetDock(verbs, Dock.Bottom);
-
-                _rows.Children.Add(under);
-                _rows.Children.Add(verbs);
-                _rows.Children.Add(Ui.Loose(table));
+                Bench.Listed(_rows, table, verbs, under);
 
                 _rowsSaid.Children.Add(Ui.Small(
                     showing.Count.ToString("N0", CultureInfo.InvariantCulture) + " shown · "

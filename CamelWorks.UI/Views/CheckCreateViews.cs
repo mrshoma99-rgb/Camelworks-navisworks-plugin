@@ -201,36 +201,8 @@ namespace CamelWorks.UI.Views
                 return Bench.Split(Strip(), left, right, _foot, 620);
             }
 
-            /// <summary>
-            /// The list pane's body: the rows scroll, the verbs under them do not.
-            ///
-            /// The verbs were inside the scroller with the rows, so on a project with more tests
-            /// than fit the pane they were below the last row and had to be scrolled to. They act
-            /// on what is ticked, which is on screen, so they stay on screen.
-            /// </summary>
-            private UIElement Listing()
-            {
-                // A dock, not a grid with a scroller in its star row. The table is a ListView and
-                // scrolls itself; putting it inside a second scroller sized to the pane left it
-                // measured against a height it did not use, and the rows drew at the foot of an
-                // otherwise empty pane. Docked, the verbs take their line at the bottom and the
-                // table fills what is left, which is what every other two-pane bench here does.
-                var body = new DockPanel { LastChildFill = true };
-
-                var pinned = Ui.Loose(_picking);
-
-                DockPanel.SetDock(pinned, Dock.Bottom);
-                body.Children.Add(pinned);
-
-                DockPanel.SetDock(_log, Dock.Top);
-                body.Children.Add(Ui.Loose(_log));
-
-                Ui.SetFills(body, true);
-
-                body.Children.Add(Ui.Loose(_list));
-
-                return body;
-            }
+            /// <summary>The list pane's body: the rows scroll, the verbs under them do not.</summary>
+            private UIElement Listing() => Bench.Listing(_list, _picking, _log);
 
             /// <summary>
             /// The strip over both panes: what makes a test on the left, the search on the right.

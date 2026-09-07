@@ -427,6 +427,106 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
+        /// A pane body whose rows scroll and whose verbs do not.
+        ///
+        /// Three benches needed this and each derived it: Exchange docked the verbs and made the
+        /// table the filling child; the Create tab put the table inside a second scroller sized
+        /// to the pane, which measured it against a height it did not use and drew the rows at
+        /// the foot of an otherwise empty pane.
+        ///
+        /// A dock, not a grid with a scroller in it. A table here is a <see cref="ListView"/> and
+        /// scrolls itself; giving it a scroller of its own is the fault, not the fix.
+        ///
+        /// Hand the result to <see cref="Pane"/> with <c>scrolls: false</c> — the pane must not
+        /// wrap this in a scroller either.
+        /// </summary>
+        /// <param name="rows">The table, which fills what the verbs leave.</param>
+        /// <param name="verbs">The bar under it, or null when there is none.</param>
+        /// <param name="said">A line or two above the table — a log, a count — or null.</param>
+        public static UIElement Listing(UIElement rows, UIElement? verbs, UIElement? said = null)
+        {
+            if (rows == null) throw new ArgumentNullException(nameof(rows));
+
+            var body = new DockPanel { LastChildFill = true };
+
+            if (verbs != null)
+            {
+                var pinned = Ui.Loose(verbs);
+
+                DockPanel.SetDock(pinned, Dock.Bottom);
+                body.Children.Add(pinned);
+            }
+
+            if (said != null)
+            {
+                var top = Ui.Loose(said);
+
+                DockPanel.SetDock(top, Dock.Top);
+                body.Children.Add(top);
+            }
+
+            // The table fills the pane rather than stopping at two thirds of it: on a bench the
+            // table is what the pane is for.
+            Ui.SetFills(body, true);
+
+            body.Children.Add(Ui.Loose(rows));
+
+            return body;
+        }
+
+        /// <summary>
+        /// The same shape, filled into a pane body the screen redraws in place.
+        ///
+        /// A screen that rebuilds one pane holds its body as a field and hands it to
+        /// <see cref="Pane"/> once, so it needs the dock filled rather than returned.
+        /// </summary>
+        /// <param name="body">The pane body, cleared first.</param>
+        /// <param name="rows">The table, which fills what the docked children leave.</param>
+        /// <param name="verbs">The bar under it, or null when there is none.</param>
+        /// <param name="under">
+        /// What lands under the verb bar — a note, a mapping, a line about what was left out.
+        /// Docked before the verbs, because a dock stacks inward from the edge.
+        /// </param>
+        /// <param name="over">What lands above the table, or null.</param>
+        public static void Listed(DockPanel body, UIElement rows, UIElement? verbs,
+                                  UIElement? under = null, UIElement? over = null)
+        {
+            if (body == null) throw new ArgumentNullException(nameof(body));
+            if (rows == null) throw new ArgumentNullException(nameof(rows));
+
+            body.Children.Clear();
+            body.LastChildFill = true;
+
+            if (under != null)
+            {
+                var below = Ui.Loose(under);
+
+                DockPanel.SetDock(below, Dock.Bottom);
+                body.Children.Add(below);
+            }
+
+            if (verbs != null)
+            {
+                var bar = Ui.Loose(verbs);
+
+                DockPanel.SetDock(bar, Dock.Bottom);
+                body.Children.Add(bar);
+            }
+
+            if (over != null)
+            {
+                var top = Ui.Loose(over);
+
+                DockPanel.SetDock(top, Dock.Top);
+                body.Children.Add(top);
+            }
+
+            Ui.SetFills(body, true);
+
+            body.Children.Add(Ui.Loose(rows));
+        }
+
+        /// <summary>
         /// A group of options under a small-caps label.
         ///
         /// The label carries the meaning a card's chrome used to pretend to; the fields are always

@@ -81,7 +81,7 @@ the same day. **Becomes `Seat.Folders`.**
 
 `ClashExchangeViews` documents the shape — verbs docked bottom, table as the filling child —
 and `CheckCreateViews` re-derived it wrongly, putting the table inside a second scroller.
-**Candidate for `Bench.Listing`**, not yet built.
+**Becomes `Bench.Listing`, and `Bench.Listed` for a pane a screen redraws in place.**
 
 ### 8. Searching results
 
@@ -92,12 +92,16 @@ menus are multi-select over facets, which the search grammar does not yet expres
 
 ## Order of work
 
-1. `Seat.Offer`, `Ui.Listed`, `Seat.Folders` — small, no visual change, they make the rest short.
-2. `Parts.Ticked` — the list with ticks and a box.
-3. `Parts.Source` — built on `Parts.Ticked`, replacing all four shapes.
-4. The vocabulary in Core.
-5. `Bench.Listing`.
-6. The Manage tab's facets against the search grammar.
+1. ~~`Seated.Offer`, `Ui.Listed`, `Seated.Folders`~~ — done.
+2. ~~`Parts.Ticked`~~ — done.
+3. ~~`Parts.Source`~~ — done.
+4. ~~`ResultVocabulary` in Core~~ — done. The three a seat alone can name (the checks on this
+   edition, the tests in the document, the models loaded) stay with the seat.
+5. ~~`Bench.Listing` / `Bench.Listed`~~ — done, adopted in the Create tab and Exchange's four
+   panes.
+6. The Manage tab's facets against the search grammar. Still to do, and still the largest: the
+   menus are multi-select over facets, which `ResultQuery` does not yet express, so it is a Core
+   change before it is a UI one.
 
 Each step replaces the hand-built copies rather than sitting beside them. A primitive that is
 added and not adopted is a fifth shape, not a standard.
