@@ -405,33 +405,60 @@ namespace CamelWorks.UI.Views
                                          Func<TextBox, UIElement> palette)
         {
             into.Children.Clear();
-            written.Clear();
+
+            // The boxes outlive a redraw. Editing one raises on every keystroke and the redraw
+            // that follows rebuilds the cards, so a box made here was replaced by a new one after
+            // every character typed into it: the cards could not be edited at all. One box per
+            // pattern is made once and moves with it.
+            while (written.Count < patterns.Count)
+            {
+                var made = Ui.Text(patterns[written.Count], "{row} vs {column}", null, 240);
+
+                made.HorizontalAlignment = HorizontalAlignment.Stretch;
+
+                // Wrapped: a full pattern is wider than the field and scrolled out of view on a
+                // single line.
+                made.TextWrapping = TextWrapping.Wrap;
+                made.AcceptsReturn = false;
+                made.MinHeight = 46;
+
+                // By where the box is now, not by where it was when it was made: a pattern moved
+                // up or down carries its box with it.
+                made.TextChanged += (s, e) => Ui.Safely(() =>
+                {
+                    var mine = written.IndexOf(made);
+
+                    if (mine < 0 || mine >= patterns.Count) return;
+                    if (string.Equals(patterns[mine], made.Text, StringComparison.Ordinal)) return;
+
+                    patterns[mine] = made.Text;
+                    redraw();
+                });
+
+                made.GotKeyboardFocus += (s, e) => Ui.Safely(() =>
+                {
+                    if (!ReferenceEquals(focused, made)) onFocus(made);
+                });
+
+                written.Add(made);
+            }
+
+            while (written.Count > patterns.Count) written.RemoveAt(written.Count - 1);
 
             for (var at = 0; at < patterns.Count; at++)
             {
                 var here = at;
                 var one = read[at];
+                var box = written[at];
 
-                var box = Ui.Text(patterns[at], "{row} vs {column}",
-                                  typed => { patterns[here] = typed; redraw(); }, 240);
-
-                box.HorizontalAlignment = HorizontalAlignment.Stretch;
-
-                // Wrapped: a full pattern is wider than the field and scrolled out of view on a
-                // single line.
-                box.TextWrapping = TextWrapping.Wrap;
-                box.AcceptsReturn = false;
-                box.MinHeight = 46;
-
-                box.GotKeyboardFocus += (s, e) => Ui.Safely(() =>
-                {
-                    if (!ReferenceEquals(focused, box)) onFocus(box);
-                });
+                // The text can change under the box — a pattern removed shifts every one below
+                // it up — and setting it while somebody is typing would fight the caret.
+                if (!box.IsKeyboardFocusWithin
+                    && !string.Equals(box.Text, patterns[at], StringComparison.Ordinal))
+                    box.Text = patterns[at];
 
                 // The card the caret is in, or the first card before anything has been touched.
                 var live = focused == null ? here == 0 : ReferenceEquals(focused, box);
-
-                written.Add(box);
 
                 var card = new Border
                 {
@@ -449,37 +476,47 @@ namespace CamelWorks.UI.Views
                 var head = new DockPanel { LastChildFill = true,
                                            Margin = new Thickness(0, 0, 0, 6) };
 
+                // The box moves with its pattern, so a card carries its own text and its own
+                // caret wherever it is put.
+                void Move(int to)
+                {
+                    var held = patterns[here];
+                    var carried = written[here];
+
+                    patterns.RemoveAt(here);
+                    written.RemoveAt(here);
+
+                    patterns.Insert(to, held);
+                    written.Insert(to, carried);
+
+                    redraw();
+                }
+
                 var moves = Ui.Across(
-                    Ui.Quiet("↑", () =>
-                    {
-                        if (here == 0) return;
-
-                        var held = patterns[here];
-
-                        patterns.RemoveAt(here);
-                        patterns.Insert(here - 1, held);
-                        redraw();
-                    }),
-                    Ui.Quiet("↓", () =>
-                    {
-                        if (here >= patterns.Count - 1) return;
-
-                        var held = patterns[here];
-
-                        patterns.RemoveAt(here);
-                        patterns.Insert(here + 1, held);
-                        redraw();
-                    }),
+                    Ui.Quiet("↑", () => { if (here > 0) Move(here - 1); }),
+                    Ui.Quiet("↓", () => { if (here < patterns.Count - 1) Move(here + 1); }),
                     Ui.Quiet("✕", () =>
                     {
                         if (patterns.Count == 1) return;
 
                         patterns.RemoveAt(here);
+                        written.RemoveAt(here);
                         redraw();
                     }));
 
                 DockPanel.SetDock(moves, Dock.Right);
                 head.Children.Add(moves);
+
+                // Opening a card is a press, not only a click into its box. The tokens showed
+                // for whichever card had the caret and there was no way to bring them back
+                // without finding the box again.
+                var open = Ui.Quiet(live ? "▾ Tokens" : "▸ Tokens", () => onFocus(box));
+
+                open.ToolTip = "Show the tokens that can be written into this pattern.";
+                open.Margin = new Thickness(8, 0, 0, 0);
+
+                DockPanel.SetDock(open, Dock.Right);
+                head.Children.Add(open);
 
                 head.Children.Add(new TextBlock
                 {
@@ -489,7 +526,7 @@ namespace CamelWorks.UI.Views
                 }.Wearing("Body"));
 
                 stack.Children.Add(head);
-                stack.Children.Add(box);
+                stack.Children.Add(Ui.Loose(box));
 
                 if (!one.IsUsable)
                 {
