@@ -923,8 +923,7 @@ namespace CamelWorks.UI.Views
                 _seat = seat ?? throw new ArgumentNullException(nameof(seat));
                 _live = seat as Session;
 
-                _list.MaxWidth = 560;
-                _list.HorizontalAlignment = HorizontalAlignment.Left;
+                _list.HorizontalAlignment = HorizontalAlignment.Stretch;
             }
 
             internal UIElement Build()
@@ -947,7 +946,11 @@ namespace CamelWorks.UI.Views
                     ? (UIElement)Stopped("Run all rules", primary: true)
                     : Ui.Runner("Run all rules", _preview, job => Play(_live, job, null));
 
-                return Bench.Surface(_pane, Ui.Foot(run, Ui.Actions(save, review), help), Stage());
+                // Half the window to the rule being edited. The list says what the rules are and
+                // what order they run in; the panel is where a rule is actually written, and on a
+                // three-hundred pixel panel a criteria row has nowhere to grow.
+                return Bench.Surface(_pane, Ui.Foot(run, Ui.Actions(save, review), help), Stage(),
+                                     setupShare: 0.5);
             }
 
             /// <summary>
@@ -1036,11 +1039,12 @@ namespace CamelWorks.UI.Views
                                     "Every clash result the tests report reaches the board as it is.",
                                     "New rule", Fresh);
 
+                // Stretched, not sized: the stage is now half the window and a fixed 520 would
+                // overflow it on a narrow one.
                 if (card is FrameworkElement frame)
                 {
-                    frame.HorizontalAlignment = HorizontalAlignment.Left;
+                    frame.HorizontalAlignment = HorizontalAlignment.Stretch;
                     frame.MaxWidth = double.PositiveInfinity;
-                    frame.Width = 520;
                 }
 
                 return card;
