@@ -382,7 +382,7 @@ namespace CamelWorks.UI.Views
                 // The source is a picker fed from the model, because the property a code table
                 // reads is exactly the kind of name somebody otherwise retypes from an element.
                 _source = Pickers.Property("Element / Classification", _ => Stale(), 240);
-                _target = Ui.Text("Code", _ => Stale(), 160);
+                _target = Ui.Text("Code", _ => Stale(), Ui.Wide.Word);
 
                 _session = session;
                 _keys = keys;
@@ -609,8 +609,8 @@ namespace CamelWorks.UI.Views
             private readonly Session _session;
             private readonly IReadOnlyList<ElementKey> _keys;
 
-            private readonly TextBox _out = Ui.Text(string.Empty, null, 340);
-            private readonly TextBox _in = Ui.Text(string.Empty, null, 340);
+            private readonly TextBox _out = Ui.Text(string.Empty, null, Ui.Wide.Path);
+            private readonly TextBox _in = Ui.Text(string.Empty, null, Ui.Wide.Path);
             private readonly StackPanel _status = Ui.Stack();
             private readonly StackPanel _applyRow = Ui.Stack();
 
@@ -1049,15 +1049,15 @@ namespace CamelWorks.UI.Views
                 rule.Name = name;
             }, 220);
 
-            var find = Ui.Text(string.Empty, text => rule.Find = text, 160);
-            var with = Ui.Text(string.Empty, text => rule.ReplaceWith = text, 160);
+            var find = Ui.Text(string.Empty, text => rule.Find = text, Ui.Wide.Word);
+            var with = Ui.Text(string.Empty, text => rule.ReplaceWith = text, Ui.Wide.Word);
 
             var how = Ui.Choice(new[] { Anywhere, WholeValue, AtStart, AtEnd, LikePattern }, Anywhere,
                 pick => rule.Kind = pick == WholeValue ? MatchKind.Whole
                                   : pick == AtStart ? MatchKind.Start
                                   : pick == AtEnd ? MatchKind.End
                                   : pick == LikePattern ? MatchKind.Pattern
-                                  : MatchKind.Part, 200);
+                                  : MatchKind.Part, Ui.Wide.Name);
 
             var cased = Ui.Check("Case has to match", false, v => rule.CaseSensitive = v);
 
@@ -1320,8 +1320,8 @@ namespace CamelWorks.UI.Views
                 // on part of the model, and the naming standard's spelling is in the dropdown
                 // rather than in whoever's memory is filling it in.
                 _name = Pickers.Property("Zone", _ => Stale(), 150);
-                _value = Ui.Text(string.Empty, _ => Stale(), 200);
-                _formula = Ui.Text(string.Empty, _ => Stale(), 340);
+                _value = Ui.Text(string.Empty, _ => Stale(), Ui.Wide.Name);
+                _formula = Ui.Text(string.Empty, _ => Stale(), Ui.Wide.Path);
 
                 _session = session;
                 _keys = keys;
@@ -1690,7 +1690,7 @@ namespace CamelWorks.UI.Views
             // The column is a picker - it exists on the model or there is nothing to rename. The
             // new name stays a box, because a new name is by definition not in any dropdown.
             private readonly ComboBox _column = Pickers.Property(string.Empty, null, 150);
-            private readonly TextBox _renamed = Ui.Text(string.Empty, null, 150);
+            private readonly TextBox _renamed = Ui.Text(string.Empty, null, Ui.Wide.Word);
             private readonly StackPanel _status = Ui.Stack();
             private readonly StackPanel _actions = Ui.Stack();
 
@@ -2195,8 +2195,8 @@ namespace CamelWorks.UI.Views
                     recipe.Levels = n;
             }, 70);
 
-            var separator = Ui.Text(recipe.Separator, text => recipe.Separator = text, 70);
-            var prefix = Ui.Text(recipe.Prefix, text => recipe.Prefix = text, 110);
+            var separator = Ui.Text(recipe.Separator, text => recipe.Separator = text, Ui.Wide.Number);
+            var prefix = Ui.Text(recipe.Prefix, text => recipe.Prefix = text, Ui.Wide.Number);
 
             var root = Ui.Check("Keep the file name as the first level", false, v => recipe.SkipRoot = !v);
 
@@ -2384,8 +2384,8 @@ namespace CamelWorks.UI.Views
 
             private readonly StackPanel _results = Ui.Stack();
             private readonly StackPanel _output = Ui.Stack();
-            private readonly TextBox _path = Ui.Text(string.Empty, null, 340);
-            private readonly TextBox _clean = Ui.Text(string.Empty, null, 220);
+            private readonly TextBox _path = Ui.Text(string.Empty, null, Ui.Wide.Path);
+            private readonly TextBox _clean = Ui.Text(string.Empty, null, Ui.Wide.Phrase);
 
             private string _assume = NoUnit;
             private ValueCleaner _cleaner = ValueCleaner.None;

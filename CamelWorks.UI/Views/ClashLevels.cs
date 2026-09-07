@@ -161,7 +161,7 @@ namespace CamelWorks.UI.Views
                 millimetres = string.Equals(chosen, Millimetres, StringComparison.Ordinal);
 
                 Redraw();
-            }, 140);
+            }, Ui.Wide.Word);
 
             var units = Ui.Field("Heights in", unit);
 

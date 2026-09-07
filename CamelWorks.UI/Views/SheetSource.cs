@@ -23,7 +23,7 @@ namespace CamelWorks.UI.Views
     internal sealed class SheetSource
     {
         private readonly TextBox _file;
-        private readonly ComboBox _sheets = Ui.Choice(Array.Empty<string>(), null, null, 200);
+        private readonly ComboBox _sheets = Ui.Choice(Array.Empty<string>(), null, null, Ui.Wide.Name);
         private readonly StackPanel _preview = Ui.Stack();
         private readonly StackPanel _trouble = Ui.Stack();
 
@@ -39,7 +39,7 @@ namespace CamelWorks.UI.Views
         /// <param name="columns">How many columns of the corner to show.</param>
         internal SheetSource(Action? onOpened = null, int rows = 12, int columns = 10)
         {
-            _file = Ui.Text(string.Empty, "The workbook it is in", _ => { }, 320);
+            _file = Ui.Text(string.Empty, "The workbook it is in", _ => { }, Ui.Wide.Path);
             _rows = Math.Max(1, rows);
             _columns = Math.Max(1, columns);
             _opened = onOpened;

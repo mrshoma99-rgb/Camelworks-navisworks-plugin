@@ -322,7 +322,7 @@ namespace CamelWorks.UI.Views
             var find = string.Empty;
             var list = Ui.Stack();
 
-            var box = Ui.Find("a test name", typed => { }, 240);
+            var box = Ui.Find("a test name", typed => { }, Ui.Wide.Phrase);
 
             box.HorizontalAlignment = HorizontalAlignment.Stretch;
 
@@ -662,7 +662,7 @@ namespace CamelWorks.UI.Views
             card.Tint(Border.BackgroundProperty, "Card2");
             card.Tint(Border.BorderBrushProperty, "Bd");
 
-            var box = Ui.Text(patterns[here], MatrixNaming.Default, typed => { }, 240);
+            var box = Ui.Text(patterns[here], MatrixNaming.Default, typed => { }, Ui.Wide.Phrase);
 
             box.HorizontalAlignment = HorizontalAlignment.Stretch;
             box.TextWrapping = TextWrapping.Wrap;
@@ -925,7 +925,7 @@ namespace CamelWorks.UI.Views
 
                 field.Title = said;
                 touch();
-            }, 170);
+            }, Ui.Wide.Name);
 
             title.VerticalAlignment = VerticalAlignment.Center;
 
@@ -1440,7 +1440,7 @@ namespace CamelWorks.UI.Views
             {
                 how.Start = (typed ?? string.Empty).Trim();
                 onChange();
-            }, 62);
+            }, Ui.Wide.Number);
 
             var step = Ui.Text(how.Step.ToString(CultureInfo.InvariantCulture), "1", typed =>
             {
@@ -1491,7 +1491,7 @@ namespace CamelWorks.UI.Views
             {
                 how.Same = (typed ?? string.Empty).Trim();
                 onChange();
-            }, 150);
+            }, Ui.Wide.Word);
 
             var held = Ui.Field("Value", box, null);
 

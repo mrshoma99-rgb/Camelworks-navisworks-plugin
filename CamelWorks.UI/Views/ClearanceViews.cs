@@ -131,7 +131,7 @@ namespace CamelWorks.UI.Views
                     Bench.Group(string.Empty,
                         Ui.Across(
                             Sized(Ui.Field("Name", Ui.Settled(_run.Name, string.Empty,
-                                name => Keep(_ => _run.Name = name), 190)), 200),
+                                name => Keep(_ => _run.Name = name), Ui.Wide.Name)), 200),
                             Sized(Ui.Field("Folder", Ui.Settled(_run.Folder ?? string.Empty,
                                 string.Empty,
                                 folder => Keep(_ => _run.Folder =

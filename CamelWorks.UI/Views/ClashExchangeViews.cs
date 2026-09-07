@@ -158,9 +158,9 @@ namespace CamelWorks.UI.Views
             /// <summary>Clashes left out by hand, on top of what the filter already removed.</summary>
             private readonly HashSet<Core.Identity.ClashKey> _dropped =
                 new HashSet<Core.Identity.ClashKey>();
-            private readonly TextBox _find = Ui.Find("a test or a folder", null, 200);
+            private readonly TextBox _find = Ui.Find("a test or a folder", null, Ui.Wide.Name);
 
-            private readonly TextBox _named = Ui.Text("Everything", null, 180);
+            private readonly TextBox _named = Ui.Text("Everything", null, Ui.Wide.Name);
 
             private string _search = string.Empty;
             private System.Windows.Threading.DispatcherTimer? _typing;
@@ -573,7 +573,7 @@ namespace CamelWorks.UI.Views
 
                 if (names.Count == 0) names.Add(_profile.Name);
 
-                return Ui.Choice(names, _profile.Name, Pick, 180);
+                return Ui.Choice(names, _profile.Name, Pick, Ui.Wide.Name);
             }
 
             /// <summary>Redraw the tests table once the typing in the find box has stopped.</summary>
@@ -1647,7 +1647,7 @@ namespace CamelWorks.UI.Views
                 {
                     _showing = said;
                     DrawReading();
-                }, 170);
+                }, Ui.Wide.Name);
 
                 box.ToolTip = "A pack of four hundred clashes usually holds a dozen answers. "
                               + "This is how to see only those.";
@@ -2331,7 +2331,7 @@ namespace CamelWorks.UI.Views
 
                 var reach = Ui.Text(
                     _profile.SectionMetres.ToString("0.##", CultureInfo.InvariantCulture),
-                    null, 70);
+                    null, Ui.Wide.Number);
 
                 reach.TextChanged += (s, e) => Ui.Safely(() =>
                 {
@@ -2368,7 +2368,7 @@ namespace CamelWorks.UI.Views
                 _named.Text = _profile.Name;
 
                 return Ui.Stack(
-                    Ui.Field("Saved", Ui.Choice(names, _profile.Name, Pick, 220)),
+                    Ui.Field("Saved", Ui.Choice(names, _profile.Name, Pick, Ui.Wide.Phrase)),
                     Ui.Field("Called", _named),
                     Ui.Across(
                         Ui.Quiet("Keep", () => Keep(quiet: false)),

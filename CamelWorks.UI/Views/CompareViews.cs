@@ -424,9 +424,9 @@ namespace CamelWorks.UI.Views
 
                 strip.Children.Add(Ui.Icon(Glyphs.Find, "Search the changes", () => { }));
                 strip.Children.Add(Ui.Text(_search, "element, type or what changed",
-                                           text => { _search = text ?? string.Empty; Redraw(); }, 240));
+                                           text => { _search = text ?? string.Empty; Redraw(); }, Ui.Wide.Phrase));
                 strip.Children.Add(new Border { Width = 10 });
-                strip.Children.Add(Ui.Choice(Buckets(), _filter, pick => { _filter = pick; Redraw(); }, 180));
+                strip.Children.Add(Ui.Choice(Buckets(), _filter, pick => { _filter = pick; Redraw(); }, Ui.Wide.Name));
 
                 var paint = Ui.Runner("Paint it onto the model", _output, job => ApplyView(job, view));
 
@@ -1180,7 +1180,7 @@ namespace CamelWorks.UI.Views
         {
             var label = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
-            var field = Ui.Text(label, text => label = text ?? string.Empty, 220);
+            var field = Ui.Text(label, text => label = text ?? string.Empty, Ui.Wide.Phrase);
 
             var button = Ui.Runner("Take a baseline", results, primary: primary, work: job =>
             {

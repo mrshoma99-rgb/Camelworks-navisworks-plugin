@@ -152,7 +152,7 @@ namespace CamelWorks.UI.Views
                     _query = text ?? string.Empty;
 
                     RedrawList();
-                }, 220);
+                }, Ui.Wide.Phrase);
 
                 // The menu is hung off the button it is opened from, so it needs the button. A
                 // handler that names the control it is attached to cannot be written in the

@@ -157,7 +157,7 @@ namespace CamelWorks.UI.Views
             var strip = Ui.Stack();
             var trouble = Ui.Stack();
 
-            var find = Ui.Find("part of a name", null, 220);
+            var find = Ui.Find("part of a name", null, Ui.Wide.Phrase);
             var take = Ui.Check("Use saved sets for unmatched tests", true, null);
             var names = Ui.Check("Prefer parsed names over set names", true, null);
 
@@ -412,7 +412,7 @@ namespace CamelWorks.UI.Views
             // pattern is made once and moves with it.
             while (written.Count < patterns.Count)
             {
-                var made = Ui.Text(patterns[written.Count], "{row} vs {column}", null, 240);
+                var made = Ui.Text(patterns[written.Count], "{row} vs {column}", null, Ui.Wide.Phrase);
 
                 made.HorizontalAlignment = HorizontalAlignment.Stretch;
 

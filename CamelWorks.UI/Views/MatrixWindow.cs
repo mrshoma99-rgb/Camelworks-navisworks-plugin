@@ -2539,7 +2539,7 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>The find box in the corner, and whether it has been wired yet.</summary>
-            private readonly TextBox _finder = Ui.Text(string.Empty, null, 60);
+            private readonly TextBox _finder = Ui.Text(string.Empty, null, Ui.Wide.Number);
             private bool _finding;
 
             /// <summary>
@@ -9328,7 +9328,7 @@ namespace CamelWorks.UI.Views
                     var held = Ui.Stack();
                     var says = Ui.Stack();
 
-                    var box = Ui.Text(_pattern, MatrixNaming.Default, null, 420);
+                    var box = Ui.Text(_pattern, MatrixNaming.Default, null, Ui.Wide.Path);
 
                     box.TextWrapping = TextWrapping.Wrap;
                     box.AcceptsReturn = false;

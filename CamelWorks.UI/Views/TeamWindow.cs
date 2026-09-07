@@ -445,7 +445,7 @@ namespace CamelWorks.UI.Views
 
             // The name is the identity, so changing it is a remove and an add rather than an
             // edit in place - and the list is drawn again because the order may have moved.
-            var name = Ui.Text(member.Name, null, 74);
+            var name = Ui.Text(member.Name, null, Ui.Wide.Number);
 
             name.LostFocus += (s, e) => Ui.Safely(() =>
             {
@@ -486,7 +486,7 @@ namespace CamelWorks.UI.Views
             Put(grid, Suggesting(roster.Parties, member.Party,
                                  typed => { member.Party = Or(typed); onEdit(); }), 4);
 
-            var email = Ui.Text(member.Email ?? string.Empty, "nobody@", null, 74);
+            var email = Ui.Text(member.Email ?? string.Empty, "nobody@", null, Ui.Wide.Number);
 
             email.LostFocus += (s, e) => Ui.Safely(() =>
             {
@@ -499,7 +499,7 @@ namespace CamelWorks.UI.Views
             // A folder, with a Browse, because a job that issues clashes by folder rather than
             // by email has nowhere else to put it - and typing a share path by hand is how the
             // wrong consultant gets somebody else's clashes.
-            var folder = Ui.Text(member.Folder ?? string.Empty, "where they go", null, 74);
+            var folder = Ui.Text(member.Folder ?? string.Empty, "where they go", null, Ui.Wide.Number);
 
             folder.LostFocus += (s, e) => Ui.Safely(() =>
             {

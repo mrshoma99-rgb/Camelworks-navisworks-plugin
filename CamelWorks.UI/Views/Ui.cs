@@ -2150,7 +2150,7 @@ namespace CamelWorks.UI.Views
         /// <param name="value">Starting value.</param>
         /// <param name="onChanged">Called on each keystroke.</param>
         /// <param name="width">The narrowest it may be.</param>
-        public static TextBox Text(string? value, Action<string>? onChanged, double width = 180)
+        public static TextBox Text(string? value, Action<string>? onChanged, double width = Wide.Name)
         {
             var box = new TextBox
             {
@@ -2169,7 +2169,8 @@ namespace CamelWorks.UI.Views
         /// <param name="placeholder">What to show while it is empty. An example, not an instruction.</param>
         /// <param name="onChanged">Called on each keystroke.</param>
         /// <param name="width">The narrowest it may be.</param>
-        public static TextBox Text(string? value, string placeholder, Action<string>? onChanged, double width = 180)
+        public static TextBox Text(string? value, string placeholder, Action<string>? onChanged,
+                                   double width = Wide.Name)
         {
             var box = Text(value, onChanged, width);
 
@@ -2177,6 +2178,35 @@ namespace CamelWorks.UI.Views
             // product gets one the same way and none of them can drift out of position.
             box.Tag = placeholder;
             return box;
+        }
+
+        /// <summary>
+        /// How wide a field should be, by what goes in it.
+        ///
+        /// The product used eleven widths across thirty controls - 90, 128, 130, 140, 150, 180,
+        /// 190, 200, 220, 240, 250, 260, 320 - each chosen at its own call site, so three
+        /// dropdowns on one strip were three lengths and none of them related to the length of
+        /// what they held. These five steps are the content classes the product actually has.
+        ///
+        /// The number is a minimum, not a fixed size: a field in a stretching column still fills
+        /// it. The class is about how much can be read at rest.
+        /// </summary>
+        public static class Wide
+        {
+            /// <summary>A figure and its unit: 250, 16 mm, 3.</summary>
+            public const double Number = 100;
+
+            /// <summary>One word from a known list: a status, a discipline, a level.</summary>
+            public const double Word = 150;
+
+            /// <summary>A name somebody typed: a test, a person, a saved set.</summary>
+            public const double Name = 200;
+
+            /// <summary>A phrase: a naming pattern, a sentence fragment, a search.</summary>
+            public const double Phrase = 260;
+
+            /// <summary>A file path or a file-name template.</summary>
+            public const double Path = 340;
         }
 
         /// <summary>
@@ -2193,7 +2223,7 @@ namespace CamelWorks.UI.Views
         /// <param name="placeholder">What can be typed in, e.g. "a test or a folder".</param>
         /// <param name="onChanged">Called on each keystroke, including on the clear.</param>
         /// <param name="width">The narrowest it may be.</param>
-        public static TextBox Find(string placeholder, Action<string>? onChanged, double width = 200)
+        public static TextBox Find(string placeholder, Action<string>? onChanged, double width = Wide.Name)
         {
             var box = Text(string.Empty, placeholder, onChanged, width);
 
@@ -2230,7 +2260,7 @@ namespace CamelWorks.UI.Views
         /// <param name="onSettled">Called once, with what the box now holds.</param>
         /// <param name="width">The narrowest it may be.</param>
         public static TextBox Settled(string? value, string placeholder,
-                                      Action<string>? onSettled, double width = 180)
+                                      Action<string>? onSettled, double width = Wide.Name)
         {
             var was = value ?? string.Empty;
             var box = Text(was, placeholder, null, width);
@@ -2270,7 +2300,7 @@ namespace CamelWorks.UI.Views
         /// <param name="onChanged">Called with the new pick.</param>
         /// <param name="width">The narrowest it may be.</param>
         public static ComboBox Choice(IEnumerable<string> options, string? selected,
-                                      Action<string>? onChanged, double width = 170)
+                                      Action<string>? onChanged, double width = Wide.Name)
         {
             var box = new ComboBox
             {

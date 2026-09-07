@@ -80,7 +80,7 @@ namespace CamelWorks.UI.Views
             var trouble = Ui.Stack();
             var body = Ui.Stack();
 
-            var name = Ui.Text(held.Symbol, "A", typed => held.Symbol = typed.Trim(), 70);
+            var name = Ui.Text(held.Symbol, "A", typed => held.Symbol = typed.Trim(), Ui.Wide.Number);
 
             // A cell is thirty-eight pixels wide and nothing was clipping it. The field invites "a
             // letter, a mark or a word", and a word overdrew its neighbours in the grid and in the
@@ -88,7 +88,7 @@ namespace CamelWorks.UI.Views
             // name, and a name belongs in the legend line beside it.
             name.MaxLength = 4;
 
-            var mm = Ui.Text(units.Bare(held.Tolerance), null, 80);
+            var mm = Ui.Text(units.Bare(held.Tolerance), null, Ui.Wide.Number);
 
             body.Children.Add(Ui.Field("What the cells say", name,
                 "A letter or a short mark — whatever the sheet this matrix came from uses. Four "
@@ -228,7 +228,7 @@ namespace CamelWorks.UI.Views
                             : MatrixTest.Hard;
 
                         Kinded();
-                    }, 160),
+                    }, Ui.Wide.Word),
                 "Hard is solids overlapping. Hard conservative tests the triangles instead — "
                 + "slower, and it catches more. Clearance is closer than they are allowed to be. "
                 + "Duplicate is the same thing modelled twice."));

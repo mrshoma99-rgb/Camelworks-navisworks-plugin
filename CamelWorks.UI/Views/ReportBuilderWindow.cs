@@ -91,9 +91,9 @@ namespace CamelWorks.UI.Views
                 _format = _kept.Text("format", Book) ?? Book;
 
                 _file = Ui.Text(_kept.Text("file"), "where to write it",
-                                text => _kept.Set("file", text), 260);
+                                text => _kept.Set("file", text), Ui.Wide.Phrase);
 
-                _name = Ui.Text(_kept.Text("name", "Model data"), null, 200);
+                _name = Ui.Text(_kept.Text("name", "Model data"), null, Ui.Wide.Name);
 
                 Load();
 
@@ -186,7 +186,7 @@ namespace CamelWorks.UI.Views
 
                 if (names.Count == 0) names.Add(_template.Name);
 
-                _picker = Ui.Choice(names, _template.Name, Switch, 200);
+                _picker = Ui.Choice(names, _template.Name, Switch, Ui.Wide.Name);
 
                 return Ui.Stack(
                     Ui.Field("Saved", _picker,
@@ -352,14 +352,14 @@ namespace CamelWorks.UI.Views
                         column.Heading = string.IsNullOrWhiteSpace(text) ? column.Heading : text.Trim();
                         DrawShape();
                         DrawPreview();
-                    }, 170);
+                    }, Ui.Wide.Name);
 
                     var roll = Ui.Choice(Rolls.Select(r => r.Caption).ToList(), Caption(column.Roll),
                                          pick =>
                                          {
                                              column.Roll = Rolled(pick);
                                              DrawPreview();
-                                         }, 190);
+                                         }, Ui.Wide.Name);
 
                     roll.IsEnabled = _template.GroupBy != null;
 
@@ -412,14 +412,14 @@ namespace CamelWorks.UI.Views
                             _template.GroupBy = pick == Nothing ? null : pick;
                             DrawColumns();
                             DrawPreview();
-                        }, 200),
+                        }, Ui.Wide.Name),
                         "One row per value instead of one per element."),
                     Ui.Field("Order by",
                         Ui.Choice(sorts, _template.SortBy ?? ModelOrder, pick =>
                         {
                             _template.SortBy = pick == ModelOrder ? null : pick;
                             DrawPreview();
-                        }, 200)),
+                        }, Ui.Wide.Name)),
                     Ui.Field("Largest first",
                         Ui.Toggle(string.Empty, _template.Descending, on =>
                         {

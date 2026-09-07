@@ -1161,8 +1161,8 @@ namespace CamelWorks.UI.Views
                 // supplied — see Drawn — and the source has to follow what is actually read.
                 if (!Engine.IsAvailable) _source = FromFile;
 
-                _path = Ui.Text(_file?.Path ?? string.Empty, null, 190);
-                _markups = Ui.Text(string.Empty, null, 190);
+                _path = Ui.Text(_file?.Path ?? string.Empty, null, Ui.Wide.Name);
+                _markups = Ui.Text(string.Empty, null, Ui.Wide.Name);
 
                 // Both search boxes are built here and placed once. Rebuilding a text box inside
                 // the handler for its own keystroke takes the caret out of it, which is a search
@@ -1177,7 +1177,7 @@ namespace CamelWorks.UI.Views
 
                     _railTyping.Stop();
                     _railTyping.Start();
-                }, 150);
+                }, Ui.Wide.Word);
 
                 _railTyping.Interval = TimeSpan.FromMilliseconds(160);
                 _railTyping.Tick += (s, e) => Ui.Safely(() =>
@@ -1195,7 +1195,7 @@ namespace CamelWorks.UI.Views
                     // them for a string nobody was looking for.
                     _typing.Stop();
                     _typing.Start();
-                }, 128);
+                }, Ui.Wide.Word);
 
                 _typing.Interval = TimeSpan.FromMilliseconds(160);
                 _typing.Tick += (s, e) => Ui.Safely(() =>
@@ -7310,7 +7310,7 @@ namespace CamelWorks.UI.Views
                     // The markers already hanging in the view are the ones being looked at, so
                     // they change now rather than at the next focus.
                     Remarked();
-                }, 150));
+                }, Ui.Wide.Word));
 
                 return row;
             }
@@ -10676,7 +10676,7 @@ namespace CamelWorks.UI.Views
                         Ui.Field("Property", Pickers.ClashProperty(here.Name,
                             pick => Recut(here, null, pick, null))),
                         Ui.Field("Read from", Ui.Choice(new[] { BothSides, FirstSide, SecondSide },
-                            here.Side, pick => Recut(here, null, null, pick), 150)));
+                            here.Side, pick => Recut(here, null, null, pick), Ui.Wide.Word)));
 
                     _columnList.Children.Add(card);
                 }

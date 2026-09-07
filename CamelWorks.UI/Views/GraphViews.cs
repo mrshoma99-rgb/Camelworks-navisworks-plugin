@@ -49,7 +49,7 @@ namespace CamelWorks.UI.Views
                     return Bench.Surface(null, null, Ui.Stack(Ui.Empty("No model is open.", Host.NoModel)));
 
                 _kept = ToolMemory.Of(session.Store, "automate.graphs");
-                _folder = Ui.Text(_kept.Text(FolderKey) ?? Suggested(session), null, 240);
+                _folder = Ui.Text(_kept.Text(FolderKey) ?? Suggested(session), null, Ui.Wide.Phrase);
 
                 var run = Ui.Runner("Run the graph", _results, job => Go(session, job));
 

@@ -189,7 +189,7 @@ namespace CamelWorks.UI.Views
         /// </summary>
         private static UIElement Bundle()
         {
-            var path = Ui.Text(Suggested("camelworks-support.txt"), null, 360);
+            var path = Ui.Text(Suggested("camelworks-support.txt"), null, Ui.Wide.Path);
             var status = Ui.Stack();
 
             var write = Ui.Button("Write the bundle", () =>
@@ -300,7 +300,7 @@ namespace CamelWorks.UI.Views
         /// </summary>
         private static UIElement Sample()
         {
-            var path = Ui.Text(Suggested(SampleProject.FileName), null, 360);
+            var path = Ui.Text(Suggested(SampleProject.FileName), null, Ui.Wide.Path);
             var status = Ui.Stack();
 
             var write = Ui.Button("Sample project", () =>

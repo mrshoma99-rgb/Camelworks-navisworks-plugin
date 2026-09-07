@@ -176,7 +176,7 @@ namespace CamelWorks.UI.Views
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            var name = Ui.Text("Weekly coordination", null, 220);
+            var name = Ui.Text("Weekly coordination", null, Ui.Wide.Phrase);
 
             var make = Ui.Button("Job from this...", () =>
             {

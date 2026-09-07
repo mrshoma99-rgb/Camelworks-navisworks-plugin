@@ -108,7 +108,7 @@ namespace CamelWorks.UI.Views
                 var recipe = Ui.Stack(
                     Bench.Group("What it reads",
                         Ui.Field("Scope", Ui.Choice(new[] { WholeModel, Selection }, _scope,
-                                                    pick => _scope = pick, 200))),
+                                                    pick => _scope = pick, Ui.Wide.Name))),
                     Bench.Group("The levels, outermost first", _levels),
                     Bench.Group("What comes out", Shape()),
                     Bench.Group("This recipe", Keep(), _saved));
@@ -194,14 +194,14 @@ namespace CamelWorks.UI.Views
                     {
                         level.Missing = pick == LeaveThem ? MissingValues.Leave : MissingValues.Gather;
                         DrawLevels();
-                    }, 170);
+                    }, Ui.Wide.Name);
 
                 return Bench.Group("Level " + (index + 1).ToString(CultureInfo.InvariantCulture),
                     Ui.Pair(Ui.Field("Property tab", tab), Ui.Field("Property", name)),
                     Ui.Field("Elements without it", holes),
                     level.Missing == MissingValues.Gather
                         ? Ui.Field("Called",
-                            Ui.Text(level.GatherAs, text => level.GatherAs = text, 150),
+                            Ui.Text(level.GatherAs, text => level.GatherAs = text, Ui.Wide.Word),
                             "The branch they land in.")
                         : null);
             }
@@ -209,9 +209,9 @@ namespace CamelWorks.UI.Views
             private UIElement Shape()
             {
                 var root = Ui.Text(_recipe.Root ?? string.Empty, "left blank for the top of the tree",
-                                   text => _recipe.Root = text, 180);
+                                   text => _recipe.Root = text, Ui.Wide.Name);
 
-                var pattern = Ui.Text(_recipe.NamePattern, text => _recipe.NamePattern = text, 180);
+                var pattern = Ui.Text(_recipe.NamePattern, text => _recipe.NamePattern = text, Ui.Wide.Name);
 
                 return Ui.Stack(
                     Ui.Field("Top folder", root,
@@ -243,7 +243,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private UIElement Keep()
             {
-                var name = Ui.Text(_recipe.Name, text => _recipe.Name = text, 180);
+                var name = Ui.Text(_recipe.Name, text => _recipe.Name = text, Ui.Wide.Name);
 
                 return Ui.Stack(
                     Ui.Field("Called", name, "Kept, the next revision is one press."),

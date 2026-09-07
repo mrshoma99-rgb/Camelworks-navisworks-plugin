@@ -1300,7 +1300,7 @@ namespace CamelWorks.UI.Views
 
                 var card = _open;
 
-                var name = Ui.Text(card.Name, typed => { card.Name = typed; Touched(); }, 240);
+                var name = Ui.Text(card.Name, typed => { card.Name = typed; Touched(); }, Ui.Wide.Phrase);
 
                 name.LostFocus += (s, e) => Ui.Safely(Redraw);
 
@@ -1316,7 +1316,7 @@ namespace CamelWorks.UI.Views
 
                     Touched();
                     Redraw();
-                }, 240);
+                }, Ui.Wide.Phrase);
 
                 var value = Value(card);
 
@@ -1368,7 +1368,7 @@ namespace CamelWorks.UI.Views
                 {
                     case ClashActionKind.Group:
                         return Ui.Field("Group name",
-                            Ui.Text(card.Value, typed => { card.Value = typed; Touched(); }, 240));
+                            Ui.Text(card.Value, typed => { card.Value = typed; Touched(); }, Ui.Wide.Phrase));
 
                     case ClashActionKind.Assign:
                     {
@@ -1396,17 +1396,17 @@ namespace CamelWorks.UI.Views
 
                     case ClashActionKind.Label:
                         return Ui.Field("Label",
-                            Ui.Text(card.Value, typed => { card.Value = typed; Touched(); }, 240));
+                            Ui.Text(card.Value, typed => { card.Value = typed; Touched(); }, Ui.Wide.Phrase));
 
                     case ClashActionKind.Issue:
                         return Ui.Field("Issue",
-                            Ui.Text(card.Value, typed => { card.Value = typed; Touched(); }, 240),
+                            Ui.Text(card.Value, typed => { card.Value = typed; Touched(); }, Ui.Wide.Phrase),
                             "An issue of this name is raised if the project has none, and the "
                             + "results are attached to it. Attaching writes the project file at "
                             + "once, because the issue register is another tab's state.");
 
                     case ClashActionKind.Comment:
-                        var said = Ui.Text(card.Value, typed => { card.Value = typed; Touched(); }, 300);
+                        var said = Ui.Text(card.Value, typed => { card.Value = typed; Touched(); }, Ui.Wide.Path);
 
                         said.AcceptsReturn = true;
                         said.TextWrapping = TextWrapping.Wrap;
@@ -1418,7 +1418,7 @@ namespace CamelWorks.UI.Views
                             + "does not leave it again.");
 
                     case ClashActionKind.Markers:
-                        var box = Ui.Text(card.Value, typed => { card.Value = typed; Touched(); }, 300);
+                        var box = Ui.Text(card.Value, typed => { card.Value = typed; Touched(); }, Ui.Wide.Path);
 
                         return Ui.Field("Write them to",
                             Ui.PathRow(box, PathKind.Save, "Wavefront OBJ|*.obj"),
@@ -1451,7 +1451,7 @@ namespace CamelWorks.UI.Views
 
                     Touched();
                     Redraw();
-                }, 240);
+                }, Ui.Wide.Phrase);
             }
 
             /// <summary>The project's priority words, never empty.</summary>
@@ -2537,8 +2537,8 @@ namespace CamelWorks.UI.Views
         {
             private readonly IReadOnlyList<SpecKind> _kinds;
             private readonly ComboBox _kind;
-            private readonly TextBox _first = Ui.Text(string.Empty, null, 90);
-            private readonly TextBox _second = Ui.Text(string.Empty, null, 90);
+            private readonly TextBox _first = Ui.Text(string.Empty, null, Ui.Wide.Number);
+            private readonly TextBox _second = Ui.Text(string.Empty, null, Ui.Wide.Number);
 
             private readonly TextBlock _firstLabel =
                 new TextBlock { Margin = new Thickness(0, 0, 0, 4) }.Wearing("Lbl");
@@ -2563,7 +2563,7 @@ namespace CamelWorks.UI.Views
                 {
                     Relabel();
                     Fired();
-                }, 240);
+                }, Ui.Wide.Phrase);
 
                 _first.TextChanged += (s, e) => Ui.Safely(Fired);
                 _second.TextChanged += (s, e) => Ui.Safely(Fired);
@@ -2960,10 +2960,10 @@ namespace CamelWorks.UI.Views
                 _mode = locked ?? _kept.Text("mode", FullReport) ?? FullReport;
                 _audience = _kept.Text("audience", Everyone) ?? Everyone;
 
-                _path = Ui.Text(_kept.Text("folder"), text => { _kept.Set("folder", text); Restate(); }, 200);
+                _path = Ui.Text(_kept.Text("folder"), text => { _kept.Set("folder", text); Restate(); }, Ui.Wide.Name);
 
                 _template = Ui.Text(_kept.Text("name", Deliverable.DefaultTemplate),
-                                    text => { _kept.Set("name", text); Restate(); }, 200);
+                                    text => { _kept.Set("name", text); Restate(); }, Ui.Wide.Name);
 
                 _units = _kept.Text("units", FromDocument) ?? FromDocument;
 
@@ -3001,7 +3001,7 @@ namespace CamelWorks.UI.Views
                     _audience = a;
                     _kept.Set("audience", a);
                     Restate();
-                }, 150);
+                }, Ui.Wide.Word);
 
                 var format = Ui.Segmented(new[] { "PDF", "XLSX", "HTML" }, _format,
                                           f => { _format = f; _kept.Set("format", f); Restate(); });
@@ -3043,7 +3043,7 @@ namespace CamelWorks.UI.Views
                     _mode = m;
                     _kept.Set("mode", m);
                     Retune();
-                }, 200);
+                }, Ui.Wide.Name);
 
                 Retune();
 
@@ -3334,7 +3334,7 @@ namespace CamelWorks.UI.Views
                                  : MarkerShape.Sphere;
 
                     _kept.Set("markerShape", pick);
-                }, 140);
+                }, Ui.Wide.Word);
 
                 var across = _kept.Number("markerSize", 300);
 
@@ -3349,7 +3349,7 @@ namespace CamelWorks.UI.Views
                     _kept.Set("markerSize", (int)Math.Round(mm));
                 }, 90);
 
-                var units = Ui.Choice(Units, _units, pick => { _units = pick; _kept.Set("units", pick); }, 160);
+                var units = Ui.Choice(Units, _units, pick => { _units = pick; _kept.Set("units", pick); }, Ui.Wide.Word);
 
                 // The run reports into this window. Its answers used to be written to a panel on
                 // the tab behind it, so nothing appeared until the window was closed.

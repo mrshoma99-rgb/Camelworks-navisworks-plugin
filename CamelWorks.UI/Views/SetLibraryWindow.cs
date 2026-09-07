@@ -66,8 +66,8 @@ namespace CamelWorks.UI.Views
             internal Screen(Session session)
             {
                 _session = session;
-                _pattern = Ui.Text("{value}", null, 200);
-                _floor = Ui.Text("1", null, 70);
+                _pattern = Ui.Text("{value}", null, Ui.Wide.Name);
+                _floor = Ui.Text("1", null, Ui.Wide.Number);
             }
 
             internal UIElement Build()

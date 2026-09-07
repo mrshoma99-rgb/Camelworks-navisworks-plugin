@@ -135,7 +135,7 @@ namespace CamelWorks.UI.Views
                 return Ui.Stack(
                     Bench.Group(string.Empty,
                         Ui.Across(
-                            Sized(Ui.Field("Name", Ui.Text(_name, text => _name = text, 190)), 200),
+                            Sized(Ui.Field("Name", Ui.Text(_name, text => _name = text, Ui.Wide.Name)), 200),
                             Sized(Ui.Field("Folder", Folder()), 190))),
 
                     // The sides first and together. They are the test: the two numbers under them

@@ -96,12 +96,12 @@ namespace CamelWorks.UI.Views
                 _scopeChoice = _kept.Text("scope", Everything) ?? Everything;
 
                 _file = Ui.Text(_kept.Text("file"), "the spreadsheet to link",
-                                text => _kept.Set("file", text), 260);
+                                text => _kept.Set("file", text), Ui.Wide.Phrase);
 
                 _out = Ui.Text(_kept.Text("out"), "where to write the returned sheet",
-                               text => _kept.Set("out", text), 260);
+                               text => _kept.Set("out", text), Ui.Wide.Phrase);
 
-                _name = Ui.Text(_kept.Text("name", "Data link"), null, 200);
+                _name = Ui.Text(_kept.Text("name", "Data link"), null, Ui.Wide.Name);
 
                 Load();
 
@@ -128,7 +128,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private UIElement Build()
             {
-                _sheets = Ui.Choice(Array.Empty<string>(), null, Pick, 200);
+                _sheets = Ui.Choice(Array.Empty<string>(), null, Pick, Ui.Wide.Name);
                 _sheets.IsEnabled = false;
 
                 var file = Ui.Stack(
@@ -201,7 +201,7 @@ namespace CamelWorks.UI.Views
 
                 if (names.Count == 0) names.Add(_link.Name);
 
-                _picker = Ui.Choice(names, _link.Name, Switch, 200);
+                _picker = Ui.Choice(names, _link.Name, Switch, Ui.Wide.Name);
 
                 return Ui.Stack(
                     Ui.Field("Saved", _picker,
@@ -418,7 +418,7 @@ namespace CamelWorks.UI.Views
                 {
                     _link.KeyProperty = Split(pick);
                     DrawVerdict();
-                }, 240);
+                }, Ui.Wide.Phrase);
 
                 property.IsEnabled = _link.Match == LinkMatch.Property && fields.Count > 0;
 
@@ -427,7 +427,7 @@ namespace CamelWorks.UI.Views
                         Ui.Choice(headings, headings.Contains(_link.KeyHeading, StringComparer.OrdinalIgnoreCase)
                                                 ? _link.KeyHeading
                                                 : headings.FirstOrDefault(),
-                                  pick => { _link.KeyHeading = pick; DrawColumns(); DrawVerdict(); }, 240),
+                                  pick => { _link.KeyHeading = pick; DrawColumns(); DrawVerdict(); }, Ui.Wide.Phrase),
                         "The column whose values turn up in the model."),
                     Ui.Field("Matched against",
                         Ui.Choice(new[] { ById, ByProperty, ByName }, how, pick =>
@@ -437,7 +437,7 @@ namespace CamelWorks.UI.Views
                                         : LinkMatch.Identity;
                             DrawJoin();
                             DrawVerdict();
-                        }, 240)),
+                        }, Ui.Wide.Phrase)),
                     Ui.Field("Which property", property)));
 
                 _join.Children.Add(Ui.Actions(
@@ -501,7 +501,7 @@ namespace CamelWorks.UI.Views
                     _columns.Children.Add(Ui.Across(
                         Ui.Line(heading, 1, true),
                         Ui.Choice(new[] { DoWrite, DoFill, DoRead, DoNothing }, Word(here.Action),
-                                  pick => { here.Action = Doing(pick); DrawVerdict(); }, 200),
+                                  pick => { here.Action = Doing(pick); DrawVerdict(); }, Ui.Wide.Name),
                         tab,
                         name));
                 }

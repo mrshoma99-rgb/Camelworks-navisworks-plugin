@@ -33,7 +33,7 @@ namespace CamelWorks.UI.Views
         private static UIElement Body(Session session)
         {
             var results = Ui.Stack();
-            var folder = Ui.Text(string.Empty, null, 220);
+            var folder = Ui.Text(string.Empty, null, Ui.Wide.Phrase);
 
             var broken = Missing(session).Select(m => new Broken(m)).ToList();
 

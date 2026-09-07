@@ -685,7 +685,7 @@ namespace CamelWorks.UI.Views
             {
                 field.Start = (typed ?? string.Empty).Trim();
                 onChange();
-            }, 62);
+            }, Ui.Wide.Number);
 
             var step = Ui.Settled(field.Step.ToString(CultureInfo.InvariantCulture), "1", typed =>
             {
@@ -745,7 +745,7 @@ namespace CamelWorks.UI.Views
             {
                 field.Same = (typed ?? string.Empty).Trim();
                 onChange();
-            }, 150);
+            }, Ui.Wide.Word);
 
             var held = Ui.Field("Value", box, null);
 

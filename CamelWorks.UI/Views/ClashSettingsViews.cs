@@ -468,7 +468,7 @@ namespace CamelWorks.UI.Views
                         // The inch fraction is only a control at all in feet and inches, so the
                         // section is drawn again rather than leaving a dead box on a metric job.
                         Show(Part.Units);
-                    }, 200));
+                    }, Ui.Wide.Name));
 
                 var inches = imperial
                     ? Ui.Field("Round inches to",
@@ -640,7 +640,7 @@ namespace CamelWorks.UI.Views
                 // by it, so a whole selection is set in one press.
                 var wanted = NoDiscipline;
 
-                var pick = Ui.Choice(offered, NoDiscipline, chosen => wanted = chosen, 180);
+                var pick = Ui.Choice(offered, NoDiscipline, chosen => wanted = chosen, Ui.Wide.Name);
 
                 pick.VerticalAlignment = VerticalAlignment.Center;
 

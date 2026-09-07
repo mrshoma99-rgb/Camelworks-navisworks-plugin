@@ -540,14 +540,14 @@ namespace CamelWorks.UI.Views
                 if (QueryTerm.Numeric(term.Op))
                 {
                     row.Children.Add(Spaced(Ui.Text(Said(term.Number),
-                        typed => { term.Number = Read(typed); _onChanged(); }, 90)));
+                        typed => { term.Number = Read(typed); _onChanged(); }, Ui.Wide.Number)));
 
                     if (term.Op == QueryOp.Between)
                     {
                         row.Children.Add(Spaced(Ui.Line("and", 0.7)));
 
                         row.Children.Add(Spaced(Ui.Text(Said(term.Number2),
-                            typed => { term.Number2 = Read(typed); _onChanged(); }, 90)));
+                            typed => { term.Number2 = Read(typed); _onChanged(); }, Ui.Wide.Number)));
                     }
 
                     var unit = known?.Unit;
@@ -567,10 +567,10 @@ namespace CamelWorks.UI.Views
                             {
                                 term.Text = offered.First(one => one.Said == picked).Value;
                                 Touched();
-                            }, 180)));
+                            }, Ui.Wide.Name)));
                     else
                         row.Children.Add(Spaced(Ui.Text(term.Text, "Value",
-                            typed => { term.Text = typed; _onChanged(); }, 160)));
+                            typed => { term.Text = typed; _onChanged(); }, Ui.Wide.Word)));
                 }
             }
 

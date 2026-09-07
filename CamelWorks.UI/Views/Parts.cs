@@ -1211,7 +1211,7 @@ namespace CamelWorks.UI.Views
         {
             _ = near;
 
-            var box = Ui.Text(starting ?? string.Empty, null, 320);
+            var box = Ui.Text(starting ?? string.Empty, null, Ui.Wide.Path);
 
             var label = new TextBlock
             {
@@ -1525,7 +1525,7 @@ namespace CamelWorks.UI.Views
             // Only once there is more to read than fits, for the same reason a menu gets one:
             // a box over four lines is a control asking to be used on something it cannot help.
             var find = offered.Count > Searchable
-                ? Ui.Find("part of a name", null, 200)
+                ? Ui.Find("part of a name", null, Ui.Wide.Name)
                 : null;
 
             void Fill()
@@ -1803,7 +1803,7 @@ namespace CamelWorks.UI.Views
             // A box that narrows the list, once there are more entries than can be read at a
             // glance. A federation carries two hundred saved sets and finding one by scrolling a
             // column of buttons is not finding it.
-            var find = held.Count > Searchable ? Ui.Find("part of a name", null, 300) : null;
+            var find = held.Count > Searchable ? Ui.Find("part of a name", null, Ui.Wide.Path) : null;
 
             void Fill()
             {
@@ -1865,7 +1865,7 @@ namespace CamelWorks.UI.Views
 
             if (fresh != null)
             {
-                var box = Ui.Text(starting ?? string.Empty, null, 300);
+                var box = Ui.Text(starting ?? string.Empty, null, Ui.Wide.Path);
                 box.Margin = new Thickness(0, 10, 0, 0);
 
                 void Make()
