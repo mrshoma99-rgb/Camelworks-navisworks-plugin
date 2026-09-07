@@ -439,6 +439,10 @@ namespace CamelWorks.UI.Views
         ///
         /// Hand the result to <see cref="Pane"/> with <c>scrolls: false</c> — the pane must not
         /// wrap this in a scroller either.
+        ///
+        /// Where the verbs come from <see cref="Ui.Picking(ListView, Ui.OnPicked[])"/>, build
+        /// them first: that returns the table stacked above its own bar, so it has to be taken
+        /// back out with <see cref="Ui.Loose{T}"/> before it is handed here as the rows.
         /// </summary>
         /// <param name="rows">The table, which fills what the verbs leave.</param>
         /// <param name="verbs">The bar under it, or null when there is none.</param>

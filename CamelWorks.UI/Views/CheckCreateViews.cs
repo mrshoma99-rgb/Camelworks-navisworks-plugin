@@ -405,8 +405,12 @@ namespace CamelWorks.UI.Views
                 table.Menu(verbs.Select(one =>
                     new Ui.OnMenu(one.Caption, chosen => one.Act(chosen, _log))).ToArray());
 
-                _list.Content = table;
+                // The bar first, then the table taken back out of it. Ui.Picking returns the
+                // table stacked above its own bar, so assigning that stack to the pinned bar
+                // reparents the table into it — which is why the rows drew at the foot of the
+                // pane with the bar, and the list above them was empty.
                 _picking.Content = Ui.Picking(table, verbs.ToArray());
+                _list.Content = Ui.Loose(table);
             }
 
             /// <summary>What the last run of a test found: never run, clean, or a count.</summary>

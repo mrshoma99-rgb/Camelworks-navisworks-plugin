@@ -3977,6 +3977,10 @@ namespace CamelWorks.UI.Views
             // already is, and offering both costs nothing.
             table.Menu(verbs.Select(v => new OnMenu(v.Caption, picked => v.Act(picked, said))).ToArray());
 
+            // The table is in what comes back, above its bar. A pane that pins the bar and lets
+            // the rows scroll wants the bar alone, and takes the table back out with Loose — see
+            // Bench.Listed. Handing this whole stack to a docked slot reparents the table into
+            // it, which draws the rows at the foot of an empty pane.
             return Stack(table, bar, said);
         }
 
