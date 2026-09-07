@@ -189,11 +189,33 @@ namespace CamelWorks.UI.Views
         /// Anything else sizes to its content and is pushed right instead.
         /// </summary>
         /// <param name="foot">The footer element.</param>
-        private static bool Spread(UIElement foot) =>
-            foot is DockPanel
-            || (foot is StackPanel column
-                && column.Orientation == Orientation.Vertical
-                && column.Children.OfType<DockPanel>().Any());
+        private static bool Spread(UIElement foot)
+        {
+            switch (foot)
+            {
+                case DockPanel _:
+                    return true;
+
+                // Through the holder to what it holds. A screen that redraws its footer in place
+                // keeps it in a ContentControl and sets the row as its content, which is the
+                // ordinary pattern here — and the holder is not a DockPanel, so the footer was
+                // sized to its content and pushed right. Ui.Foot docks one end left and the other
+                // right, so with no width to work in the two ends were arranged on top of each
+                // other: "0 tests in this project" under "There is no test to run."
+                case ContentControl held:
+                    return held.Content is UIElement inside && Spread(inside);
+
+                case Border edged:
+                    return edged.Child != null && Spread(edged.Child);
+
+                case StackPanel column:
+                    return column.Orientation == Orientation.Vertical
+                        && column.Children.OfType<DockPanel>().Any();
+
+                default:
+                    return false;
+            }
+        }
 
         /// <summary>
         /// The other anatomy: a strip, two tables side by side, and one action row.
