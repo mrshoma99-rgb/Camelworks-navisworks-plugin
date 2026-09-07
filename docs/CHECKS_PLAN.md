@@ -2149,3 +2149,82 @@ Deliberately out of scope, with the reason.
   host clash types, which is the precondition for both, but neither is attempted
   here. Until 6.9 lands, the Manage board's rendered page is the harness's own table
   in `Panels.cs` and does not prove a change to the product's board.
+
+---
+
+## What the implementation left
+
+All eleven phases landed, each with the full battery green and an adversarial review
+whose findings were fixed before the next phase. What follows is what those reviews
+found and this work did not fix, with the reason. It is a record for whoever picks the
+next piece up, not a plan.
+
+### Owed before release
+
+- **A licensed-seat smoke run of `NavTriangles`.** It is the only real source of
+  triangles and the one part of this work with no automated coverage at all. Nothing
+  here has read a real floor, so neither the walkable-surface detector nor the
+  fall-hazard rasteriser has run against a federation.
+- **A licensed-seat pass over the Manage board.** There is no test project over
+  `CamelWorks.UI` (67,000 lines, no tests), so every board, tab and view change across
+  all eleven phases is compiler- and validator-checked only. Whether the board draws
+  clearance and fall-hazard results correctly is unproven here.
+- **`shots/app-clash-manage` still draws the harness's own table**, not
+  `ClashManageViews`, so a render does not prove a board change. This is
+  `CLASH_PLAN.md` 6.9, already listed above.
+
+### The board is closer to agnostic, not finished
+
+Adding fall hazard in Phase 11 touched the board, the register, the columns, the
+journal, the delta and the pack writer nowhere, which is the claim the plan rests on.
+What it did cost, and what a check using every capability would still find:
+
+- **A per-check screen registry is missing.** The Checks tab holds one set-up screen at
+  a time and `AppWindow` caches a tab's surface, so swapping screens is a dispatch
+  inside `ClearanceViews`. About half of `FallHazardViews` is the run list, the picking
+  bar and the Manage hand-off restated. The fix is the UI-side twin of
+  `CheckCatalogue`.
+- **The duplicate finder reads the `Item 1` and `Item 2` facts.** It falls back to
+  element keys, which every check carries, so behaviour degrades rather than breaking.
+  The Duplicates verb is a silent no-op on a check with no pairs, rather than saying so.
+- **`Renamed()` lays this project's `ClashTestNames` overrides over every check's runs
+  on every read.** Ids do not collide in practice, but a check that owns its run names
+  should not be reachable by a clash-shaped override store.
+- **`ICheckGrouping` returns `ClashNesting` and `ClashGroupPath`**, so one clash type
+  remains in the seam. It is on the one capability only clash implements.
+- **A check offering `HostEcho` but no `Runner`** gets the reduced test menu. That is
+  correct and has never been drawn.
+- **`SaveBaseline` does not route a check's own `Geometry.Snapshot` into BCF.** It
+  passes `ClashIdentity.Pictures`, which is clash-engine-only, so a fall-hazard
+  baseline exports without the plan the check can draw.
+
+### Smaller things the reviews left
+
+- **`FindingBcf.Together` has no production caller.** The Issue Manager's export was
+  its last one and now goes through `FindingBcf.Write`. It is a public engine reached
+  only by tests.
+- **The per-party ledger still reads `ClashSnapshot`**, so `OpenByParty` lives in both
+  the snapshot and the journal until that screen moves. 2.7 puts it in the journal and
+  no phase covers the move.
+- **`FloorGaps.Analyze` has no `onProgress`.** It measured 250–300 ms against the edge
+  pass's 41 seconds, so it did not earn a signature change, but a plan at the
+  six-million-cell cap will spend real time in `Rasterize` with no Stop.
+- **A fall-hazard finding names up to eight elements and identifies on all of them**,
+  so a model edit that changes which eight are commonest re-derives the id. Naming
+  eight while identifying on one is not expressible without changing `Finding`.
+- **`CamelWorks.Core.Testing` compiles into the shipping `CamelWorks.Core` assembly**,
+  so `EmptySeat`'s document and view doubles ship either way. The honest fix is moving
+  `Testing` out of the shipping assembly.
+- **Level and category scope are single-valued on the clearance set-up screen** though
+  the model behind them is a list. The screen says so rather than implying otherwise.
+
+### One defect class, nine sightings
+
+Two candidates match one held record, nothing claims the one that matched, and
+enumeration order decides the winner. It was found in `ClashExchange.Apply`,
+`CheckDelta.Between`, `FileCheck.Fold`, `FileCheck.Adopt`, `FindingBcf.Merge`'s index
+build, `ClashLegacy.Fold`, `FindingBcf.Sidecars`, `ClashManageViews.Sync` and
+`FallHazardFindings`' identity cell. `checks/validate-claim-once.py` catches the first
+eight shapes — lookups and index builds keyed on a topic guid or an alias — and cannot
+see the ninth, whose key is a quantised cell. A key that is non-unique for a reason its
+name does not state is still invisible to the check.
