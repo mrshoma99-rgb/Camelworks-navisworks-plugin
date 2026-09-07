@@ -28,6 +28,10 @@ lets it be changed.
 
 Four shapes for one question. **Becomes `Parts.Source`.**
 
+`Parts.Source` exists and has two call sites: `ClearanceViews` and `FallHazardViews`, each
+wrapping it in a local helper. `ClashTestViews` and `Pickers.Set` still build their own, so this
+item is half done and the list above still describes the product.
+
 ### 2. A list with ticks and a box that narrows it
 
 Choose several things out of a list too long to scroll.
@@ -42,6 +46,9 @@ Choose several things out of a list too long to scroll.
 
 Each filters with its own `IndexOf(query, OrdinalIgnoreCase) >= 0` loop and its own empty state.
 **Becomes `Parts.Ticked`.**
+
+`Parts.Ticked` exists and has one call site, `ClashTestViews`. The other four still build their
+own, so this item is barely started.
 
 ### 3. What values a field can hold
 
@@ -93,8 +100,8 @@ menus are multi-select over facets, which the search grammar does not yet expres
 ## Order of work
 
 1. ~~`Seated.Offer`, `Ui.Listed`, `Seated.Folders`~~ — done.
-2. ~~`Parts.Ticked`~~ — done.
-3. ~~`Parts.Source`~~ — done.
+2. `Parts.Ticked` — **written, not adopted.** One call site of the five screens listed above.
+3. `Parts.Source` — **written, partly adopted.** Two call sites of the four shapes listed above.
 4. ~~`ResultVocabulary` in Core~~ — done. The three a seat alone can name (the checks on this
    edition, the tests in the document, the models loaded) stay with the seat.
 5. ~~`Bench.Listing` / `Bench.Listed`~~ — done, adopted in the Create tab and Exchange's four

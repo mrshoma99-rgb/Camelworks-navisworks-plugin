@@ -773,6 +773,26 @@ namespace CamelWorks.UI.Views
                 Margin = new Thickness(0, 0, 0, 2),
             }.Wearing("Head");
 
+        /// <summary>
+        /// A screen's own title, above everything on it.
+        ///
+        /// One step above <see cref="Heading"/>, which titles a card or a pane. The two were the
+        /// same size: the 20px step existed in the sheet with no callers, so the ramp was four
+        /// sizes inside five points and a screen's name carried the same weight as the third
+        /// card down it.
+        /// </summary>
+        /// <param name="text">The title.</param>
+        public static TextBlock Titled(string text) =>
+            new TextBlock
+            {
+                Text = text,
+
+                // As in Heading: the one property whose absence is not cosmetic if the skin
+                // fails to load.
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 2),
+            }.Wearing("Title");
+
         /// <summary>The line under a title that says what the screen is for.</summary>
         /// <param name="text">The line.</param>
         public static TextBlock Sub(string text) =>

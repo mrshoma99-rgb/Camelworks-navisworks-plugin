@@ -59,7 +59,6 @@
   <SolidColorBrush x:Key="NavActive"   Color="#E6F0FA"/>
   <SolidColorBrush x:Key="Hover"       Color="#0F000000"/>
   <SolidColorBrush x:Key="Press"       Color="#1A000000"/>
-  <SolidColorBrush x:Key="Veil"        Color="#B8FFFFFF"/>
   <SolidColorBrush x:Key="Track"       Color="#D8DDE3"/>
   <SolidColorBrush x:Key="Thumb"       Color="#B4BCC5"/>
 
@@ -81,8 +80,6 @@
   <SolidColorBrush x:Key="BlueBd"      Color="#B6E1F8"/>
   <SolidColorBrush x:Key="BlueTx"      Color="#0B6C97"/>
 
-  <SolidColorBrush x:Key="ConsoleBg"   Color="#0E1116"/>
-  <SolidColorBrush x:Key="ConsoleTx"   Color="#CFE3D5"/>
 
   <!-- The workspace family accents. Eight tools rendered in one grey read as one tool; the ribbon
        and the shell both tint from this row so a glance tells you which part of the product you
@@ -783,28 +780,6 @@
     </Setter>
   </Style>
 
-  <!-- On the brand bar, where the ground is the gradient rather than the card. -->
-  <Style x:Key="IconBtn" TargetType="Button">
-    <Setter Property="Foreground" Value="White"/>
-    <Setter Property="Width" Value="28"/>
-    <Setter Property="Height" Value="28"/>
-    <Setter Property="Cursor" Value="Hand"/>
-    <Setter Property="Template">
-      <Setter.Value>
-        <ControlTemplate TargetType="Button">
-          <Border x:Name="b" CornerRadius="8" Background="#29FFFFFF">
-            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-          </Border>
-          <ControlTemplate.Triggers>
-            <Trigger Property="IsMouseOver" Value="True">
-              <Setter TargetName="b" Property="Background" Value="#47FFFFFF"/>
-            </Trigger>
-          </ControlTemplate.Triggers>
-        </ControlTemplate>
-      </Setter.Value>
-    </Setter>
-  </Style>
-
   <!-- ════════════════════════════════ Toggles ════════════════════════════════ -->
 
   <Style TargetType="CheckBox">
@@ -874,40 +849,6 @@
     </Setter>
   </Style>
 
-  <Style x:Key="OptionCard" TargetType="RadioButton">
-    <Setter Property="Foreground" Value="{DynamicResource Text}"/>
-    <Setter Property="FontSize" Value="{DynamicResource Size.Small}"/>
-    <Setter Property="Margin" Value="0,0,0,6"/>
-    <Setter Property="Cursor" Value="Hand"/>
-    <Setter Property="Template">
-      <Setter.Value>
-        <ControlTemplate TargetType="RadioButton">
-          <Border x:Name="b" BorderBrush="{DynamicResource FieldBd}" BorderThickness="1"
-                  CornerRadius="9" Padding="10,8" Background="Transparent">
-            <StackPanel Orientation="Horizontal">
-              <Grid Width="15" Height="15" VerticalAlignment="Center">
-                <Ellipse x:Name="ring" Stroke="{DynamicResource BdStrong}" StrokeThickness="2"/>
-                <Ellipse x:Name="dot" Width="7" Height="7" Fill="{DynamicResource Accent}" Visibility="Collapsed"/>
-              </Grid>
-              <ContentPresenter Margin="9,0,0,0" VerticalAlignment="Center"/>
-            </StackPanel>
-          </Border>
-          <ControlTemplate.Triggers>
-            <Trigger Property="IsMouseOver" Value="True">
-              <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource Accent}"/>
-            </Trigger>
-            <Trigger Property="IsChecked" Value="True">
-              <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource Accent}"/>
-              <Setter TargetName="b" Property="Background" Value="{DynamicResource NavActive}"/>
-              <Setter TargetName="ring" Property="Stroke" Value="{DynamicResource Accent}"/>
-              <Setter TargetName="dot" Property="Visibility" Value="Visible"/>
-            </Trigger>
-          </ControlTemplate.Triggers>
-        </ControlTemplate>
-      </Setter.Value>
-    </Setter>
-  </Style>
-
   <!-- The workspace switcher and the tab strip. A pill that fills when it is the one you are on. -->
   <Style x:Key="RailBtn" TargetType="ToggleButton">
     <Setter Property="Foreground" Value="{DynamicResource Muted}"/>
@@ -926,35 +867,6 @@
             </Trigger>
             <Trigger Property="IsChecked" Value="True">
               <Setter TargetName="b" Property="Background" Value="{DynamicResource Card}"/>
-              <Setter Property="Foreground" Value="{DynamicResource Text}"/>
-              <Setter Property="FontWeight" Value="SemiBold"/>
-            </Trigger>
-          </ControlTemplate.Triggers>
-        </ControlTemplate>
-      </Setter.Value>
-    </Setter>
-  </Style>
-
-  <!-- Tabs underline rather than fill: two rows of filled pills stacked on each other made the
-       switcher and the tab strip impossible to tell apart at a glance. -->
-  <Style x:Key="TabBtn" TargetType="ToggleButton">
-    <Setter Property="Foreground" Value="{DynamicResource Muted}"/>
-    <Setter Property="FontSize" Value="{DynamicResource Size.Small}"/>
-    <Setter Property="Padding" Value="10,7"/>
-    <Setter Property="Cursor" Value="Hand"/>
-    <Setter Property="Template">
-      <Setter.Value>
-        <ControlTemplate TargetType="ToggleButton">
-          <Border x:Name="b" Background="Transparent" BorderBrush="Transparent"
-                  BorderThickness="0,0,0,2" Padding="{TemplateBinding Padding}">
-            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-          </Border>
-          <ControlTemplate.Triggers>
-            <Trigger Property="IsMouseOver" Value="True">
-              <Setter Property="Foreground" Value="{DynamicResource Text}"/>
-            </Trigger>
-            <Trigger Property="IsChecked" Value="True">
-              <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource Accent}"/>
               <Setter Property="Foreground" Value="{DynamicResource Text}"/>
               <Setter Property="FontWeight" Value="SemiBold"/>
             </Trigger>

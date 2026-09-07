@@ -320,7 +320,6 @@ namespace CamelWorks.UI.Views
             ("NavActive",   "#E6F0FA", "#1F2D3D"),
             ("Hover",       "#0F000000", "#14FFFFFF"),
             ("Press",       "#1A000000", "#24FFFFFF"),
-            ("Veil",        "#B8FFFFFF", "#B81C1F24"),
             ("Track",       "#D8DDE3", "#2E343B"),
             ("Thumb",       "#B4BCC5", "#454C55"),
 
@@ -340,8 +339,6 @@ namespace CamelWorks.UI.Views
             ("BlueBd",      "#B6E1F8", "#1F4457"),
             ("BlueTx",      "#0B6C97", "#67C8EA"),
 
-            ("ConsoleBg",   "#0E1116", "#0A0C10"),
-            ("ConsoleTx",   "#CFE3D5", "#BFE0C8"),
 
             // The two inks for writing on a colour somebody chose. Fixed rather than theme-led,
             // because the colour under them is fixed: a wash that does not change with the theme

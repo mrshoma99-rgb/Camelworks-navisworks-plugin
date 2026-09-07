@@ -119,7 +119,9 @@ namespace CamelWorks.UI.Views
                 line.Children.Add(press);
             }
 
-            var head = Ui.Heading(title);
+            // The screen's title, not a card's. This section is a whole screen in the rail, and
+            // at Heading it was the same size as the card headings under it.
+            var head = Ui.Titled(title);
 
             head.VerticalAlignment = VerticalAlignment.Center;
             line.Children.Add(head);
