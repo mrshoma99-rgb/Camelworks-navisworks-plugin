@@ -147,6 +147,57 @@ namespace CamelWorks.UI.Views
             return screen.Drawn(panel);
         }
 
+        /// <summary>One of the board's menus: what it is called, and what is in it.</summary>
+        public sealed class BoardMenu
+        {
+            /// <summary>Name one.</summary>
+            /// <param name="name">How the menu reads.</param>
+            /// <param name="items">What is in it.</param>
+            public BoardMenu(string name, IReadOnlyList<Parts.Entry> items)
+            {
+                Name = name ?? string.Empty;
+                Items = items ?? Array.Empty<Parts.Entry>();
+            }
+
+            /// <summary>How the menu reads.</summary>
+            public string Name { get; }
+
+            /// <summary>What is in it.</summary>
+            public IReadOnlyList<Parts.Entry> Items { get; }
+        }
+
+        /// <summary>
+        /// The board's own menus, as their lists rather than in a popup.
+        ///
+        /// A menu lives in a popup, a popup needs a screen to open on, and the design harness has
+        /// neither - so the sort, filter and row menus, which a coordinator opens dozens of times
+        /// a day, had never been drawn or reviewed. This is the door CheckPicker.Entries already
+        /// opened for the check picker, one level up: the screen is built exactly as the tab
+        /// builds it and asked for the lists it would have put in those popups.
+        ///
+        /// Nothing here is harness-only. Each list is the one the product opens; if this returned
+        /// something the product does not, the pictures would be of a screen nobody ships.
+        /// </summary>
+        /// <param name="seat">The seat.</param>
+        /// <param name="clash">The clash engine.</param>
+        public static IReadOnlyList<BoardMenu> Menus(ISeat seat, IClashSource clash)
+        {
+            if (seat == null) throw new ArgumentNullException(nameof(seat));
+            if (clash == null) throw new ArgumentNullException(nameof(clash));
+
+            Forget();
+
+            _engine = new ClashCheck(clash, seat.MetresPerUnit, null);
+
+            var screen = new Screen(seat);
+
+            // Built, because the menus read what the board is showing. A screen that has not been
+            // drawn has no entry to sort, filter or act on.
+            _ = screen.Drawn(false);
+
+            return screen.Menus();
+        }
+
         static ClashManageViews() => Host.WhenDocumentChanges(Forget);
 
         /// <summary>
@@ -3813,6 +3864,29 @@ namespace CamelWorks.UI.Views
             /// control. What remains is the return to the order held by the test itself. A header
             /// press only reverses an order; it cannot clear one.
             /// </summary>
+            /// <summary>
+            /// This board's menus, named, for the harness door above.
+            ///
+            /// The ones that need only what the screen already holds. The column menu wants a
+            /// particular property column and a board with none has nothing to hand it, so it is
+            /// not here and the harness page says so rather than drawing four and meaning three.
+            /// </summary>
+            internal IReadOnlyList<BoardMenu> Menus()
+            {
+                var entry = Current()?.FirstOrDefault();
+                var rows = entry?.Rows ?? new List<Row>();
+
+                return new List<BoardMenu>
+                {
+                    new BoardMenu("Sort the results", SortMenu()),
+                    new BoardMenu("Show", entry == null
+                        ? (IReadOnlyList<Parts.Entry>)Array.Empty<Parts.Entry>()
+                        : FilterMenu(entry)),
+                    new BoardMenu("The test's own menu", TestMenu(entry)),
+                    new BoardMenu("More actions on the picked rows", PickedMenu(rows)),
+                };
+            }
+
             private List<Parts.Entry> SortMenu()
             {
                 var items = new List<Parts.Entry>();

@@ -51,6 +51,11 @@ namespace CamelWorks.Studio
             Page("app-clash-manage-wide", "Clash Manager · Manage, the list folded away", 980,
                  () => Managing(false, railShut: true)),
 
+            // The board's menus, which a coordinator opens dozens of times a day and which no
+            // picture of this product has ever contained: a menu lives in a popup and a popup
+            // needs a screen. Drawn as their lists, which is what the popups hold.
+            Page("app-clash-menus", "Clash Manager · Manage, the menus", 820, BoardMenus),
+
             // The same board with the rail's filter panel open: the disciplines, the folders and
             // the naming tokens this read actually holds, drawn as a card over the test list.
             Page("app-clash-finder", "Clash Manager · Manage, the filter panel open", 980,
@@ -437,6 +442,54 @@ namespace CamelWorks.Studio
 
             return Deck("clash", "manage",
                         ClashManageViews.Drawn(seat, engine, panel, railShut));
+        }
+
+        /// <summary>
+        /// Every menu the board opens, side by side as the lists they are.
+        ///
+        /// Not a mock of them: ClashManageViews.Menus builds the tab exactly as the product does
+        /// and hands back the lists it would have put in those popups, so a fault here is a fault
+        /// on the board.
+        /// </summary>
+        private static UIElement BoardMenus()
+        {
+            var seat = Seated();
+            var engine = Engined();
+
+            Decided(seat, engine);
+
+            var held = Ui.Stack();
+
+            foreach (var menu in ClashManageViews.Menus(seat, engine))
+            {
+                var block = Ui.Stack();
+
+                block.Children.Add(Ui.Heading(menu.Name));
+
+                block.Children.Add(menu.Items.Count == 0
+                    ? Ui.Small("This menu is empty in this state.")
+                    : Parts.Drawn(menu.Items));
+
+                var card = new Border
+                {
+                    Padding = new Thickness(12),
+                    Margin = new Thickness(0, 0, 0, 14),
+                    CornerRadius = new CornerRadius(9),
+                    BorderThickness = new Thickness(1),
+                    Child = block,
+                };
+
+                card.Tint(Border.BackgroundProperty, "Card");
+                card.Tint(Border.BorderBrushProperty, "Bd");
+
+                held.Children.Add(card);
+            }
+
+            held.Children.Add(Ui.Small(
+                "The column menu is not here: it wants a particular property column and this "
+                + "board has none, so drawing four and meaning three would be worse."));
+
+            return new Border { Padding = new Thickness(16), Child = held };
         }
 
         /// <summary>
