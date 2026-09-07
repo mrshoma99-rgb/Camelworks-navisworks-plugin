@@ -3307,17 +3307,6 @@ namespace CamelWorks.UI.Views
                     VerticalAlignment = VerticalAlignment.Center,
                 };
 
-                // The search and the status chips come up here with the name and the verbs. They
-                // had a row of their own under this one, which is a strip of window spent on two
-                // controls.
-                _boardBox.VerticalAlignment = VerticalAlignment.Center;
-                _boardBox.Margin = new Thickness(10, 0, 10, 0);
-                verbs.Children.Add(Ui.Loose(_boardBox));
-
-                _strip.VerticalAlignment = VerticalAlignment.Center;
-                _strip.Margin = new Thickness(0, 0, 10, 0);
-                verbs.Children.Add(Ui.Loose(_strip));
-
                 if (Check?.Runner != null)
                     verbs.Children.Add(Ui.Icon(Glyphs.Play, "Run this test",
                         () => RunTests(One(entry), _log)));
@@ -3374,10 +3363,23 @@ namespace CamelWorks.UI.Views
                               + (When(entry).Length == 0 ? string.Empty : ", run " + When(entry)),
                 };
 
-                // No filling child: the title has its own panel now, and what is left in here is
-                // the "showing n of m" line, which is docked right and must stay there rather than
-                // being stretched across whatever the row has spare.
-                var words = new DockPanel { LastChildFill = false };
+                // The search and the status chips fill what the title and the symbols leave, in a
+                // panel that wraps.
+                //
+                // They used to sit in the symbol row, which is a horizontal stack: a stack offers
+                // its children unlimited width, so a six-part status strip took whatever it wanted
+                // and what it took came off the title and, once, off the last symbol. Here they
+                // are handed a finite width and go onto a second line when there is not enough for
+                // one, which costs a few pixels of height and never a control.
+                var words = new WrapPanel { Orientation = Orientation.Horizontal };
+
+                _boardBox.VerticalAlignment = VerticalAlignment.Center;
+                _boardBox.Margin = new Thickness(0, 0, 10, 0);
+                words.Children.Add(Ui.Loose(_boardBox));
+
+                _strip.VerticalAlignment = VerticalAlignment.Center;
+                _strip.Margin = new Thickness(0, 0, 10, 0);
+                words.Children.Add(Ui.Loose(_strip));
 
                 if (Check?.Naming != null)
                 {
@@ -3405,7 +3407,6 @@ namespace CamelWorks.UI.Views
                         TextWrapping = TextWrapping.NoWrap,
                     };
 
-                    DockPanel.SetDock(said, Dock.Right);
                     words.Children.Add(said.Wearing("Hint"));
                 }
 
@@ -3509,7 +3510,9 @@ namespace CamelWorks.UI.Views
             /// <param name="entry">The test on the board.</param>
             private UIElement Strip(TestEntry entry)
             {
-                var strip = new StackPanel { Orientation = Orientation.Horizontal };
+                // A wrap, not a stack. Six counts is 350 px, and on a docked pane the row it sits
+                // in has less than that to spare once the title and the symbols have theirs.
+                var strip = new WrapPanel { Orientation = Orientation.Horizontal };
 
                 var tabs = new (string Label, int Count, string Key, FindingStatus? Status)[]
                 {
