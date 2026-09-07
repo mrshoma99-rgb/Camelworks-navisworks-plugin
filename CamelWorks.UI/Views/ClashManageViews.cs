@@ -3868,7 +3868,7 @@ namespace CamelWorks.UI.Views
                     items.Add(Parts.Entry.Rule());
                     items.Add(Parts.Entry.Heading("Sharing an item with " + Both(_sameAs)));
 
-                    items.Add(Parts.Entry.Act("All clashes, not only these", Glyphs.Close,
+                    items.Add(Parts.Entry.Act("All " + Result + "s, not only these", Glyphs.Close,
                         () =>
                         {
                             _sameAs = null;
@@ -5086,7 +5086,7 @@ namespace CamelWorks.UI.Views
 
                     Prompt("Rename the group", row.Name, "Rename",
                            renamed => Regroup(row.Rows.Cast<object>().ToList(), renamed,
-                                              "Renamed the clash group to"));
+                                              "Renamed the group to"));
                 };
 
                 name.MouseLeftButtonUp += (s, e) =>
@@ -5118,7 +5118,7 @@ namespace CamelWorks.UI.Views
                     Margin = new Thickness(8, 0, 0, 0),
                     TextAlignment = TextAlignment.Right,
                     TextWrapping = TextWrapping.NoWrap,
-                    ToolTip = Ui.Count(row.Rows.Count, "clash") + " in this group",
+                    ToolTip = Ui.Count(row.Rows.Count, Result) + " in this group",
                 };
 
                 var named = new DockPanel { LastChildFill = true };
@@ -5435,7 +5435,7 @@ namespace CamelWorks.UI.Views
                 {
                     var talk = Ui.Glyph(Glyphs.Comment, 12, "Accent", new Thickness(0, 0, 4, 0));
 
-                    talk.ToolTip = Ui.Count(said, "comment") + " on this clash.";
+                    talk.ToolTip = Ui.Count(said, "comment") + " on this " + Result + ".";
                     marks.Children.Add(talk);
                 }
 
@@ -5468,7 +5468,7 @@ namespace CamelWorks.UI.Views
                 foreach (var column in Added)
                     Put(grid, Cell(result, column), Where(column.Title));
 
-                var wrapper = new BoardRow(id, result.Name ?? "this clash", false,
+                var wrapper = new BoardRow(id, result.Name ?? "this " + Result, false,
                                            new List<Row> { result });
 
                 return Finish(grid, wrapper, on, inside);
@@ -5829,7 +5829,7 @@ namespace CamelWorks.UI.Views
 
                 var what = many
                     ? Ui.Count(State.Picked.Count, "picked row")
-                    : row.IsGroup ? "this clash group" : "this clash";
+                    : row.IsGroup ? "this group" : "this " + Result;
 
                 var picked = reaching;
 
@@ -5851,7 +5851,7 @@ namespace CamelWorks.UI.Views
                     ? Ui.Icon(Glyphs.Comment, "Comment on " + what,
                         () => Prompt("Comment on " + what, string.Empty, "Comment",
                                      body => CommentPicked(picked, body, _toast)))
-                    : Ui.Icon(Glyphs.Comment, "Read and write the comments on this clash",
+                    : Ui.Icon(Glyphs.Comment, "Read and write the comments on this " + Result,
                         () => Conversation(row.Rows[0])));
 
                 bar.Children.Add(Parts.MoreMenu(Glyphs.More, "More actions for " + what,
@@ -5880,7 +5880,7 @@ namespace CamelWorks.UI.Views
 
                 var what = State.Picked.Count > 1 && State.Picked.Contains(row.Id)
                     ? Ui.Count(State.Picked.Count, "picked row")
-                    : row.IsGroup ? "this clash group" : "this clash";
+                    : row.IsGroup ? "this group" : "this " + Result;
 
                 var picked = reaching;
                 var rest = Doing(Rows(reaching), what);
@@ -5891,17 +5891,17 @@ namespace CamelWorks.UI.Views
                 {
                     rest.Add(Parts.Entry.Act("Rename the group", Glyphs.Pencil,
                         () => Prompt("Rename the group", row.Name, "Rename",
-                                     name => Regroup(picked, name, "Renamed the clash group to"))));
+                                     name => Regroup(picked, name, "Renamed the group to"))));
 
                     rest.Add(Parts.Entry.Act("Ungroup", Glyphs.Group,
                         () => Regroup(picked, string.Empty,
-                                      "Dissolved the clash group and put {0} back loose.")));
+                                      "Dissolved the group and put {0} back loose.")));
                 }
                 else if (row.Only.Group.Length > 0)
                 {
                     rest.Add(Parts.Entry.Act("Remove from group", Glyphs.MoveIn,
                         () => Regroup(picked, string.Empty,
-                                      "Took {0} out of their clash group.")));
+                                      "Took {0} out of their group.")));
                 }
                 else
                 {
@@ -5916,7 +5916,7 @@ namespace CamelWorks.UI.Views
                     // element in" meant reading the board with an element name held in the head.
                     rest.Add(Parts.Entry.Rule());
 
-                    rest.Add(Parts.Entry.Act("Find other clashes with these items", Glyphs.Find,
+                    rest.Add(Parts.Entry.Act("Find other " + Result + "s with these items", Glyphs.Find,
                                              () => SameItems(row.Only)));
                 }
 
@@ -6175,7 +6175,7 @@ namespace CamelWorks.UI.Views
                     if (groups.Count == 1)
                         return Parts.Entry.Act("Ungroup", Glyphs.Group,
                             () => Regroup(picked, string.Empty,
-                                          "Dissolved the clash group and put {0} back loose."));
+                                          "Dissolved the group and put {0} back loose."));
 
                     return Parts.Entry.Danger("Merge groups", Glyphs.Group,
                         () => Prompt("Name for the merged group", groups[0], "Merge",
@@ -6187,7 +6187,7 @@ namespace CamelWorks.UI.Views
                 // Anything already in a group, and the way out of it is the verb that matters.
                 if (groups.Count > 0)
                     return Parts.Entry.Act("Remove from group", Glyphs.MoveIn,
-                        () => Regroup(inside, string.Empty, "Took {0} out of their clash group."));
+                        () => Regroup(inside, string.Empty, "Took {0} out of their group."));
 
                 if (loose.Count > 1)
                     return Parts.Entry.Danger("Group", Glyphs.Group,
@@ -6270,7 +6270,7 @@ namespace CamelWorks.UI.Views
                     Parts.Entry.Rule(),
                     Parts.Entry.Heading("File"),
                     Parts.Entry.Act("Move to an existing group", Glyphs.MoveIn,
-                        () => Prompt("Which clash group", string.Empty, "Move",
+                        () => Prompt("Which group", string.Empty, "Move",
                                      name => Regroup(picked, name, "Moved {0} into"))),
 
                     Parts.Entry.Rule(),
@@ -7641,6 +7641,14 @@ namespace CamelWorks.UI.Views
             /// <param name="entry">The run.</param>
             private static string Tolerance(TestEntry entry) =>
                 entry.Run.Threshold ?? "the tolerance it was run at";
+
+            /// <summary>
+            /// The check's word for one result: a clash, a breach, a hazard.
+            ///
+            /// The board draws every kind through the same table, and these sentences said "clash"
+            /// whichever kind was on it.
+            /// </summary>
+            private string Result => Check?.ResultWord ?? "result";
 
             /// <summary>What kind of test this is, lower case, for the middle of a sentence.</summary>
             /// <param name="entry">The test.</param>
