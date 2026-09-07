@@ -36,6 +36,83 @@ namespace CamelWorks.Studio
         /// <summary>Under this many pixels is rounding, not a fault.</summary>
         private const double Slack = 0.75;
 
+        /// <summary>
+        /// A page built to be wrong, so a clean run proves the reader works rather than only that
+        /// it said nothing.
+        ///
+        /// The first run of this reader over twenty-six surfaces reported no faults. That is the
+        /// answer a reader with a bug gives and the answer a sound one gives, and there is no way
+        /// to tell them apart from the output. So every run also reads this: a stack whose
+        /// children are pulled onto each other by a negative margin, and a fixed-width panel
+        /// holding text wider than itself. Both faults must be found, or the run says the reader
+        /// is broken rather than that the product is clean.
+        /// </summary>
+        internal static FrameworkElement Canary()
+        {
+            var page = new StackPanel { Width = 200 };
+
+            var overlapping = new StackPanel { Orientation = Orientation.Horizontal };
+
+            overlapping.Children.Add(new Border
+            {
+                Width = 90,
+                Height = 24,
+                Background = Brushes.Gainsboro,
+            });
+
+            overlapping.Children.Add(new Border
+            {
+                Width = 90,
+                Height = 24,
+                Background = Brushes.Silver,
+
+                // Pulled onto the one before it. This is the fault, deliberately.
+                Margin = new Thickness(-40, 0, 0, 0),
+            });
+
+            page.Children.Add(overlapping);
+
+            // Wider than the slot it is given, and it neither trims nor wraps, so it is cut off.
+            page.Children.Add(new Border
+            {
+                Width = 60,
+                Child = new TextBlock
+                {
+                    Text = "a line of text far wider than sixty pixels",
+                    TextTrimming = TextTrimming.None,
+                    TextWrapping = TextWrapping.NoWrap,
+                },
+            });
+
+            return page;
+        }
+
+        /// <summary>
+        /// What the reader finds in <see cref="Canary"/>, or a line saying it is broken.
+        ///
+        /// Returns null when both faults are found, which is the only passing answer.
+        /// </summary>
+        internal static string? Broken()
+        {
+            var page = Canary();
+
+            page.Measure(new Size(200, double.PositiveInfinity));
+            page.Arrange(new Rect(0, 0, 200, page.DesiredSize.Height));
+            page.UpdateLayout();
+
+            var found = Of(page);
+
+            var over = found.Any(one => one.Kind == "overlapping");
+            var cut = found.Any(one => one.Kind == "cut off");
+
+            if (over && cut) return null;
+
+            return "the layout reader is broken: it found "
+                 + (over ? "the overlap" : "no overlap")
+                 + " and " + (cut ? "the clipped text" : "no clipped text")
+                 + " in a page built to hold both, so a clean run over the product proves nothing";
+        }
+
         /// <summary>One thing wrong with a page's layout.</summary>
         internal sealed class Fault
         {

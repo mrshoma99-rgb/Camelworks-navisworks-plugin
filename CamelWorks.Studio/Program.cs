@@ -173,6 +173,12 @@ namespace CamelWorks.Studio
 
             Log(written.ToString(CultureInfo.InvariantCulture) + " images in " + folder);
 
+            // The reader, read. A run that reports nothing is the answer a sound reader gives and
+            // the answer a broken one gives, and the output cannot tell them apart.
+            var broken = Fits.Broken();
+
+            if (broken != null) Log("LAYOUT READER " + broken);
+
             var layout = _log.Count(line => line.StartsWith("LAYOUT ", StringComparison.Ordinal));
 
             Log(layout == 0
