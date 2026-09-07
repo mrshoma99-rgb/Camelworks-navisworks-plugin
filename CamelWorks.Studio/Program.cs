@@ -230,26 +230,21 @@ namespace CamelWorks.Studio
 
             Skin.Apply(window);
 
-            // A build agent is not guaranteed a desktop to put a window on. Showing one is worth
-            // trying, because parts of WPF only behave once there is a presentation source, but it
-            // is not worth failing over: measure and arrange work either way.
-            var shown = false;
-
-            try
-            {
-                window.Show();
-                shown = true;
-
-                Log("  window shown at "
-                    + window.ActualWidth.ToString("0", System.Globalization.CultureInfo.InvariantCulture)
-                    + "x"
-                    + window.ActualHeight.ToString("0", System.Globalization.CultureInfo.InvariantCulture)
-                    + " for " + sheet.Id);
-            }
-            catch (Exception e)
-            {
-                Log("no window (" + e.GetType().Name + "), laying out headless");
-            }
+            // The window is never shown.
+            //
+            // It was, on the theory that parts of WPF only behave once there is a presentation
+            // source. The shoot's own log disproved it: only the first page of a run gets a real
+            // window - the app shuts down when that one closes, so every later Show is a no-op -
+            // and the first page is the one that comes back wrong, every time, while the pages that
+            // never got a window come back correct with their tables, rows and combo boxes intact.
+            //
+            // What a shown window costs is its size. A build agent's desktop is smaller than these
+            // pages: the window came up at 1044 px for a 1180 px sheet, the page measured itself
+            // against that, and the measurement survived being handed a bigger slot afterwards. The
+            // picture was the size asked for with the page laid out for a narrower one inside it.
+            //
+            // The Window object stays, unshown, so the page inherits its resources during the
+            // passes below; Snap puts the skin on the page itself before it cuts it loose.
 
             // Two layout passes with a pump between them. The first generates the item containers
             // a ListView only creates once it has been measured; the second lays out what that
@@ -267,27 +262,9 @@ namespace CamelWorks.Studio
                 Pump();
             }
 
-            // The window goes before the picture is taken, for a page that did not take its own.
-            //
-            // Detaching alone was not enough: the first page of every shoot still came back cut at
-            // the agent's display width with transparent pixels beyond, because a shown window is
-            // clamped to the work area and the clip that comes with that survived the page being
-            // handed a bigger slot. A closed window has nothing to clamp to.
-            //
-            // A page that photographs itself mid-run has already been taken by here and still
-            // needs the window alive while it does, which is what the guard below is for.
-            if (!taken)
-            {
-                if (host.Parent is Window still) still.Content = null;
-
-                if (shown) window.Close();
-
-                shown = false;
-            }
-
+            // Anything that did not photograph itself gets taken here, settled. Snap takes the
+            // page off the window first, so nothing the window did to it is still on it.
             Shoot();
-
-            if (shown) window.Close();
         }
 
         /// <summary>Write one laid-out element to a PNG.</summary>
@@ -343,17 +320,15 @@ namespace CamelWorks.Studio
                 height = wanted;
             }
 
-            // What the page came out as, per picture. The first page of a shoot has come back cut
-            // at the build agent's display width more than once, and each theory about why has cost
-            // a Windows run to test; the numbers say which one is right.
+            // What the page came out as. A page whose desired width is under the width asked for
+            // was laid out for a narrower slot than the picture is taken at, which is the fault
+            // this harness has had twice; the number is in the log so the next one is one read
+            // rather than another run.
             Log("  " + System.IO.Path.GetFileName(path) + ": desired "
                 + host.DesiredSize.Width.ToString("0", CultureInfo.InvariantCulture) + "x"
                 + host.DesiredSize.Height.ToString("0", CultureInfo.InvariantCulture)
-                + ", actual "
-                + host.ActualWidth.ToString("0", CultureInfo.InvariantCulture) + "x"
-                + host.ActualHeight.ToString("0", CultureInfo.InvariantCulture)
-                + ", clip " + (host.Clip == null ? "none" : host.Clip.Bounds.ToString())
-                + ", parent " + (host.Parent == null ? "none" : host.Parent.GetType().Name));
+                + " into " + width.ToString(CultureInfo.InvariantCulture) + "x"
+                + height.ToString(CultureInfo.InvariantCulture));
 
             var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
             bitmap.Render(host);
