@@ -244,8 +244,8 @@
        washes with no shape. They have an edge now, and Ui.Field draws them. -->
 
   <Style x:Key="BadgeReq" TargetType="Border">
-    <Setter Property="Background" Value="{DynamicResource AmberBg}"/>
-    <Setter Property="BorderBrush" Value="{DynamicResource AmberBd}"/>
+    <Setter Property="Background" Value="{DynamicResource Nav}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource BdStrong}"/>
     <Setter Property="BorderThickness" Value="1"/>
     <Setter Property="CornerRadius" Value="7"/>
     <Setter Property="Padding" Value="6,0"/>
@@ -253,7 +253,7 @@
     <Setter Property="VerticalAlignment" Value="Center"/>
   </Style>
   <Style x:Key="BadgeOpt" TargetType="Border" BasedOn="{StaticResource BadgeReq}">
-    <Setter Property="Background" Value="{DynamicResource Nav}"/>
+    <Setter Property="Background" Value="Transparent"/>
     <Setter Property="BorderBrush" Value="{DynamicResource Bd}"/>
   </Style>
   <Style x:Key="BadgeAuto" TargetType="Border" BasedOn="{StaticResource BadgeReq}">

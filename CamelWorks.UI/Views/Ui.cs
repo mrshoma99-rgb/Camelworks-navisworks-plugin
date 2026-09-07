@@ -2301,8 +2301,10 @@ namespace CamelWorks.UI.Views
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
+            // Required is the dark neutral, not amber. Amber is the warning tone in this palette,
+            // and a form of six fields would have carried four warnings before anything was wrong.
             said.Tint(TextBlock.ForegroundProperty,
-                      need == Need.Required ? "AmberTx" : need == Need.Optional ? "Faint" : "BlueTx");
+                      need == Need.Required ? "Text" : need == Need.Optional ? "Faint" : "BlueTx");
 
             var mark = new Border { Child = said };
 
