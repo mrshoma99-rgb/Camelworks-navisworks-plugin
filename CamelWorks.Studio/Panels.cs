@@ -468,6 +468,38 @@ namespace CamelWorks.Studio
             var seat = Seated();
             var rules = new ClashRuleSet();
 
+            var ducts = new ResultQuery();
+
+            ducts.Inside.Add(new ResultQuery(
+                new QueryTerm(ResultFields.Category, QueryOp.Is)
+                {
+                    Where = QueryWhere.FirstElement,
+                    Text = "Ducts",
+                }));
+
+            // A bracket whose two conditions are joined by "or", so the harness draws the chip
+            // and the bar the sketch calls for.
+            var framing = new ResultQuery();
+
+            framing.With(new ResultQuery(
+                new QueryTerm(ResultFields.Category, QueryOp.Is)
+                {
+                    Where = QueryWhere.SecondElement,
+                    Text = "Structural Framing",
+                }));
+
+            framing.With(new ResultQuery(
+                new QueryTerm(ResultFields.Category, QueryOp.Is)
+                {
+                    Where = QueryWhere.SecondElement,
+                    Text = "Structural Columns",
+                }), QueryJoin.Any);
+
+            ducts.With(framing);
+
+            rules.Cards.Add(new ClashCard("Ducts through structural framing", ducts,
+                                          ClashActionKind.Assign) { Value = "Mechanical" });
+
             // Searches of every shape the editor draws: one condition, a stack of two, a bracket,
             // an element property read from an ancestor, and a number range.
             rules.Cards.Add(new ClashCard("Insulation grazing insulation",
@@ -505,38 +537,6 @@ namespace CamelWorks.Studio
                     Number2 = 0.005,
                 }),
                 ClashActionKind.Flag));
-
-            var ducts = new ResultQuery();
-
-            ducts.Inside.Add(new ResultQuery(
-                new QueryTerm(ResultFields.Category, QueryOp.Is)
-                {
-                    Where = QueryWhere.FirstElement,
-                    Text = "Ducts",
-                }));
-
-            // A bracket whose two conditions are joined by "or", so the harness draws the chip
-            // and the bar the sketch calls for.
-            var framing = new ResultQuery();
-
-            framing.With(new ResultQuery(
-                new QueryTerm(ResultFields.Category, QueryOp.Is)
-                {
-                    Where = QueryWhere.SecondElement,
-                    Text = "Structural Framing",
-                }));
-
-            framing.With(new ResultQuery(
-                new QueryTerm(ResultFields.Category, QueryOp.Is)
-                {
-                    Where = QueryWhere.SecondElement,
-                    Text = "Structural Columns",
-                }), QueryJoin.Any);
-
-            ducts.With(framing);
-
-            rules.Cards.Add(new ClashCard("Ducts through structural framing", ducts,
-                                          ClashActionKind.Assign) { Value = "Mechanical" });
 
             rules.Cards.Add(new ClashCard("Cable tray not yet grouped",
                 Group(new QueryTerm(ResultFields.Category, QueryOp.Is)

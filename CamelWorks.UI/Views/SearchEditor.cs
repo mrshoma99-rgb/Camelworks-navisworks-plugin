@@ -37,6 +37,16 @@ namespace CamelWorks.UI.Views
         private readonly IReadOnlyList<QueryField> _fields;
         private readonly Action _onChanged;
 
+        /// <summary>
+        /// The conditions and brackets drawn as one line rather than as their controls.
+        ///
+        /// Held by the editor rather than saved with the search: it is what the reader is looking
+        /// at, not what the rule finds, and a project file that carried it would make two people
+        /// open the same rule and disagree about it. Kept on the node itself, so a condition stays
+        /// as it was left while the search is redrawn around it.
+        /// </summary>
+        private readonly HashSet<ResultQuery> _shut = new HashSet<ResultQuery>();
+
         /// <summary>Build an editor over one search.</summary>
         /// <param name="root">The search, edited in place.</param>
         /// <param name="check">The check whose results are searched, for the columns it declares.</param>
@@ -49,6 +59,10 @@ namespace CamelWorks.UI.Views
 
             View = Ui.Stack();
 
+            // Everything already written arrives shut, so a search of nine conditions reads as
+            // nine lines. What somebody adds opens, because they are about to fill it in.
+            Shut(_root);
+
             Redraw();
         }
 
@@ -60,6 +74,69 @@ namespace CamelWorks.UI.Views
         {
             View.Children.Clear();
             View.Children.Add(Group(_root, top: true, first: true));
+        }
+
+        /// <summary>Draw everything inside a group as one line.</summary>
+        /// <param name="group">The group.</param>
+        private void Shut(ResultQuery group)
+        {
+            foreach (var one in group.Inside)
+            {
+                _shut.Add(one);
+
+                if (!one.IsTerm) Shut(one);
+            }
+        }
+
+        /// <summary>The symbol that opens a condition or a bracket, and shuts it again.</summary>
+        /// <param name="node">What it opens.</param>
+        private UIElement Chevron(ResultQuery node)
+        {
+            var shut = _shut.Contains(node);
+
+            return Ui.Icon(shut ? Glyphs.Right : Glyphs.Down,
+                           shut ? "Open this to change it" : "Close this",
+                           () =>
+                           {
+                               if (!_shut.Remove(node)) _shut.Add(node);
+
+                               Redraw();
+                           });
+        }
+
+        /// <summary>
+        /// One condition as a sentence, for when it is shut.
+        ///
+        /// Everything the controls hold, in the order they hold it, so shutting a condition loses
+        /// nothing but the ability to change it.
+        /// </summary>
+        /// <param name="term">The condition.</param>
+        private string Said(QueryTerm term)
+        {
+            var known = _fields.FirstOrDefault(one =>
+                string.Equals(one.Id, term.Field, StringComparison.Ordinal));
+
+            var named = ResultFields.ReadProperty(term.Field, out var category, out var name)
+                ? (category.Length == 0 ? name : category + " / " + name)
+                  + (term.Ancestors > 0 ? " or above" : string.Empty)
+                : known?.Title ?? Strange(term.Field);
+
+            var where = term.Where == QueryWhere.Result
+                ? string.Empty
+                : ResultFields.Worded(term.Where) + ": ";
+
+            var said = where + named + " " + ResultFields.Worded(term.Op);
+
+            if (QueryTerm.Bare(term.Op)) return said;
+
+            if (!QueryTerm.Numeric(term.Op))
+                return said + " \u201c" + (term.Text ?? string.Empty) + "\u201d";
+
+            said += " " + Said(term.Number);
+
+            if (term.Op == QueryOp.Between) said += " and " + Said(term.Number2);
+
+            return said + (string.IsNullOrEmpty(known?.Unit) ? string.Empty : " " + known!.Unit);
         }
 
         /// <summary>Say something changed, and draw it again.</summary>
@@ -82,20 +159,39 @@ namespace CamelWorks.UI.Views
         private UIElement Group(ResultQuery group, bool top, bool first)
         {
             var held = Ui.Stack();
+            var shut = !top && _shut.Contains(group);
 
-            for (var at = 0; at < group.Inside.Count; at++)
+            if (shut)
             {
-                var one = group.Inside[at];
+                var head = new WrapPanel();
 
-                held.Children.Add(one.IsTerm
-                    ? Clause(group, one, at == 0)
-                    : Group(one, top: false, first: at == 0));
+                head.Children.Add(Spaced(Chevron(group)));
+
+                var line = Ui.Line(Counted(group), 1);
+
+                line.VerticalAlignment = VerticalAlignment.Center;
+                head.Children.Add(Spaced(line));
+
+                held.Children.Add(head);
             }
+            else
+            {
+                if (!top) held.Children.Add(Chevroned(group));
 
-            if (group.Inside.Count == 0)
-                held.Children.Add(Ui.Small("No conditions, so this finds every result."));
+                for (var at = 0; at < group.Inside.Count; at++)
+                {
+                    var one = group.Inside[at];
 
-            held.Children.Add(Adding(group));
+                    held.Children.Add(one.IsTerm
+                        ? Clause(group, one, at == 0)
+                        : Group(one, top: false, first: at == 0));
+                }
+
+                if (group.Inside.Count == 0)
+                    held.Children.Add(Ui.Small("No conditions, so this finds every result."));
+
+                held.Children.Add(Adding(group));
+            }
 
             if (top) return held;
 
@@ -138,6 +234,28 @@ namespace CamelWorks.UI.Views
 
             return row;
         }
+
+        /// <summary>The line at the top of an open bracket, which is how it is shut again.</summary>
+        /// <param name="group">The bracket.</param>
+        private UIElement Chevroned(ResultQuery group)
+        {
+            var head = new WrapPanel { Margin = new Thickness(0, 0, 0, 4) };
+
+            head.Children.Add(Spaced(Chevron(group)));
+
+            var line = Ui.Small("Bracket");
+
+            line.VerticalAlignment = VerticalAlignment.Center;
+            head.Children.Add(Spaced(line));
+
+            return head;
+        }
+
+        /// <summary>What a shut bracket says it holds.</summary>
+        /// <param name="group">The bracket.</param>
+        private static string Counted(ResultQuery group) =>
+            "Bracket \u2014 " + Ui.Count(group.Clauses, "condition")
+            + (group.Negate ? ", inverted" : string.Empty);
 
         /// <summary>The two ways to add to a group.</summary>
         /// <param name="group">The group.</param>
@@ -256,6 +374,22 @@ namespace CamelWorks.UI.Views
             // How it joins to the condition above it. Not on the first: there is nothing above it
             // to join to, and a chip there would invite somebody to set one.
             if (!first) row.Children.Add(Connector(node, tall: false));
+
+            row.Children.Add(Spaced(Chevron(node)));
+
+            if (_shut.Contains(node))
+            {
+                var line = Ui.Line(Said(term), 1);
+
+                line.VerticalAlignment = VerticalAlignment.Center;
+                line.TextWrapping = TextWrapping.Wrap;
+                line.MaxWidth = 380;
+
+                row.Children.Add(Spaced(line));
+                row.Children.Add(Spaced(Dropping(group, node, "Remove this condition")));
+
+                return row;
+            }
 
             // What to read.
             var titles = _fields.Select(one => one.Title).ToList();
@@ -384,16 +518,23 @@ namespace CamelWorks.UI.Views
                 }
             }
 
-            var remove = Ui.Icon(Glyphs.Bin, "Remove this condition", () =>
-            {
-                group.Inside.Remove(node);
-                Touched();
-            });
-
-            row.Children.Add(Spaced(remove));
+            row.Children.Add(Spaced(Dropping(group, node, "Remove this condition")));
 
             return row;
         }
+
+        /// <summary>Take a condition or a bracket out of its group.</summary>
+        /// <param name="group">The group it is in.</param>
+        /// <param name="node">What to remove.</param>
+        /// <param name="tip">What the symbol says it does.</param>
+        private UIElement Dropping(ResultQuery group, ResultQuery node, string tip) =>
+            Ui.Icon(Glyphs.Bin, tip, () =>
+            {
+                group.Inside.Remove(node);
+                _shut.Remove(node);
+
+                Touched();
+            });
 
         /// <summary>
         /// A field this check does not declare, named as itself.
