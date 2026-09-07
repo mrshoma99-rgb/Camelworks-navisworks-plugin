@@ -900,6 +900,16 @@ namespace CamelWorks.UI.Views
 
             private ClashRuleSet _rules = new ClashRuleSet();
 
+            /// <summary>
+            /// Whether the criteria dropdown has been used, or a rule that matches everything has
+            /// been added.
+            ///
+            /// The composer opens on the first kind in the list, which is "Every result". Warning
+            /// about that before the user has picked anything is a warning about a rule that does
+            /// not exist, so the note waits until the criteria are the user's own.
+            /// </summary>
+            private bool _chose;
+
             private readonly StackPanel _filters = Ui.Stack();
             private readonly StackPanel _grouping = Ui.Stack();
             private readonly StackPanel _assigns = Ui.Stack();
@@ -941,7 +951,7 @@ namespace CamelWorks.UI.Views
                 // matches nothing. A saved file that holds one still lists and runs it.
                 _when = new SpecEditor("Criteria",
                                        PredicateSpec.Kinds.Where(k => k.Input != SpecInput.Nested).ToList(),
-                                       Retune);
+                                       () => { _chose = true; Retune(); });
 
                 _by = new SpecEditor("Group by", GroupingSpec.Kinds, Retune);
 
@@ -963,9 +973,12 @@ namespace CamelWorks.UI.Views
                 // Two acts, drawn as two. Saving writes the project file and is the filled
                 // button; the preview runs the pipeline, writes nothing, and puts its answer on
                 // the stage rather than in the footer.
+                //
+                // The blocked reason is kept short. The footer holds one line at 560 device
+                // pixels, and a full sentence beside the preview pushed the primary onto a
+                // second line below it. The long form is on the stage, where there is room.
                 var run = _live == null
-                    ? Ui.Blocked("Try these on the board",
-                                 "A preview reads the results, which needs an open model.")
+                    ? Ui.Blocked("Try these on the board", "Needs an open model.")
                     : Ui.Runner("Try these on the board", _preview, job => Preview(_live, job),
                                 primary: false);
 
@@ -975,16 +988,10 @@ namespace CamelWorks.UI.Views
             /// <summary>The composer: one rule at a time, in the panel the anatomy keeps options in.</summary>
             private UIElement Setup()
             {
-                // Ui.Heading rather than Bench.Group, which titles a group in upper case. One
-                // heading style on this screen, sentence case, in the panel as on the stage.
-                var head = Ui.Heading("Add a rule");
-                head.Margin = new Thickness(0, 0, 0, 10);
-
                 _when.View.Margin = new Thickness(0, 0, 0, 10);
                 _by.View.Margin = new Thickness(0, 0, 0, 10);
 
-                return Ui.Stack(
-                    head,
+                return Bench.Group("Add a rule",
                     Ui.Field("Action", _act),
                     _when.View,
                     _by.View,
@@ -1000,6 +1007,11 @@ namespace CamelWorks.UI.Views
                     Say("Each rule has criteria and an action. Saved rules run over the clash "
                         + "results when the board loads: suppress and flag first, then group, "
                         + "then assign."),
+                    _live == null
+                        ? Say("No model is open. Rules can be written and saved from here; "
+                              + "trying them on the board reads the clash results, which needs "
+                              + "the model open.")
+                        : null,
                     _saved,
                     _preview,
                     Head("Suppress and flag"),
@@ -1058,7 +1070,7 @@ namespace CamelWorks.UI.Views
                         filter.Suppress ? "Suppress" : "Flag",
                         filter.Suppress ? Tone.Warn : Tone.Plain,
                         filter.Name,
-                        filter.When.Describe(),
+                        Criteria(filter.When),
                         here > 0 ? () => Move(_rules.Filters, here, -1) : (Action?)null,
                         here < _rules.Filters.Count - 1 ? () => Move(_rules.Filters, here, 1) : (Action?)null,
                         () => Drop(_rules.Filters, here),
@@ -1076,18 +1088,14 @@ namespace CamelWorks.UI.Views
                 {
                     var step = _rules.Grouping[at];
                     var here = at;
-                    var title = step.Descriptor?.Title ?? step.Kind;
-                    var said = step.Describe();
 
                     _grouping.Children.Add(Rule(
                         here,
-                        null,
+                        Always(),
                         "Group",
                         Tone.Plain,
-                        title,
-                        said.StartsWith(title, StringComparison.Ordinal)
-                            ? said.Substring(title.Length).Trim()
-                            : said,
+                        step.Descriptor?.Title ?? step.Kind,
+                        Criteria(step),
                         here > 0 ? () => Move(_rules.Grouping, here, -1) : (Action?)null,
                         here < _rules.Grouping.Count - 1 ? () => Move(_rules.Grouping, here, 1) : (Action?)null,
                         () => Drop(_rules.Grouping, here),
@@ -1124,7 +1132,7 @@ namespace CamelWorks.UI.Views
             /// what it matches — all of it legible without opening the rule.
             /// </summary>
             /// <param name="at">Its index, counted from zero.</param>
-            /// <param name="tick">Its on-off box, or null for a rule that has none.</param>
+            /// <param name="tick">Its on-off box: live for a rule that can be switched off, set and unavailable for one that cannot.</param>
             /// <param name="action">What it does, as the pill.</param>
             /// <param name="tone">How the pill reads.</param>
             /// <param name="name">What it is called, or what it groups by.</param>
@@ -1217,6 +1225,99 @@ namespace CamelWorks.UI.Views
                 return box;
             }
 
+            /// <summary>
+            /// The on-off box on a grouping rule: set, and unavailable.
+            ///
+            /// <see cref="GroupingSpec"/> has no enabled flag and the pipeline runs every rule in
+            /// the stack, so a grouping rule is stopped by removing it. The box is drawn rather
+            /// than left out so the three lists read as one list, and it says why it cannot be
+            /// pressed.
+            /// </summary>
+            private static UIElement Always()
+            {
+                var box = Ui.Check(string.Empty, true, null);
+                box.IsEnabled = false;
+                box.ToolTip = "Grouping rules always run. Remove one to stop it.";
+                return box;
+            }
+
+            /// <summary>The proximity radius, with the default the pipeline uses when it is unset.</summary>
+            /// <param name="metres">The distance, or zero for the default.</param>
+            private static string Metres(double metres) => Length(metres > 0 ? metres : 5.0);
+
+            /// <summary>Whether a length reads better in millimetres: non-zero and under a metre.</summary>
+            /// <param name="metres">The length.</param>
+            private static bool Fine(double metres) => metres != 0 && Math.Abs(metres) < 1;
+
+            /// <summary>A length with its unit, in the scale asked for.</summary>
+            /// <param name="metres">The length.</param>
+            /// <param name="fine">True for millimetres, false for metres.</param>
+            private static string Length(double metres, bool fine) =>
+                fine
+                    ? (metres * 1000).ToString("0.###", CultureInfo.InvariantCulture) + " mm"
+                    : metres.ToString("0.###", CultureInfo.InvariantCulture) + " m";
+
+            /// <summary>A length with its unit, in whichever scale reads.</summary>
+            /// <param name="metres">The length.</param>
+            private static string Length(double metres) => Length(metres, Fine(metres));
+
+            /// <summary>
+            /// The two ends of a distance range, in one scale.
+            ///
+            /// Both ends take the finer scale if either needs it, so a range never reads
+            /// "between 0 m and 5 mm".
+            /// </summary>
+            /// <param name="from">The near end.</param>
+            /// <param name="to">The far end.</param>
+            private static string Span(double from, double to)
+            {
+                var fine = Fine(from) || Fine(to);
+                return Length(from, fine) + " and " + Length(to, fine);
+            }
+
+            /// <summary>
+            /// What a suppress or flag rule matches, with the unit on every measured value.
+            ///
+            /// <see cref="PredicateSpec.Describe"/> writes bare numbers, because Core has no
+            /// opinion about how a screen shows a length. The three measured kinds are formatted
+            /// here and everything else falls through to the Core wording.
+            /// </summary>
+            /// <param name="spec">The rule.</param>
+            private static string Criteria(PredicateSpec spec)
+            {
+                var kind = spec.Descriptor;
+                if (kind == null) return spec.Describe();
+
+                return kind.Id switch
+                {
+                    "maxVolume" => kind.Title + " "
+                                   + spec.A.ToString("0.####", CultureInfo.InvariantCulture) + " m³",
+                    "distance" => kind.Title + " " + Span(spec.A, spec.B),
+                    "angle" => kind.Title + " " + Degrees(spec.A) + " and " + Degrees(spec.B),
+                    _ => spec.Describe(),
+                };
+            }
+
+            /// <summary>What a grouping rule groups by, without repeating its title.</summary>
+            /// <param name="step">The rule.</param>
+            private static string Criteria(GroupingSpec step)
+            {
+                var kind = step.Descriptor;
+                if (kind == null) return step.Describe();
+
+                return kind.Input switch
+                {
+                    SpecInput.Number => Metres(step.A),
+                    SpecInput.Text => "'" + (step.Name ?? string.Empty) + "'",
+                    _ => string.Empty,
+                };
+            }
+
+            /// <summary>An angle with its unit.</summary>
+            /// <param name="degrees">The angle.</param>
+            private static string Degrees(double degrees) =>
+                degrees.ToString("0.###", CultureInfo.InvariantCulture) + "°";
+
             /// <summary>Move a rule up or down its list.</summary>
             /// <typeparam name="T">The rule type.</typeparam>
             /// <param name="list">The list it is in.</param>
@@ -1271,7 +1372,7 @@ namespace CamelWorks.UI.Views
 
                 _composerSaid.Children.Clear();
 
-                if (act == ActSuppress && _when.Kind()?.Id == "always")
+                if (_chose && act == ActSuppress && _when.Kind()?.Id == "always")
                     _composerSaid.Children.Add(Ui.Note("These criteria match every result, so this "
                         + "rule would take the whole board off. Narrow it first."));
             }
@@ -1318,14 +1419,20 @@ namespace CamelWorks.UI.Views
                     {
                         var typed = _name.Text.Trim();
 
-                        _rules.Filters.Add(new FilterSpec(typed.Length == 0 ? spec.Describe() : typed,
+                        _rules.Filters.Add(new FilterSpec(typed.Length == 0 ? Criteria(spec) : typed,
                                                           spec, act == ActSuppress));
                         _name.Text = string.Empty;
+
+                        // The rule exists now, so the note about a rule that takes the whole
+                        // board off has something to point at even if the criteria were left as
+                        // the composer offered them.
+                        if (act == ActSuppress && kind.Id == "always") _chose = true;
                     }
                 }
 
                 Touched();
                 Redraw();
+                Retune();
             }
 
             /// <summary>Say that the rule set on screen is no longer what the project file holds.</summary>
@@ -1407,11 +1514,6 @@ namespace CamelWorks.UI.Views
             /// <param name="count">The count.</param>
             private static string Tallied(int count) => count.ToString("N0", CultureInfo.InvariantCulture);
 
-            /// <summary>A distance in metres, as it reads in a sentence.</summary>
-            /// <param name="metres">The distance.</param>
-            private static string Metres(double metres) =>
-                (metres > 0 ? metres : 5.0).ToString("0.###", CultureInfo.InvariantCulture) + " m";
-
             /// <summary>
             /// The reference matter, behind one symbol rather than standing under the lists.
             ///
@@ -1430,7 +1532,9 @@ namespace CamelWorks.UI.Views
                              + "the group name, and the parts are joined in the order the rules "
                              + "are listed, so the first rule is the outermost division of the "
                              + "board. A result no rule can answer for is reported rather than "
-                             + "grouped."),
+                             + "grouped. Every grouping rule in the list runs — unlike a suppress, "
+                             + "flag or assignment rule it has no on-off box, and is stopped by "
+                             + "removing it."),
                         Part("Assign",
                              "Runs on the groups, because the group is the unit of "
                              + "responsibility. The first rule whose criteria match any result in "
@@ -1758,6 +1862,9 @@ namespace CamelWorks.UI.Views
 
             private readonly StackPanel _results = Ui.Stack();
 
+            /// <summary>The preview of the document about to be written, redrawn on every setting change.</summary>
+            private readonly StackPanel _shape = Ui.Stack();
+
             /// <summary>The seat. Everything the screen reads without a document comes from here.</summary>
             private readonly ISeat _seat;
 
@@ -1804,10 +1911,10 @@ namespace CamelWorks.UI.Views
 
                 _kept = ToolMemory.Of(seat.Store, "coordinate.report");
 
-                _path = Ui.Text(_kept.Text("folder"), text => _kept.Set("folder", text), 200);
+                _path = Ui.Text(_kept.Text("folder"), text => { _kept.Set("folder", text); Restate(); }, 200);
 
                 _template = Ui.Text(_kept.Text("name", Deliverable.DefaultTemplate),
-                                    text => _kept.Set("name", text), 200);
+                                    text => { _kept.Set("name", text); Restate(); }, 200);
 
                 _units = _kept.Text("units", FromDocument) ?? FromDocument;
 
@@ -1837,23 +1944,23 @@ namespace CamelWorks.UI.Views
                 var parties = new List<string> { Everyone, Nobody };
                 parties.AddRange(_seat.Profile.Parties);
 
-                _for = Ui.Choice(parties, _audience, a => _audience = a, 150);
+                _for = Ui.Choice(parties, _audience, a => { _audience = a; Restate(); }, 150);
 
                 var format = Ui.Segmented(new[] { "PDF", "XLSX", "HTML" }, _format,
-                                          f => { _format = f; _kept.Set("format", f); });
+                                          f => { _format = f; _kept.Set("format", f); Restate(); });
 
                 _changed = Ui.Check("Only issues that are new or back after being resolved",
                                     _changedOnly,
-                                    v => { _changedOnly = v; _kept.Set("changedOnly", v); });
+                                    v => { _changedOnly = v; _kept.Set("changedOnly", v); Restate(); });
 
                 var plan = Ui.Check("A site plan with every issue numbered on it", _keyPlan,
-                                    v => { _keyPlan = v; _kept.Set("keyPlan", v); });
+                                    v => { _keyPlan = v; _kept.Set("keyPlan", v); Restate(); });
 
                 _split = Ui.Check("A separate file for each party", _perParty,
-                                  v => { _perParty = v; _kept.Set("perParty", v); });
+                                  v => { _perParty = v; _kept.Set("perParty", v); Restate(); });
 
                 var pictures = Ui.Check("A rendered view of each issue", _pictures,
-                                        v => { _pictures = v; _kept.Set("pictures", v); });
+                                        v => { _pictures = v; _kept.Set("pictures", v); Restate(); });
 
                 var cost = Ui.Small("A rendered view moves the model view while it runs, once "
                                     + "per issue.");
@@ -1870,6 +1977,8 @@ namespace CamelWorks.UI.Views
 
                     pictures.Visibility = images ? Visibility.Visible : Visibility.Collapsed;
                     cost.Visibility = images ? Visibility.Visible : Visibility.Collapsed;
+
+                    Restate();
                 }
 
                 var document = Ui.Choice(new[] { FullReport, FieldPack, Penetration }, _mode, m =>
@@ -1882,20 +1991,16 @@ namespace CamelWorks.UI.Views
 
                 // Locked: the document is the tool, so the picker is not a choice this window has.
                 var setup = Ui.Stack(
-                    _locked == null ? Ui.Field("Document", document) : null,
-                    _what,
-                    Ui.Across(Ui.Field("Recipient", _for), Ui.Field("File format", format)),
-                    Head("What else is in it"),
-                    _changed,
-                    plan,
-                    _split,
-                    pictures,
-                    cost,
-                    Head("Where it goes"),
-                    Ui.PathField("Folder", _path, PathKind.Folder,
-                                 hint: "blank writes it to your Documents folder"),
-                    Ui.Field("File name", _template,
-                             "tokens: " + string.Join(", ", Deliverable.Tokens)));
+                    Bench.Group(string.Empty,
+                        _locked == null ? Ui.Field("Document", document) : null,
+                        _what,
+                        Ui.Across(Ui.Field("Recipient", _for), Ui.Field("File format", format))),
+                    Bench.Group("What else is in it", _changed, plan, _split, pictures, cost),
+                    Bench.Group("Where it goes",
+                        Ui.PathField("Folder", _path, PathKind.Folder,
+                                     hint: "blank writes it to your Documents folder"),
+                        Ui.Field("File name", _template,
+                                 "tokens: " + string.Join(", ", Deliverable.Tokens))));
 
                 var help = Ui.Icon(Glyphs.Info, "What goes in each document", Help);
                 var markers = Ui.Icon(Glyphs.Sphere, "Markers in the model", Markers);
@@ -1915,25 +2020,179 @@ namespace CamelWorks.UI.Views
                                    + "from the results in the open model.")
                         : BoardState("Writing builds it fresh from the tests and the saved rules."),
                     Say(Covers()),
-                    Bench.Ready("Writes the document out and gives it the next revision letter."),
+                    _shape,
                     _results);
+
+                Restate();
 
                 return Bench.Surface(setup, Ui.Across(help, markers, write), stage, PanelWidth);
             }
 
             /// <summary>
-            /// A section heading in the options panel: sentence case, one size, one weight.
+            /// What the press will produce, read off the board and the settings on the right.
+            ///
+            /// Every control on this screen is in the panel, so without this the stage carried a
+            /// scope line and a sentence and nothing else. It holds the document instead: how much
+            /// of the board this recipient gets, what goes into the file, which revision it
+            /// becomes, where it lands, and what has been issued before. Redrawn whenever a
+            /// setting changes, so a setting has somewhere to show its effect before the press.
             /// </summary>
-            /// <remarks>
-            /// Not <see cref="Bench.Group"/>, whose label goes through <c>Ui.Eyebrow</c> and comes
-            /// out upper case. Worked around here rather than in Bench, which is shared: changing
-            /// it there restyles every screen that groups options.
-            /// </remarks>
+            private void Restate()
+            {
+                _shape.Children.Clear();
+
+                var session = _live;
+                var board = LastBoard;
+
+                if (session == null || board == null) return;
+
+                var regressed = Regressed();
+
+                // One file per party still reports on the whole board, split at the end, so the
+                // preview counts the board rather than one recipient's share of it.
+                var audience = _perParty ? Everyone : _audience;
+                var groups = Chosen(board, audience, regressed);
+
+                _shape.Children.Add(Title("In this issue"));
+
+                if (groups.Count == 0)
+                {
+                    _shape.Children.Add(Nothing());
+                    return;
+                }
+
+                var parties = groups
+                    .Select(g => g.AssignedTo)
+                    .Where(p => !string.IsNullOrWhiteSpace(p))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Count();
+
+                var unowned = groups.Count(g => g.AssignedTo == null);
+
+                _shape.Children.Add(Ui.Across(
+                    Ui.Figure(Tallied(groups.Count), "issues"),
+                    Ui.Figure(Tallied(groups.Sum(g => g.Items.Count)), "clashes"),
+                    Ui.Figure(Tallied(parties), "parties"),
+                    Ui.Figure(Tallied(unowned), "issues unassigned",
+                              unowned > 0 ? Tone.Warn : Tone.Good)));
+
+                foreach (var section in Sections()) _shape.Children.Add(Say("— " + section));
+
+                if (_perParty)
+                {
+                    _shape.Children.Add(Say(Ui.Count(parties + (unowned > 0 ? 1 : 0), "file")
+                        + ", one for each party on the board"
+                        + (unowned > 0 ? " and one for the unassigned issues" : string.Empty)
+                        + ". Each takes the next letter in that party's own sequence."));
+                }
+                else
+                {
+                    var was = LastIssue(session, audience);
+                    var revision = Deliverable.NextRevision(was?.Revision);
+                    var now = DateTimeOffset.UtcNow;
+
+                    _shape.Children.Add(Say("This issue is revision " + revision + ". "
+                        + (was == null
+                            ? "Nothing has been issued to this recipient before."
+                            : was.Supersedes)));
+
+                    _shape.Children.Add(Say(Lands(session, audience, revision, now)));
+                }
+
+                History(session);
+            }
+
+            /// <summary>
+            /// Where the file will be written, without the side effect of working it out for real.
+            ///
+            /// <see cref="Where"/> fills the folder box in when it is blank, which from here would
+            /// re-enter this method through that box's change handler.
+            /// </summary>
+            /// <param name="session">The live session, for the project name.</param>
+            /// <param name="audience">Who it is for.</param>
+            /// <param name="revision">The revision it will take.</param>
+            /// <param name="issued">When it goes out.</param>
+            private string Lands(Session session, string audience, string revision,
+                                 DateTimeOffset issued)
+            {
+                var typed = _path.Text.Trim();
+
+                if (typed.Length > 0) return "Writes to " + typed + ".";
+
+                var stem = Deliverable.Name(_template.Text, session.Profile.ProjectName,
+                                            audience == Everyone ? null : audience, revision, issued);
+
+                return "Writes " + stem + "." + _format.ToLowerInvariant()
+                       + " to your Documents folder.";
+            }
+
+            /// <summary>What the chosen document holds, in the order it holds it.</summary>
+            private IEnumerable<string> Sections()
+            {
+                if (_mode == Penetration)
+                {
+                    yield return "A cover naming the project, the recipient and the revision.";
+                    yield return "Every service the model shows passing through structure, with "
+                                 + "what it is and where.";
+                    yield break;
+                }
+
+                yield return "A cover naming the project, the recipient and the revision.";
+
+                if (_mode == FullReport)
+                {
+                    yield return "The funnel the board was narrowed by, and what changed since "
+                                 + "the last run.";
+
+                    if (_keyPlan) yield return "A site plan with every issue numbered on it.";
+
+                    yield return "Every issue with its clashes, party and priority.";
+                }
+                else
+                {
+                    yield return "One page per issue, in large type, with a line to sign against.";
+                }
+
+                if (_pictures) yield return "A rendered view of each issue.";
+            }
+
+            /// <summary>
+            /// What has gone out before, per recipient.
+            ///
+            /// The register is what the next revision letter is derived from, so it belongs where
+            /// the letter is stated rather than only on the cover of the file.
+            /// </summary>
+            /// <param name="session">The live session, whose project file holds the register.</param>
+            private void History(Session session)
+            {
+                var register = Deliverable.Read(
+                    session.Store.Section(ProjectStore.ClashSection)[ClashKeys.Issued]);
+
+                if (register.Count == 0) return;
+
+                _shape.Children.Add(Title("Issued so far"));
+
+                foreach (var entry in register.OrderBy(e => e.Key, StringComparer.OrdinalIgnoreCase))
+                    _shape.Children.Add(Say(entry.Key + " — revision " + entry.Value.Revision
+                        + ", issued "
+                        + entry.Value.IssuedUtc.UtcDateTime.ToString("d MMMM yyyy",
+                                                                     CultureInfo.InvariantCulture)
+                        + (string.IsNullOrWhiteSpace(entry.Value.File)
+                            ? "."
+                            : " as " + entry.Value.File + ".")));
+            }
+
+            /// <summary>A count as it reads beside a figure.</summary>
+            /// <param name="count">The count.</param>
+            private static string Tallied(int count) =>
+                count.ToString("N0", CultureInfo.InvariantCulture);
+
+            /// <summary>A section heading on the stage: sentence case, one size, one weight.</summary>
             /// <param name="text">The heading.</param>
-            private static TextBlock Head(string text)
+            private static TextBlock Title(string text)
             {
                 var head = Ui.Heading(text);
-                head.Margin = new Thickness(0, 18, 0, 4);
+                head.Margin = new Thickness(0, 18, 0, 6);
                 return head;
             }
 

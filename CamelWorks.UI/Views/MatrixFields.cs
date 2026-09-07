@@ -290,7 +290,6 @@ namespace CamelWorks.UI.Views
             var token = new TextBlock
             {
                 Text = Tokened(field),
-                FontSize = 11,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 Margin = new Thickness(10, 0, 0, 0),

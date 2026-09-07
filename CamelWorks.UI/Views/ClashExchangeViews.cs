@@ -347,79 +347,6 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// A heading over a group of strip fields, or over a group in a settings window.
-            ///
-            /// Local rather than <see cref="Bench.Group"/> and <see cref="Ui.Eyebrow"/>: both draw
-            /// their label upper-cased, and headings on this screen are sentence case.
-            /// </summary>
-            /// <param name="text">The heading.</param>
-            private static TextBlock Heading(string text) =>
-                new TextBlock
-                {
-                    Text = text,
-                    FontWeight = FontWeights.SemiBold,
-                    Margin = new Thickness(0, 0, 0, 4),
-                }.Wearing("Body");
-
-            /// <summary>
-            /// A labelled group of fields, laid out left to right.
-            /// </summary>
-            /// <param name="label">What the fields have in common.</param>
-            /// <param name="fields">The fields.</param>
-            private static UIElement Grouped(string label, params UIElement?[] fields)
-            {
-                var row = new WrapPanel();
-
-                foreach (var field in fields)
-                {
-                    if (field == null) continue;
-
-                    if (field is FrameworkElement element)
-                        element.Margin = new Thickness(0, 0, 14, 0);
-
-                    row.Children.Add(Ui.Loose(field));
-                }
-
-                var stack = new StackPanel { Margin = new Thickness(0, 0, 28, 0) };
-
-                stack.Children.Add(Heading(label));
-                stack.Children.Add(row);
-
-                return stack;
-            }
-
-            /// <summary>
-            /// A pane's heading and its counts, for the "say" slot of <see cref="Bench.Pane"/>.
-            ///
-            /// The pane's own label slot is drawn upper-cased, so it is left empty and the
-            /// heading is drawn here in sentence case.
-            /// </summary>
-            /// <param name="title">The pane's name.</param>
-            /// <param name="counts">The live line the screen keeps and redraws.</param>
-            private static UIElement PaneHead(string title, Panel counts)
-            {
-                var row = new StackPanel
-                {
-                    Orientation = Orientation.Horizontal,
-                    VerticalAlignment = VerticalAlignment.Center,
-                };
-
-                row.Children.Add(new TextBlock
-                {
-                    Text = title,
-                    FontWeight = FontWeights.SemiBold,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(0, 0, 10, 0),
-                }.Wearing("Body"));
-
-                counts.VerticalAlignment = VerticalAlignment.Center;
-
-                row.Children.Add(Ui.Loose(counts));
-
-                return row;
-            }
-
-            /// <summary>
             /// Hold a pane's one card at the top of it.
             ///
             /// A pane body is a <see cref="DockPanel"/> whose last child fills, so an empty state
@@ -459,17 +386,15 @@ namespace CamelWorks.UI.Views
                 // between two groups.
                 var groups = new WrapPanel();
 
-                groups.Children.Add(Grouped("What goes out",
-                                            Ui.Field("Kind", Kind()),
-                                            Ui.Field("Find a test", _find)));
+                groups.Children.Add(Bench.Group("What goes out", across: true,
+                                                Ui.Field("Kind", Kind()),
+                                                Ui.Field("Find a test", _find)));
 
-                groups.Children.Add(Grouped("How the packs are written",
-                                            Ui.Field("Packs", Splitting()),
-                                            Ui.Field("Order in each pack", Sorting())));
+                groups.Children.Add(Bench.Group("How the packs are written", across: true,
+                                                Ui.Field("Packs", Splitting()),
+                                                Ui.Field("Order in each pack", Sorting())));
 
                 var strip = Ui.Stack(Modes(SendOut, Setup()), groups);
-
-                var foot = new DockPanel { LastChildFill = false };
 
                 // Labelled. Two symbols beside a primary say nothing about what they open, and
                 // the funnel is the same picture the results filter uses a few inches away.
@@ -479,14 +404,12 @@ namespace CamelWorks.UI.Views
                 scope.ToolTip = "Which statuses go out, what each topic carries, and whether "
                               + "folders travel with them.";
                 saved.ToolTip = "Keep these settings under a name, so the next round is one press.";
-                scope.VerticalAlignment = VerticalAlignment.Center;
-                saved.VerticalAlignment = VerticalAlignment.Center;
                 saved.Margin = new Thickness(6, 0, 0, 0);
 
-                DockPanel.SetDock(scope, Dock.Left);
-                DockPanel.SetDock(saved, Dock.Left);
-                foot.Children.Add(scope);
-                foot.Children.Add(saved);
+                var setup = new StackPanel { Orientation = Orientation.Horizontal };
+
+                setup.Children.Add(scope);
+                setup.Children.Add(saved);
 
                 // The write is the primary and it sits bottom right. The preview is the same run
                 // without the files, so it is the secondary beside it rather than the only action
@@ -495,23 +418,9 @@ namespace CamelWorks.UI.Views
                 var preview = Ui.Runner("Preview the export", _sending,
                                         job => Rehearse(job, _sending), primary: false);
 
-                var acts = new StackPanel
-                {
-                    Orientation = Orientation.Horizontal,
-                    HorizontalAlignment = HorizontalAlignment.Right,
-                    VerticalAlignment = VerticalAlignment.Center,
-                };
-
-                // Both flat against the footer's own padding, or the runner's top gap would set
-                // the two buttons eight pixels apart vertically.
-                preview.Margin = new Thickness(0, 0, 8, 0);
-                write.Margin = new Thickness(0);
-
-                acts.Children.Add(preview);
-                acts.Children.Add(write);
-
-                DockPanel.SetDock(acts, Dock.Right);
-                foot.Children.Add(acts);
+                // Flat against the footer's own padding: Ui.Foot replaces the runner's own top
+                // gap, which otherwise set the two buttons eight pixels apart vertically.
+                var foot = Ui.Foot(write, preview, setup);
 
                 // Live, but not per keystroke. Every letter rebuilds the tests table, which on a
                 // job of any size is a tenth of a second between one letter and the next.
@@ -529,15 +438,13 @@ namespace CamelWorks.UI.Views
                 DrawTests();
                 DrawResults();
 
-                // The pane label slot is drawn upper-cased, so both panes are headed through the
-                // "say" slot instead and the label is left empty.
                 // The pane bodies are fields this screen redraws in place, and a pane puts the
                 // body it is given inside a border of its own. Loosed on the way in, or the
                 // second build hands one element to a second parent.
                 return Bench.Split(strip,
-                                   Bench.Pane(string.Empty, PaneHead("Tests", _testsSaid),
+                                   Bench.Pane("Tests", Ui.Loose(_testsSaid),
                                               Ui.Loose(_tests), null, scrolls: false),
-                                   Bench.Pane(string.Empty, PaneHead("Results", _resultsSaid),
+                                   Bench.Pane("Results", Ui.Loose(_resultsSaid),
                                               Ui.Loose(_results), null, scrolls: false),
                                    Ui.Stack(foot, _sending),
                                    leftWidth: 460);
@@ -1159,8 +1066,7 @@ namespace CamelWorks.UI.Views
                 }
 
                 var page = new Ui.Page(facet.Title,
-                    () => Bench.Group(string.Empty,
-                                      Heading(facet.Title + " values to include"), box));
+                    () => Bench.Group(facet.Title + " values to include", box));
 
                 Ui.Configure(facet.Title, () =>
                 {
@@ -1660,8 +1566,8 @@ namespace CamelWorks.UI.Views
                                  () => Ui.Safely(() => { if (Choosing()) Receive(null); })),
                         _back);
 
-                    return Bench.Surface(null, Ui.Stack(applying.Buttons, applying.Progress,
-                                                        _applied), alone);
+                    return Bench.Surface(null, Ui.Stack(Ui.Foot(Ui.Loose(applying.Buttons)),
+                                                        applying.Progress, _applied), alone);
                 }
 
                 _paned = true;
@@ -1677,30 +1583,17 @@ namespace CamelWorks.UI.Views
                     Modes(TakeBack, null),
                     Ui.Across(choose, _show));
 
-                var foot = new DockPanel { LastChildFill = false };
-
-                var acts = new StackPanel
-                {
-                    Orientation = Orientation.Horizontal,
-                    HorizontalAlignment = HorizontalAlignment.Right,
-                    VerticalAlignment = VerticalAlignment.Center,
-                };
-
-                acts.Children.Add(Ui.Loose(applying.Buttons));
-
-                DockPanel.SetDock(acts, Dock.Right);
-                foot.Children.Add(acts);
+                // One footer anatomy: the primary hard right, the reason it cannot be pressed to
+                // its left. The reason is read off the button's tooltip, which DrawReading sets.
+                var foot = Ui.Foot(Ui.Loose(applying.Buttons));
 
                 DrawPacks();
                 DrawReading();
 
-                // The pane label slot is drawn upper-cased, so both panes are headed through the
-                // "say" slot instead and the label is left empty.
                 return Bench.Split(strip,
-                                   Bench.Pane(string.Empty, PaneHead("Packs", _packsSaid),
+                                   Bench.Pane("Packs", Ui.Loose(_packsSaid),
                                               Ui.Loose(_files), null, scrolls: false),
-                                   Bench.Pane(string.Empty,
-                                              PaneHead("Returned clashes", _rowsSaid),
+                                   Bench.Pane("Returned clashes", Ui.Loose(_rowsSaid),
                                               Ui.Loose(_rows), null, scrolls: false),
                                    Ui.Stack(foot, applying.Progress, _back, _applied),
                                    leftWidth: 400);
@@ -2006,11 +1899,6 @@ namespace CamelWorks.UI.Views
 
                     _apply.IsEnabled = ready;
 
-                    // The filled primary style paints no plate and no border while it is
-                    // disabled, so an unavailable primary reads as a grey word rather than as a
-                    // button. Worn at the secondary weight until there is something to apply.
-                    _apply.Wearing(ready ? "PrimaryBtn" : "Btn");
-
                     _apply.ToolTip = ready
                         ? null
                         : _reading == null
@@ -2133,7 +2021,10 @@ namespace CamelWorks.UI.Views
                     VerticalAlignment = VerticalAlignment.Center,
                 };
 
+                // Two links with no chrome between them read as one phrase, so the pair is ruled
+                // apart rather than left to run together.
                 says.Children.Add(settling);
+                says.Children.Add(Ui.Vrule());
                 says.Children.Add(noting);
 
                 var verbs = Ui.Picking(table, says,
@@ -2348,7 +2239,7 @@ namespace CamelWorks.UI.Views
             {
                 var box = Ui.Stack();
 
-                box.Children.Add(Heading("Statuses"));
+                box.Children.Add(Ui.Eyebrow("Statuses"));
 
                 foreach (FindingStatus status in Enum.GetValues(typeof(FindingStatus)))
                 {
@@ -2367,7 +2258,7 @@ namespace CamelWorks.UI.Views
                 box.Children.Add(Ui.Check("Keep the folder structure", _profile.KeepGroups,
                                           on => _profile.KeepGroups = on));
 
-                var head = Heading("What each topic carries");
+                var head = Ui.Eyebrow("What each topic carries");
 
                 head.Margin = new Thickness(0, 14, 0, 4);
 

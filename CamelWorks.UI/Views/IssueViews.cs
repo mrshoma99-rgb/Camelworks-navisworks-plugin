@@ -54,9 +54,13 @@ namespace CamelWorks.UI.Views
         // -----------------------------------------------------------------------------------
 
         /// <summary>This project's issues.</summary>
-        /// <param name="session">The open document.</param>
-        internal static IssueRegister Read(Session session) =>
-            IssueRegister.FromJson(session.Store.Section(ProjectStore.IssuesSection)["register"]);
+        /// <param name="seat">
+        /// The seat. A seat rather than a session because the register is a section of the project
+        /// file and nothing else here is needed to read it, which is what lets a screen drawn on a
+        /// seat with no document read the issues its rows are attached to.
+        /// </param>
+        internal static IssueRegister Read(ISeat seat) =>
+            IssueRegister.FromJson(seat.Store.Section(ProjectStore.IssuesSection)["register"]);
 
         /// <summary>
         /// Write the register back, and say what stopped it when it would not go.

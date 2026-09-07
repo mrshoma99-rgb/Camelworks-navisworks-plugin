@@ -1373,6 +1373,21 @@ namespace CamelWorks.UI.Views
             Margin = new Thickness(0, Gap, 0, Gap),
         }.Tint(Border.BackgroundProperty, "Bd");
 
+        /// <summary>
+        /// The same hairline stood on end, for a bar that runs left to right.
+        ///
+        /// Two link verbs side by side have no chrome between them and read as one long phrase —
+        /// "Resolve the conflict…Say why…". A rule between them separates the two presses without
+        /// giving either a border.
+        /// </summary>
+        public static UIElement Vrule() => new Border
+        {
+            Width = 1,
+            Height = 18,
+            Margin = new Thickness(Gap, 0, Gap, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        }.Tint(Border.BackgroundProperty, "Bd");
+
         /// <summary>A label on the left and its value on the right, as one row.</summary>
         /// <param name="label">What it is.</param>
         /// <param name="value">What it says.</param>
@@ -1445,19 +1460,122 @@ namespace CamelWorks.UI.Views
 
             go.Wearing("PrimaryBtn");
 
-            var said = Small(why ?? string.Empty);
+            var row = Foot(go);
 
-            said.Margin = new Thickness(10, 0, 0, 0);
+            // Inline on a stage rather than in a footer band, so the gap above it is this
+            // caller's to set. A footer band has its own padding.
+            row.Margin = new Thickness(0, Gap, 0, 0);
+
+            return row;
+        }
+
+        /// <summary>
+        /// A screen's footer: the reason, the secondary action, the primary hard right.
+        ///
+        /// One anatomy for every screen's last row, for one reason: the primary must be in the
+        /// same place before and after it can be pressed. The footers this replaces put the
+        /// disabled button and its reason in a wrap panel, so the button moved when the reason
+        /// arrived or went, and on a narrow pane the reason pushed it onto a second line.
+        ///
+        /// The reason is read off the primary rather than passed in, so a screen that keeps the
+        /// button in a field and enables it later has nothing to redraw: it sets the tooltip and
+        /// the footer states it. An enabled primary has no tooltip, so the line is empty and takes
+        /// no room; a disabled one without a tooltip is a press with no stated reason, which is
+        /// the defect this exists to make visible.
+        /// </summary>
+        /// <param name="primary">
+        /// The screen's one action, or the row a <see cref="RunParts"/> returns. Where it is a
+        /// panel, the first button in it is the primary the reason is read from.
+        /// </param>
+        /// <param name="secondary">A supporting action, drawn to the left of the primary.</param>
+        /// <param name="aside">
+        /// What the screen is set up with — the windows that hold the settings the primary spends.
+        /// Drawn hard left, away from the actions, or null on a footer with none.
+        /// </param>
+        public static Panel Foot(UIElement primary, UIElement? secondary = null,
+                                 UIElement? aside = null)
+        {
+            if (primary == null) throw new ArgumentNullException(nameof(primary));
+
+            var row = new DockPanel { LastChildFill = false };
+
+            if (primary is FrameworkElement main)
+            {
+                main.VerticalAlignment = VerticalAlignment.Center;
+                main.Margin = new Thickness(Gap, 0, 0, 0);
+            }
+
+            // Docked in this order, so the primary is against the right edge whatever else the
+            // row is holding, and nothing to its left can displace it.
+            DockPanel.SetDock(primary, Dock.Right);
+            row.Children.Add(primary);
+
+            if (secondary != null)
+            {
+                if (secondary is FrameworkElement other)
+                {
+                    other.VerticalAlignment = VerticalAlignment.Center;
+                    other.Margin = new Thickness(Gap, 0, 0, 0);
+                }
+
+                DockPanel.SetDock(secondary, Dock.Right);
+                row.Children.Add(secondary);
+            }
+
+            if (aside != null)
+            {
+                if (aside is FrameworkElement side) side.VerticalAlignment = VerticalAlignment.Center;
+
+                DockPanel.SetDock(aside, Dock.Left);
+                row.Children.Add(aside);
+            }
+
+            var said = Small(string.Empty);
+
+            said.Margin = new Thickness(0, 0, Gap, 0);
             said.VerticalAlignment = VerticalAlignment.Center;
             said.TextWrapping = TextWrapping.Wrap;
-            said.MaxWidth = 380;
+            said.TextAlignment = TextAlignment.Right;
 
-            var row = new WrapPanel { Margin = new Thickness(0, Gap, 0, 0) };
+            // Bound rather than copied: the reason is whatever the primary says it is at the
+            // moment it is read, and an enabled primary carries none, so the line empties itself.
+            var button = Pressed(primary, 3);
 
-            row.Children.Add(go);
+            if (button != null)
+                said.SetBinding(TextBlock.TextProperty,
+                                new Binding("ToolTip")
+                                {
+                                    Source = button,
+                                    TargetNullValue = string.Empty,
+                                    FallbackValue = string.Empty,
+                                });
+
+            DockPanel.SetDock(said, Dock.Right);
             row.Children.Add(said);
 
             return row;
+        }
+
+        /// <summary>
+        /// The button a footer's primary slot is actually built around.
+        ///
+        /// The slot takes a runner as readily as a button, and a runner is a column holding a row
+        /// holding the button, so the search goes down rather than only at the element handed in.
+        /// </summary>
+        /// <param name="element">The primary slot's content.</param>
+        /// <param name="depth">How many panels to look through.</param>
+        private static System.Windows.Controls.Button? Pressed(UIElement element, int depth)
+        {
+            if (element is System.Windows.Controls.Button button) return button;
+            if (depth <= 0 || !(element is Panel panel)) return null;
+
+            foreach (var child in panel.Children.OfType<UIElement>())
+            {
+                var found = Pressed(child, depth - 1);
+                if (found != null) return found;
+            }
+
+            return null;
         }
 
         /// <summary>A supporting action, with no border until it is hovered.</summary>
@@ -3614,11 +3732,23 @@ namespace CamelWorks.UI.Views
             // word.
             all.VerticalAlignment = VerticalAlignment.Center;
             none.VerticalAlignment = VerticalAlignment.Center;
-            all.Margin = new Thickness(0, 0, Gap, 0);
 
             // A gap, or the two read as one word. They had none, so every table on every screen
             // ended its bar with "AllNone".
             all.Margin = new Thickness(0, 0, Gap, 0);
+
+            // One child of the wrap, not two. As two they were wrapped independently, so a bar
+            // with enough verbs to fill the line left "All" on it and pushed "None" onto the
+            // next - a lone word under the table with nothing to say what it picks.
+            var picking = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(Gap, 0, 0, 0),
+            };
+
+            picking.Children.Add(all);
+            picking.Children.Add(none);
 
             var buttons = new List<System.Windows.Controls.Button>();
 
@@ -3643,13 +3773,20 @@ namespace CamelWorks.UI.Views
                     ? (here.Primary
                         ? Primary(here.Caption.Replace("{n}", "0"), () => Verb(here, table, said))
                         : Quiet(here.Caption.Replace("{n}", "0"), () => Verb(here, table, said)))
-                    : Icon(glyph, here.Caption.Replace("{n}", "0"), () => Verb(here, table, said));
+                    : Icon(glyph, here.Caption.Replace("{n}", "0"), () => Verb(here, table, said),
+                           here.Danger ? "RedTx" : "Muted");
 
+                // A destructive verb reads as destructive whether or not it can be drawn. This
+                // applied the danger style only to the worded ones, which left every delete that
+                // has a symbol - which is all of them - in the same grey as the verb beside it.
                 if (here.Danger && glyph == null) button.Wearing("DangerBtn");
 
                 // A worded button carries its own padding; a symbol needs the room put around it,
-                // for the same reason Icon does.
-                button.Margin = new Thickness(glyph == null ? Gap : 3, 2, glyph == null ? 0 : 3, 2);
+                // for the same reason Icon does. A danger verb gets a wider left gap either way,
+                // so the press before it is not adjacent to the one that deletes.
+                var before = here.Danger ? Gap * 2 : glyph == null ? Gap : 3;
+
+                button.Margin = new Thickness(before, 2, glyph == null ? 0 : 3, 2);
                 button.VerticalAlignment = VerticalAlignment.Center;
                 button.Tag = here.Caption;
 
@@ -3657,9 +3794,7 @@ namespace CamelWorks.UI.Views
                 bar.Children.Add(button);
             }
 
-            bar.Children.Add(new Border { Width = Gap });
-            bar.Children.Add(all);
-            bar.Children.Add(none);
+            bar.Children.Add(picking);
 
             void Say()
             {

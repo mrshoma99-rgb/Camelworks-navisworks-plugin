@@ -257,7 +257,7 @@ namespace CamelWorks.UI.Views
             /// The panel must arm whatever the grid is drawing. In the priority view it holds the
             /// ranks, not the symbol legend.
             /// </summary>
-            private readonly TextBlock _paletteTitle = Cap("Palette");
+            private readonly TextBlock _paletteTitle = Ui.Eyebrow("Palette");
 
             /// <summary>Add, change and cover a symbol - which mean nothing but on the symbols.</summary>
             private UIElement? _legendActs;
@@ -5308,7 +5308,7 @@ namespace CamelWorks.UI.Views
                     if (meaning != null && !meaning.Enabled) mute++;
                 }
 
-                _progress.Children.Add(Cap("Decided"));
+                _progress.Children.Add(Ui.Eyebrow("Decided"));
 
                 var track = new Border
                 {
@@ -6428,7 +6428,7 @@ namespace CamelWorks.UI.Views
                     if (open == 0) clear++;
                 }
 
-                _progress.Children.Add(Cap("Cleared"));
+                _progress.Children.Add(Ui.Eyebrow("Cleared"));
 
                 var track = new Border
                 {
@@ -6511,7 +6511,7 @@ namespace CamelWorks.UI.Views
                     one => !_board.IsSelfPair(one.Row, one.Column)
                            || _board.At(one.Row, one.Column) != null);
 
-                _progress.Children.Add(Cap("Ranked"));
+                _progress.Children.Add(Ui.Eyebrow("Ranked"));
 
                 var track = new Border
                 {
@@ -6952,7 +6952,7 @@ namespace CamelWorks.UI.Views
                     Padding = new Thickness(4, 0, 4, 0),
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(6, 0, 0, 0),
-                    Child = new TextBlock { Text = stroke, FontSize = 10 }.Wearing("Hint"),
+                    Child = new TextBlock { Text = stroke }.Wearing("Hint"),
                 };
 
                 typed.Tint(Border.BorderBrushProperty, "BdStrong");
@@ -7393,7 +7393,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private void Summary()
             {
-                _inspector.Children.Add(Cap("This matrix"));
+                _inspector.Children.Add(Ui.Eyebrow("This matrix"));
 
                 var facts = Ui.Stack();
 
@@ -7710,7 +7710,7 @@ namespace CamelWorks.UI.Views
 
                 var what = rows ? "row" : "column";
 
-                _inspector.Children.Add(Cap(
+                _inspector.Children.Add(Ui.Eyebrow(
                     (rows ? "Row " + Number(at) : "Column " + Letter(at))));
 
                 var gap = new Border { Height = 8 };
@@ -8148,7 +8148,7 @@ namespace CamelWorks.UI.Views
             /// <param name="symbol">The symbol.</param>
             private void SymbolPage(MatrixSymbol symbol)
             {
-                _inspector.Children.Add(Cap("Symbol " + symbol.Symbol));
+                _inspector.Children.Add(Ui.Eyebrow("Symbol " + symbol.Symbol));
 
                 // Symbol editing happens in one place: the form opened by the pencil on the
                 // palette. This page previously offered five editable fields, making a second
@@ -8314,7 +8314,7 @@ namespace CamelWorks.UI.Views
             {
                 var here = _board.At(row, column);
 
-                _inspector.Children.Add(Cap("Cell " + Where(row, column)));
+                _inspector.Children.Add(Ui.Eyebrow("Cell " + Where(row, column)));
 
                 var named = Ui.Small(row.Titled + "  ×  " + column.Titled);
 
@@ -10507,7 +10507,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                Said(Cap("What is wrong with this matrix"), hold: true);
+                Said(Ui.Eyebrow("What is wrong with this matrix"), hold: true);
 
                 foreach (var fault in faults.Take(20))
                     Said(fault.Stops
@@ -10526,7 +10526,7 @@ namespace CamelWorks.UI.Views
 
                 if (plan.Skipped.Count == 0) return;
 
-                Said(Cap("Cells that build no test"), hold: true);
+                Said(Ui.Eyebrow("Cells that build no test"), hold: true);
 
                 foreach (var skip in plan.Skipped.Take(20))
                     Said(Ui.Small(skip.Cell + " — " + skip.Why), hold: true);
@@ -10550,7 +10550,7 @@ namespace CamelWorks.UI.Views
 
                 Quiet();
 
-                Said(Cap("What building this would do"), hold: true);
+                Said(Ui.Eyebrow("What building this would do"), hold: true);
 
                 Said(Ui.Line(
                     Ui.Count(MatrixDiff.Count(lines, MatrixChange.Added), "test") + " to make, "
@@ -11365,17 +11365,6 @@ namespace CamelWorks.UI.Views
 
                 return held;
             }
-
-            /// <summary>
-            /// A section label, in sentence case.
-            ///
-            /// <see cref="Ui.Eyebrow"/> upper-cases whatever it is handed, so every panel title on
-            /// this screen came out as an ALL-CAPS heading. This wears the same style without the
-            /// upper-casing. It is local because Ui.cs is shared and the fix belongs there.
-            /// </summary>
-            /// <param name="text">The label, written as it is to be read.</param>
-            private static TextBlock Cap(string text) =>
-                new TextBlock { Text = text ?? string.Empty }.Wearing("Caps");
 
             private static string Millimetres(double metres) =>
                 (metres * 1000).ToString("0.###", CultureInfo.InvariantCulture) + " mm";

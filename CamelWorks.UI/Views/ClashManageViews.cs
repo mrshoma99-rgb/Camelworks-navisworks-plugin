@@ -96,6 +96,38 @@ namespace CamelWorks.UI.Views
         /// <param name="session">The open document.</param>
         public static UIElement Manage(Session session) => new Screen(session).Build();
 
+        /// <summary>
+        /// The board over a supplied clash engine, read, for the render harness.
+        ///
+        /// The board is the engine's results, and a seat with no document has no engine, so
+        /// <see cref="Manage"/> on the empty seat draws the start screen and nothing else. Every
+        /// picture of this tab was therefore a hand-written reconstruction in the harness, and a
+        /// reconstruction cannot show a fault in the code that lays the tab out — which is where
+        /// the faults on this tab have been.
+        ///
+        /// The engine is a parameter rather than taken off the seat because the seat's own is a
+        /// stand-in that reports itself unavailable. Everything else — the project file, the
+        /// findings, the naming, the levels, the roster — comes off the seat as it does on a
+        /// licensed one, and the read is the same read the "Read the results" button runs.
+        /// </summary>
+        /// <param name="seat">The seat this is running in.</param>
+        /// <param name="clash">The clash engine to read.</param>
+        /// <param name="panel">Whether the rail's filter panel is open.</param>
+        public static UIElement Drawn(ISeat seat, IClashSource clash, bool panel = false)
+        {
+            if (seat == null) throw new ArgumentNullException(nameof(seat));
+            if (clash == null) throw new ArgumentNullException(nameof(clash));
+
+            // Nothing carried in from another page: the board, the file leg and the per-check
+            // state are all static, and two pages of this tab in one process would otherwise draw
+            // whichever one ran first.
+            Forget();
+
+            _engine = new ClashCheck(clash, seat.MetresPerUnit, null);
+
+            return new Screen(seat).Drawn(panel);
+        }
+
         static ClashManageViews() => Host.WhenDocumentChanges(Forget);
 
         /// <summary>
@@ -541,7 +573,18 @@ namespace CamelWorks.UI.Views
 
         private sealed class Screen
         {
-            private readonly Session _session;
+            /// <summary>The seat the board is running in. Everything it draws comes from here.</summary>
+            private readonly ISeat _seat;
+
+            /// <summary>
+            /// The live session, or null on a seat with no document.
+            ///
+            /// Four acts need the host document rather than the seat: selecting elements by
+            /// locator, reading and writing the issue register, and asking the clash engine for a
+            /// result snapshot on export. None of them is on the draw path, so the board draws
+            /// without one and each of them says so where it is refused.
+            /// </summary>
+            private readonly Session? _live;
 
             private readonly StackPanel _log = Ui.Stack();
             private readonly StackPanel _headline = Ui.Stack();
@@ -852,7 +895,17 @@ namespace CamelWorks.UI.Views
             private TeamRoster? _roster;
 
             /// <summary>The team as it stands, read once and held until something changes it.</summary>
-            private TeamRoster Roster() => _roster ??= TeamWindow.Read(_session);
+            private TeamRoster Roster() => _roster ??= TeamWindow.Read(_seat);
+
+            /// <summary>
+            /// Write the issue register back, and say what stopped it.
+            ///
+            /// Through the session rather than the seat: an issue names finding ids, so the
+            /// findings sidecar is written with it, and a seat with no document has neither.
+            /// </summary>
+            /// <param name="register">The register to keep.</param>
+            private string? Stored(IssueRegister register) =>
+                _live == null ? Host.NoModel : IssueViews.Write(_live, register);
 
             /// <summary>
             /// The project's naming, read once per screen and held.
@@ -866,7 +919,7 @@ namespace CamelWorks.UI.Views
 
             /// <summary>The project's fields, patterns and per-test bindings.</summary>
             private NamingBook Book => _book ??= NamingBook.FromJson(
-                _session.Store.Section(ProjectStore.ClashSection)[NamingBook.Key]);
+                _seat.Store.Section(ProjectStore.ClashSection)[NamingBook.Key]);
 
             /// <summary>
             /// The project's storeys, read once per screen and held.
@@ -878,16 +931,16 @@ namespace CamelWorks.UI.Views
 
             /// <summary>The storeys this project says the building has.</summary>
             private LevelPlan Plan => _plan ??= LevelPlan.FromJson(
-                _session.Store.Section(ProjectStore.ProfileSection)[LevelPlan.Key]);
+                _seat.Store.Section(ProjectStore.ProfileSection)[LevelPlan.Key]);
 
             /// <summary>Write the storeys back to the project file.</summary>
             /// <returns>True when the project file took them.</returns>
             private bool KeepPlan()
             {
-                _session.Store.Section(ProjectStore.ProfileSection)
+                _seat.Store.Section(ProjectStore.ProfileSection)
                         .Set(LevelPlan.Key, Plan.ToJson() ?? JsonValue.Array());
 
-                return _session.Store.Save();
+                return _seat.Store.Save();
             }
 
             /// <summary>
@@ -937,10 +990,10 @@ namespace CamelWorks.UI.Views
             /// <returns>True when the project file took it.</returns>
             private bool KeepBook()
             {
-                _session.Store.Section(ProjectStore.ClashSection)
+                _seat.Store.Section(ProjectStore.ClashSection)
                         .Set(NamingBook.Key, Book.ToJson() ?? JsonValue.Object());
 
-                return _session.Store.Save();
+                return _seat.Store.Save();
             }
 
             /// <summary>
@@ -962,7 +1015,7 @@ namespace CamelWorks.UI.Views
             {
                 var sent = new List<string>();
 
-                var held = _session.Store.Section(ProjectStore.ProfileSection)
+                var held = _seat.Store.Section(ProjectStore.ProfileSection)
                                    [ClashExchangeViews.Key];
 
                 foreach (var one in held.Items)
@@ -1001,7 +1054,7 @@ namespace CamelWorks.UI.Views
 
                 if (!KeepBook())
                     Warned(Ui.Problem("The naming could not be kept in this project. "
-                        + (_session.Store.LastSaveProblem ?? string.Empty)));
+                        + (_seat.Store.LastSaveProblem ?? string.Empty)));
 
                 RedrawRail();
                 RedrawBoard();
@@ -1103,16 +1156,19 @@ namespace CamelWorks.UI.Views
             private const string SecondSide = "Second item";
             private const string BothSides = "Both";
 
-            internal Screen(Session session)
+            internal Screen(ISeat seat)
             {
-                _session = session;
+                _seat = seat;
+                _live = seat as Session;
 
                 // Before anything is drawn, so the first board is already the way this person
                 // left it rather than the way it looked the first time they ever opened it.
                 Remembered();
 
                 // A seat with no clash engine has exactly one source; the switch would be a lie.
-                if (!session.Clash.IsAvailable) _source = FromFile;
+                // Asked of the engine rather than of the seat, because the engine may have been
+                // supplied — see Drawn — and the source has to follow what is actually read.
+                if (!Engine.IsAvailable) _source = FromFile;
 
                 _path = Ui.Text(_file?.Path ?? string.Empty, null, 190);
                 _markups = Ui.Text(string.Empty, null, 190);
@@ -1187,7 +1243,7 @@ namespace CamelWorks.UI.Views
             {
                 var found = new List<ICheck> { Engine };
 
-                foreach (var one in _session.Checks.All)
+                foreach (var one in _seat.Checks.All)
                     if (!string.Equals(one.Key, FindingSource.Clash, StringComparison.OrdinalIgnoreCase))
                         found.Add(one);
 
@@ -1218,8 +1274,8 @@ namespace CamelWorks.UI.Views
             /// between and what it ran at: reading those is a host call per test.
             /// </summary>
             private ClashCheck Engine =>
-                _engine ??= new ClashCheck(_session.Clash, _session.MetresPerUnit,
-                                           _session.ClashProblem);
+                _engine ??= new ClashCheck(_seat.Clash, _seat.MetresPerUnit,
+                                           _seat.ClashProblem);
 
             /// <summary>
             /// The check the board is drawing: the document's clash data, or the file being marked
@@ -1234,7 +1290,7 @@ namespace CamelWorks.UI.Views
             private ICheck? Check =>
                 OnFile ? (ICheck?)_fileCheck
                 : IsClash ? Engine
-                : _session.Checks.Find(_checkKey);
+                : _seat.Checks.Find(_checkKey);
 
             /// <summary>
             /// The tab: a test finder on the left, one board on the right, one footer under both.
@@ -1247,6 +1303,24 @@ namespace CamelWorks.UI.Views
             /// The rail finds the test, the board works it, and an action appears when there is
             /// something for it to act on.
             /// </summary>
+            /// <summary>
+            /// The tab with its results already read, and the rail's filter panel in the state
+            /// asked for.
+            ///
+            /// The read runs first because Build draws the caption, the headline and the footer
+            /// out of what is on the board when it runs: built first and read second, the tab
+            /// comes back carrying the start screen's banner over a full board.
+            /// </summary>
+            /// <param name="panel">Whether the rail's filter panel is open.</param>
+            internal UIElement Drawn(bool panel)
+            {
+                _panel = panel;
+
+                Read(Job.Silent());
+
+                return Build();
+            }
+
             internal UIElement Build()
             {
                 // The ask first: it can change which check is being drawn, and the column index is
@@ -1308,7 +1382,7 @@ namespace CamelWorks.UI.Views
                         _headline.Children.Add(Ui.Info("This Navisworks edition has no clash "
                             + "engine, so the model source is off — but the review round is not: "
                             + "open the exported file, mark it up, save the markup. "
-                            + (_session.ClashProblem ?? string.Empty)));
+                            + (_seat.ClashProblem ?? string.Empty)));
                 }
 
                 Redraw();
@@ -1435,7 +1509,7 @@ namespace CamelWorks.UI.Views
             /// Which check the board is drawing, over the rail's search box.
             /// </summary>
             private UIElement Picker() =>
-                CheckPicker.Draw(Offered(), Check, _session.Findings.Findings, Pick);
+                CheckPicker.Draw(Offered(), Check, _seat.Findings.Findings, Pick);
 
             /// <summary>
             /// What the last read could not do, as one line under the rail.
@@ -5067,7 +5141,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private List<Parts.ChipOption> Giving()
             {
-                var roster = TeamWindow.Read(_session);
+                var roster = TeamWindow.Read(_seat);
                 var options = new List<Parts.ChipOption>();
                 var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -5104,7 +5178,7 @@ namespace CamelWorks.UI.Views
                         if (row.Assigned.Length > 0)
                             Offer(Responsible.Read(row.Assigned), null);
 
-                foreach (var party in _session.Profile.Parties)
+                foreach (var party in _seat.Profile.Parties)
                     Offer(Responsible.Person(party), null);
 
                 options.Add(new Parts.ChipOption(string.Empty, Nobody, null, Glyphs.Close, "Faint"));
@@ -5175,7 +5249,7 @@ namespace CamelWorks.UI.Views
 
                     if (read == null) return found;
 
-                    var register = IssueViews.Read(_session);
+                    var register = IssueViews.Read(_seat);
 
                     var attached = new HashSet<string>(
                         register.Issues.SelectMany(i => i.Findings), StringComparer.OrdinalIgnoreCase);
@@ -6525,7 +6599,7 @@ namespace CamelWorks.UI.Views
             {
                 job.Say("Saving the results…");
 
-                var register = _session.Findings.Findings;
+                var register = _seat.Findings.Findings;
 
                 // A board read from a file writes findings of its own, hashed under the file's
                 // test name rather than the host's id for that test. This claims them before the
@@ -6535,7 +6609,7 @@ namespace CamelWorks.UI.Views
 
                 var intake = register.Observe(
                     Check?.Key ?? FindingSource.Clash, read.Findings, DateTime.UtcNow.Ticks,
-                    origin: _session.Store.Path,
+                    origin: _seat.Store.Path,
                     scope: read.Scope);
 
                 Index(register);
@@ -6560,9 +6634,9 @@ namespace CamelWorks.UI.Views
                 // sidecar has already lost.
                 Repointed(moved);
 
-                if (!_session.Findings.Save())
+                if (!_seat.Findings.Save())
                     return "These results are on the board but could not be kept: "
-                           + (_session.Findings.LastSaveProblem ?? "there was nowhere to write.");
+                           + (_seat.Findings.LastSaveProblem ?? "there was nowhere to write.");
 
                 return intake.Explain()
                        + (carried > 0
@@ -6593,11 +6667,11 @@ namespace CamelWorks.UI.Views
 
                 try
                 {
-                    var issues = IssueViews.Read(_session);
+                    var issues = IssueViews.Read(_seat);
 
                     if (IssueFindings.Repoint(issues.Issues, moved) == 0) return;
 
-                    var problem = IssueViews.Write(_session, issues);
+                    var problem = Stored(issues);
 
                     if (problem != null) _log.Children.Add(Ui.Problem(problem));
                 }
@@ -6621,7 +6695,7 @@ namespace CamelWorks.UI.Views
             /// <param name="entries">The runs whose rows were replaced.</param>
             private void Laid(IReadOnlyList<TestEntry> entries)
             {
-                var register = _session.Findings.Findings;
+                var register = _seat.Findings.Findings;
 
                 // The callers are a run, a renumber and a compact, which are exactly the
                 // operations that renumber the host's result ids, and neither re-read path
@@ -6728,7 +6802,7 @@ namespace CamelWorks.UI.Views
             /// <param name="read">What the file check read.</param>
             private void Marked(CheckRead read)
             {
-                var register = _session.Findings.Findings;
+                var register = _seat.Findings.Findings;
 
                 var unheld = FileCheck.Fold(register, read.Findings, out var folded);
 
@@ -6741,7 +6815,7 @@ namespace CamelWorks.UI.Views
                 // Failing to save is an ordinary outcome on a seat with no project file, and never
                 // a reason to refuse the read: the markup is still on the board and still goes out
                 // with the file.
-                _session.Findings.Save();
+                _seat.Findings.Save();
             }
 
             /// <summary>
@@ -6794,7 +6868,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private int Carried(FindingRegister register)
             {
-                var section = _session.Store.Section(ProjectStore.ClashSection);
+                var section = _seat.Store.Section(ProjectStore.ClashSection);
 
                 var held = section[ClashLegacy.HeldKey];
                 var asides = section[ClashLegacy.AsideKey];
@@ -6835,13 +6909,13 @@ namespace CamelWorks.UI.Views
             {
                 var made = row.Fact;
 
-                var register = _session.Findings.Findings;
+                var register = _seat.Findings.Findings;
 
                 // The check's own key. A finding arriving under another check's source is refused
                 // by the register, and every later edit would then land on an object it does not
                 // hold.
                 register.Observe(made.Source, new[] { made }, DateTime.UtcNow.Ticks,
-                                 origin: _session.Store.Path,
+                                 origin: _seat.Store.Path,
                                  scope: f => false);
 
                 var kept = register.Find(made.Id) ?? made;
@@ -6870,7 +6944,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             /// <param name="row">The row.</param>
             private Finding? Recorded(Row row) =>
-                _session.Findings.Findings.Find(row.Fact.Id) ?? Found(row);
+                _seat.Findings.Findings.Find(row.Fact.Id) ?? Found(row);
 
             /// <summary>
             /// The finding a row is a view of, raising one when nothing is recorded for it yet.
@@ -6902,7 +6976,7 @@ namespace CamelWorks.UI.Views
             /// has no place for.
             /// </summary>
             private IEnumerable<Finding> Waiting =>
-                _session.Findings.Findings.From(Check?.Key ?? FindingSource.Clash)
+                _seat.Findings.Findings.From(Check?.Key ?? FindingSource.Clash)
                         .Where(f => f.IsHeld);
 
             /// <summary>How many clashes are waiting for the document.</summary>
@@ -6983,11 +7057,11 @@ namespace CamelWorks.UI.Views
                 // At what the register holds for each of them. A result the fold matched to a
                 // finding already held is that finding now, and a row still pointing at the copy
                 // the fold dropped would put it back the moment somebody edited the row.
-                var byTopic = Topics(_session.Findings.Findings);
+                var byTopic = Topics(_seat.Findings.Findings);
 
                 foreach (var row in round.Entries.SelectMany(entry => entry.Rows))
                 {
-                    row.Fact = _session.Findings.Findings.Find(row.Fact.Id)
+                    row.Fact = _seat.Findings.Findings.Find(row.Fact.Id)
                                ?? Same(byTopic, row.Fact)
                                ?? row.Fact;
 
@@ -7124,7 +7198,7 @@ namespace CamelWorks.UI.Views
                                  + "up an exported baseline instead, which is how a seat without "
                                  + "a clash engine takes part in the review."))
                     : Ui.Info("This Navisworks edition has no clash engine, so results can only "
-                              + "be read from a file. " + (_session.ClashProblem ?? string.Empty)),
+                              + "be read from a file. " + (_seat.ClashProblem ?? string.Empty)),
 
                 OnFile
                     ? Options("The baseline file",
@@ -8380,7 +8454,7 @@ namespace CamelWorks.UI.Views
                     Giving(),
                     Responsible.ReadAll(already).Select(w => w.Written).ToList(),
                     "Add team members\u2026",
-                    () => TeamWindow.Show(_board, _session, () =>
+                    () => TeamWindow.Show(_board, _seat, () =>
                     {
                         _roster = null;
                         RedrawRows();
@@ -8665,7 +8739,7 @@ namespace CamelWorks.UI.Views
                                ? " They are nested in the document, as they were on the board."
                                : string.Empty);
 
-                if (!OnFile) _session.Record(ActivityKind.Regroup, what);
+                if (!OnFile) _seat.Record(ActivityKind.Regroup, what);
 
                 RailChanged(new[] { entry.Run.Id });
                 RedrawBoard();
@@ -8763,7 +8837,7 @@ namespace CamelWorks.UI.Views
             {
                 Reread();
 
-                _session.Record(ActivityKind.Regroup,
+                _seat.Record(ActivityKind.Regroup,
                                 "renamed the test \"" + entry.Run.Name + "\" to \"" + wanted + "\"");
 
                 // One word, in memory. This used to re-harvest every result on the job to change
@@ -8932,17 +9006,17 @@ namespace CamelWorks.UI.Views
 
             /// <summary>What this project calls its tests, read fresh off the project file.</summary>
             private ClashTestNames TestNames() =>
-                ClashTestNames.FromJson(_session.Store.Section(ProjectStore.ClashSection)[ClashTestNames.Key]);
+                ClashTestNames.FromJson(_seat.Store.Section(ProjectStore.ClashSection)[ClashTestNames.Key]);
 
             /// <summary>Keep what this project calls its tests.</summary>
             /// <param name="names">The names to keep.</param>
             /// <returns>True when the project file took them.</returns>
             private bool KeepTestNames(ClashTestNames names)
             {
-                _session.Store.Section(ProjectStore.ClashSection)
+                _seat.Store.Section(ProjectStore.ClashSection)
                         .Set(ClashTestNames.Key, names.ToJson());
 
-                return _session.Store.Save();
+                return _seat.Store.Save();
             }
 
             /// <summary>
@@ -9063,7 +9137,7 @@ namespace CamelWorks.UI.Views
                 }
 
                 if (ran > 0)
-                    _session.Record(ActivityKind.Regroup, "ran " + Ui.Count(ran, word));
+                    _seat.Record(ActivityKind.Regroup, "ran " + Ui.Count(ran, word));
 
                 // Re-read either way. A run that reported nothing still has notes to show, and a
                 // board that swallowed them said only that the run had failed.
@@ -9097,7 +9171,7 @@ namespace CamelWorks.UI.Views
                 // of them, and that is not a reason for the renumber to have not happened.
                 Renumber(tests.SelectMany(e => e.Rows).ToList(), prefix);
 
-                _session.Record(ActivityKind.Regroup, "renamed the results of "
+                _seat.Record(ActivityKind.Regroup, "renamed the results of "
                     + Ui.Count(tests.Count, "test") + " to \"" + prefix + "...\"");
 
                 Redraw();
@@ -9138,7 +9212,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                _session.Record(ActivityKind.Regroup, "moved " + Ui.Count(tests.Count, word)
+                _seat.Record(ActivityKind.Regroup, "moved " + Ui.Count(tests.Count, word)
                     + (folder.Length == 0 ? " to the root" : " into \"" + folder + "\""));
 
                 // In memory rather than a re-read. Re-reading threw the board away and put the
@@ -9193,7 +9267,7 @@ namespace CamelWorks.UI.Views
                 // moment it is renamed.
                 if (State.ShutFolders.Remove(folder)) State.ShutFolders.Add(wanted);
 
-                _session.Record(ActivityKind.Regroup,
+                _seat.Record(ActivityKind.Regroup,
                                 "renamed the folder \"" + folder + "\" to \"" + wanted + "\"");
 
                 Moved();
@@ -9230,7 +9304,7 @@ namespace CamelWorks.UI.Views
                         return;
                     }
 
-                    _session.Record(ActivityKind.Regroup,
+                    _seat.Record(ActivityKind.Regroup,
                                     "deleted " + Ui.Count(tests.Count, word));
                     Reread("Deleted " + Ui.Count(tests.Count, word) + ".", null);
                 }));
@@ -9261,7 +9335,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                _session.Record(ActivityKind.Regroup,
+                _seat.Record(ActivityKind.Regroup,
                                 "compacted " + Ui.Count(tests.Count, word)
                                 + ", dropping their Resolved results");
                 RereadTests(tests.Select(t => t.Run.Id).ToList(),
@@ -9336,7 +9410,7 @@ namespace CamelWorks.UI.Views
                 var point = Middle(rows);
 
                 if (point != null)
-                    _session.View.LookAt(point.Value.X, point.Value.Y, point.Value.Z,
+                    _seat.View.LookAt(point.Value.X, point.Value.Y, point.Value.Z,
                                          _focusBack / 1000.0);
 
                 // The ball, if it is wanted. Every picked point rather than the average the camera
@@ -9411,9 +9485,11 @@ namespace CamelWorks.UI.Views
 
                 var found = Located(rows);
 
-                if (found.Count == 0) return 0;
+                // A seat with no document has nothing to select in, which is the file board on
+                // a Simulate seat as well as the harness.
+                if (found.Count == 0 || _live == null) return 0;
 
-                var selected = _session.Model.SelectByLocator(found);
+                var selected = _live.Model.SelectByLocator(found);
 
                 _outOfReach = found.Count - selected;
 
@@ -9453,9 +9529,9 @@ namespace CamelWorks.UI.Views
             /// <param name="rows">The rows being focused.</param>
             private void MarkFocused(IReadOnlyList<Row> rows)
             {
-                if (!_session.View.CanMark) return;
+                if (!_seat.View.CanMark) return;
 
-                var metres = _session.MetresPerUnit;
+                var metres = _seat.MetresPerUnit;
                 var perUnit = metres > 0 ? metres : 1.0;
                 var radius = _markerAcross / 2000.0 / perUnit;
 
@@ -9467,7 +9543,7 @@ namespace CamelWorks.UI.Views
 
                 // The overlay is drawn in the document's units and a row's point is metres on
                 // both legs, so the conversion is the same one either way round.
-                _session.View.ShowMarkers(Marks(rows, 1.0 / perUnit, radius));
+                _seat.View.ShowMarkers(Marks(rows, 1.0 / perUnit, radius));
             }
 
             /// <summary>The rows the markers on screen are about, or null when there are none.</summary>
@@ -9531,7 +9607,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                var register = IssueViews.Read(_session);
+                var register = IssueViews.Read(_seat);
 
                 var open = register.Issues
                     .OrderBy(i => !i.IsOpen)
@@ -9582,7 +9658,7 @@ namespace CamelWorks.UI.Views
                             issue.ModifiedTicks = now;
                         }
 
-                        var problem = IssueViews.Write(_session, register);
+                        var problem = Stored(register);
 
                         if (problem != null)
                         {
@@ -9590,7 +9666,7 @@ namespace CamelWorks.UI.Views
                             return;
                         }
 
-                        _session.Record(ActivityKind.Regroup,
+                        _seat.Record(ActivityKind.Regroup,
                             "attached " + Ui.Count(added, "finding") + " to "
                             + Ui.Count(issues.Count, "issue"));
 
@@ -9683,9 +9759,11 @@ namespace CamelWorks.UI.Views
                     return issue;
                 }
 
+                if (_live == null) { Warned(Ui.Problem(Host.NoModel)); return; }
+
                 var at = 0;
 
-                var (made, problem) = IssueViews.Raise(_session,
+                var (made, problem) = IssueViews.Raise(_live,
                     id => each ? Make(id, new[] { rows[at++] }) : Make(id, rows),
                     each ? rows.Count : 1);
 
@@ -9742,7 +9820,7 @@ namespace CamelWorks.UI.Views
                 // meant resolving each one back to the element it names, which for a key that is
                 // not an instance GUID indexes the whole federation - so isolating what was
                 // already selected started a walk of the model to find what it was holding.
-                var kept = _session.View.IsolateSelection();
+                var kept = _seat.View.IsolateSelection();
 
                 // The one case that used to fail in silence. Isolating works off the host's
                 // current selection, so a selection the host did not take leaves this press
@@ -9758,7 +9836,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                _session.View.ZoomToSelection(1.0);
+                _seat.View.ZoomToSelection(1.0);
 
                 // Nothing said when it worked. What isolating did is the thing on the screen.
                 _ = keys;
@@ -9776,9 +9854,9 @@ namespace CamelWorks.UI.Views
             {
                 var selected = Selected(rows);
 
-                return selected == 0
+                return selected == 0 || _live == null
                     ? (IReadOnlyList<ElementKey>)Array.Empty<ElementKey>()
-                    : _session.Model.SelectedKeys();
+                    : _live.Model.SelectedKeys();
             }
 
             /// <summary>Set the status on everything picked.</summary>
@@ -10339,7 +10417,7 @@ namespace CamelWorks.UI.Views
                 {
                     if (problems.Count == 0)
                         problems.Add("That change could not be kept. "
-                            + (_session.Findings.LastSaveProblem
+                            + (_seat.Findings.LastSaveProblem
                                ?? "There was nowhere to write it."));
 
                     foreach (var problem in problems) say.Children.Add(Ui.Problem(problem));
@@ -10361,7 +10439,7 @@ namespace CamelWorks.UI.Views
                 var what = string.Format(CultureInfo.InvariantCulture, didFormat,
                                          Ui.Count(done + held, "result"));
 
-                if (!OnFile) _session.Record(ActivityKind.Regroup, what);
+                if (!OnFile) _seat.Record(ActivityKind.Regroup, what);
 
                 // Redrawing replaces the table whose bar the message panel lived in, so the
                 // outcome goes to the screen's own log, which survives.
@@ -10472,7 +10550,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                _session.Record(ActivityKind.Export, "exported clash markers", mesh.Explain());
+                _seat.Record(ActivityKind.Export, "exported clash markers", mesh.Explain());
 
                 var tests = rows.Select(r => r.TestName).Distinct(StringComparer.Ordinal).Count();
 
@@ -10495,13 +10573,13 @@ namespace CamelWorks.UI.Views
             {
                 say.Children.Clear();
 
-                if (_session.View.HideMarkers() == 0 && _session.View.CanUnhideMarkers)
-                    _session.View.UnhideMarkers();
+                if (_seat.View.HideMarkers() == 0 && _seat.View.CanUnhideMarkers)
+                    _seat.View.UnhideMarkers();
             }
 
             /// <summary>What the marker toggle should say right now.</summary>
             private string MarkerToggle() =>
-                _session.View.CanUnhideMarkers && !MarkerOverlay.Any
+                _seat.View.CanUnhideMarkers && !MarkerOverlay.Any
                     ? "Show the markers"
                     : "Hide the markers";
 
@@ -10945,7 +11023,7 @@ namespace CamelWorks.UI.Views
                     items.Add(item);
                 }
 
-                var collapse = DuplicateCollapse.Across(items, _session.Profile.DuplicateBand);
+                var collapse = DuplicateCollapse.Across(items, _seat.Profile.DuplicateBand);
 
                 if (collapse.Count == 0)
                 {
@@ -11067,7 +11145,7 @@ namespace CamelWorks.UI.Views
 
                 if (!OnFile)
                     Ui.Working("Reading IFC ids for the export...",
-                               job => ids = new ClashIdentity.Ids(_session, going, job));
+                               job => ids = new ClashIdentity.Ids(_live, going, job));
 
                 // Which test and result each finding came from, so the clash engine can draw it
                 // rather than the camera having to be moved.
@@ -11090,16 +11168,16 @@ namespace CamelWorks.UI.Views
                 {
                     GroupOf = finding =>
                         grouped.TryGetValue(finding.Id, out var named) ? named : null,
-                    Snapshot = _pictures && !OnFile
-                        ? ClashIdentity.Pictures(_session, 1280, 720,
+                    Snapshot = _pictures && !OnFile && _live != null
+                        ? ClashIdentity.Pictures(_live, 1280, 720,
                               finding => drawnFrom.TryGetValue(finding.Id, out var at)
                                   ? at
                                   : ((string Test, string Result)?)null)
                         : null,
                     IfcGuidOf = ids.Of,
                     LocatorOf = ids.At,
-                    SourceFile = _session.Store.Path,
-                    ProjectName = _session.Profile.ProjectName,
+                    SourceFile = _seat.Store.Path,
+                    ProjectName = _seat.Profile.ProjectName,
                     Author = Environment.UserName ?? "CamelWorks",
                     WhenTicks = DateTime.UtcNow.Ticks,
                 });
@@ -11125,7 +11203,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                _session.Record(ActivityKind.Export, "wrote a clash baseline", written.Explain());
+                _seat.Record(ActivityKind.Export, "wrote a clash baseline", written.Explain());
 
                 // Into the footer, where the read's own counts go - not the strip over the board.
                 // A press that produces a file has to say where the file went, which is the one
@@ -11220,7 +11298,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                _session.Record(ActivityKind.Export, "wrote the clash results grid",
+                _seat.Record(ActivityKind.Export, "wrote the clash results grid",
                                 Ui.Count(_shown.Count, "row") + " to " + dialog.FileName);
 
                 _log.Children.Clear();
@@ -11314,7 +11392,7 @@ namespace CamelWorks.UI.Views
                 var written = FindingBcf.Write(going, null, new FindingBcfOptions
                 {
                     SourceFile = round.Path,
-                    ProjectName = _session.Profile.ProjectName,
+                    ProjectName = _seat.Profile.ProjectName,
                     Author = Environment.UserName ?? "reviewer",
                     WhenTicks = DateTime.UtcNow.Ticks,
                     IfcGuidOf = key => ids.TryGetValue(key, out var guid) ? guid : null,
@@ -11643,7 +11721,7 @@ namespace CamelWorks.UI.Views
 
                 var raisedNote = Raise(strangers, named);
 
-                _session.Record(ActivityKind.Regroup, "synced " + Ui.Count(files.Count, "markup")
+                _seat.Record(ActivityKind.Regroup, "synced " + Ui.Count(files.Count, "markup")
                     + " into the model", statuses + " statuses, " + comments + " comments, "
                     + assigns + " assignments");
 
@@ -11890,7 +11968,7 @@ namespace CamelWorks.UI.Views
                 // Failing to save is an ordinary outcome — a document nobody has saved has no
                 // project file — and never a reason to refuse the edit: it still applies on the
                 // board and still travels out in the baseline.
-                _session.Findings.Save();
+                _seat.Findings.Save();
             }
 
             /// <summary>
@@ -12126,7 +12204,7 @@ namespace CamelWorks.UI.Views
                 if (!Engine.IsAvailable)
                     return "This Navisworks edition has no clash engine, so there are no clash "
                            + "results in the file to write into. "
-                           + (_session.ClashProblem ?? string.Empty).Trim();
+                           + (_seat.ClashProblem ?? string.Empty).Trim();
 
                 return null;
             }
@@ -12203,7 +12281,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private void SaveWork()
             {
-                var stored = _session.Findings.Save();
+                var stored = _seat.Findings.Save();
                 var why = WhySync();
 
                 if (why == null && WaitingCount > 0)
@@ -12219,7 +12297,7 @@ namespace CamelWorks.UI.Views
                     Tell("The decisions on this board could not be saved.",
                          new List<string>
                          {
-                             _session.Findings.LastSaveProblem
+                             _seat.Findings.LastSaveProblem
                              ?? "There was nowhere to write the project file.",
                          });
 
@@ -12336,10 +12414,10 @@ namespace CamelWorks.UI.Views
 
                 try
                 {
-                    var register = IssueViews.Read(_session);
+                    var register = IssueViews.Read(_seat);
                     var merged = FindingBcf.MergeIssues(register, strangers, source);
 
-                    var problem = IssueViews.Write(_session, register);
+                    var problem = Stored(register);
 
                     if (problem != null)
                         return " " + Ui.Count(strangers.Count, "topic") + " could not be placed on "
@@ -12519,7 +12597,7 @@ namespace CamelWorks.UI.Views
             {
                 var names = new List<string>();
 
-                foreach (var party in _session.Profile.Parties)
+                foreach (var party in _seat.Profile.Parties)
                     if (!names.Contains(party, StringComparer.OrdinalIgnoreCase)) names.Add(party);
 
                 var from = entry != null
