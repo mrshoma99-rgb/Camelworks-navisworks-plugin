@@ -5716,7 +5716,7 @@ namespace CamelWorks.UI.Views
 
                 var items = new List<Parts.Entry>
                 {
-                    Parts.Entry.Heading(Ui.Count(many.Count, what) + " picked"),
+                    Parts.Entry.Heading(Ui.Count(many.Count, what) + " selected"),
                 };
 
                 // Through the same gutter act, so filling eight rows from the menu and filling
@@ -7202,7 +7202,7 @@ namespace CamelWorks.UI.Views
                 if (_chosen.Count > 1)
                 {
                     Say(Ui.Small(Ui.Count(_chosen.Count, _chosenRows ? "row" : "column")
-                                 + " picked"));
+                                 + " selected"));
 
                     Say(Ui.Quiet("Pick one", () => Pick(_picked, _chosenRows)), 8);
                 }

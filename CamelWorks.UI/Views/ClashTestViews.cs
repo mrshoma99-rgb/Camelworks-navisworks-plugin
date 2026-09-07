@@ -278,7 +278,7 @@ namespace CamelWorks.UI.Views
                     var count = side.Picked.Count;
 
                     says.Text = count == 0
-                        ? lines.Count == 0 ? string.Empty : "Nothing picked yet."
+                        ? lines.Count == 0 ? string.Empty : "Nothing selected yet."
                         : count == 1
                             ? side.Picked[0]
                             : Ui.Count(count, "of them") + ": " + string.Join(", ", side.Picked);

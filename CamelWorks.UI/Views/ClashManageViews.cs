@@ -5815,7 +5815,7 @@ namespace CamelWorks.UI.Views
                 var many = reaching.Count > row.Rows.Count;
 
                 var what = many
-                    ? Ui.Count(State.Picked.Count, "picked row")
+                    ? Ui.Count(State.Picked.Count, "selected row")
                     : row.IsGroup ? "this group" : "this " + Result;
 
                 var picked = reaching;
@@ -5866,7 +5866,7 @@ namespace CamelWorks.UI.Views
                 var reaching = Reaching(row);
 
                 var what = State.Picked.Count > 1 && State.Picked.Contains(row.Id)
-                    ? Ui.Count(State.Picked.Count, "picked row")
+                    ? Ui.Count(State.Picked.Count, "selected row")
                     : row.IsGroup ? "this group" : "this " + Result;
 
                 var picked = reaching;
@@ -6058,7 +6058,7 @@ namespace CamelWorks.UI.Views
                 // control.
                 var count = new TextBlock
                 {
-                    Text = Ui.Count(State.Picked.Count, "row") + " picked",
+                    Text = Ui.Count(State.Picked.Count, "row") + " selected",
                     FontWeight = FontWeights.SemiBold,
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(0, 0, 10, 0),
@@ -6189,7 +6189,7 @@ namespace CamelWorks.UI.Views
             /// <param name="rows">The picked results.</param>
             private List<Parts.Entry> PickedMenu(List<Row> rows)
             {
-                var menu = Doing(rows, "the picked rows");
+                var menu = Doing(rows, "the selected rows");
 
                 menu.Add(Parts.Entry.Rule());
                 menu.Add(GroupVerb(rows));
@@ -9165,7 +9165,7 @@ namespace CamelWorks.UI.Views
 
                 if (tests.Count == 0)
                 {
-                    Warned(Ui.Problem("No " + word + " is picked, so there was nothing to move."));
+                    Warned(Ui.Problem("No " + word + " is selected, so there was nothing to move."));
                     return;
                 }
 
@@ -10282,7 +10282,7 @@ namespace CamelWorks.UI.Views
                 // dropdown opens but does not change the status" gets reported.
                 if (rows.Count == 0)
                 {
-                    say.Children.Add(Ui.Problem("Nothing is picked, so there was nothing to "
+                    say.Children.Add(Ui.Problem("Nothing is selected, so there was nothing to "
                         + "change. Tick the rows first, or use the row's own menu."));
                     return;
                 }
@@ -10889,7 +10889,7 @@ namespace CamelWorks.UI.Views
 
                 if (rows.Count == 0)
                 {
-                    Warned(Ui.Problem("Nothing is picked, so there was nothing to picture."));
+                    Warned(Ui.Problem("Nothing is selected, so there was nothing to picture."));
                     return;
                 }
 

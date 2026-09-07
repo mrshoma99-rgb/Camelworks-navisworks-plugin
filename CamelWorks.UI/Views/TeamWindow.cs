@@ -609,7 +609,7 @@ namespace CamelWorks.UI.Views
 
                 _count.Text = picked == 0
                     ? "Tick a row to act on it"
-                    : Ui.Count(picked, "person") + " picked";
+                    : Ui.Count(picked, "person") + " selected";
 
                 _off.IsEnabled = picked > 0;
                 _off.Content = picked > 1

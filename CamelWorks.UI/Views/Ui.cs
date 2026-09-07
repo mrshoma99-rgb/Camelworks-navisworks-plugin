@@ -2977,6 +2977,10 @@ namespace CamelWorks.UI.Views
             // Centred in whatever it is dropped into, and never wider than a paragraph. Stretched
             // across an empty pane the card read as a banner over content that was not there, and
             // a sentence three feet wide is one nobody reads to the end of.
+            //
+            // Centred vertically as well as horizontally. A pane with nothing in it put the card
+            // against the top edge and left the rest of the screen blank, which on the import tab
+            // was 78% of it.
             var frame = new Border
             {
                 BorderThickness = new Thickness(1),
@@ -2985,15 +2989,18 @@ namespace CamelWorks.UI.Views
                 Margin = new Thickness(0, 16, 0, 4),
                 MaxWidth = 460,
                 HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
                 Child = row,
             };
 
+            // The primary, not a secondary. This is the only thing to do on a screen with nothing
+            // on it, and it was drawn quieter than the disabled press in the footer below it.
             if (caption != null && onClick != null)
                 text.Children.Add(new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
                     Margin = new Thickness(0, 10, 0, 0),
-                    Children = { Button(caption, onClick) },
+                    Children = { Primary(caption, onClick) },
                 });
 
             frame.Tint(Border.BorderBrushProperty, "Bd");
@@ -4524,10 +4531,13 @@ namespace CamelWorks.UI.Views
                 var picked = table.SelectedItems.Count;
                 var total = table.Items.Count;
 
+                // "selected", not "picked". The product named one concept four ways - picked,
+                // included, in, selected - and the tick column on some of these tables means
+                // something else entirely, so the two need different words.
                 tally.Text = picked == 0
                     ? Count(total, "row")
                     : picked.ToString(CultureInfo.InvariantCulture)
-                      + " of " + Count(total, "row") + " picked";
+                      + " of " + Count(total, "row") + " selected";
 
                 foreach (var button in buttons)
                 {
@@ -5078,16 +5088,40 @@ namespace CamelWorks.UI.Views
             if (count == 1 || string.IsNullOrEmpty(unit)) return unit;
 
             var said = unit.TrimEnd();
+            var trailing = unit.Substring(said.Length);
 
-            if (said.EndsWith("s", StringComparison.OrdinalIgnoreCase)
-                || said.EndsWith("x", StringComparison.OrdinalIgnoreCase)
-                || said.EndsWith("z", StringComparison.OrdinalIgnoreCase)
-                || said.EndsWith("ch", StringComparison.OrdinalIgnoreCase)
-                || said.EndsWith("sh", StringComparison.OrdinalIgnoreCase))
-                return unit + "es";
+            // The last word, not the whole phrase. Units here are often two or three words -
+            // "selected row", "of them" - and suffixing the phrase put the "s" on the wrong word.
+            var space = said.LastIndexOf(' ');
+            var head = space < 0 ? string.Empty : said.Substring(0, space + 1);
+            var tail = space < 0 ? said : said.Substring(space + 1);
 
-            return unit + "s";
+            // Already plural. "of them" is the phrase five screens count with, and the generic
+            // rule wrote "2 of thems" on every one of them.
+            if (Already.Contains(tail)) return unit;
+
+            if (tail.EndsWith("s", StringComparison.OrdinalIgnoreCase)
+                || tail.EndsWith("x", StringComparison.OrdinalIgnoreCase)
+                || tail.EndsWith("z", StringComparison.OrdinalIgnoreCase)
+                || tail.EndsWith("ch", StringComparison.OrdinalIgnoreCase)
+                || tail.EndsWith("sh", StringComparison.OrdinalIgnoreCase))
+                return head + tail + "es" + trailing;
+
+            return head + tail + "s" + trailing;
         }
+
+        /// <summary>
+        /// Words that are already plural, so <see cref="Plural"/> leaves them alone.
+        ///
+        /// Short on purpose: it holds the words this product actually counts with, not an English
+        /// irregular-plural table. A word missing from it gets an "s", which is what happened
+        /// before the list existed.
+        /// </summary>
+        private static readonly HashSet<string> Already =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "them", "these", "those", "others", "people", "children", "men", "women",
+            };
     }
 
     /// <summary>

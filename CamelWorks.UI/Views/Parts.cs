@@ -2577,7 +2577,7 @@ namespace CamelWorks.UI.Views
 
             var count = new TextBlock
             {
-                Text = Ui.Count(picked, what) + " picked",
+                Text = Ui.Count(picked, what) + " selected",
                 FontWeight = FontWeights.SemiBold,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 10, 0),

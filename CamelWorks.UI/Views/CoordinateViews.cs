@@ -780,7 +780,7 @@ namespace CamelWorks.UI.Views
 
             if (keys.Count == 0)
             {
-                status.Children.Add(Ui.Line("Nothing picked.", 0.8));
+                status.Children.Add(Ui.Line("Nothing selected.", 0.8));
                 return;
             }
 
