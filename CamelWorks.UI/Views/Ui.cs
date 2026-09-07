@@ -5270,6 +5270,9 @@ namespace CamelWorks.UI.Views
         /// <summary>A chevron pointing right: a folded section.</summary>
         public const string Right = "M9,6 L15,12 L9,18";
 
+        /// <summary>A chevron pointing left: fold a pane away, go back one.</summary>
+        public const string Left = "M15,6 L9,12 L15,18";
+
         /// <summary>A chevron pointing up.</summary>
         public const string Up = "M6,15 L12,9 L18,15";
 

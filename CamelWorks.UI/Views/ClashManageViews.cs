@@ -126,7 +126,9 @@ namespace CamelWorks.UI.Views
         /// <param name="seat">The seat this is running in.</param>
         /// <param name="clash">The clash engine to read.</param>
         /// <param name="panel">Whether the rail's filter panel is open.</param>
-        public static UIElement Drawn(ISeat seat, IClashSource clash, bool panel = false)
+        /// <param name="railShut">True to open with the test list folded away.</param>
+        public static UIElement Drawn(ISeat seat, IClashSource clash, bool panel = false,
+                                      bool railShut = false)
         {
             if (seat == null) throw new ArgumentNullException(nameof(seat));
             if (clash == null) throw new ArgumentNullException(nameof(clash));
@@ -138,7 +140,11 @@ namespace CamelWorks.UI.Views
 
             _engine = new ClashCheck(clash, seat.MetresPerUnit, null);
 
-            return new Screen(seat).Drawn(panel);
+            var screen = new Screen(seat);
+
+            screen.State.RailShut = railShut;
+
+            return screen.Drawn(panel);
         }
 
         static ClashManageViews() => Host.WhenDocumentChanges(Forget);
@@ -763,6 +769,16 @@ namespace CamelWorks.UI.Views
 
                 internal bool OpenOnly { get; set; }
 
+                /// <summary>
+                /// Whether the test list is out of the way.
+                ///
+                /// The rail takes 372 of an 1180-pixel window to show a handful of test names,
+                /// and the board it sits beside then has to fit seven columns and four row verbs
+                /// into what is left. Choosing a test is a moment; reading its results is the
+                /// afternoon, so the pane that serves the moment folds away.
+                /// </summary>
+                internal bool RailShut { get; set; }
+
                 /// <summary>Folders whose runs are hidden. Keyed the way the rail groups them.</summary>
                 internal HashSet<string> ShutFolders { get; } =
                     new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -816,7 +832,7 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>How the check being drawn was left, made on the first visit to it.</summary>
-            private BoardState State =>
+            internal BoardState State =>
                 _states.TryGetValue(_checkKey, out var held)
                     ? held
                     : _states[_checkKey] = new BoardState();
@@ -1385,7 +1401,8 @@ namespace CamelWorks.UI.Views
 
                 Redraw();
 
-                var tab = Bench.Split(null, Rail(), BoardPane(), Footer(read), RailWidth);
+                var tab = Bench.Split(null, Rail(), BoardPane(), Footer(read), RailWidth,
+                                      State.RailShut);
 
                 // Called after the footer is built, since it dresses the buttons created there.
                 //
@@ -3441,6 +3458,22 @@ namespace CamelWorks.UI.Views
                     MaxWidth = 250,
                     Margin = new Thickness(0, 0, 10, 0),
                 };
+
+                // The way back to the test list, first on the row, so it is where the eye
+                // already is and it is reachable when the list is not on screen at all.
+                var folding = Ui.Icon(State.RailShut ? Glyphs.Right : Glyphs.Left,
+                                      State.RailShut ? "Show the tests" : "Hide the tests",
+                                      () =>
+                                      {
+                                          State.RailShut = !State.RailShut;
+                                          Ui.Told(Shell.AppWindow.Show("clash", "manage"));
+                                      });
+
+                folding.VerticalAlignment = VerticalAlignment.Bottom;
+                folding.Margin = new Thickness(0, 0, 6, 1);
+
+                DockPanel.SetDock(folding, Dock.Left);
+                naming.Children.Add(folding);
 
                 // The kind's symbol before the name, so the board says what sort of thing it is
                 // showing without being read. The rail below it lists one kind, and the words for

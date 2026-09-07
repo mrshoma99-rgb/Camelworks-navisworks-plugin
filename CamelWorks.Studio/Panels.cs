@@ -45,6 +45,12 @@ namespace CamelWorks.Studio
             // engine, and what is drawn is the tab, read, measured by WPF.
             Page("app-clash-manage", "Clash Manager · Manage", 980, () => Managing(false)),
 
+            // The board with the test list folded away, which is how it is worked: choosing a
+            // test is a moment and reading its results is the afternoon. The state where the
+            // columns have the room they need had never been drawn.
+            Page("app-clash-manage-wide", "Clash Manager · Manage, the list folded away", 980,
+                 () => Managing(false, railShut: true)),
+
             // The same board with the rail's filter panel open: the disciplines, the folders and
             // the naming tokens this read actually holds, drawn as a card over the test list.
             Page("app-clash-finder", "Clash Manager · Manage, the filter panel open", 980,
@@ -421,14 +427,16 @@ namespace CamelWorks.Studio
         /// and the read is the one the tab's own "Read the results" runs.
         /// </summary>
         /// <param name="panel">Whether the rail's filter panel is open.</param>
-        private static UIElement Managing(bool panel)
+        /// <param name="railShut">True to draw it with the test list folded away.</param>
+        private static UIElement Managing(bool panel, bool railShut = false)
         {
             var seat = Seated();
             var engine = Engined();
 
             Decided(seat, engine);
 
-            return Deck("clash", "manage", ClashManageViews.Drawn(seat, engine, panel));
+            return Deck("clash", "manage",
+                        ClashManageViews.Drawn(seat, engine, panel, railShut));
         }
 
         /// <summary>

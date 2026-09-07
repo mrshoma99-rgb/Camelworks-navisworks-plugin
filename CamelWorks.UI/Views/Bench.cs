@@ -212,8 +212,14 @@ namespace CamelWorks.UI.Views
         /// <param name="right">The detail pane.</param>
         /// <param name="foot">The action row, laid out left to right rather than right-aligned.</param>
         /// <param name="leftWidth">How wide the master pane starts.</param>
+        /// <param name="leftShut">
+        /// True to give the master pane no room at all. A screen whose detail pane is the work —
+        /// a board of results being read — gets the whole window for it, and the pane comes back
+        /// when the reader wants to choose something else.
+        /// </param>
         public static UIElement Split(UIElement? strip, UIElement left, UIElement right,
-                                      UIElement? foot, double leftWidth = 380)
+                                      UIElement? foot, double leftWidth = 380,
+                                      bool leftShut = false)
         {
             if (left == null) throw new ArgumentNullException(nameof(left));
             if (right == null) throw new ArgumentNullException(nameof(right));
@@ -238,7 +244,11 @@ namespace CamelWorks.UI.Views
             }
 
             var body = new Grid();
-            body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(leftWidth), MinWidth = 220 });
+            body.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(leftShut ? 0 : leftWidth),
+                MinWidth = leftShut ? 0 : 220,
+            });
             body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 320 });
 
@@ -262,6 +272,11 @@ namespace CamelWorks.UI.Views
             };
 
             grip.Tint(GridSplitter.BackgroundProperty, "Bd");
+
+            // Nothing to drag between when one side has no width, and a grip against the window
+            // edge reads as a scrollbar that does not scroll.
+            if (leftShut) grip.Visibility = Visibility.Collapsed;
+
             Grid.SetColumn(grip, 1);
             body.Children.Add(grip);
 

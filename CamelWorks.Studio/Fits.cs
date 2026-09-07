@@ -107,10 +107,29 @@ namespace CamelWorks.Studio
 
             if (over && cut) return null;
 
-            return "the layout reader is broken: it found "
-                 + (over ? "the overlap" : "no overlap")
-                 + " and " + (cut ? "the clipped text" : "no clipped text")
-                 + " in a page built to hold both, so a clean run over the product proves nothing";
+            // What it saw, not only that it saw the wrong thing. Two runs were spent guessing at
+            // why the clipped line was missed, which is two runs more than reporting the numbers
+            // would have cost.
+            var said = "the layout reader is broken: it found "
+                     + (over ? "the overlap" : "no overlap")
+                     + " and " + (cut ? "the clipped text" : "no clipped text")
+                     + " in a page built to hold both, so a clean run over the product proves "
+                     + "nothing. It reported: "
+                     + (found.Count == 0
+                            ? "nothing at all"
+                            : string.Join(" | ", found.Select(one => one.ToString())));
+
+            var line = Lined(page);
+
+            said += line == null
+                ? ". The canary's own text block was not reached by the walk."
+                : ". The canary's text block is \"" + line.Text + "\" at "
+                  + Size(line.FontSize) + "px, laid out free at " + Size(Wide(line))
+                  + " and given " + Size(line.RenderSize.Width)
+                  + ", trimming " + line.TextTrimming + ", wrapping " + line.TextWrapping
+                  + ", visibility " + line.Visibility;
+
+            return said;
         }
 
         /// <summary>One thing wrong with a page's layout.</summary>
@@ -294,6 +313,22 @@ namespace CamelWorks.Studio
                         + parent.GetType().Name,
                         path));
                 }
+        }
+
+        /// <summary>The first text block under an element, or null when the walk reaches none.</summary>
+        /// <param name="element">Where to start.</param>
+        private static TextBlock? Lined(DependencyObject element)
+        {
+            if (element is TextBlock found) return found;
+
+            foreach (var child in Under(element))
+            {
+                var deeper = Lined(child);
+
+                if (deeper != null) return deeper;
+            }
+
+            return null;
         }
 
         /// <summary>
