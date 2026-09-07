@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -84,57 +85,71 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
+                var rows = new List<TableRow>();
+
                 for (var at = 0; at < board.Rules.Count; at++)
                 {
-                    var here = at;
                     var rule = board.Rules[at];
 
-                    var line = new DockPanel
+                    rows.Add(new TableRow(at,
+                        (at + 1).ToString(CultureInfo.CurrentCulture), rule.Worded())
                     {
-                        LastChildFill = true,
-                        Margin = new Thickness(0, 0, 0, 6),
-                    };
-
-                    var acts = Ui.Across(
-                        Ui.Quiet("↑", () =>
-                        {
-                            board.MoveRule(here, here - 1);
-                            touched = true;
-                            Redraw();
-                        }),
-                        Ui.Quiet("↓", () =>
-                        {
-                            board.MoveRule(here, here + 1);
-                            touched = true;
-                            Redraw();
-                        }),
-                        Ui.Quiet("Remove", () =>
-                        {
-                            board.RemoveRule(here);
-                            touched = true;
-                            Redraw();
-                        }));
-
-                    DockPanel.SetDock(acts, Dock.Right);
-                    line.Children.Add(acts);
-
-                    var said = new TextBlock
-                    {
-                        Text = rule.Worded(),
-                        VerticalAlignment = VerticalAlignment.Center,
-                        TextTrimming = TextTrimming.CharacterEllipsis,
-                        TextWrapping = TextWrapping.NoWrap,
-                    }.Wearing("Body");
-
-                    // The one that wins is worth saying out loud, because "the last one wins" is
-                    // a fact about a list that a list does not show.
-                    if (here == board.Rules.Count - 1 && board.Rules.Count > 1)
-                        said.FontWeight = FontWeights.SemiBold;
-
-                    line.Children.Add(said);
-
-                    list.Children.Add(line);
+                        // The one that wins is worth saying out loud, because "the last one wins"
+                        // is a fact about a list that a list does not show.
+                        Tone = at == board.Rules.Count - 1 && board.Rules.Count > 1
+                            ? Tone.Good : Tone.Plain,
+                    });
                 }
+
+                var table = Ui.Table(rows, ("Read", 52), ("Rule", 0));
+
+                table.MaxHeight = 220;
+
+                // Move up, move down and remove, over whatever is ticked, rather than three small
+                // buttons on every row. Several rules move at once, and the tick beside each one
+                // says what the next press covers.
+                var verbs = new Ui.OnPicked[]
+                {
+                    new Ui.OnPicked("Move up {n}", (picked, said) => Shift(picked, -1, said)),
+                    new Ui.OnPicked("Move down {n}", (picked, said) => Shift(picked, 1, said)),
+                    new Ui.OnPicked("Remove these {n}", (picked, said) => Drop(picked, said),
+                                    danger: true),
+                };
+
+                list.Children.Add(Ui.Stack(table, Ui.Picking(table, verbs)));
+            }
+
+            void Shift(IReadOnlyList<object> picked, int by, Panel said)
+            {
+                var at = picked.OfType<int>().OrderBy(one => one * by).ToList();
+
+                if (at.Count == 0)
+                {
+                    said.Children.Add(Ui.Note("Tick a rule to move."));
+                    return;
+                }
+
+                foreach (var one in at) board.MoveRule(one, one + by);
+
+                touched = true;
+                Redraw();
+            }
+
+            void Drop(IReadOnlyList<object> picked, Panel said)
+            {
+                // Highest index first, so removing one does not renumber the next.
+                var at = picked.OfType<int>().OrderByDescending(one => one).ToList();
+
+                if (at.Count == 0)
+                {
+                    said.Children.Add(Ui.Note("Tick a rule to remove."));
+                    return;
+                }
+
+                foreach (var one in at) board.RemoveRule(one);
+
+                touched = true;
+                Redraw();
             }
 
             Redraw();
