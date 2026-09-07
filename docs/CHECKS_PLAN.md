@@ -1445,16 +1445,20 @@ A picker above the rail's search box, on the Manage tab.
   list is short, it needs a disabled state with a reason, and `Parts.Entry.Act` is
   the pattern the board already uses for exactly this.
 - **Unavailable checks are listed, greyed, with their reason.** `ICheck.Unavailable`
-  exists to be shown. Hiding them makes "where did the clearance results go?" a
-  support question on every Simulate seat.
+  exists to be shown. Hiding them leaves a Simulate seat with no way to say why a
+  check is missing, which reaches support as its results having disappeared.
 - **Counts.** Each entry shows the check's open finding count from the register —
   available without a read, because the register is loaded.
 - **What survives a switch.** Nothing that is check-specific: selection, filter
   text, the grouping chain, the property columns and the search box are all keyed on
   `ICheck.Key` and restored when the user comes back. Switching check does not clear
   them, and coming back to clash finds the board as it was left. The statics that
-  hold them become per-check dictionaries and `_current` becomes a
-  `(checkKey, runId)` pair.
+  hold them become per-check dictionaries. The board's own state — the picked run,
+  the status and party filters, both search boxes, the column filters, the ticked
+  rows, the column order and the column widths — is one `BoardState` per check in a
+  static dictionary, rather than a `(checkKey, runId)` pair and a screen full of
+  instance fields: picking a check rebuilds the tab, so anything left on the screen
+  object is lost on the switch.
 - **The hand-off from set-up.** Pressing Run on the Checks tab takes the user to the
   Manage tab with that check picked and that run selected.
   `ClashExchangeViews.Preferred` — a static list of test ids the receiving screen
@@ -1959,8 +1963,9 @@ issue, the relation both ways and a viewpoint.
 - `ClearanceViews` reduces to the set-up: the side pickers, the numbers, the
   traversal, the run list, and the floor-side screen Phase 3 built. Its
   `PropColumn`, `Bucket`, `Row`, banding, filtering, columns, marker export, BCF
-  export and issue attach are deleted — about 1,200 lines — because they are the
-  Manage board. `Bench.Ready`'s four empty states move onto the board per 4.5,
+  export and issue attach are deleted — the file goes from 2,174 lines to 601, of
+  which 239 move intact to `ClearanceSurfaces.cs`, so about 1,330 lines of second
+  implementation go — because they are the Manage board. `Bench.Ready`'s four empty states move onto the board per 4.5,
   rather than being deleted with the rest.
 - The four empty states and the `CheckRead.Notes` line of 4.5.
 - **`ClearanceViews.Check(Session)` becomes `Check(ISeat)`, and that is an `ISeat`
@@ -1978,9 +1983,13 @@ issue, the relation both ways and a viewpoint.
   in the `ui-shots` default. `docs/apps/clash.md` updated for both tabs.
 
 **Done when.** In `Core.Tests`: two named clearance runs over overlapping geometry
-produce disjoint findings, and running one leaves the other's findings present;
-`CheckFacts.RunsOf` returns both runs for a finding reported by both; a run saved and
-never run is distinguishable from a run that found nothing. In the harness:
+produce disjoint findings, and running one leaves the other's findings present; a
+clearance finding names exactly the run that produced it, which is what the run being
+part of the identity means — a finding naming two runs is a shape clearance cannot
+produce, so `CheckFacts.RunsOf` over one belongs to `CheckFacts`'s own tests and not
+to this check's; a run saved and never run is distinguishable from a run that found
+nothing, and both from a run that resolved to nothing and therefore marked nothing
+absent. In the harness:
 `validate-shots.py` and `validate-reachable-screens.py` pass with the new pages, and
 the Checks tab draws over `ISeat` with no Navisworks assembly loaded, which is what
 `Check(ISeat)` buys. `ClearanceViews.cs` is under 750 lines. Whether the Manage tab

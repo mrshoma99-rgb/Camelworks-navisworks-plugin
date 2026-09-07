@@ -54,6 +54,16 @@ namespace CamelWorks.Core.Checks
         /// <summary>The detected surfaces somebody dropped, by patch id, semicolon separated.</summary>
         public const string ExcludedKey = "excluded";
 
+        /// <summary>
+        /// What the surface side was set to when this run last measured.
+        ///
+        /// Written by the runner rather than by this screen, and read by nothing else. A detected
+        /// surface is keyed by where it is and a named one by its element, so changing the side
+        /// re-derives every finding under the run: the run says so in its notes, and this is what
+        /// it compares against. Not a setting anybody edits, which is why it has no property here.
+        /// </summary>
+        public const string LastSurfacesKey = "lastSurfaces";
+
         /// <summary>What the surface side is set to when detection finds the surfaces.</summary>
         public const string Detected = "Detected walkable surfaces";
 

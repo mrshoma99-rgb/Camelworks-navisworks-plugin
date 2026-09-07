@@ -47,7 +47,10 @@ namespace CamelWorks.UI.Views
             Checks.Add(new ClearanceCheck(Findings.Findings, runs, model,
                                           Triangles, MetresPerUnit,
                                           () => SaveWork(out var problem) ? null : problem,
-                                          LevelPlan.FromJson(store.Section(ProjectStore.ProfileSection)[LevelPlan.Key]),
+                                          // Read when a run measures, not now: Levels & Zones
+                                          // edits the storeys while the document stays open.
+                                          () => LevelPlan.FromJson(
+                                              store.Section(ProjectStore.ProfileSection)[LevelPlan.Key]),
                                           store));
 
             Checks.Add(new FallCheck(Findings.Findings, runs, model, Triangles, MetresPerUnit,

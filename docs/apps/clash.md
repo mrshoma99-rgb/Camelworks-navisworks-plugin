@@ -13,10 +13,11 @@ exists. It is gone from every app.
 
 **One board, every check.** The board holds one check at a time, picked from a dropdown over the
 rail's search box. Every check the session registered is listed; the ones this seat cannot offer
-are listed too, greyed, with their reason, because hiding them makes "where did the clearance
-results go?" a support question on every Simulate seat. Each entry shows how much of that check is
-still open, read off the findings register. What survives a switch is everything that was keyed on
-the check — the read, the property columns, the selected run — so coming back to clash finds the
+are listed too, greyed, with their reason, so a Simulate seat says why a check is missing rather
+than leaving the coordinator to guess. Each entry shows how much of that check is still open, read
+off the findings register. What survives a switch is everything keyed on the check: the read, the
+property columns, the selected run, the rail and board filters, both search boxes, the ticked rows
+and the column order. Picking a check rebuilds the tab, and the rebuilt tab draws that check's
 board as it was left.
 
 **Four empty states, not one.** The check is unavailable, and it says why; the check is available
@@ -26,7 +27,8 @@ last two are opposite facts and used to be one blank pane.
 
 **What a read could not do is shown.** `CheckRead.Notes` — the refused-element counts, the surface
 diagnostics, the runs saved and never run — appears as a line under the rail with a count, which
-opens. A note nobody shows is a failure nobody reports.
+opens. Each of them is a partial failure of the read, and the screen it failed on is where it is
+reported.
 
 
 The tab a coordinator lives in, measured against the clash managers they actually use — the full
@@ -174,7 +176,9 @@ document, `FileCheck` over an opened baseline or markup — and draws whatever t
 - **The file leg is not a branch; it is a check with capabilities missing.** A file has nothing to
   echo a decision into, no host groups to nest in, nothing to re-run, no run of ours to rename and
   no elements in this document to read properties off, so it answers null to five of the six.
-  Running, renaming by double-click and the property columns appear where the check offers them.
+  Running, renaming by double-click, the naming window and the property columns appear where the
+  check offers them, and the columns are filled through `ICheckProperties` — the check's own
+  reader, whichever check is on the board — rather than through the clash engine.
 - **An edit is not lost because there is no echo.** Every edit on the board goes through one door:
   the register takes it first and unconditionally, the check's host echo is attempted where the
   check offers one, and a refused echo marks the field pending and the sync offers it again. That
@@ -459,9 +463,11 @@ the set-up only, for every check whose runs this project owns, under a picker of
 results are on Manage.
 
 - *Was wrong:* the tab was a second Manage board. `ClearanceViews` carried its own row type, its
-  own banding, filtering, property columns, marker export, BCF export and issue attach — about
-  1,200 lines that answered the same questions the Manage board already answers, from a second
-  implementation that could drift from it. **The board is deleted.** Clearance results are drawn by
+  own banding, filtering, property columns, marker export, BCF export and issue attach.
+  `ClearanceViews.cs` went from 2,174 lines to 601, and 239 of the difference is the floor-side
+  screen moved intact to `ClearanceSurfaces.cs`, so about 1,330 lines of second implementation are
+  gone — a second implementation that answered the same questions the Manage board already answers
+  and could drift from it. **The board is deleted.** Clearance results are drawn by
   the Manage board through `ICheck`, so they get its grouping, sorting, filtering, exchange in and
   out, renaming, renumbering and export rather than an imitation of them.
 - *Was wrong:* there was one unnamed clearance run, so a second run over another corridor

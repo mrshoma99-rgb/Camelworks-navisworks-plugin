@@ -226,8 +226,8 @@ namespace CamelWorks.Studio
         /// The check picker's own menu, with an unavailable check in it.
         ///
         /// The state worth drawing is the greyed line: a Simulate seat has no clash engine, and
-        /// the picker lists the check with the reason rather than leaving it out, which is what
-        /// stops "where did the clash results go?" being a support call.
+        /// the picker lists the check with its reason rather than leaving it out, so the seat can
+        /// say why the check is not there.
         /// </summary>
         private static UIElement Picker()
         {

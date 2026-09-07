@@ -42,12 +42,13 @@ namespace CamelWorks.Core.Checks
 
             return new List<ResultColumn>
             {
-                new ResultColumn(Surface, Surface, ColumnKind.Element)
+                new ResultColumn(ClearanceFindings.Surface, Surface, ColumnKind.Element)
                 {
                     ElementIndex = 0,
                     Width = 220,
+                    Text = finding => Said(finding, ClearanceFindings.Surface),
                 },
-                new ResultColumn(Over, Over, ColumnKind.Element)
+                new ResultColumn(ClearanceFindings.Obstruction, Over, ColumnKind.Element)
                 {
                     ElementIndex = 1,
                     Width = 220,

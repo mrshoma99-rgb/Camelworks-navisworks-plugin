@@ -54,6 +54,11 @@ namespace CamelWorks.Core.Testing
 
             internal string Id { get; }
             internal string Name { get; set; } = string.Empty;
+
+            /// <summary>What each side of this result says under a property, by category and name.</summary>
+            internal Dictionary<string, string> Properties { get; } =
+                new Dictionary<string, string>(StringComparer.Ordinal);
+
             internal ElementKey A { get; }
             internal ElementKey B { get; }
             internal double X { get; }
@@ -123,6 +128,31 @@ namespace CamelWorks.Core.Testing
             result.Name = "Clash" + (test.Results.Count + 1).ToString(CultureInfo.InvariantCulture);
 
             test.Results.Add(result);
+
+            return this;
+        }
+
+        /// <summary>
+        /// What one side of the last result added says under a property.
+        ///
+        /// The host answers a property per result rather than per element, which is the shape the
+        /// clash seam carries, so the fake holds it the same way.
+        /// </summary>
+        /// <param name="side">Which element of the clash carries it.</param>
+        /// <param name="category">The property category.</param>
+        /// <param name="name">The property name.</param>
+        /// <param name="value">What it says.</param>
+        public FakeClashSource Saying(ClashElementSide side, string category, string name,
+                                      string value)
+        {
+            if (_tests.Count == 0) throw new InvalidOperationException("add a test first");
+
+            var test = _tests[_tests.Count - 1];
+
+            if (test.Results.Count == 0) throw new InvalidOperationException("add a result first");
+
+            test.Results[test.Results.Count - 1]
+                .Properties[(int)side + "/" + category + "/" + name] = value;
 
             return this;
         }
@@ -240,16 +270,44 @@ namespace CamelWorks.Core.Testing
         }
 
         /// <summary>
-        /// Nothing. A fake federation has no properties, no IFC and no snapshots, and a caller
-        /// that needs one of those is testing the adapter rather than what sits above it.
+        /// What the results of one test say under the properties asked for.
+        ///
+        /// Whatever <see cref="Saying"/> put there, and nothing where nothing was put. Every call
+        /// is logged, so a caller that reads the same property twice can be told from one that
+        /// reads it once and keeps the answer.
         /// </summary>
         /// <param name="testId">Which test.</param>
         /// <param name="wanted">The properties asked for.</param>
-        /// <param name="onProgress">Progress, ignored.</param>
+        /// <param name="onProgress">Called with how many results have been read.</param>
         public IReadOnlyList<ClashResultValues> ValuesFor(string testId,
                                                           IReadOnlyList<ClashPropertyWanted> wanted,
-                                                          Func<int, bool>? onProgress) =>
-            Array.Empty<ClashResultValues>();
+                                                          Func<int, bool>? onProgress)
+        {
+            _log.Add("ValuesFor " + testId);
+
+            var test = Found(testId);
+
+            if (test == null) return Array.Empty<ClashResultValues>();
+
+            var read = new List<ClashResultValues>();
+            var seen = 0;
+
+            foreach (var result in test.Results)
+            {
+                if (onProgress != null && !onProgress(++seen)) break;
+
+                var values = new ClashResultValues(result.Id);
+
+                foreach (var one in wanted ?? Array.Empty<ClashPropertyWanted>())
+                    if (result.Properties.TryGetValue(
+                            (int)one.Side + "/" + one.Tab + "/" + one.Name, out var value))
+                        values.Values[one.Id] = value;
+
+                read.Add(values);
+            }
+
+            return read;
+        }
 
         /// <inheritdoc cref="ValuesFor" />
         /// <param name="testId">Which test.</param>

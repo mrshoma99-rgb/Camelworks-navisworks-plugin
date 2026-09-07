@@ -37,6 +37,9 @@ namespace CamelWorks.Core.Data
         /// </summary>
         public const string Rule = "Clear height";
 
+        /// <summary>Where the surface that was measured up from is kept.</summary>
+        public const string Surface = "Surface";
+
         /// <summary>Where what is over the floor is kept.</summary>
         public const string Obstruction = "Obstruction";
 
@@ -120,6 +123,10 @@ namespace CamelWorks.Core.Data
 
             finding.Detail = Detail(span, minimum);
 
+            // Both sides are written as facts. The board's element columns read a fact rather
+            // than the element list: a finding's elements are keys, and a key resolves to a name
+            // only by walking the document, which the board must not do per cell.
+            Fact(finding, Surface, span.Floor.Name);
             Fact(finding, Obstruction, span.Obstruction.Name);
             Fact(finding, Measured, Written(span.Clear));
             Fact(finding, Wanted, Written(minimum));

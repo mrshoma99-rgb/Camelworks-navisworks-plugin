@@ -26,16 +26,29 @@ namespace CamelWorks.UI.Views
         /// <summary>How many rows of the list are drawn at once.</summary>
         private const int Shown = 500;
 
+        /// <summary>
+        /// The smallest-surface sizes offered, in square metres.
+        ///
+        /// Offered rather than typed: the setting is an area, this product has no area parser, and
+        /// a number read in the wrong unit would silently drop every surface on an imperial job.
+        /// The first is the detector's own default.
+        /// </summary>
+        private static readonly double[] Areas = { 0.05, 0.25, 1.0, 4.0, 10.0 };
+
         // What was detected, held between visits: a federation sweep is a minute of traversal and
-        // opening the window again must not cost it.
+        // opening the window again must not cost it. Held with the run it was detected for, since
+        // two runs detect different surfaces - a different minimum area, the stairs tick, the
+        // floor-category preference - and the list of one is not the list of the other.
         private static List<WalkablePatch>? _patches;
         private static WalkableDiagnostics? _diagnostics;
+        private static string? _detectedFor;
 
         /// <summary>Forget what was detected. Surfaces of the last federation are not this one's.</summary>
         internal static void Forget()
         {
             _patches = null;
             _diagnostics = null;
+            _detectedFor = null;
         }
 
         /// <summary>
@@ -70,6 +83,25 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
+            /// The sizes the picker offers, including whatever the run is set to now.
+            ///
+            /// A run saved by another build may hold a size this list does not, and a picker whose
+            /// current value is not one of its own entries draws as empty.
+            /// </summary>
+            /// <param name="held">The size the run holds, in square metres.</param>
+            private List<string> Offered(double held)
+            {
+                var sizes = new List<double>(Areas);
+
+                if (!sizes.Any(one => Math.Abs(one - held) < 0.0001)) sizes.Add(held);
+
+                return sizes.OrderBy(one => one)
+                            .Select(one => _units.Area(one))
+                            .Distinct(StringComparer.Ordinal)
+                            .ToList();
+            }
+
+            /// <summary>
             /// What the run's settings say right now.
             ///
             /// Read back off the run rather than carried, so a tick written here is seen by the
@@ -81,9 +113,27 @@ namespace CamelWorks.UI.Views
             {
                 var settings = Settings;
 
+                // What is held answers for the run it was detected for and no other.
+                if (!string.Equals(_detectedFor, _runId, StringComparison.Ordinal)) Forget();
+
                 Redraw();
 
                 return Bench.Group(ClearanceSettings.Detected,
+                    Ui.Field("Smallest surface kept",
+                             Ui.Choice(Areas.Select(one => _units.Area(one)).ToList(),
+                                       _units.Area(settings.MinPatchAreaSquareMetres),
+                                       pick =>
+                                       {
+                                           var chosen = Areas.FirstOrDefault(
+                                               one => string.Equals(_units.Area(one), pick,
+                                                                    StringComparison.Ordinal));
+
+                                           if (chosen <= 0) return;
+
+                                           _keep(one => one.MinPatchAreaSquareMetres = chosen);
+                                           Stale();
+                                       }, 160),
+                             "detection keeps nothing smaller"),
                     Ui.Check("Prefer elements whose category names a floor",
                              settings.PreferFloorCategories,
                              on => { _keep(one => one.PreferFloorCategories = on); Stale(); }),
@@ -124,6 +174,8 @@ namespace CamelWorks.UI.Views
 
                 _patches = _check.Detect(Settings, _diagnostics,
                                          read => job.Step(read, "elements read")).ToList();
+
+                _detectedFor = _runId;
 
                 Redraw();
             }

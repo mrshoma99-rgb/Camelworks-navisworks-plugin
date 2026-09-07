@@ -394,6 +394,49 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void A_property_column_reads_each_side_and_the_test_is_walked_once_per_property()
+        {
+            var seat = new FakeClashSource()
+                .With("L03 MEP v STR", "Weekly", "t1")
+                .Finding(Key("Duct 1"), Key("Beam 1"), 1, 2, 3)
+                .Saying(ClashElementSide.First, "Element", "Workset", "ME-Supply")
+                .Saying(ClashElementSide.Second, "Element", "Workset", "ST-Frame")
+                .Finding(Key("Duct 2"), Key("Beam 2"), 4, 5, 6)
+                .Saying(ClashElementSide.First, "Element", "Workset", "ME-Extract");
+
+            var check = new ClashCheck(seat);
+            var findings = check.Read(null, null).Findings.ToList();
+            var properties = check.Properties!;
+
+            Assert.Equal(new[] { "ME-Supply" },
+                         properties.ValuesFor(findings[0], 0, "Element", "Workset")
+                                   .Select(one => one.Value));
+
+            Assert.Equal(new[] { "ST-Frame" },
+                         properties.ValuesFor(findings[0], 1, "Element", "Workset")
+                                   .Select(one => one.Value));
+
+            Assert.Equal(new[] { "ME-Extract" },
+                         properties.ValuesFor(findings[1], 0, "Element", "Workset")
+                                   .Select(one => one.Value));
+
+            Assert.Empty(properties.ValuesFor(findings[1], 1, "Element", "Workset"));
+
+            // The board asks per result. The host answers per test and locates the test by walking
+            // the document's test tree, so the answers are kept: two sides over two results is two
+            // passes, not four.
+            Assert.Equal(2, seat.Log.Count(line => line.StartsWith("ValuesFor", StringComparison.Ordinal)));
+
+            // And they are dropped when the host reissues its result ids, or the next column would
+            // read the property of whatever clash inherited the id.
+            check.Read(null, null);
+
+            properties.ValuesFor(findings[0], 0, "Element", "Workset");
+
+            Assert.Equal(3, seat.Log.Count(line => line.StartsWith("ValuesFor", StringComparison.Ordinal)));
+        }
+
+        [Fact]
         public void The_file_check_offers_geometry_and_nothing_else()
         {
             var check = File(Seat());

@@ -591,7 +591,8 @@ namespace CamelWorks.UI.Views
                                  "a saved set the run is confined to"),
                         Ui.Small("Without a scope the first federation run returns every soffit in "
                                  + "the building. A level narrows what is reported; a zone narrows "
-                                 + "what is measured."),
+                                 + "what is measured. One level per run: the run record holds a "
+                                 + "list, and this screen writes one of them."),
                         storeys.Count == 0
                             ? Ui.Note("This project declares no storeys yet. Levels & Zones works "
                                       + "them out from the geometry and they appear here.")
@@ -608,7 +609,11 @@ namespace CamelWorks.UI.Views
                         Ui.Small("Every sprinkler head, light fitting and smoke detector is under "
                                  + "the minimum somewhere. Naming the category here is the "
                                  + "difference between a board of coordination issues and four "
-                                 + "thousand rows to delete.")),
+                                 + "thousand rows to delete."),
+                        Ui.Small("The name is matched anywhere in the category, so \"Duct\" also "
+                                 + "leaves out \"Duct Fittings\" and \"Duct Insulation\". One "
+                                 + "category per run: the run record holds a list, and this screen "
+                                 + "writes one of them.")),
                     Bench.Group("How much to report",
                         Ui.Check("One row per surface — its worst obstruction only",
                                  settings.WorstPerPatch,

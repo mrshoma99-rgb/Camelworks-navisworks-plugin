@@ -15,8 +15,9 @@ namespace CamelWorks.UI.Views
     /// to say why it cannot be picked, and a menu is what the rest of this product uses for
     /// exactly that.
     ///
-    /// Unavailable checks are listed, greyed, with their reason. Leaving them out makes "where did
-    /// the clearance results go?" a support question on every Simulate seat.
+    /// Unavailable checks are listed, greyed, with their reason. Leaving them out gives a seat
+    /// that cannot offer a check no way to say so, which is reported as the check's results having
+    /// disappeared.
     ///
     /// The count beside each entry is read off the findings register rather than by reading the
     /// check, so opening the menu costs nothing: the register is already loaded and a read of the

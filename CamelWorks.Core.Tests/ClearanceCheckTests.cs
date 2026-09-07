@@ -4,6 +4,8 @@ using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Checks;
 using CamelWorks.Core.Data;
 using CamelWorks.Core.Findings;
+using CamelWorks.Core.Project;
+using CamelWorks.Core.Store;
 using CamelWorks.Core.Testing;
 using Xunit;
 
@@ -127,21 +129,63 @@ namespace CamelWorks.Core.Tests
             Assert.All(plant, one => Assert.True(one.IsPresent));
         }
 
+        /// <summary>
+        /// The run a clearance finding names is the run that produced it, and only that run.
+        ///
+        /// This replaces a test that called <c>CheckFacts.SetRuns</c> by hand to make a finding
+        /// naming two runs. Clearance cannot produce one: the run id is part of the identity, so
+        /// the same breach found by two runs is two findings with one run each. The fabricated
+        /// state exercised <c>CheckFacts</c>, which has its own tests, and nothing in this check.
+        /// </summary>
         [Fact]
-        public void A_finding_reported_by_two_runs_names_both()
+        public void A_clearance_finding_names_exactly_the_run_that_produced_it()
         {
-            var finding = ClearanceFindings.From(
-                Span(), default, default, 2.1, null, ClearanceFindings.DefaultCell, "corridor", "Corridors");
+            var register = new FindingRegister();
+            var runs = new CheckRunStore();
 
-            Assert.Equal(new[] { "corridor" }, CheckFacts.RunsOf(finding));
+            // The same name on both, so only the run id can be keeping the findings apart.
+            runs.Put(Spec("corridor", "Corridors, 2.1 m"));
+            runs.Put(Spec("plant", "Corridors, 2.1 m"));
 
-            // What a producer writes when one physical breach is reported by two runs. The board
-            // counts it under both and draws it once.
-            CheckFacts.SetRuns(finding, new[] { "corridor", "plant" });
+            var check = Check(register, runs, Model());
 
-            Assert.Equal(new[] { "corridor", "plant" }, CheckFacts.RunsOf(finding));
-            Assert.True(CheckFacts.IsIn(finding, "corridor"));
-            Assert.True(CheckFacts.IsIn(finding, "plant"));
+            Assert.True(check.Runner!.Run("corridor", null));
+            Assert.True(check.Runner!.Run("plant", null));
+
+            Assert.All(register.From(check.Key),
+                       one => Assert.Single(CheckFacts.RunsOf(one)));
+
+            // Same floor, same duct, same place, two runs: two findings, and neither names the
+            // other's run.
+            var corridor = register.From(check.Key).Where(one => CheckFacts.IsIn(one, "corridor"));
+
+            Assert.NotEmpty(corridor);
+            Assert.All(corridor, one => Assert.False(CheckFacts.IsIn(one, "plant")));
+        }
+
+        [Fact]
+        public void A_breach_names_the_surface_it_was_measured_from()
+        {
+            var register = new FindingRegister();
+            var runs = new CheckRunStore();
+
+            runs.Put(Spec("corridor", "Corridors, 2.1 m"));
+
+            var check = Check(register, runs, Model());
+
+            Assert.True(check.Runner!.Run("corridor", null));
+
+            var one = register.From(check.Key).First();
+
+            // The Surface column reads this fact. Without it the first column of every clearance
+            // row was blank on screen, in search, in the copy, in the spreadsheet and in BCF.
+            Assert.Equal("Slab L3", one.Facts[ClearanceFindings.Surface]);
+            Assert.StartsWith("Duct", one.Facts[ClearanceFindings.Obstruction], StringComparison.Ordinal);
+
+            var surface = check.Columns.Single(
+                column => string.Equals(column.Title, ClearanceColumns.Surface, StringComparison.Ordinal));
+
+            Assert.Equal("Slab L3", surface.Show(one));
         }
 
         // ---------------------------------------------------------------------------------
@@ -334,6 +378,501 @@ namespace CamelWorks.Core.Tests
             Assert.NotNull(after);
             Assert.Equal(FindingStatus.Approved, after!.Status);
             Assert.Equal("Level 3 corridors", after.Rule);
+        }
+
+        // ---------------------------------------------------------------------------------
+        // A run that could not measure
+        // ---------------------------------------------------------------------------------
+
+        [Fact]
+        public void A_run_that_resolves_to_no_surface_marks_nothing_absent()
+        {
+            var register = new FindingRegister();
+            var runs = new CheckRunStore();
+            var spec = Spec("corridor", "Corridors, 2.1 m");
+
+            runs.Put(spec);
+
+            var check = Check(register, runs, Model());
+
+            Assert.True(check.Runner!.Run("corridor", null));
+
+            var found = register.From(check.Key).Where(one => one.IsPresent).ToList();
+
+            Assert.NotEmpty(found);
+
+            // One typo in the zone picker: the run now resolves to nothing.
+            var settings = ClearanceSettings.From(spec);
+
+            settings.Zone = "Level 3 corridros";
+            settings.Write(spec);
+
+            Assert.False(check.Runner!.Run("corridor", null));
+
+            // Still present: a run that measured nothing is not evidence that anything is fixed.
+            Assert.All(found, one => Assert.True(one.IsPresent));
+            Assert.Contains(check.Notes, note => note.Contains("resolved to no surface", StringComparison.Ordinal));
+
+            // And it is told apart from a run that measured and found nothing, which does mark its
+            // findings absent.
+            settings.Zone = null;
+            settings.MinimumMetres = 0.5;
+            settings.Write(spec);
+
+            Assert.True(check.Runner!.Run("corridor", null));
+            Assert.All(found, one => Assert.False(one.IsPresent));
+        }
+
+        [Fact]
+        public void A_run_whose_obstruction_side_resolves_to_nothing_marks_nothing_absent()
+        {
+            var register = new FindingRegister();
+            var runs = new CheckRunStore();
+            var spec = Spec("corridor", "Corridors, 2.1 m");
+
+            var document = Model();
+            var settings = ClearanceSettings.From(spec);
+
+            settings.Targets = "Services";
+            settings.Write(spec);
+            runs.Put(spec);
+
+            document.DefineSet("Services",
+                               document.Traverse(TraversalScope.WholeDocument)
+                                       .Where(item => item.Category == "Ducts")
+                                       .Select(item => item.Key)
+                                       .ToArray());
+
+            var check = Check(register, runs, document);
+
+            Assert.True(check.Runner!.Run("corridor", null));
+
+            var found = register.From(check.Key).Where(one => one.IsPresent).ToList();
+
+            Assert.NotEmpty(found);
+
+            // The set is renamed in Set Builder, or deleted. The run now measures up to nothing.
+            settings.Targets = "Services v2";
+            settings.Write(spec);
+
+            Assert.False(check.Runner!.Run("corridor", null));
+            Assert.All(found, one => Assert.True(one.IsPresent));
+            Assert.Contains(check.Notes, note => note.Contains("resolved to nothing over the surfaces",
+                                                               StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void Changing_the_surface_side_says_why_every_breach_reads_as_new()
+        {
+            var register = new FindingRegister();
+            var runs = new CheckRunStore();
+            var spec = Spec("corridor", "Corridors, 2.1 m");
+
+            runs.Put(spec);
+
+            var check = Check(register, runs, Model());
+
+            Assert.True(check.Runner!.Run("corridor", null));
+            Assert.DoesNotContain(check.Notes, note => note.Contains("measured from", StringComparison.Ordinal));
+
+            var settings = ClearanceSettings.From(spec);
+
+            settings.Surfaces = ClearanceSettings.Loaded;
+            settings.Write(spec);
+
+            Assert.True(check.Runner!.Run("corridor", null));
+
+            // The delta will report the whole run as gone and reported again, and only the run
+            // knows that the ids were re-derived rather than the model having moved.
+            Assert.Contains(check.Notes, note => note.Contains("measured from", StringComparison.Ordinal));
+
+            // Said once, not on every run from then on.
+            Assert.True(check.Runner!.Run("corridor", null));
+            Assert.DoesNotContain(check.Notes, note => note.Contains("measured from", StringComparison.Ordinal));
+        }
+
+        // ---------------------------------------------------------------------------------
+        // The scope
+        // ---------------------------------------------------------------------------------
+
+        [Fact]
+        public void A_level_scope_reports_only_the_levels_it_names()
+        {
+            var register = new FindingRegister();
+            var runs = new CheckRunStore();
+
+            var spec = Spec("corridor", "Corridors, 2.1 m");
+            var settings = ClearanceSettings.From(spec);
+
+            settings.Levels.Add("Level 03");
+            settings.Write(spec);
+            runs.Put(spec);
+
+            var plan = new LevelPlan();
+
+            plan.Add("Level 03", 0);
+            plan.Add("Level 04", 4);
+
+            var document = new FakeDocument();
+            var model = document.AddModel("Arch", @"C:\job\Arch.nwc");
+
+            document.AddItem(model, "Slab L3", "Floors", "Concrete",
+                             new BoundingBox(0, 0, -0.2, 20, 10, 0));
+            document.AddItem(model, "Duct A", "Ducts", "Rectangular",
+                             new BoundingBox(2, 2, 1.85, 6, 4, 2.15));
+
+            document.AddItem(model, "Slab L4", "Floors", "Concrete",
+                             new BoundingBox(0, 0, 3.8, 20, 10, 4));
+            document.AddItem(model, "Duct B", "Ducts", "Rectangular",
+                             new BoundingBox(2, 2, 5.85, 6, 4, 6.15));
+
+            var check = new ClearanceCheck(register, runs, document, levels: () => plan);
+
+            Assert.True(check.Runner!.Run("corridor", null));
+
+            var found = register.From(check.Key).Where(one => one.IsPresent).ToList();
+
+            Assert.Single(found);
+            Assert.Equal("Slab L3", found[0].Facts[ClearanceFindings.Surface]);
+        }
+
+        [Fact]
+        public void A_level_scope_keeps_a_surface_nobody_could_place_and_drops_the_ones_it_placed_elsewhere()
+        {
+            var settings = new ClearanceSettings();
+
+            // No scope is every level, including the unplaced.
+            Assert.True(settings.CoversLevel("Level 03"));
+            Assert.True(settings.CoversLevel(null));
+
+            settings.Levels.Add("Level 03");
+
+            Assert.True(settings.CoversLevel("Level 03"));
+            Assert.True(settings.CoversLevel("level 03"));
+            Assert.False(settings.CoversLevel("Level 04"));
+
+            // A level scope narrows what is reported; it is not evidence that a surface nobody
+            // could place is outside it.
+            Assert.True(settings.CoversLevel(null));
+            Assert.True(settings.CoversLevel("  "));
+        }
+
+        [Fact]
+        public void A_run_confined_to_a_zone_measures_only_what_is_in_it()
+        {
+            var register = new FindingRegister();
+            var runs = new CheckRunStore();
+
+            var document = new FakeDocument();
+            var model = document.AddModel("Arch", @"C:\job\Arch.nwc");
+
+            var slab = document.AddItem(model, "Slab L3", "Floors", "Concrete",
+                                        new BoundingBox(0, 0, -0.2, 20, 10, 0));
+            var ductA = document.AddItem(model, "Duct A", "Ducts", "Rectangular",
+                                         new BoundingBox(2, 2, 1.85, 6, 4, 2.15));
+
+            document.AddItem(model, "Duct B", "Ducts", "Rectangular",
+                             new BoundingBox(12, 2, 1.90, 16, 4, 2.20));
+
+            document.DefineSet("West corridor", slab.Key, ductA.Key);
+
+            var spec = Spec("corridor", "Corridors, 2.1 m");
+            var settings = ClearanceSettings.From(spec);
+
+            settings.Zone = "West corridor";
+            settings.Write(spec);
+            runs.Put(spec);
+
+            var check = Check(register, runs, document);
+
+            Assert.True(check.Runner!.Run("corridor", null));
+
+            var found = register.From(check.Key).Where(one => one.IsPresent).ToList();
+
+            Assert.Single(found);
+            Assert.Equal("Duct A", found[0].Facts[ClearanceFindings.Obstruction]);
+        }
+
+        [Fact]
+        public void A_dropped_surface_is_not_measured_from()
+        {
+            var register = new FindingRegister();
+            var runs = new CheckRunStore();
+
+            var document = new FakeDocument();
+            var model = document.AddModel("Arch", @"C:\job\Arch.nwc");
+
+            var slab = document.AddItem(model, "Slab L3", "Floors", "Concrete");
+
+            document.SetSlab(slab.Key, 0, 0, -0.2, 20, 10, 0);
+
+            document.AddItem(model, "Duct A", "Ducts", "Rectangular",
+                             new BoundingBox(2, 2, 1.85, 6, 4, 2.15));
+
+            var spec = new CheckRunSpec(FindingSource.Headroom, "corridor", "Corridors, 2.1 m");
+            var settings = new ClearanceSettings
+            {
+                MinimumMetres = 2.1,
+                Surfaces = ClearanceSettings.Detected,
+                Targets = ClearanceSettings.NotTheSurfaces,
+                WorstPerPatch = false,
+            };
+
+            settings.Write(spec);
+            runs.Put(spec);
+
+            var check = new ClearanceCheck(register, runs, document, document);
+
+            var patches = check.Detect(settings);
+
+            Assert.NotEmpty(patches);
+
+            Assert.True(check.Runner!.Run("corridor", null));
+            Assert.Contains(register.From(check.Key), one => one.IsPresent);
+
+            // Dropped in the set-up window because it is a desk top rather than a floor. The run
+            // then has nothing to measure from and says so rather than reporting the breach again.
+            foreach (var patch in patches) settings.Excluded.Add(patch.Id);
+
+            settings.Write(spec);
+
+            Assert.False(check.Runner!.Run("corridor", null));
+            Assert.Contains(check.Notes, note => note.Contains("resolved to no surface", StringComparison.Ordinal));
+        }
+
+        // ---------------------------------------------------------------------------------
+        // Forgetting results
+        // ---------------------------------------------------------------------------------
+
+        [Fact]
+        public void Compact_drops_the_resolved_results_and_keeps_the_rest()
+        {
+            var register = new FindingRegister();
+            var runs = new CheckRunStore();
+
+            runs.Put(Spec("corridor", "Corridors, 2.1 m"));
+
+            var check = Check(register, runs, Model());
+
+            Assert.True(check.Runner!.Run("corridor", null));
+
+            var found = register.From(check.Key).ToList();
+
+            Assert.Equal(2, found.Count);
+
+            found[0].Status = FindingStatus.Resolved;
+            found[1].Status = FindingStatus.Active;
+
+            Assert.True(check.Runner!.Compact(new[] { "corridor" }));
+
+            // The menu says "remove resolved results" and this is what it removes. Compacting
+            // everything empties a board somebody is halfway through working.
+            Assert.False(found[0].IsPresent);
+            Assert.True(found[1].IsPresent);
+        }
+
+        [Fact]
+        public void Deleting_a_run_takes_its_findings_off_the_board_and_leaves_them_in_the_register()
+        {
+            var register = new FindingRegister();
+            var runs = new CheckRunStore();
+
+            runs.Put(Spec("corridor", "Corridors, 2.1 m"));
+
+            var check = Check(register, runs, Model());
+
+            Assert.True(check.Runner!.Run("corridor", null));
+
+            var one = register.From(check.Key).First();
+
+            one.Status = FindingStatus.Approved;
+
+            Assert.True(check.Runner!.Delete(new[] { "corridor" }));
+
+            // Off the board, because nothing will report them again.
+            Assert.Empty(check.Read(null, null).Findings);
+            Assert.Empty(check.Runs());
+
+            // Still in the register, because an issue may name one and a removed finding is an
+            // issue pointing at nothing.
+            var after = register.Find(one.Id);
+
+            Assert.NotNull(after);
+            Assert.False(after!.IsPresent);
+            Assert.Equal(FindingStatus.Approved, after.Status);
+        }
+
+        // ---------------------------------------------------------------------------------
+        // How bad, in this check's own words
+        // ---------------------------------------------------------------------------------
+
+        [Fact]
+        public void Severity_is_measured_against_the_runs_own_minimum()
+        {
+            var register = new FindingRegister();
+            var runs = new CheckRunStore();
+
+            runs.Put(Spec("corridor", "Corridors, 2.1 m"));
+            runs.Put(Spec("plant", "Plant room, 2.4 m", minimum: 2.4));
+
+            var check = Check(register, runs, Model());
+
+            check.Runner!.Run("corridor", null);
+            check.Runner!.Run("plant", null);
+
+            Finding Lowest(string run) =>
+                register.From(check.Key)
+                        .Where(one => CheckFacts.IsIn(one, run))
+                        .OrderBy(one => ClearanceFindings.MetresOf(one, ClearanceFindings.Measured))
+                        .First();
+
+            var corridor = check.Severity(Lowest("corridor"));
+            var plant = check.Severity(Lowest("plant"));
+
+            Assert.NotNull(corridor);
+            Assert.NotNull(plant);
+
+            // The same duct, the same height, two runs: the 2.4 m run is further under its own
+            // minimum, so a board banding both together bands them apart.
+            Assert.True(plant!.Value > corridor!.Value);
+
+            // 1.85 m clear where 2.1 m was asked for.
+            Assert.Equal(1.0 + (2.1 - 1.85) / 2.1, corridor.Value, 6);
+
+            Assert.Equal("no measure", check.SeverityBand(null));
+            Assert.Equal("at the minimum", check.SeverityBand(1.0));
+            Assert.Equal("under the minimum", check.SeverityBand(1.1));
+            Assert.Equal("far under the minimum", check.SeverityBand(1.3));
+
+            // A finding with no measurement on it has no severity rather than a severity of nought.
+            Assert.Null(check.Severity(ClearanceFindings.From(Span(), default, default, 0)));
+        }
+
+        // ---------------------------------------------------------------------------------
+        // The property columns
+        // ---------------------------------------------------------------------------------
+
+        [Fact]
+        public void A_property_column_reads_the_surface_and_the_obstruction()
+        {
+            var register = new FindingRegister();
+            var runs = new CheckRunStore();
+
+            runs.Put(Spec("corridor", "Corridors, 2.1 m"));
+
+            var document = new FakeDocument();
+            var model = document.AddModel("Arch", @"C:\job\Arch.nwc");
+
+            document.AddItem(model, "Slab L3", "Floors", "Concrete",
+                             new BoundingBox(0, 0, -0.2, 20, 10, 0))
+                    .WithProperty("Element", "Workset", "ST-Slabs");
+
+            document.AddItem(model, "Duct A", "Ducts", "Rectangular",
+                             new BoundingBox(2, 2, 1.85, 6, 4, 2.15))
+                    .WithProperty("Element", "Workset", "ME-Supply");
+
+            var check = Check(register, runs, document);
+
+            Assert.True(check.Runner!.Run("corridor", null));
+
+            var one = register.From(check.Key).Single(finding => finding.IsPresent);
+            var properties = check.Properties;
+
+            // The capability the board fills its added columns through. Clearance answered null
+            // here, so every column somebody added to a clearance board stayed empty while the
+            // board reported that it had read them.
+            Assert.NotNull(properties);
+
+            Assert.Equal(new[] { "ST-Slabs" },
+                         properties!.ValuesFor(one, 0, "Element", "Workset")
+                                    .Select(value => value.Value));
+
+            Assert.Equal(new[] { "ME-Supply" },
+                         properties.ValuesFor(one, 1, "Element", "Workset")
+                                   .Select(value => value.Value));
+
+            // "Both", as the board words it: every element the finding names.
+            Assert.Equal(new[] { "ST-Slabs", "ME-Supply" },
+                         properties.ValuesFor(one, -1, "Element", "Workset")
+                                   .Select(value => value.Value));
+
+            // A property nothing carries is empty rather than an error, which is the blank cell
+            // the board counts and reports.
+            Assert.Empty(properties.ValuesFor(one, -1, "Element", "Fire rating"));
+        }
+
+        // ---------------------------------------------------------------------------------
+        // The settings, kept
+        // ---------------------------------------------------------------------------------
+
+        [Fact]
+        public void Every_setting_of_a_run_survives_the_project_file()
+        {
+            var store = ProjectStore.Open(new InMemoryFileSystem(), @"C:\job\Tower.nwf", null);
+            var runs = new CheckRunStore();
+
+            var spec = new CheckRunSpec(FindingSource.Headroom, "corridor", "Corridors")
+            {
+                Folder = "Level 3",
+            };
+
+            var settings = new ClearanceSettings
+            {
+                MinimumMetres = 2.4,
+                ToleranceMetres = 0.15,
+                Surfaces = ClearanceSettings.Detected,
+                Targets = "Services",
+                Zone = "West corridor",
+                WorstPerPatch = false,
+                ExcludeStairs = true,
+                PreferFloorCategories = true,
+                MinPatchAreaSquareMetres = 0.25,
+            };
+
+            settings.Levels.Add("Level 03");
+            settings.Levels.Add("Level 04");
+            settings.Ignore.Add("Sprinklers");
+            settings.Ignore.Add("Lighting Fixtures");
+            settings.Excluded.Add("patch-7");
+            settings.Excluded.Add("patch-9");
+
+            settings.Write(spec);
+            runs.Put(spec);
+            runs.Write(store);
+
+            // Read back the way a second session reads it: off the project file, through the store.
+            var again = ClearanceSettings.From(CheckRunStore.Read(store).Find(FindingSource.Headroom,
+                                                                              "corridor"));
+
+            Assert.Equal(2.4, again.MinimumMetres, 6);
+            Assert.Equal(0.15, again.ToleranceMetres, 6);
+            Assert.Equal(ClearanceSettings.Detected, again.Surfaces);
+            Assert.Equal("Services", again.Targets);
+            Assert.Equal("West corridor", again.Zone);
+            Assert.Equal(new[] { "Level 03", "Level 04" }, again.Levels);
+            Assert.Equal(new[] { "Sprinklers", "Lighting Fixtures" }, again.Ignore);
+            Assert.False(again.WorstPerPatch);
+            Assert.True(again.ExcludeStairs);
+            Assert.True(again.PreferFloorCategories);
+            Assert.Equal(0.25, again.MinPatchAreaSquareMetres, 6);
+            Assert.Equal(new[] { "patch-7", "patch-9" }, again.Excluded.OrderBy(one => one,
+                                                                                StringComparer.Ordinal));
+        }
+
+        [Fact]
+        public void An_ignored_category_is_matched_anywhere_in_the_category_name()
+        {
+            var settings = new ClearanceSettings();
+
+            settings.Ignore.Add("Duct");
+
+            // Substring, which is what makes one entry cover Ducts, Duct Fittings and Duct
+            // Insulation - and what makes it cover Ductwork Supports nobody meant to leave out.
+            Assert.True(settings.Ignores("Ducts"));
+            Assert.True(settings.Ignores("Duct Fittings"));
+            Assert.True(settings.Ignores("ducts"));
+            Assert.False(settings.Ignores("Pipes"));
+            Assert.False(settings.Ignores(null));
         }
 
         /// <summary>One breach, for the tests that need a span and no document.</summary>

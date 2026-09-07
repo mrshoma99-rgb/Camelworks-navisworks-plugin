@@ -138,21 +138,6 @@ namespace CamelWorks.Core.Checks
         }
 
         /// <summary>
-        /// One property, read off every result of one test in a single pass.
-        ///
-        /// Not on <see cref="ICheckProperties"/>, which answers for one finding at a time. Filling
-        /// a column over a whole test through that would be one host call per result, and each one
-        /// of them locates its test by walking the document's test tree.
-        /// </summary>
-        /// <param name="runId">The host's id for the test.</param>
-        /// <param name="wanted">The properties to read, each with the id to answer under.</param>
-        /// <param name="onProgress">Called with how many results have been read; false stops it.</param>
-        public IReadOnlyList<ClashResultValues> ValuesFor(string runId,
-                                                          IReadOnlyList<ClashPropertyWanted> wanted,
-                                                          Func<int, bool>? onProgress) =>
-            _source.ValuesFor(runId, wanted, onProgress);
-
-        /// <summary>
         /// How bad, against this test's own tolerance: 1.0 exactly at it.
         ///
         /// Negative distances are penetrations and are what a hard clash test reports, so the sign
@@ -244,6 +229,10 @@ namespace CamelWorks.Core.Checks
         /// <param name="onProgress">Called with how many results have been read; false stops it.</param>
         public CheckRead Read(IReadOnlyList<string>? runIds, Func<int, bool>? onProgress)
         {
+            // The host reissues result ids on a read, so whatever the property reader kept is
+            // keyed by ids that may now name other clashes.
+            (Properties as Props)?.Forget();
+
             var runs = new List<CheckRun>();
             var findings = new List<Finding>();
             var notes = new List<string>();
@@ -738,12 +727,24 @@ namespace CamelWorks.Core.Checks
             {
                 _ = onProgress;
 
+                (_check.Properties as Props)?.Forget();
+
                 return _check._source.Run(runId);
             }
 
-            public bool Delete(IReadOnlyList<string> runIds) => _check._source.DeleteTests(runIds);
+            public bool Delete(IReadOnlyList<string> runIds)
+            {
+                (_check.Properties as Props)?.Forget();
 
-            public bool Compact(IReadOnlyList<string> runIds) => _check._source.CompactTests(runIds);
+                return _check._source.DeleteTests(runIds);
+            }
+
+            public bool Compact(IReadOnlyList<string> runIds)
+            {
+                (_check.Properties as Props)?.Forget();
+
+                return _check._source.CompactTests(runIds);
+            }
         }
 
         /// <summary>Renaming and refiling the host's tests.</summary>
@@ -762,12 +763,30 @@ namespace CamelWorks.Core.Checks
                 _check._source.MoveTests(new[] { runId }, folder);
         }
 
-        /// <summary>Element properties, one finding at a time.</summary>
+        /// <summary>
+        /// Element properties, one finding at a time, over a per-test read held while a column is
+        /// filled.
+        ///
+        /// The host answers a property for a whole test in one pass and locates that test by
+        /// walking the document's test tree, so asking it per finding would be one such walk per
+        /// result. The pass is made once per test and property and kept, which turns a column over
+        /// eighteen thousand results into one host call rather than eighteen thousand.
+        ///
+        /// The kept answers are dropped whenever the host reissues its result ids — a read, a run,
+        /// a renumber or a compact — because an id that has been reused would otherwise hand back
+        /// the property of a different clash.
+        /// </summary>
         private sealed class Props : ICheckProperties
         {
             private readonly ClashCheck _check;
 
+            private readonly Dictionary<string, IReadOnlyDictionary<string, string>> _read =
+                new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.Ordinal);
+
             internal Props(ClashCheck check) => _check = check;
+
+            /// <summary>Forget what was read, because the host's result ids have moved.</summary>
+            internal void Forget() => _read.Clear();
 
             public IReadOnlyList<PropertyValue> ValuesFor(Finding finding, int elementIndex,
                                                           string category, string name)
@@ -775,24 +794,42 @@ namespace CamelWorks.Core.Checks
                 var test = TestOf(finding);
                 var result = ResultOf(finding);
 
-                if (test == null || result == null) return Array.Empty<PropertyValue>();
+                if (test == null || result == null || string.IsNullOrWhiteSpace(name))
+                    return Array.Empty<PropertyValue>();
 
                 var side = elementIndex == 0 ? ClashElementSide.First
                          : elementIndex == 1 ? ClashElementSide.Second
                          : ClashElementSide.Both;
 
+                var held = Held(test, category, name, side);
+
+                return held.TryGetValue(result, out var value)
+                    ? new[] { new PropertyValue(category, name, value) }
+                    : Array.Empty<PropertyValue>();
+            }
+
+            /// <summary>One property over one test, read once and kept by result id.</summary>
+            /// <param name="test">The host's id for the test.</param>
+            /// <param name="category">The property category.</param>
+            /// <param name="name">The property name.</param>
+            /// <param name="side">Which element of the clash it is read off.</param>
+            private IReadOnlyDictionary<string, string> Held(string test, string category,
+                                                             string name, ClashElementSide side)
+            {
+                var key = test + "\u001f" + category + "\u001f" + name + "\u001f" + (int)side;
+
+                if (_read.TryGetValue(key, out var already)) return already;
+
                 var wanted = new[] { new ClashPropertyWanted("value", category, name, side) };
+                var found = new Dictionary<string, string>(StringComparer.Ordinal);
 
                 foreach (var answer in _check._source.ValuesFor(test, wanted, null))
-                {
-                    if (!string.Equals(answer.ResultId, result, StringComparison.Ordinal)) continue;
+                    if (answer.Values.TryGetValue("value", out var value) && value != null)
+                        found[answer.ResultId] = value;
 
-                    return answer.Values.TryGetValue("value", out var value)
-                        ? new[] { new PropertyValue(category, name, value) }
-                        : Array.Empty<PropertyValue>();
-                }
+                _read[key] = found;
 
-                return Array.Empty<PropertyValue>();
+                return found;
             }
         }
 

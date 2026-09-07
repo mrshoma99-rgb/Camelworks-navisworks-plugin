@@ -18,9 +18,8 @@ namespace CamelWorks.Core.Checks
     /// is a clash list in everything but how it was found — so it goes on the same board, and this
     /// is what puts it there.
     ///
-    /// Four capabilities are null and each is the honest answer. There is no clash data in the
-    /// document to echo a decision into, no host groups to nest in, no naming window, and no
-    /// element properties this check reads that the board could not read itself.
+    /// Three capabilities are null and each is the honest answer. There is no clash data in the
+    /// document to echo a decision into, no host groups to nest in, and no naming window.
     ///
     /// The runs are the project's own, in <see cref="CheckRunStore"/>. Re-running is pressing Run on
     /// a saved run, and the findings a run produces carry that run's id as their identity, so two
@@ -34,7 +33,7 @@ namespace CamelWorks.Core.Checks
         private readonly ITriangleSource? _triangles;
         private readonly double _metresPerUnit;
         private readonly Func<string?>? _save;
-        private readonly LevelPlan? _levels;
+        private readonly Func<LevelPlan?>? _levels;
         private readonly ProjectStore? _project;
 
         private readonly List<string> _notes = new List<string>();
@@ -54,7 +53,11 @@ namespace CamelWorks.Core.Checks
         /// door; null does not save, which is what a test wants and what a seat with no project
         /// file gets.
         /// </param>
-        /// <param name="levels">The project's storeys, for a run scoped to some of them.</param>
+        /// <param name="levels">
+        /// The project's storeys, for a run scoped to some of them. Called once per run rather
+        /// than held, because Levels &amp; Zones edits the plan while the document stays open and a
+        /// plan captured when the document opened would scope the run by yesterday's storeys.
+        /// </param>
         /// <param name="project">
         /// The project file the saved runs are written into. Null keeps them in memory, which is
         /// what a test wants and what a seat with no project file gets.
@@ -62,7 +65,7 @@ namespace CamelWorks.Core.Checks
         public ClearanceCheck(FindingRegister register, CheckRunStore runs,
                               IModelDocument? document = null, ITriangleSource? triangles = null,
                               double metresPerUnit = 1.0, Func<string?>? save = null,
-                              LevelPlan? levels = null, ProjectStore? project = null)
+                              Func<LevelPlan?>? levels = null, ProjectStore? project = null)
         {
             _register = register ?? throw new ArgumentNullException(nameof(register));
             _runs = runs ?? throw new ArgumentNullException(nameof(runs));
@@ -77,6 +80,7 @@ namespace CamelWorks.Core.Checks
             Runner = new Measure(this);
             Naming = new Names(this);
             Geometry = new Sight();
+            Properties = document == null ? null : new DocumentProperties(document);
         }
 
         /// <inheritdoc />
@@ -117,13 +121,13 @@ namespace CamelWorks.Core.Checks
         public ICheckNaming? Naming { get; }
 
         /// <summary>
-        /// No element-property reader of its own.
+        /// Element properties off the surface and the obstruction, through the document.
         ///
-        /// A breach names its surface and its obstruction as ordinary elements, and the board reads
-        /// properties off them through the document. A reader here would be the same walk written
-        /// twice.
+        /// A breach names two ordinary elements, so the columns somebody adds to the board are
+        /// answered by resolving those keys and reading what the host holds against them. Null on
+        /// a seat with no document, where there is nothing to resolve them in.
         /// </summary>
-        public ICheckProperties? Properties => null;
+        public ICheckProperties? Properties { get; }
 
         /// <inheritdoc />
         public ICheckGeometry? Geometry { get; }
@@ -213,6 +217,21 @@ namespace CamelWorks.Core.Checks
         public IReadOnlyList<WalkablePatch> Detect(ClearanceSettings settings,
                                                    WalkableDiagnostics? diagnostics = null,
                                                    Func<int, bool>? onProgress = null)
+        {
+            _notes.Clear();
+
+            return Swept(settings, diagnostics, onProgress);
+        }
+
+        /// <summary>
+        /// The same detection without clearing the notes, for a run that has already written some.
+        /// </summary>
+        /// <param name="settings">The run's settings.</param>
+        /// <param name="diagnostics">Where the counts and the caveats go, or null to drop them.</param>
+        /// <param name="onProgress">Called with how many elements have been read; false stops it.</param>
+        private IReadOnlyList<WalkablePatch> Swept(ClearanceSettings settings,
+                                                   WalkableDiagnostics? diagnostics,
+                                                   Func<int, bool>? onProgress)
         {
             if (settings == null) throw new ArgumentNullException(nameof(settings));
 
@@ -347,6 +366,18 @@ namespace CamelWorks.Core.Checks
 
             if (surfaces == null) return false;
 
+            // A run that measured nothing is not evidence that yesterday's breaches are fixed, so
+            // it reports what happened and marks nothing absent. An empty zone, a detection that
+            // found no patch and a named set the document no longer holds all land here.
+            if (surfaces.Count == 0)
+            {
+                _notes.Add(spec.Name + " resolved to no surface to measure from, so nothing was "
+                           + "measured and nothing was marked as fixed. Check the run's surface "
+                           + "side and its zone.");
+
+                return false;
+            }
+
             var already = settings.IsDetecting
                 ? new HashSet<string>(patches!.Select(patch => patch.Source.ToString()), StringComparer.Ordinal)
                 : new HashSet<string>(surfaces.Select(one => one.Id), StringComparer.Ordinal);
@@ -354,6 +385,20 @@ namespace CamelWorks.Core.Checks
             var above = Side(settings.Targets, whole, already, zone, onProgress);
 
             if (above == null) return false;
+
+            // The same rule on the other side, for a side that named something. A set the document
+            // no longer holds and an empty selection resolve to nothing, and a run that measured
+            // up to nothing has not shown that anything is fixed either. The three whole-model
+            // answers are not covered: over a model with nothing above the floors they honestly
+            // measure nothing.
+            if (above.Count == 0 && !NeedsWhole(settings.Targets))
+            {
+                _notes.Add(spec.Name + " resolved to nothing over the surfaces, so nothing was "
+                           + "measured and nothing was marked as fixed. Check what the run "
+                           + "measures up to.");
+
+                return false;
+            }
 
             above = above.Where(one => !settings.Ignores(one.Category)).ToList();
 
@@ -375,19 +420,34 @@ namespace CamelWorks.Core.Checks
                                  reportUnder, Headroom.DefaultCell, settings.WorstPerPatch);
 
             var found = new List<Finding>();
+            var plan = _levels?.Invoke();
             var at = 0;
 
             foreach (var span in result.Spans)
             {
                 if (!boxes.TryGetValue(span.Floor.Id, out var floor)) continue;
                 if (!boxes.TryGetValue(span.Obstruction.Id, out var over)) continue;
-                if (!settings.CoversLevel(Level(floor))) continue;
+                if (!settings.CoversLevel(Level(floor, plan))) continue;
 
                 found.Add(ClearanceFindings.From(
                     span, floor.Key, over.Key, settings.MinimumMetres,
                     spec.Name + " " + (++at).ToString(CultureInfo.InvariantCulture),
                     ClearanceFindings.DefaultCell, spec.Id, spec.Name));
             }
+
+            // Changing the surface side re-derives every id under this run: a detected surface is
+            // keyed by where it is and a named one by its element, so the delta reports the whole
+            // run as gone and reported again. Said here, because nothing downstream can tell that
+            // from a model that moved.
+            if (spec.Settings.TryGetValue(ClearanceSettings.LastSurfacesKey, out var last)
+                && !string.IsNullOrWhiteSpace(last)
+                && !string.Equals(last, settings.Surfaces, StringComparison.OrdinalIgnoreCase))
+                _notes.Add("This run measured from \"" + last + "\" last time and from \""
+                           + settings.Surfaces + "\" now. A surface is identified differently "
+                           + "either side of that change, so every breach under this run reads as "
+                           + "gone and reported again rather than as the same breach.");
+
+            spec.Settings[ClearanceSettings.LastSurfacesKey] = settings.Surfaces;
 
             _register.Observe(Key, found, DateTime.UtcNow.Ticks,
                               scope: CheckFacts.ScopeOf(new[] { spec.Id }));
@@ -416,7 +476,7 @@ namespace CamelWorks.Core.Checks
 
             var diagnostics = new WalkableDiagnostics();
 
-            var found = Detect(settings, diagnostics, onProgress);
+            var found = Swept(settings, diagnostics, onProgress);
 
             foreach (var note in diagnostics.Notes) _notes.Add(note);
 
@@ -575,7 +635,9 @@ namespace CamelWorks.Core.Checks
 
         /// <summary>Which storey a surface stands on, or null when the project declares none.</summary>
         /// <param name="piece">The surface.</param>
-        private string? Level(Piece piece) => piece.Level ?? _levels?.LevelAt(piece.Box.MaxZ);
+        /// <param name="plan">The project's storeys as this run read them, or null.</param>
+        private static string? Level(Piece piece, LevelPlan? plan) =>
+            piece.Level ?? plan?.LevelAt(piece.Box.MaxZ);
 
         /// <summary>One element as both sides of the run see it.</summary>
         private sealed class Piece
@@ -621,11 +683,13 @@ namespace CamelWorks.Core.Checks
                 _check.Measured(runId, onProgress);
 
             /// <summary>
-            /// Forget the runs and everything they found.
+            /// Forget the runs, and take what they found off the board.
             ///
-            /// The findings go with the run because nothing else names them: a breach's identity is
-            /// its run, so a finding left behind by a deleted run can never be reported again and
-            /// would sit on the board for good.
+            /// The findings are marked absent rather than removed, for the reason
+            /// <see cref="Compact"/> gives: a finding somebody closed is the record of the fix and
+            /// an issue may point at it. Nothing will report them again — a breach's identity is
+            /// its run and the run is gone — so they stay off the board, and the issues that name
+            /// them still resolve.
             /// </summary>
             /// <param name="runIds">Which runs.</param>
             public bool Delete(IReadOnlyList<string> runIds)
@@ -634,10 +698,9 @@ namespace CamelWorks.Core.Checks
 
                 foreach (var id in runIds ?? Array.Empty<string>())
                 {
-                    foreach (var finding in _check._register.From(_check.Key)
-                                                  .Where(one => CheckFacts.IsIn(one, id))
-                                                  .ToList())
-                        _check._register.Remove(finding.Id);
+                    foreach (var finding in _check._register.From(_check.Key))
+                        if (finding.IsPresent && CheckFacts.IsIn(finding, id))
+                            finding.IsPresent = false;
 
                     gone |= _check._runs.Remove(_check.Key, id);
                 }
@@ -648,7 +711,10 @@ namespace CamelWorks.Core.Checks
             }
 
             /// <summary>
-            /// Drop what the runs found, keeping the runs.
+            /// Drop the runs' resolved results, keeping the runs and everything still open.
+            ///
+            /// Resolved only, which is what the verb offers: the rest are outstanding work, and a
+            /// compact that took them would empty a board somebody is halfway through.
             ///
             /// Marked absent rather than removed, because a finding somebody closed is the record
             /// of the fix and an issue may point at it.
@@ -660,7 +726,9 @@ namespace CamelWorks.Core.Checks
 
                 foreach (var id in runIds ?? Array.Empty<string>())
                     foreach (var finding in _check._register.From(_check.Key))
-                        if (finding.IsPresent && CheckFacts.IsIn(finding, id))
+                        if (finding.IsPresent
+                            && finding.Status == FindingStatus.Resolved
+                            && CheckFacts.IsIn(finding, id))
                         {
                             finding.IsPresent = false;
                             touched = true;
