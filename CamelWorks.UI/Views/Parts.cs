@@ -1669,8 +1669,11 @@ namespace CamelWorks.UI.Views
 
             if (blocked != null)
             {
-                box.IsEnabled = false;
+                // Dimmed, not disabled. A disabled element does not raise the events a tooltip
+                // needs, so the field that most needs to say why it cannot be used was the one
+                // field that said nothing when pointed at.
                 box.Opacity = 0.55;
+                box.Cursor = Cursors.Arrow;
                 box.ToolTip = blocked;
 
                 return box;
