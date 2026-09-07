@@ -27,6 +27,12 @@ namespace CamelWorks.UI.Views
     public static class Parts
     {
         /// <summary>The height of a chip, and of the inline control a chip becomes.</summary>
+        /// <summary>How wide a dropdown's chevron well is, matching the skin's ComboBox.</summary>
+        private const double WellWidth = 26;
+
+        /// <summary>How tall a field is, matching the skin's TextBox and ComboBox.</summary>
+        private const double FieldHeight = 31;
+
         private const double ChipHeight = 26;
 
         /// <summary>
@@ -1644,27 +1650,41 @@ namespace CamelWorks.UI.Views
 
             said.Tint(TextBlock.ForegroundProperty, "Text");
 
+            said.Margin = new Thickness(10, 0, 6, 0);
+
+            // The dropdown's own geometry, taken from the skin's ComboBox template rather than
+            // approximated: the same height, the same radius, and the same capped gutter with its
+            // own edge. Drawn 3px shorter and 2px squarer, this sat beside a real Ui.Choice on the
+            // clearance panel and read as a third kind of control.
             var row = new DockPanel { LastChildFill = true };
 
-            var mark = Ui.Glyph(Glyphs.Down, 12, "Muted", new Thickness(8, 0, 0, 0));
+            var well = new Border
+            {
+                Width = WellWidth,
+                BorderThickness = new Thickness(1, 0, 0, 0),
+                CornerRadius = new CornerRadius(0, 5, 5, 0),
+                Child = Ui.Glyph(Glyphs.Down, 12, "Muted"),
+            };
 
-            DockPanel.SetDock(mark, Dock.Right);
-            row.Children.Add(mark);
+            well.Tint(Border.BackgroundProperty, "Well");
+            well.Tint(Border.BorderBrushProperty, "FieldBd");
+
+            DockPanel.SetDock(well, Dock.Right);
+            row.Children.Add(well);
             row.Children.Add(said);
 
             var box = new Border
             {
                 Width = width,
-                MinHeight = 28,
-                Padding = new Thickness(8, 4, 8, 4),
-                CornerRadius = new CornerRadius(4),
+                MinHeight = FieldHeight,
+                CornerRadius = new CornerRadius(6),
                 BorderThickness = new Thickness(1),
                 HorizontalAlignment = HorizontalAlignment.Left,
                 Cursor = Cursors.Hand,
                 Child = row,
             };
 
-            box.Tint(Border.BackgroundProperty, "Card");
+            box.Tint(Border.BackgroundProperty, "Field");
             box.Tint(Border.BorderBrushProperty, "FieldBd");
 
             if (blocked != null)
@@ -1675,13 +1695,15 @@ namespace CamelWorks.UI.Views
                 box.Opacity = 0.55;
                 box.Cursor = Cursors.Arrow;
                 box.ToolTip = blocked;
+                well.Background = System.Windows.Media.Brushes.Transparent;
 
                 return box;
             }
 
             box.ToolTip = prompt;
+            box.Focusable = true;
 
-            box.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
+            void Open() => Ui.Safely(() =>
                 Choose(near!, prompt, offered, chosen, null, null, picked =>
                 {
                     if (picked.Length == 0) return;
@@ -1689,7 +1711,34 @@ namespace CamelWorks.UI.Views
                     onPicked(picked);
                 }));
 
-            Lights(box, "Hover");
+            box.MouseLeftButtonUp += (s, e) => Open();
+
+            // Reachable from the keyboard, which it was not: a Border with a mouse handler takes
+            // no tab stop, so the two fields that say what a clearance test measures could only be
+            // set with a pointer.
+            box.KeyDown += (s, e) =>
+            {
+                if (e.Key != Key.Enter && e.Key != Key.Space && e.Key != Key.Down) return;
+
+                e.Handled = true;
+                Open();
+            };
+
+            box.GotKeyboardFocus += (s, e) => box.Tint(Border.BorderBrushProperty, "Focus");
+            box.LostKeyboardFocus += (s, e) => box.Tint(Border.BorderBrushProperty, "FieldBd");
+
+            box.MouseEnter += (s, e) =>
+            {
+                box.Tint(Border.BorderBrushProperty, "Accent");
+                well.Tint(Border.BackgroundProperty, "AccentWash");
+            };
+
+            box.MouseLeave += (s, e) =>
+            {
+                if (!box.IsKeyboardFocused) box.Tint(Border.BorderBrushProperty, "FieldBd");
+
+                well.Tint(Border.BackgroundProperty, "Well");
+            };
 
             return box;
         }
