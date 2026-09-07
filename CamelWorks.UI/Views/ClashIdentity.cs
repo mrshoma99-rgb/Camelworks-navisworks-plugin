@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using CamelWorks.Core.Checks;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
 
@@ -168,14 +169,22 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// How a clash gets its image, and what it costs.
+        /// How a finding gets its image, and what it costs.
         ///
-        /// Two routes, in order of preference. The clash engine can render a result directly, which
-        /// frames the clash as the native window does and never touches the camera the user is
-        /// looking through. Where that is unavailable — a file source, an edition with no clash
-        /// engine, a result the engine will not draw — the camera is moved to the clash point and
-        /// the view captured, with the camera borrowed and restored so the run leaves the screen
-        /// where it found it.
+        /// Three routes, in order of preference.
+        ///
+        /// The check draws it itself, where it can. A fall hazard is a place on a floor plan and
+        /// not a place in the model, so a photograph of the camera pointed at it says far less than
+        /// the plan the run rasterised; the check holds that plan and renders it. This route was
+        /// missing, so <see cref="ICheckGeometry.Snapshot"/> had no caller and no floor plan ever
+        /// reached a pack.
+        ///
+        /// Failing that, the clash engine renders a result directly, which frames the clash as the
+        /// native window does and never touches the camera the user is looking through.
+        ///
+        /// Failing both — a file source, an edition with no clash engine, a result the engine will
+        /// not draw — the camera is moved to the point and the view captured, with the camera
+        /// borrowed and restored so the run leaves the screen where it found it.
         ///
         /// It is slow, and opt-in for that reason: on a large board this is minutes.
         /// </summary>
@@ -184,18 +193,35 @@ namespace CamelWorks.UI.Views
         /// <param name="height">Pixels down.</param>
         /// <param name="idOf">The test and result a clash came from, when they are known.</param>
         /// <param name="job">Progress, and the way to stop.</param>
+        /// <param name="check">The check the findings belong to, when it draws its own.</param>
         internal static Func<Finding, byte[]?> Pictures(
             Session session, int width, int height,
             Func<Finding, (string Test, string Result)?>? idOf = null,
-            Job? job = null)
+            Job? job = null,
+            ICheck? check = null)
         {
             var taken = 0;
+            var drawing = check?.Geometry;
 
             return item =>
             {
                 if (item == null) return null;
 
                 job?.Step(++taken, "findings drawn");
+
+                if (drawing != null)
+                {
+                    try
+                    {
+                        var own = drawing.Snapshot(item, width, height);
+
+                        if (own != null && own.Length > 0) return own;
+                    }
+                    catch (Exception)
+                    {
+                        // The check would not draw this one. The two routes below still might.
+                    }
+                }
 
                 var named = idOf?.Invoke(item);
 

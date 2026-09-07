@@ -1493,8 +1493,12 @@ namespace CamelWorks.UI.Views
                     how.LocatorOf = ids.At;
                     how.Author = Environment.UserName ?? "CamelWorks";
 
+                    // The check as well as the session, so a kind that draws its own picture is
+                    // asked first: a fall hazard's picture is the floor plan the run rasterised,
+                    // and a photograph of the model at that point is not the same thing.
                     if (_pictures && _session != null)
-                        how.Snapshot = ClashIdentity.Pictures(_session, 1280, 720, Drawn, job);
+                        how.Snapshot = ClashIdentity.Pictures(_session, 1280, 720, Drawn, job,
+                                                              _session.Checks.Find(CheckKey));
 
                     var pack = Pack(round, how);
 

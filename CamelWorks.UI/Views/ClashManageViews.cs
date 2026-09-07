@@ -11210,7 +11210,8 @@ namespace CamelWorks.UI.Views
                         ? ClashIdentity.Pictures(_live, 1280, 720,
                               finding => drawnFrom.TryGetValue(finding.Id, out var at)
                                   ? at
-                                  : ((string Test, string Result)?)null)
+                                  : ((string Test, string Result)?)null,
+                              job: null, check: Check)
                         : null,
                     IfcGuidOf = ids.Of,
                     LocatorOf = ids.At,
