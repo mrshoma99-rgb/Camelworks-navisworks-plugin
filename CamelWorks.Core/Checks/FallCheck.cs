@@ -83,8 +83,15 @@ namespace CamelWorks.Core.Checks
         /// <inheritdoc />
         public string Name => "Fall hazard";
 
-        /// <inheritdoc />
-        public string RunWord => "run";
+        /// <summary>
+        /// "test", the same word every kind uses.
+        ///
+        /// It was "run", which was the word this check used when it had a tab of its own. The
+        /// Create tab lists every kind in one table and cannot say two words for one column, and
+        /// the Manage board reads this back for the same objects: a coordinator set up a test on
+        /// one tab and was told how many runs there were on the next.
+        /// </summary>
+        public string RunWord => "test";
 
         /// <inheritdoc />
         public string ResultWord => "hazard";
