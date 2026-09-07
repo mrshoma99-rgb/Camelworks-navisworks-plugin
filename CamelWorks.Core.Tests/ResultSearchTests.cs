@@ -107,7 +107,7 @@ namespace CamelWorks.Core.Tests
             three.Priority = "Low";
 
             // Mechanical AND High.
-            var both = new ResultQuery(QueryJoin.All);
+            var both = new ResultQuery();
 
             both.Inside.Add(One(new QueryTerm(ResultFields.Assignee, QueryOp.Is) { Text = "Mechanical" }));
             both.Inside.Add(One(new QueryTerm(ResultFields.Priority, QueryOp.Is) { Text = "High" }));
@@ -116,17 +116,48 @@ namespace CamelWorks.Core.Tests
                 ResultSearch.Run(both, new[] { one, two, three }, new Nowhere()).Select(f => f.Title));
 
             // High AND (Mechanical OR Electrical).
-            var nested = new ResultQuery(QueryJoin.All);
-            var either = new ResultQuery(QueryJoin.Any);
+            var nested = new ResultQuery();
+            var either = new ResultQuery();
 
-            either.Inside.Add(One(new QueryTerm(ResultFields.Assignee, QueryOp.Is) { Text = "Mechanical" }));
-            either.Inside.Add(One(new QueryTerm(ResultFields.Assignee, QueryOp.Is) { Text = "Electrical" }));
+            either.With(One(new QueryTerm(ResultFields.Assignee, QueryOp.Is) { Text = "Mechanical" }));
+            either.With(One(new QueryTerm(ResultFields.Assignee, QueryOp.Is) { Text = "Electrical" }),
+                        QueryJoin.Any);
 
             nested.Inside.Add(One(new QueryTerm(ResultFields.Priority, QueryOp.Is) { Text = "High" }));
             nested.Inside.Add(either);
 
             Assert.Equal(new[] { "a", "b" },
                 ResultSearch.Run(nested, new[] { one, two, three }, new Nowhere()).Select(f => f.Title));
+        }
+
+        [Fact]
+        public void Conditions_are_joined_left_to_right_by_their_own_connectors()
+        {
+            // A and B or C, read in the order it is drawn: (A and B) or C. Not "A and (B or C)",
+            // which is what an operator precedence nobody can see would give.
+            var one = Found("a");
+            var two = Found("b");
+            var three = Found("c");
+
+            one.AssignedTo = "Mechanical";
+            one.Priority = "High";
+
+            two.AssignedTo = "Mechanical";
+            two.Priority = "Low";
+
+            three.AssignedTo = "Electrical";
+            three.Priority = "Low";
+            three.Stage = "Tender";
+
+            var chain = new ResultQuery();
+
+            chain.With(One(new QueryTerm(ResultFields.Assignee, QueryOp.Is) { Text = "Mechanical" }));
+            chain.With(One(new QueryTerm(ResultFields.Priority, QueryOp.Is) { Text = "High" }));
+            chain.With(One(new QueryTerm(ResultFields.Stage, QueryOp.Is) { Text = "Tender" }),
+                       QueryJoin.Any);
+
+            Assert.Equal(new[] { "a", "c" },
+                ResultSearch.Run(chain, new[] { one, two, three }, new Nowhere()).Select(f => f.Title));
         }
 
         [Fact]
@@ -138,7 +169,7 @@ namespace CamelWorks.Core.Tests
             one.AssignedTo = "Mechanical";
             two.AssignedTo = "Electrical";
 
-            var not = new ResultQuery(QueryJoin.All) { Negate = true };
+            var not = new ResultQuery() { Negate = true };
 
             not.Inside.Add(One(new QueryTerm(ResultFields.Assignee, QueryOp.Is) { Text = "Mechanical" }));
 
@@ -396,7 +427,7 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void A_search_survives_being_written_and_read()
         {
-            var query = new ResultQuery(QueryJoin.Any) { Negate = true };
+            var query = new ResultQuery() { Negate = true };
 
             query.Inside.Add(new ResultQuery(
                 new QueryTerm(ResultFields.Property("Element", "System Name"), QueryOp.Contains)
@@ -406,7 +437,7 @@ namespace CamelWorks.Core.Tests
                     Ancestors = 2,
                 }));
 
-            var inner = new ResultQuery(QueryJoin.All);
+            var inner = new ResultQuery();
 
             inner.Inside.Add(new ResultQuery(
                 new QueryTerm(ResultFields.Column("Distance"), QueryOp.Between)
@@ -415,14 +446,17 @@ namespace CamelWorks.Core.Tests
                     Number2 = 0.5,
                 }));
 
-            query.Inside.Add(inner);
+            // The bracket joins to the condition above it with "or", which is what the chip down
+            // its left says on screen.
+            query.With(inner, QueryJoin.Any);
 
             var read = ResultQuery.FromJson(query.ToJson(), out var lost);
 
             Assert.Equal(0, lost);
             Assert.True(read.Negate);
-            Assert.Equal(QueryJoin.Any, read.Join);
             Assert.Equal(2, read.Clauses);
+            Assert.Equal(QueryJoin.Any, read.Inside[1].Joiner);
+            Assert.Equal(QueryJoin.All, read.Inside[0].Joiner);
 
             var first = read.Inside[0].Term!;
 

@@ -102,14 +102,35 @@ namespace CamelWorks.Core.Search
         /// <param name="world">The world.</param>
         private static bool Joined(ResultQuery group, Finding finding, IResultWorld world)
         {
-            // An empty group matches, whichever way it joins. A rule is written by adding clauses
-            // to it, and one that found nothing until the first clause was finished would report
-            // nought found for every half-written rule.
+            // An empty group matches. A rule is written by adding conditions to it, and one that
+            // found nothing until the first condition was finished would report nought found for
+            // every half-written rule.
             if (group.Inside.Count == 0) return true;
 
-            return group.Join == QueryJoin.Any
-                ? group.Inside.Any(one => Answered(one, finding, world))
-                : group.Inside.All(one => Answered(one, finding, world));
+            // Left to right, in the order they are drawn, each condition joined the way its own
+            // connector says. No operator precedence: a bracket is how precedence is written, and
+            // a bracket is a group somebody can see. Reading "A or B and C" as "A or (B and C)"
+            // would make the screen and the answer disagree.
+            var said = Answered(group.Inside[0], finding, world);
+
+            for (var at = 1; at < group.Inside.Count; at++)
+            {
+                var one = group.Inside[at];
+
+                // Short-circuited: an "or" after something that already holds, and an "and" after
+                // something that already does not, cannot change the answer, and evaluating them
+                // would read the model for nothing.
+                if (one.Joiner == QueryJoin.Any)
+                {
+                    if (!said) said = Answered(one, finding, world);
+                }
+                else if (said)
+                {
+                    said = Answered(one, finding, world);
+                }
+            }
+
+            return said;
         }
 
         /// <summary>Whether one clause answers.</summary>

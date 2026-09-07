@@ -59,7 +59,7 @@ namespace CamelWorks.UI.Views
         private void Redraw()
         {
             View.Children.Clear();
-            View.Children.Add(Group(_root, top: true));
+            View.Children.Add(Group(_root, top: true, first: true));
         }
 
         /// <summary>Say something changed, and draw it again.</summary>
@@ -70,53 +70,79 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// One group: how it joins, its conditions, and the two ways to add to it.
+        /// One group: its conditions, each carrying how it joins to the one above it.
+        ///
+        /// The outermost group has no bar and no border — it is the search itself. A group inside
+        /// it is a bracket, drawn as a block with its own connector down the left, which is what
+        /// says how the whole bracket joins to what is above it.
         /// </summary>
         /// <param name="group">The group.</param>
-        /// <param name="top">True for the outermost group, which has no border and cannot be removed.</param>
-        private UIElement Group(ResultQuery group, bool top)
+        /// <param name="top">True for the outermost group.</param>
+        /// <param name="first">True when nothing is drawn above it, so it has no connector.</param>
+        private UIElement Group(ResultQuery group, bool top, bool first)
         {
             var held = Ui.Stack();
-            var head = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
 
-            var join = Ui.Choice(new[] { "Match all of these", "Match any of these" },
-                group.Join == QueryJoin.Any ? "Match any of these" : "Match all of these",
-                picked =>
-                {
-                    group.Join = picked == "Match any of these" ? QueryJoin.Any : QueryJoin.All;
-                    Touched();
-                }, 170);
-
-            var flip = Ui.Check("Invert", group.Negate, on => { group.Negate = on; Touched(); });
-
-            flip.VerticalAlignment = VerticalAlignment.Center;
-            flip.Margin = new Thickness(8, 0, 0, 0);
-            flip.ToolTip = "Find the results this group does not match";
-
-            DockPanel.SetDock(join, Dock.Left);
-            head.Children.Add(join);
-
-            if (!top)
+            for (var at = 0; at < group.Inside.Count; at++)
             {
-                var drop = Ui.Icon(Glyphs.Bin, "Remove this bracket", () =>
-                {
-                    Parent(_root, group)?.Inside.Remove(group);
-                    Touched();
-                });
+                var one = group.Inside[at];
 
-                DockPanel.SetDock(drop, Dock.Right);
-                head.Children.Add(drop);
+                held.Children.Add(one.IsTerm
+                    ? Clause(group, one, at == 0)
+                    : Group(one, top: false, first: at == 0));
             }
-
-            head.Children.Add(Ui.Loose(flip));
-            held.Children.Add(head);
-
-            foreach (var one in group.Inside.ToList())
-                held.Children.Add(one.IsTerm ? Clause(group, one) : Group(one, top: false));
 
             if (group.Inside.Count == 0)
                 held.Children.Add(Ui.Small("No conditions, so this finds every result."));
 
+            held.Children.Add(Adding(group));
+
+            if (top) return held;
+
+            var box = new Border
+            {
+                Padding = new Thickness(10, 8, 10, 8),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(4),
+                Child = held,
+            };
+
+            box.Tint(Border.BorderBrushProperty, "Bd");
+            box.Tint(Border.BackgroundProperty, "Card");
+
+            var row = new DockPanel { Margin = new Thickness(0, 2, 0, 4) };
+
+            // The bar down the left of a bracket, which is where its own connector lives. A
+            // bracket joined to what is above it by "or" says so once, beside the whole block,
+            // rather than on the first condition inside it.
+            var bar = first
+                ? (UIElement)new Border { Width = 4 }
+                : Connector(group, tall: true);
+
+            DockPanel.SetDock(bar, Dock.Left);
+            row.Children.Add(bar);
+
+            var drop = Ui.Icon(Glyphs.Bin, "Remove this bracket", () =>
+            {
+                Parent(_root, group)?.Inside.Remove(group);
+                Touched();
+            });
+
+            drop.VerticalAlignment = VerticalAlignment.Top;
+            drop.Margin = new Thickness(4, 8, 0, 0);
+
+            DockPanel.SetDock(drop, Dock.Right);
+            row.Children.Add(drop);
+
+            row.Children.Add(box);
+
+            return row;
+        }
+
+        /// <summary>The two ways to add to a group.</summary>
+        /// <param name="group">The group.</param>
+        private UIElement Adding(ResultQuery group)
+        {
             var add = Ui.Actions(
                 Ui.Button("Add condition", () =>
                 {
@@ -127,30 +153,62 @@ namespace CamelWorks.UI.Views
                 }),
                 Ui.Quiet("Add bracket", () =>
                 {
-                    group.Inside.Add(new ResultQuery(
-                        group.Join == QueryJoin.All ? QueryJoin.Any : QueryJoin.All));
-
+                    group.Inside.Add(new ResultQuery());
                     Touched();
                 }));
 
             add.Margin = new Thickness(0, 4, 0, 0);
-            held.Children.Add(add);
 
-            if (top) return held;
+            return add;
+        }
 
-            var box = new Border
+        /// <summary>
+        /// The chip that says how something joins to what is above it.
+        ///
+        /// Coloured and pressed rather than a dropdown: there are two of them, they are read down
+        /// a column at a glance, and a dropdown per row would be a column of chevrons saying
+        /// nothing until each is opened.
+        /// </summary>
+        /// <param name="node">What the connector belongs to.</param>
+        /// <param name="tall">True for a bracket's bar, which runs the height of the block.</param>
+        private UIElement Connector(ResultQuery node, bool tall)
+        {
+            var either = node.Joiner == QueryJoin.Any;
+
+            var press = new System.Windows.Controls.Button
             {
-                Padding = new Thickness(10, 8, 10, 8),
-                Margin = new Thickness(12, 4, 0, 6),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(4),
-                Child = held,
+                Content = either ? "or" : "and",
+                Padding = new Thickness(6, 2, 6, 2),
+                MinWidth = tall ? 26 : 44,
+                VerticalAlignment = tall ? VerticalAlignment.Stretch : VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 6, 0),
+                ToolTip = either
+                    ? "Either this or what is above it. Press to require both."
+                    : "Both this and what is above it. Press to accept either.",
             };
 
-            box.Tint(Border.BorderBrushProperty, "Bd");
-            box.Tint(Border.BackgroundProperty, "Card");
+            // The skin has no chip style, so this borrows the two washes it does have. Both are
+            // theme tokens, so the chips follow a dark seat like everything else.
+            press.Wearing("QuietBtn");
 
-            return box;
+            press.Tint(System.Windows.Controls.Control.BackgroundProperty,
+                       either ? "AccentWash" : "BlueBg");
+
+            press.Tint(System.Windows.Controls.Control.BorderBrushProperty,
+                       either ? "Accent" : "BlueBd");
+
+            press.Tint(System.Windows.Controls.Control.ForegroundProperty,
+                       either ? "Text" : "BlueTx");
+
+            press.BorderThickness = new Thickness(1);
+
+            press.Click += (s, e) => Ui.Safely(() =>
+            {
+                node.Joiner = either ? QueryJoin.All : QueryJoin.Any;
+                Touched();
+            });
+
+            return press;
         }
 
         /// <summary>The group one node sits in, or null when it is the root.</summary>
@@ -178,7 +236,8 @@ namespace CamelWorks.UI.Views
         /// </summary>
         /// <param name="group">The group it belongs to, so it can remove itself.</param>
         /// <param name="node">The condition.</param>
-        private UIElement Clause(ResultQuery group, ResultQuery node)
+        /// <param name="first">True when nothing is drawn above it, so it has no connector.</param>
+        private UIElement Clause(ResultQuery group, ResultQuery node, bool first)
         {
             var term = node.Term!;
             var property = ResultFields.ReadProperty(term.Field, out var category, out var name);
@@ -193,6 +252,10 @@ namespace CamelWorks.UI.Views
             var elemental = property || (known?.OnElement ?? false);
 
             var row = new WrapPanel { Margin = new Thickness(0, 0, 0, 4) };
+
+            // How it joins to the condition above it. Not on the first: there is nothing above it
+            // to join to, and a chip there would invite somebody to set one.
+            if (!first) row.Children.Add(Connector(node, tall: false));
 
             // What to read.
             var titles = _fields.Select(one => one.Title).ToList();

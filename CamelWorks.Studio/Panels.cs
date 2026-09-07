@@ -442,26 +442,14 @@ namespace CamelWorks.Studio
 
         /// <summary>A search of one condition.</summary>
         /// <param name="term">The condition.</param>
-        private static ResultQuery Search(QueryTerm term)
-        {
-            var query = new ResultQuery(QueryJoin.All);
-
-            query.Inside.Add(new ResultQuery(term));
-
-            return query;
-        }
+        private static ResultQuery Search(QueryTerm term) =>
+            new ResultQuery().With(new ResultQuery(term));
 
         /// <summary>A search of two conditions, both of which have to hold.</summary>
         /// <param name="first">One condition.</param>
         /// <param name="second">The other.</param>
-        private static ResultQuery Group(QueryTerm first, QueryTerm second)
-        {
-            var query = Search(first);
-
-            query.Inside.Add(new ResultQuery(second));
-
-            return query;
-        }
+        private static ResultQuery Group(QueryTerm first, QueryTerm second) =>
+            Search(first).With(new ResultQuery(second));
 
         /// <summary>
         /// The Filter tab with a project's rules on it.
@@ -489,7 +477,7 @@ namespace CamelWorks.Studio
                 }),
                 ClashActionKind.Suppress));
 
-            var sleeves = new ResultQuery(QueryJoin.All);
+            var sleeves = new ResultQuery();
 
             sleeves.Inside.Add(new ResultQuery(
                 new QueryTerm(ResultFields.Category, QueryOp.Is)
@@ -518,7 +506,7 @@ namespace CamelWorks.Studio
                 }),
                 ClashActionKind.Flag));
 
-            var ducts = new ResultQuery(QueryJoin.All);
+            var ducts = new ResultQuery();
 
             ducts.Inside.Add(new ResultQuery(
                 new QueryTerm(ResultFields.Category, QueryOp.Is)
@@ -527,23 +515,25 @@ namespace CamelWorks.Studio
                     Text = "Ducts",
                 }));
 
-            var framing = new ResultQuery(QueryJoin.Any);
+            // A bracket whose two conditions are joined by "or", so the harness draws the chip
+            // and the bar the sketch calls for.
+            var framing = new ResultQuery();
 
-            framing.Inside.Add(new ResultQuery(
+            framing.With(new ResultQuery(
                 new QueryTerm(ResultFields.Category, QueryOp.Is)
                 {
                     Where = QueryWhere.SecondElement,
                     Text = "Structural Framing",
                 }));
 
-            framing.Inside.Add(new ResultQuery(
+            framing.With(new ResultQuery(
                 new QueryTerm(ResultFields.Category, QueryOp.Is)
                 {
                     Where = QueryWhere.SecondElement,
                     Text = "Structural Columns",
-                }));
+                }), QueryJoin.Any);
 
-            ducts.Inside.Add(framing);
+            ducts.With(framing);
 
             rules.Cards.Add(new ClashCard("Ducts through structural framing", ducts,
                                           ClashActionKind.Assign) { Value = "Mechanical" });

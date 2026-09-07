@@ -5,13 +5,13 @@ using CamelWorks.Core.Store;
 
 namespace CamelWorks.Core.Search
 {
-    /// <summary>How the clauses of one group are joined.</summary>
+    /// <summary>How one condition joins to the one above it.</summary>
     public enum QueryJoin
     {
-        /// <summary>Every clause in the group has to match.</summary>
+        /// <summary>Both have to hold.</summary>
         All = 0,
 
-        /// <summary>One matching clause is enough.</summary>
+        /// <summary>Either is enough.</summary>
         Any = 1,
     }
 
@@ -233,8 +233,7 @@ namespace CamelWorks.Core.Search
     public sealed class ResultQuery
     {
         /// <summary>An empty group, which matches everything.</summary>
-        /// <param name="join">How its clauses are joined.</param>
-        public ResultQuery(QueryJoin join = QueryJoin.All) => Join = join;
+        public ResultQuery() { }
 
         /// <summary>One clause.</summary>
         /// <param name="term">The clause.</param>
@@ -244,8 +243,14 @@ namespace CamelWorks.Core.Search
         /// <summary>The clause, or null when this is a group.</summary>
         public QueryTerm? Term { get; }
 
-        /// <summary>How the group's children are joined. Meaningless on a clause.</summary>
-        public QueryJoin Join { get; set; }
+        /// <summary>
+        /// How this joins to the thing above it, whether that is a condition or a group.
+        ///
+        /// On the node rather than on the group, because a search reads down the screen as a chain
+        /// — this AND that OR the other — and one setting for a whole group cannot say that. The
+        /// first child of a group has nothing above it, so its joiner is not read.
+        /// </summary>
+        public QueryJoin Joiner { get; set; } = QueryJoin.All;
 
         /// <summary>True to invert whatever this node answers.</summary>
         public bool Negate { get; set; }
@@ -266,6 +271,19 @@ namespace CamelWorks.Core.Search
         public bool IsEverything =>
             !IsTerm && !Negate && Inside.Count == 0;
 
+        /// <summary>Add a condition or a group to the end, joined the given way.</summary>
+        /// <param name="node">What to add.</param>
+        /// <param name="joiner">How it joins to what is above it.</param>
+        public ResultQuery With(ResultQuery node, QueryJoin joiner = QueryJoin.All)
+        {
+            if (node == null) throw new ArgumentNullException(nameof(node));
+
+            node.Joiner = joiner;
+            Inside.Add(node);
+
+            return this;
+        }
+
         /// <summary>How many clauses the whole tree holds.</summary>
         public int Clauses =>
             IsTerm ? 1 : Inside.Sum(one => one.Clauses);
@@ -276,6 +294,7 @@ namespace CamelWorks.Core.Search
             var json = JsonValue.Object();
 
             if (Negate) json.Set("not", JsonValue.String("yes"));
+            if (Joiner != QueryJoin.All) json.Set("join", JsonValue.String(Joiner.ToString()));
 
             if (IsTerm)
             {
@@ -283,7 +302,6 @@ namespace CamelWorks.Core.Search
                 return json;
             }
 
-            json.Set("join", JsonValue.String(Join.ToString()));
             json.Set("inside", JsonValue.Array(Inside.Select(one => one.ToJson())));
 
             return json;
@@ -313,26 +331,27 @@ namespace CamelWorks.Core.Search
             if (json == null || json.Kind != JsonKind.Object) return null;
 
             var negate = json["not"].AsString() == "yes";
+
+            var joiner = Enum.TryParse<QueryJoin>(json["join"].AsString(), out var read)
+                ? read
+                : QueryJoin.All;
+
             var term = json["term"];
 
             if (term != null && term.Kind == JsonKind.Object)
             {
-                var read = QueryTerm.FromJson(term);
+                var clause = QueryTerm.FromJson(term);
 
-                if (read == null)
+                if (clause == null)
                 {
                     lost++;
                     return null;
                 }
 
-                return new ResultQuery(read) { Negate = negate };
+                return new ResultQuery(clause) { Negate = negate, Joiner = joiner };
             }
 
-            var group = new ResultQuery(
-                Enum.TryParse<QueryJoin>(json["join"].AsString(), out var join) ? join : QueryJoin.All)
-            {
-                Negate = negate,
-            };
+            var group = new ResultQuery { Negate = negate, Joiner = joiner };
 
             foreach (var one in json["inside"].Items)
             {

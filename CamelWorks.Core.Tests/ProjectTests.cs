@@ -361,12 +361,12 @@ namespace CamelWorks.Core.Tests
 
             // A stacked search with a bracket in it: the overlap is tiny AND the elements are not
             // insulation.
-            var when = new ResultQuery(QueryJoin.All);
+            var when = new ResultQuery();
 
             when.Inside.Add(new ResultQuery(
                 new QueryTerm(ResultFields.Column("Overlap"), QueryOp.AtMost) { Number = 0.0005 }));
 
-            var except = new ResultQuery(QueryJoin.Any) { Negate = true };
+            var except = new ResultQuery() { Negate = true };
 
             except.Inside.Add(new ResultQuery(
                 new QueryTerm(ResultFields.Category, QueryOp.Is)
