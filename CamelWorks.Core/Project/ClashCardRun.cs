@@ -37,6 +37,22 @@ namespace CamelWorks.Core.Project
         /// <param name="findings">Which results.</param>
         bool Remove(IReadOnlyList<Finding> findings);
 
+        /// <summary>Write a remark on these results.</summary>
+        /// <param name="findings">Which results.</param>
+        /// <param name="body">What it says.</param>
+        bool Comment(IReadOnlyList<Finding> findings, string body);
+
+        /// <summary>
+        /// Attach these results to an issue, raising one under that name if it is not there yet.
+        ///
+        /// The only action that writes outside the finding register and the document: an issue is
+        /// the project's own record, and a rule that raises one is how a week's coordination turns
+        /// into something with an owner and a date.
+        /// </summary>
+        /// <param name="findings">Which results.</param>
+        /// <param name="title">What the issue is called.</param>
+        bool Raise(IReadOnlyList<Finding> findings, string title);
+
         /// <summary>Why the last write returned false.</summary>
         string? LastProblem { get; }
     }
@@ -124,7 +140,7 @@ namespace CamelWorks.Core.Project
                     found.Add(finding);
                 }
 
-                outcomes.Add(Did(card, found.Count, found, writer, gone));
+                outcomes.Add(Did(card, found.Count, found, world, writer, gone));
             }
 
             return outcomes;
@@ -173,16 +189,18 @@ namespace CamelWorks.Core.Project
         /// <param name="card">The card.</param>
         /// <param name="matched">How many results the criteria found.</param>
         /// <param name="found">The findings behind them.</param>
+        /// <param name="world">Where the issue attachment is read from.</param>
         /// <param name="writer">Where writes go, or null to change nothing.</param>
         /// <param name="gone">Ids no later card should see, added to here.</param>
         private static ClashCardOutcome Did(ClashCard card, int matched, IReadOnlyList<Finding> found,
-                                            IClashCardWriter? writer, ISet<string> gone)
+                                            IResultWorld world, IClashCardWriter? writer,
+                                            ISet<string> gone)
         {
             var value = (card.Value ?? string.Empty).Trim();
 
-            // Only what the action would actually change. A card run twice reports what it found
+            // Only what the action would actually change. A rule run twice reports what it found
             // and nothing changed, which is the honest way to say it has already been applied.
-            var changing = found.Where(one => Changes(one, card.Action, value)).ToList();
+            var changing = found.Where(one => Changes(one, card.Action, value, world)).ToList();
 
             if (writer == null || changing.Count == 0)
                 return new ClashCardOutcome(card, matched, changing.Count);
@@ -232,6 +250,31 @@ namespace CamelWorks.Core.Project
 
                     break;
 
+                case ClashActionKind.Comment:
+                    if (!writer.Comment(changing, value)) return Refused(card, matched, writer);
+
+                    foreach (var one in changing)
+                        one.Comments.Add(new FindingComment(card.Name, DateTime.UtcNow.Ticks, value));
+
+                    break;
+
+                case ClashActionKind.Label:
+                    foreach (var one in changing)
+                        if (!one.Labels.Contains(value, StringComparer.OrdinalIgnoreCase))
+                            one.Labels.Add(value);
+
+                    break;
+
+                case ClashActionKind.Priority:
+                    foreach (var one in changing) one.Priority = value;
+
+                    break;
+
+                case ClashActionKind.Issue:
+                    if (!writer.Raise(changing, value)) return Refused(card, matched, writer);
+
+                    break;
+
                 case ClashActionKind.Remove:
                     if (!writer.Remove(changing)) return Refused(card, matched, writer);
 
@@ -252,8 +295,10 @@ namespace CamelWorks.Core.Project
         /// <summary>Whether an action would change this finding at all.</summary>
         /// <param name="finding">The finding.</param>
         /// <param name="action">What the card does.</param>
-        /// <param name="value">The group, the party or the status.</param>
-        private static bool Changes(Finding finding, ClashActionKind action, string value)
+        /// <param name="value">What the action was told to set.</param>
+        /// <param name="world">Where the issue attachment is read from.</param>
+        private static bool Changes(Finding finding, ClashActionKind action, string value,
+                                    IResultWorld world)
         {
             switch (action)
             {
@@ -276,6 +321,21 @@ namespace CamelWorks.Core.Project
                 case ClashActionKind.Remove:
                     return finding.IsPresent;
 
+                case ClashActionKind.Comment:
+                    // The same remark twice is not a change. A rule run every week would otherwise
+                    // leave fifty copies of one sentence on every result it finds.
+                    return !finding.Comments.Any(one =>
+                        string.Equals(one.Body, value, StringComparison.OrdinalIgnoreCase));
+
+                case ClashActionKind.Label:
+                    return !finding.Labels.Contains(value, StringComparer.OrdinalIgnoreCase);
+
+                case ClashActionKind.Priority:
+                    return !string.Equals(finding.Priority, value, StringComparison.Ordinal);
+
+                case ClashActionKind.Issue:
+                    return !string.Equals(world.IssueOf(finding), value, StringComparison.Ordinal);
+
                 default:
                     return false;
             }
@@ -292,8 +352,16 @@ namespace CamelWorks.Core.Project
         /// <summary>What an action that needs a value is missing.</summary>
         /// <param name="action">The action.</param>
         private static string Asks(ClashActionKind action) =>
-            action == ClashActionKind.Group ? "group name"
-            : action == ClashActionKind.Assign ? "party"
-            : "status";
+            action switch
+            {
+                ClashActionKind.Group => "group name",
+                ClashActionKind.Assign => "party",
+                ClashActionKind.Status => "status",
+                ClashActionKind.Comment => "remark to write",
+                ClashActionKind.Label => "label",
+                ClashActionKind.Priority => "priority",
+                ClashActionKind.Issue => "issue to attach them to",
+                _ => "value",
+            };
     }
 }

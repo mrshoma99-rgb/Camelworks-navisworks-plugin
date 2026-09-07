@@ -41,6 +41,22 @@ namespace CamelWorks.Core.Tests
             public bool Remove(IReadOnlyList<Finding> findings) =>
                 Did("remove " + findings.Count);
 
+            public bool Comment(IReadOnlyList<Finding> findings, string body) =>
+                Did("comment " + body + " on " + findings.Count);
+
+            public bool Raise(IReadOnlyList<Finding> findings, string title)
+            {
+                if (!Did("raise " + title + " on " + findings.Count)) return false;
+
+                foreach (var one in findings) Raised[one.Id] = title;
+
+                return true;
+            }
+
+            /// <summary>What has been attached to an issue, by finding id.</summary>
+            internal Dictionary<string, string> Raised { get; } =
+                new Dictionary<string, string>(StringComparer.Ordinal);
+
             private bool Did(string what)
             {
                 if (Refuses != null)
@@ -64,7 +80,11 @@ namespace CamelWorks.Core.Tests
             public IReadOnlyList<CamelWorks.Core.Checks.ResultColumn> Columns(Finding finding) =>
                 Array.Empty<CamelWorks.Core.Checks.ResultColumn>();
 
-            public string? IssueOf(Finding finding) => null;
+            public string? IssueOf(Finding finding) =>
+                Written != null && Written.Raised.TryGetValue(finding.Id, out var said) ? said : null;
+
+            /// <summary>The writer whose attachments this world reports, or null for none.</summary>
+            internal Written? Written { get; set; }
         }
 
         /// <summary>
@@ -254,6 +274,108 @@ namespace CamelWorks.Core.Tests
             };
 
             Assert.Empty(ClashCardRun.Apply(cards, found, new Nowhere(), writer));
+        }
+
+        [Fact]
+        public void A_remark_is_written_once_however_often_the_rule_runs()
+        {
+            var found = Board(2);
+            var writer = new Written();
+
+            var cards = new[]
+            {
+                new ClashCard("Say it", Every(), ClashActionKind.Comment)
+                {
+                    Value = "Coordinated on the 3rd",
+                },
+            };
+
+            Assert.Equal(2, Assert.Single(
+                ClashCardRun.Apply(cards, found, new Nowhere(), writer)).Changed);
+
+            Assert.All(found, one => Assert.Equal("Coordinated on the 3rd",
+                                                  Assert.Single(one.Comments).Body));
+
+            // The same rule again. It finds the same two and changes neither.
+            var again = Assert.Single(ClashCardRun.Apply(cards, found, new Nowhere(), writer));
+
+            Assert.Equal(2, again.Matched);
+            Assert.Equal(0, again.Changed);
+            Assert.All(found, one => Assert.Single(one.Comments));
+        }
+
+        [Fact]
+        public void A_label_and_a_priority_are_written_to_the_register()
+        {
+            var found = Board(3);
+            var writer = new Written();
+
+            var cards = new[]
+            {
+                new ClashCard("Mark them", Every(), ClashActionKind.Label) { Value = "Level 03" },
+                new ClashCard("Raise them", Every(), ClashActionKind.Priority) { Value = "High" },
+            };
+
+            var did = ClashCardRun.Apply(cards, found, new Nowhere(), writer);
+
+            Assert.Equal(3, did[0].Changed);
+            Assert.All(found, one => Assert.Contains("Level 03", one.Labels));
+
+            // Two of the three already carry High, so only the third is a change.
+            Assert.Equal(1, did[1].Changed);
+            Assert.All(found, one => Assert.Equal("High", one.Priority));
+
+            // Neither reaches the document: a label and a priority are the project's own fields.
+            Assert.Empty(writer.Log);
+        }
+
+        [Fact]
+        public void Attaching_to_an_issue_is_not_done_twice()
+        {
+            var found = Board(2);
+            var writer = new Written();
+            var world = new Nowhere { Written = writer };
+
+            var cards = new[]
+            {
+                new ClashCard("Raise it", Every(), ClashActionKind.Issue)
+                {
+                    Value = "Level 03 riser",
+                },
+            };
+
+            Assert.Equal(2, Assert.Single(ClashCardRun.Apply(cards, found, world, writer)).Changed);
+            Assert.Equal("raise Level 03 riser on 2", Assert.Single(writer.Log));
+
+            var again = Assert.Single(ClashCardRun.Apply(cards, found, world, writer));
+
+            Assert.Equal(2, again.Matched);
+            Assert.Equal(0, again.Changed);
+            Assert.Single(writer.Log);
+        }
+
+        [Fact]
+        public void Every_action_that_needs_a_value_says_so_rather_than_running_without_one()
+        {
+            var found = Board(1);
+            var writer = new Written();
+
+            foreach (var action in new[]
+            {
+                ClashActionKind.Group, ClashActionKind.Assign, ClashActionKind.Status,
+                ClashActionKind.Comment, ClashActionKind.Label, ClashActionKind.Priority,
+                ClashActionKind.Issue,
+            })
+            {
+                var did = Assert.Single(ClashCardRun.Apply(
+                    new[] { new ClashCard("No value", Every(), action) },
+                    found, new Nowhere(), writer));
+
+                Assert.Equal(0, did.Matched);
+                Assert.NotNull(did.Problem);
+            }
+
+            Assert.Empty(writer.Log);
         }
     }
 }

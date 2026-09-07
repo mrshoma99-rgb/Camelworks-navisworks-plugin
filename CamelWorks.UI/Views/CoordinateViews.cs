@@ -1373,6 +1373,32 @@ namespace CamelWorks.UI.Views
                     case ClashActionKind.Status:
                         return Ui.Field("Status", Picker(card, FindingStatusWords.Words));
 
+                    case ClashActionKind.Priority:
+                        return Ui.Field("Priority", Picker(card, Ranks()));
+
+                    case ClashActionKind.Label:
+                        return Ui.Field("Label",
+                            Ui.Text(card.Value, typed => { card.Value = typed; Touched(); }, 240));
+
+                    case ClashActionKind.Issue:
+                        return Ui.Field("Issue",
+                            Ui.Text(card.Value, typed => { card.Value = typed; Touched(); }, 240),
+                            "An issue of this name is raised if the project has none, and the "
+                            + "results are attached to it. Attaching writes the project file at "
+                            + "once, because the issue register is another tab's state.");
+
+                    case ClashActionKind.Comment:
+                        var said = Ui.Text(card.Value, typed => { card.Value = typed; Touched(); }, 300);
+
+                        said.AcceptsReturn = true;
+                        said.TextWrapping = TextWrapping.Wrap;
+                        said.MinLines = 2;
+                        said.MaxLines = 5;
+
+                        return Ui.Field("Remark", said,
+                            "Written once. A rule that has already left this remark on a result "
+                            + "does not leave it again.");
+
                     default:
                         return Ui.Stack();
                 }
@@ -1398,6 +1424,16 @@ namespace CamelWorks.UI.Views
                     Touched();
                     Redraw();
                 }, 240);
+            }
+
+            /// <summary>The project's priority words, never empty.</summary>
+            private IReadOnlyList<string> Ranks()
+            {
+                var held = _seat.Profile.Priorities.ToList();
+
+                if (held.Count == 0) held.AddRange(Core.Project.Priorities.All);
+
+                return held;
             }
 
             /// <summary>The project's parties, never empty.</summary>
@@ -1600,11 +1636,12 @@ namespace CamelWorks.UI.Views
                 var results = Reading(session, job);
                 if (results == null) return;
 
-                var writer = new CardWriter(session);
+                var world = new SeatWorld(session);
+                var writer = new CardWriter(session, world);
 
                 job.Say("Running " + Ui.Count(live.Count, "rule") + "...");
 
-                var outcomes = ClashCardRun.Apply(live, results, new SeatWorld(session), writer);
+                var outcomes = ClashCardRun.Apply(live, results, world, writer);
 
                 if (!session.Findings.Save())
                     _preview.Children.Add(Ui.Problem(
@@ -2115,6 +2152,9 @@ namespace CamelWorks.UI.Views
             /// <inheritdoc />
             public string? IssueOf(Finding finding) => Raised(finding);
 
+            /// <summary>Read the issue register again, because something has written to it.</summary>
+            internal void Forget() => _raised = null;
+
             /// <summary>
             /// The title of the issue a result is attached to, or null.
             ///
@@ -2149,13 +2189,19 @@ namespace CamelWorks.UI.Views
         private sealed class CardWriter : IClashCardWriter
         {
             private readonly Session _session;
+            private readonly SeatWorld _world;
             private readonly ICheckHostEcho? _echo;
 
             /// <summary>Write to one seat's document.</summary>
             /// <param name="session">The live session.</param>
-            internal CardWriter(Session session)
+            /// <param name="world">
+            /// The same world the search is reading, so a write that changes what a condition
+            /// would answer is seen by the results after it.
+            /// </param>
+            internal CardWriter(Session session, SeatWorld world)
             {
                 _session = session ?? throw new ArgumentNullException(nameof(session));
+                _world = world ?? throw new ArgumentNullException(nameof(world));
 
                 _echo = new ClashCheck(session.Clash, session.MetresPerUnit, session.ClashProblem)
                     .HostEcho;
@@ -2175,6 +2221,55 @@ namespace CamelWorks.UI.Views
             /// <inheritdoc />
             public bool Group(IReadOnlyList<Finding> findings, string name) =>
                 Echoed(echo => echo.SetGroup(findings, name));
+
+            /// <inheritdoc />
+            public bool Comment(IReadOnlyList<Finding> findings, string body) =>
+                Echoed(echo => echo.Comment(findings, body, _session.Owner));
+
+            /// <summary>
+            /// Attach results to an issue, raising it under that name if it is not there yet.
+            ///
+            /// Written straight to the project file rather than held for the tab's own save: the
+            /// issue register is another screen's state, and a run that changed it in memory only
+            /// would show the Issue Manager something the file does not hold.
+            /// </summary>
+            /// <param name="findings">The results.</param>
+            /// <param name="title">What the issue is called.</param>
+            public bool Raise(IReadOnlyList<Finding> findings, string title)
+            {
+                LastProblem = null;
+
+                var register = Issues(_session);
+
+                var issue = register.Issues.FirstOrDefault(one =>
+                    string.Equals(one.Title, title, StringComparison.OrdinalIgnoreCase));
+
+                if (issue == null)
+                {
+                    issue = new Issue(Guid.NewGuid().ToString("N"), title);
+                    register.Put(issue);
+                }
+
+                foreach (var one in findings)
+                    if (!issue.Findings.Contains(one.Id, StringComparer.Ordinal))
+                        issue.Findings.Add(one.Id);
+
+                _session.Store.Section(ProjectStore.IssuesSection).Set("register", register.ToJson());
+
+                // Through the one door: an issue names finding ids and the findings are in the
+                // sidecar beside the project file, so the two are written together or not at all.
+                if (!_session.SaveWork(out var problem))
+                {
+                    LastProblem = problem ?? "The project file could not be written.";
+                    return false;
+                }
+
+                // The world has to see the attachment this call made, or the next rule about
+                // results not yet on an issue would find the ones just attached.
+                _world.Forget();
+
+                return true;
+            }
 
             /// <inheritdoc />
             public bool Remove(IReadOnlyList<Finding> findings)

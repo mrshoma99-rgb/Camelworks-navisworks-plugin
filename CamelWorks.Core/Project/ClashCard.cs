@@ -27,6 +27,18 @@ namespace CamelWorks.Core.Project
 
         /// <summary>Delete the results from the Navisworks document.</summary>
         Remove = 5,
+
+        /// <summary>Write a remark on them.</summary>
+        Comment = 6,
+
+        /// <summary>Put a label on them.</summary>
+        Label = 7,
+
+        /// <summary>Set their priority.</summary>
+        Priority = 8,
+
+        /// <summary>Attach them to an issue, raising it if it is not there yet.</summary>
+        Issue = 9,
     }
 
     /// <summary>
@@ -110,9 +122,9 @@ namespace CamelWorks.Core.Project
         /// <summary>Whether an action is one that has to be told a group, a party or a status.</summary>
         /// <param name="action">The action.</param>
         public static bool Needs(ClashActionKind action) =>
-            action == ClashActionKind.Group
-            || action == ClashActionKind.Assign
-            || action == ClashActionKind.Status;
+            action != ClashActionKind.Suppress
+            && action != ClashActionKind.Flag
+            && action != ClashActionKind.Remove;
 
         /// <summary>Whether an action cannot be undone by turning the card off.</summary>
         /// <param name="action">The action.</param>
@@ -139,6 +151,14 @@ namespace CamelWorks.Core.Project
                 case ClashActionKind.Status:
                     return said.Length == 0 ? "Set the status" : "Set the status to " + said;
                 case ClashActionKind.Remove: return "Delete from the document";
+                case ClashActionKind.Comment:
+                    return said.Length == 0 ? "Write a remark" : "Remark \u201c" + said + "\u201d";
+                case ClashActionKind.Label:
+                    return said.Length == 0 ? "Label" : "Label \u201c" + said + "\u201d";
+                case ClashActionKind.Priority:
+                    return said.Length == 0 ? "Set the priority" : "Set the priority to " + said;
+                case ClashActionKind.Issue:
+                    return said.Length == 0 ? "Attach to an issue" : "Attach to \u201c" + said + "\u201d";
                 default: return action.ToString();
             }
         }
