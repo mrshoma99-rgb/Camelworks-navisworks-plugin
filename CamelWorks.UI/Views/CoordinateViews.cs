@@ -2034,71 +2034,9 @@ namespace CamelWorks.UI.Views
             /// What each action does, what order means, and the long form of the scope the surface
             /// states in one line.
             /// </summary>
-            private void Guide()
-            {
-                Ui.Configure("How rules are run", null,
-                    new Ui.Page("The order", () => Ui.Stack(
-                        Part("Top to bottom",
-                             "A rule finds results with its criteria and does one thing to them. "
-                             + "The first rule sees every clash result in the project; each rule "
-                             + "after it sees what the rules above left. A rule that suppresses or "
-                             + "removes takes its results off the list the rules under it see, so "
-                             + "dragging a rule up or down changes what the ones below it find."),
-                        Part("On a press",
-                             "Nothing runs on save, and nothing runs when the tab opens. Review "
-                             + "walks the list and writes nothing; Run all rules walks it and "
-                             + "writes; a rule opened on the right can be run on its own. All "
-                             + "three read the results with no rule applied, so running the same "
-                             + "list twice reports what it found and nothing changed the second "
-                             + "time."))),
-                    new Ui.Page("The actions", () => Ui.Stack(
-                        Part("Suppress and flag",
-                             "Both are marks on the finding and both name the rule that set them. "
-                             + "A suppressed result is off the board and hidden from the rules "
-                             + "below; a flagged one stays where it is."),
-                        Part("Group, assign and change status",
-                             "Written to the project's finding register and echoed into the "
-                             + "Navisworks document, so the native clash window shows the same "
-                             + "group, the same assignee and the same status. A document that "
-                             + "will not take the write says so on the rule."),
-                        Part("Remove",
-                             "Deletes the results from the Navisworks document. They are gone from "
-                             + "the native clash window as well, and running the clash test again "
-                             + "is the only way to get them back. The finding stays in the "
-                             + "register marked absent, so an issue that names one can still say "
-                             + "what it was about."))),
-                    new Ui.Page("What they cover", () => Ui.Stack(
-                        Part("Clash results only",
-                             "A rule's criteria work on a clash result: two items, the models they "
-                             + "came from, and the overlap between them. A clearance shortfall and "
-                             + "a fall-hazard opening are not that shape, so no rule on this screen "
-                             + "can find one."),
-                        Part("Which tests",
-                             "Every clash test in the project. There is no rule that narrows the "
-                             + "list to one test; add criteria on the test name to keep a rule to "
-                             + "one."),
-                        Part("Undoing a run",
-                             "A suppress or flag mark stands until it is taken off, because it is "
-                             + "written by a run rather than derived by the board on every load. "
-                             + "Clear the marks, above the list, takes every one of them "
-                             + "off. A group, an assignee or a status is changed by running a rule "
-                             + "that sets a different one, or by hand on the Manage tab."))));
-            }
+            private void Guide() =>
+                Ui.Configure("How rules are run", null, RulePages());
 
-            /// <summary>One passage of the help window: a sentence-case heading and its paragraph.</summary>
-            /// <param name="title">What it is about.</param>
-            /// <param name="text">The passage.</param>
-            private static UIElement Part(string title, string text)
-            {
-                var head = Ui.Heading(title);
-                head.Margin = new Thickness(0, 0, 0, 4);
-
-                var body = Ui.Small(text);
-                body.MaxWidth = TextWidth;
-                body.Margin = new Thickness(0, 0, 0, 16);
-
-                return Ui.Stack(head, body);
-            }
         }
 
         /// <summary>
@@ -3569,49 +3507,8 @@ namespace CamelWorks.UI.Views
             /// known, so none of them is worth a paragraph beside a control.
             /// </summary>
             private void Help() =>
-                Ui.Configure("What goes in each document", null,
-                    new Ui.Page("The three documents", () => Ui.Stack(
-                        Part("Full report",
-                             "The whole board laid out for a desk: the funnel the board was "
-                             + "narrowed by, what changed since the last run, then every issue "
-                             + "with its clashes, party and priority."),
-                        Part("Field pack",
-                             "The same board set for a site cabin: one issue per page, large "
-                             + "type, and a line to sign against."),
-                        Part("Penetration schedule",
-                             "Every service the model shows passing through structure, with what "
-                             + "it is and where. No opening size is derived and no host thickness "
-                             + "is inferred: those dimensions are used to cut concrete and are "
-                             + "not estimated here."))),
-                    new Ui.Page("Revisions and coverage", () => Ui.Stack(
-                        Part("Revisions",
-                             "Each issue takes the next revision letter and its cover names the "
-                             + "one it supersedes. Each party has its own sequence, so writing "
-                             + "one file per party moves only that party's letter on."),
-                        Part("What is covered",
-                             "The clash board: the clash results the engine reported and the "
-                             + "issues raised by hand on the board. Clearance and fall-hazard "
-                             + "findings are held in the same register and are not written into "
-                             + "any of these documents."),
-                        Part("Where it goes",
-                             "The folder and the file name are kept per project. A blank folder "
-                             + "writes to your Documents folder, and the name is filled in from "
-                             + "the tokens listed under it."))));
+                Ui.Configure("What goes in each document", null, DocumentPages());
 
-            /// <summary>One passage of the help window: a sentence-case heading and its paragraph.</summary>
-            /// <param name="title">What it is about.</param>
-            /// <param name="text">The passage.</param>
-            private static UIElement Part(string title, string text)
-            {
-                var head = Ui.Heading(title);
-                head.Margin = new Thickness(0, 0, 0, 4);
-
-                var body = Ui.Small(text);
-                body.MaxWidth = TextWidth;
-                body.Margin = new Thickness(0, 0, 0, 16);
-
-                return Ui.Stack(head, body);
-            }
 
             private void Write(Job job)
             {
@@ -4951,6 +4848,115 @@ namespace CamelWorks.UI.Views
                 ?? item.Property("Element", "GUID"));
 
             return new BcfComponent(guid, key.ToString(), "CamelWorks");
+        }
+
+
+        /// <summary>
+        /// What the Filter tab's "How rules are run" window says, as its pages.
+        ///
+        /// Apart from the window that shows them so the harness can draw them. A window needs a
+        /// screen and the harness has none, so until this was split out the only reader of this
+        /// text was somebody on a licensed seat who had already pressed the symbol.
+        /// </summary>
+        public static Ui.Page[] RulePages() => new[]
+        {
+            new Ui.Page("The order", () => Ui.Stack(
+                Part("Top to bottom",
+                     "A rule finds results with its criteria and does one thing to them. "
+                     + "The first rule sees every clash result in the project; each rule "
+                     + "after it sees what the rules above left. A rule that suppresses or "
+                     + "removes takes its results off the list the rules under it see, so "
+                     + "dragging a rule up or down changes what the ones below it find."),
+                Part("On a press",
+                     "Nothing runs on save, and nothing runs when the tab opens. Review "
+                     + "walks the list and writes nothing; Run all rules walks it and "
+                     + "writes; a rule opened on the right can be run on its own. All "
+                     + "three read the results with no rule applied, so running the same "
+                     + "list twice reports what it found and nothing changed the second "
+                     + "time."))),
+                    new Ui.Page("The actions", () => Ui.Stack(
+                Part("Suppress and flag",
+                     "Both are marks on the finding and both name the rule that set them. "
+                     + "A suppressed result is off the board and hidden from the rules "
+                     + "below; a flagged one stays where it is."),
+                Part("Group, assign and change status",
+                     "Written to the project's finding register and echoed into the "
+                     + "Navisworks document, so the native clash window shows the same "
+                     + "group, the same assignee and the same status. A document that "
+                     + "will not take the write says so on the rule."),
+                Part("Remove",
+                     "Deletes the results from the Navisworks document. They are gone from "
+                     + "the native clash window as well, and running the clash test again "
+                     + "is the only way to get them back. The finding stays in the "
+                     + "register marked absent, so an issue that names one can still say "
+                     + "what it was about."))),
+                    new Ui.Page("What they cover", () => Ui.Stack(
+                Part("Clash results only",
+                     "A rule's criteria work on a clash result: two items, the models they "
+                     + "came from, and the overlap between them. A clearance shortfall and "
+                     + "a fall-hazard opening are not that shape, so no rule on this screen "
+                     + "can find one."),
+                Part("Which tests",
+                     "Every clash test in the project. There is no rule that narrows the "
+                     + "list to one test; add criteria on the test name to keep a rule to "
+                     + "one."),
+                Part("Undoing a run",
+                     "A suppress or flag mark stands until it is taken off, because it is "
+                     + "written by a run rather than derived by the board on every load. "
+                     + "Clear the marks, above the list, takes every one of them "
+                     + "off. A group, an assignee or a status is changed by running a rule "
+                     + "that sets a different one, or by hand on the Manage tab."))),
+        };
+
+        /// <summary>
+        /// What the Report tab's "What goes in each document" window says, as its pages.
+        ///
+        /// Split out for the same reason as <see cref="RulePages"/>.
+        /// </summary>
+        public static Ui.Page[] DocumentPages() => new[]
+        {
+            new Ui.Page("The three documents", () => Ui.Stack(
+                Part("Full report",
+                     "The whole board laid out for a desk: the funnel the board was "
+                     + "narrowed by, what changed since the last run, then every issue "
+                     + "with its clashes, party and priority."),
+                Part("Field pack",
+                     "The same board set for a site cabin: one issue per page, large "
+                     + "type, and a line to sign against."),
+                Part("Penetration schedule",
+                     "Every service the model shows passing through structure, with what "
+                     + "it is and where. No opening size is derived and no host thickness "
+                     + "is inferred: those dimensions are used to cut concrete and are "
+                     + "not estimated here."))),
+                    new Ui.Page("Revisions and coverage", () => Ui.Stack(
+                Part("Revisions",
+                     "Each issue takes the next revision letter and its cover names the "
+                     + "one it supersedes. Each party has its own sequence, so writing "
+                     + "one file per party moves only that party's letter on."),
+                Part("What is covered",
+                     "The clash board: the clash results the engine reported and the "
+                     + "issues raised by hand on the board. Clearance and fall-hazard "
+                     + "findings are held in the same register and are not written into "
+                     + "any of these documents."),
+                Part("Where it goes",
+                     "The folder and the file name are kept per project. A blank folder "
+                     + "writes to your Documents folder, and the name is filled in from "
+                     + "the tokens listed under it."))),
+        };
+
+        /// <summary>One passage of a help window: a sentence-case heading and its paragraph.</summary>
+        /// <param name="title">What it is about.</param>
+        /// <param name="text">The passage.</param>
+        private static UIElement Part(string title, string text)
+        {
+            var head = Ui.Heading(title);
+            head.Margin = new Thickness(0, 0, 0, 4);
+
+            var body = Ui.Small(text);
+            body.MaxWidth = 620;
+            body.Margin = new Thickness(0, 0, 0, 16);
+
+            return Ui.Stack(head, body);
         }
 
     }

@@ -4097,6 +4097,17 @@ namespace CamelWorks.UI.Views
             internal string Name { get; }
 
             internal Func<UIElement> Build { get; }
+
+            /// <summary>How it reads in the section list.</summary>
+            public string Named => Name;
+
+            /// <summary>
+            /// Build the section on its own.
+            ///
+            /// For a harness that has no window to put it in: a Ui.Configure window needs a
+            /// screen, so its pages were the one part of this product no picture could contain.
+            /// </summary>
+            public UIElement Drawn() => Build();
         }
 
         /// <summary>

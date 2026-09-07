@@ -62,6 +62,14 @@ namespace CamelWorks.Studio
             Page("app-clash-keys", "Clash Manager · Manage, the keyboard", 560,
                  () => new Border { Padding = new Thickness(16), Child = BoardKeys.Drawn() }),
 
+            // The two prose windows behind the Filter and Report tabs' info symbols. Each is
+            // three or four pages of text a coordinator is expected to read once and then know,
+            // and until now the only way to read it was to press the symbol on a licensed seat.
+            Page("app-clash-rules-guide", "Clash Manager · How rules are run", 700,
+                 () => Sheet(CoordinateViews.RulePages())),
+            Page("app-clash-report-guide", "Clash Manager · What goes in each document", 700,
+                 () => Sheet(CoordinateViews.DocumentPages())),
+
             // The same board with the rail's filter panel open: the disciplines, the folders and
             // the naming tokens this read actually holds, drawn as a card over the test list.
             Page("app-clash-finder", "Clash Manager · Manage, the filter panel open", 980,
@@ -293,6 +301,27 @@ namespace CamelWorks.Studio
             // Not in the render's default list; named on dispatch.
             Page("app-clash-new", "Clash Manager · A new clash test", 620, NewClash),
         };
+
+        /// <summary>
+        /// The pages of one Ui.Configure window, drawn one under the other.
+        ///
+        /// The window puts them behind a section list; the harness has no window, and stacking
+        /// them under their own names photographs every page in one shot rather than needing one
+        /// page per section.
+        /// </summary>
+        /// <param name="pages">The window's sections.</param>
+        private static UIElement Sheet(Ui.Page[] pages)
+        {
+            var held = Ui.Stack();
+
+            foreach (var page in pages)
+            {
+                held.Children.Add(Ui.Eyebrow(page.Named));
+                held.Children.Add(page.Drawn());
+            }
+
+            return new Border { Padding = new Thickness(16), Child = held };
+        }
 
         /// <summary>The new-clash-test form, as it opens.</summary>
         private static UIElement NewClash()

@@ -35,7 +35,7 @@ PANELS = ROOT / "CamelWorks.UI"
 # in all. Raise them when a page is added; a drop is a page that stopped being drawn, which is what
 # these numbers are here to catch.
 AT_LEAST = 19
-PAGES_AT_LEAST = 40
+PAGES_AT_LEAST = 42
 
 # A local bound to the empty seat: `var seat = Seated();`
 BOUND = re.compile(r"\bvar\s+(\w+)\s*=\s*Seated\(\)\s*;")

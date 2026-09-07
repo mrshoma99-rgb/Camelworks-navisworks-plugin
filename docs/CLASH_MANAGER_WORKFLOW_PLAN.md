@@ -304,8 +304,14 @@ symbols became labelled buttons rather than all of them going behind a glyph.
 board row to `Mark`, which takes results and filters a board row out, so it changed nothing and
 reported that nothing was selected. It passes the row's results now.
 
-**Item 4, the harness gap.** The board's menus and the shortcuts sheet have pages. The five
-`Ui.Configure` dialogs and the two pickers do not yet.
+**Item 4, the harness gap.** The board's menus, the shortcuts sheet, "How rules are run" and "What
+goes in each document" have pages. `Ui.Page` gained a public `Drawn()` so a window's sections can be
+built without the window.
+
+Two dialogs still have none: "How a test is named" and "Markers in the model". Both build their page
+from live screen state rather than from prose, so drawing either means splitting an instance method
+the way `CheckPicker.Entries` was split, not adding a page. The two pickers are also still
+undrawn.
 
 The first draft of the menus page listed `SortMenu` and `FilterMenu` as two menus. They are halves
 of `TableMenu`, which is what the funnel opens, so the page drew two menus a coordinator never sees
