@@ -16,6 +16,7 @@ using CamelWorks.Core.Issues;
 using CamelWorks.Core.OpenBim;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Report;
+using CamelWorks.Core.Search;
 using CamelWorks.Core.Store;
 
 namespace CamelWorks.UI.Views
@@ -1035,9 +1036,11 @@ namespace CamelWorks.UI.Views
             /// <summary>The list with nothing in it, drawn where a rule would be.</summary>
             private UIElement Nothing()
             {
+                // No way out on the card: New rule sits directly under the list, where it also is
+                // once there are rules, and two of the same button a centimetre apart reads as two
+                // different things.
                 var card = Ui.Empty("No rules.",
-                                    "Every clash result the tests report reaches the board as it is.",
-                                    "New rule", Fresh);
+                                    "Every result the tests report reaches the board as it is.");
 
                 // Stretched, not sized: the stage is now half the window and a fixed 520 would
                 // overflow it on a narrow one.
@@ -1077,7 +1080,7 @@ namespace CamelWorks.UI.Views
 
                 var title = Ui.Line(Place(at) + ".  " + card.Name, 1, bold: chosen);
 
-                var under = Ui.Small(Criteria(card.When) + "   →   " + card.Does
+                var under = Ui.Small(Searched(card.When) + "   →   " + card.Does
                                      + (card.IsEnabled ? string.Empty : "   (off)")
                                      + Found(card));
 
@@ -1232,24 +1235,11 @@ namespace CamelWorks.UI.Views
 
                 name.LostFocus += (s, e) => Ui.Safely(Redraw);
 
-                var when = new SpecEditor("Find results where",
-                                          PredicateSpec.Kinds.Where(k => k.Input != SpecInput.Nested).ToList(),
-                                          null);
-
-                when.Show(card.When);
-
-                // Read back on every keystroke rather than on a press: the rule is the thing on
-                // screen, and a criteria edit that only landed on Save would be a second state to
-                // keep in step with the list beside it.
-                when.Changed = () =>
-                {
-                    var spec = when.Spec();
-
-                    if (spec != null) card.When = spec;
-
-                    Touched();
-                    Redraw();
-                };
+                // The search writes into the rule as it is edited. Redrawing the whole screen on
+                // every keystroke would take the caret with it, so a change marks the project
+                // unsaved and the list is redrawn only when the shape of the search changes.
+                var when = new SearchEditor(card.When, _seat.Checks.Find(FindingSource.Clash),
+                                            Touched);
 
                 var act = Ui.Choice(Acts.Select(Verb), Verb(card.Action), picked =>
                 {
@@ -1269,11 +1259,17 @@ namespace CamelWorks.UI.Views
                         + "go from the native clash window too, and running the clash test again "
                         + "is the only way to get them back."));
 
-                if (card.When.Descriptor?.Id == "always"
+                if (card.When.IsEverything
                     && (card.Action == ClashActionKind.Suppress
                         || card.Action == ClashActionKind.Remove))
-                    said.Children.Add(Ui.Note("These criteria find every result, so this rule "
-                        + "would take the whole board off. Narrow it first."));
+                    said.Children.Add(Ui.Note("This search has no conditions, so it finds every "
+                        + "result and the rule would take the whole board off. Narrow it first."));
+
+                if (card.Lost > 0)
+                    said.Children.Add(Ui.Problem(
+                        Ui.Count(card.Lost, "condition") + " in this rule could not be read, so it "
+                        + "was turned off. It was saved by a newer build; running it as it stands "
+                        + "would act on more results than it was written for."));
 
                 var one = _live == null
                     ? (UIElement)Stopped("Run this rule", primary: false)
@@ -1283,6 +1279,10 @@ namespace CamelWorks.UI.Views
                 _pane.Children.Add(Bench.Group("Criteria",
                     Ui.Field("Rule name", name),
                     when.View));
+
+                _pane.Children.Add(Ui.Small(
+                    "Conditions read the result's own fields, whatever the check that produced it "
+                    + "measured, and the properties of the elements it is about."));
 
                 _pane.Children.Add(Bench.Group("Action",
                     Ui.Field("Do this", act),
@@ -1374,8 +1374,7 @@ namespace CamelWorks.UI.Views
             /// <summary>Add a rule and open it.</summary>
             private void Fresh()
             {
-                var card = new ClashCard(Untaken(), new PredicateSpec("always"),
-                                         ClashActionKind.Suppress);
+                var card = new ClashCard(Untaken(), new ResultQuery(), ClashActionKind.Suppress);
 
                 _rules.Cards.Add(card);
                 _open = card;
@@ -1521,15 +1520,14 @@ namespace CamelWorks.UI.Views
                     }
                 }
 
-                var items = Reading(session, job);
-                if (items == null) return;
+                var results = Reading(session, job);
+                if (results == null) return;
 
-                var register = session.Findings.Findings;
                 var writer = new CardWriter(session);
 
                 job.Say("Running " + Ui.Count(live.Count, "rule") + "...");
 
-                var outcomes = ClashCardRun.Apply(live, items, register.Find, writer);
+                var outcomes = ClashCardRun.Apply(live, results, new SeatWorld(session), writer);
 
                 if (!session.Findings.Save())
                     _preview.Children.Add(Ui.Problem(
@@ -1543,31 +1541,45 @@ namespace CamelWorks.UI.Views
             /// <param name="job">The job, for progress and Stop.</param>
             private void Preview(Session session, Job job)
             {
-                var items = Reading(session, job);
-                if (items == null) return;
+                var results = Reading(session, job);
+                if (results == null) return;
 
-                Report(ClashCardRun.Plan(_rules.Cards, items, session.Findings.Findings.Find),
-                       ran: false);
+                Report(ClashCardRun.Plan(_rules.Cards, results, new SeatWorld(session)), ran: false);
             }
 
             /// <summary>
-            /// Every clash result in the project, with no rule applied.
+            /// The results the rules run over: the project's findings, read fresh.
             ///
-            /// The board is built with an empty rule set on purpose. Reading it with the rules
-            /// applied would hand the run a set they had already shaped.
+            /// The register rather than the clash board. A rule's search is written on a finding —
+            /// its status, its check's own columns, its elements — so the results of every check
+            /// are searchable by the same rule, and a rule that names no check runs over all of
+            /// them.
+            ///
+            /// The board is still built first, on a seat with a clash engine, because that is what
+            /// reads the engine and brings its results into the register. Built with an empty rule
+            /// set, so what the rules are handed is what the tests reported.
             /// </summary>
             /// <param name="session">The live session.</param>
             /// <param name="job">The job.</param>
-            private IReadOnlyList<ClashItem>? Reading(Session session, Job job)
+            private IReadOnlyList<Finding>? Reading(Session session, Job job)
             {
                 var notes = new List<string>();
-                var board = CoordinateViews.Build(session, job, notes, new ClashRuleSet(), preview: true);
+
+                CoordinateViews.Build(session, job, notes, new ClashRuleSet(), preview: true);
 
                 foreach (var note in notes) _preview.Children.Add(Ui.Note(note));
 
-                if (board == null) return null;
+                var held = session.Findings.Findings.Present.ToList();
 
-                return board.Groups.SelectMany(one => one.Items).ToList();
+                if (held.Count == 0)
+                {
+                    _preview.Children.Add(Ui.Note(
+                        "The project holds no results. Run a check on the Create tab first."));
+
+                    return null;
+                }
+
+                return held;
             }
 
             /// <summary>
@@ -1680,6 +1692,19 @@ namespace CamelWorks.UI.Views
                 var fine = Fine(from) || Fine(to);
                 return Length(from, fine) + " and " + Length(to, fine);
             }
+
+            /// <summary>
+            /// A rule's search in one line, for the list.
+            ///
+            /// A count rather than the search written out: a stacked search does not fit on a card
+            /// and a half-written one would read as nonsense. The panel beside the list holds the
+            /// search itself.
+            /// </summary>
+            /// <param name="query">The search.</param>
+            private static string Searched(ResultQuery query) =>
+                query.IsEverything
+                    ? "Every result"
+                    : Ui.Count(query.Clauses, "condition");
 
             /// <summary>
             /// What a rule finds, with the unit on every measured value.
@@ -1964,6 +1989,75 @@ namespace CamelWorks.UI.Views
                 var said = metres > 0 ? metres : 5.0;
 
                 return said.ToString("0.###", CultureInfo.InvariantCulture) + " m";
+            }
+        }
+
+        /// <summary>
+        /// What a rule's search reads besides the result: the elements, the check's columns, and
+        /// whether an issue has been raised for it.
+        ///
+        /// The elements come from the open model, so a search about a property answers on a live
+        /// seat and finds nothing on one reading a file — which is the honest answer, because the
+        /// model those elements were in is not there to ask.
+        /// </summary>
+        private sealed class SeatWorld : IResultWorld
+        {
+            private readonly Session _session;
+            private readonly Dictionary<string, IReadOnlyList<ResultColumn>> _columns =
+                new Dictionary<string, IReadOnlyList<ResultColumn>>(StringComparer.OrdinalIgnoreCase);
+
+            private Dictionary<string, string>? _raised;
+
+            /// <summary>Read from one seat.</summary>
+            /// <param name="session">The live session.</param>
+            internal SeatWorld(Session session) =>
+                _session = session ?? throw new ArgumentNullException(nameof(session));
+
+            /// <inheritdoc />
+            public IModelItem? Element(ElementKey key) => _session.Model.Resolve(key);
+
+            /// <summary>
+            /// The columns of the check that produced a result, held per check.
+            ///
+            /// A search runs over every finding in the project and asks this for each one. Looking
+            /// the check up in the catalogue every time would be a walk per result.
+            /// </summary>
+            /// <param name="finding">The result.</param>
+            public IReadOnlyList<ResultColumn> Columns(Finding finding)
+            {
+                if (_columns.TryGetValue(finding.Source, out var held)) return held;
+
+                var found = _session.Checks.Find(finding.Source)?.Columns
+                            ?? (IReadOnlyList<ResultColumn>)Array.Empty<ResultColumn>();
+
+                _columns[finding.Source] = found;
+
+                return found;
+            }
+
+            /// <inheritdoc />
+            public string? IssueOf(Finding finding) => Raised(finding);
+
+            /// <summary>
+            /// The title of the issue a result is attached to, or null.
+            ///
+            /// The register is read once and turned inside out: an issue names its findings, and
+            /// the question asked here is the other way round.
+            /// </summary>
+            /// <param name="finding">The result.</param>
+            private string? Raised(Finding finding)
+            {
+                if (_raised == null)
+                {
+                    _raised = new Dictionary<string, string>(StringComparer.Ordinal);
+
+                    foreach (var issue in Issues(_session).Issues)
+                        foreach (var id in issue.Findings)
+                            if (id != null && !_raised.ContainsKey(id))
+                                _raised[id] = issue.Title;
+                }
+
+                return _raised.TryGetValue(finding.Id, out var said) ? said : null;
             }
         }
 

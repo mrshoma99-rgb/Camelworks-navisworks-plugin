@@ -172,6 +172,20 @@ namespace CamelWorks.Nav
         public IReadOnlyList<string> TreePath => NavKeys.TreePathOf(Fresh());
 
         /// <inheritdoc />
+        public IModelItem? Parent
+        {
+            get
+            {
+                var above = Fresh().Parent;
+
+                // The model node itself is where the walk stops. Above it the host has the
+                // document root, which carries nothing a search would ask for and belongs to no
+                // model.
+                return above == null ? null : new NavModelItem(_document, above, (NavModelSource)Model);
+            }
+        }
+
+        /// <inheritdoc />
         public bool HasGeometry => Fresh().HasGeometry;
 
         /// <inheritdoc />

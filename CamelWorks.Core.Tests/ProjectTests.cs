@@ -6,6 +6,7 @@ using CamelWorks.Core.Appearance;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Project;
+using CamelWorks.Core.Search;
 using CamelWorks.Core.Sets;
 using CamelWorks.Core.Store;
 using CamelWorks.Core.Testing;
@@ -358,15 +359,32 @@ namespace CamelWorks.Core.Tests
         {
             var rules = new ClashRuleSet();
 
-            var when = new PredicateSpec("all");
-            when.Parts.Add(new PredicateSpec("maxVolume") { A = 0.0005 });
-            when.Parts.Add(new PredicateSpec("not"));
-            when.Parts[1].Parts.Add(new PredicateSpec("category") { Name = "Insulation" });
+            // A stacked search with a bracket in it: the overlap is tiny AND the elements are not
+            // insulation.
+            var when = new ResultQuery(QueryJoin.All);
+
+            when.Inside.Add(new ResultQuery(
+                new QueryTerm(ResultFields.Column("Overlap"), QueryOp.AtMost) { Number = 0.0005 }));
+
+            var except = new ResultQuery(QueryJoin.Any) { Negate = true };
+
+            except.Inside.Add(new ResultQuery(
+                new QueryTerm(ResultFields.Category, QueryOp.Is)
+                {
+                    Where = QueryWhere.AnyElement,
+                    Text = "Insulation",
+                }));
+
+            when.Inside.Add(except);
 
             rules.Cards.Add(new ClashCard("Tolerance noise", when, ClashActionKind.Suppress));
             rules.Grouping.Add(new GroupingSpec("proximity") { A = 2.5 });
             rules.Cards.Add(new ClashCard("Level 3 to Mechanical",
-                                          new PredicateSpec("bothInSet") { Name = "Level 3" },
+                                          new ResultQuery(
+                                              new QueryTerm(ResultFields.Group, QueryOp.Is)
+                                              {
+                                                  Text = "Level 3",
+                                              }),
                                           ClashActionKind.Assign) { Value = "Mechanical" });
             rules.Pinned["Level 3 riser"] = new[] { "c1", "c2" };
 
@@ -374,7 +392,11 @@ namespace CamelWorks.Core.Tests
 
             Assert.Equal("Tolerance noise", back.Cards[0].Name);
             Assert.Equal(ClashActionKind.Suppress, back.Cards[0].Action);
-            Assert.Equal("Insulation", back.Cards[0].When.Parts[1].Parts[0].Name);
+            var bracket = back.Cards[0].When.Inside[1];
+
+            Assert.True(bracket.Negate);
+            Assert.Equal("Insulation", bracket.Inside[0].Term!.Text);
+            Assert.Equal(QueryWhere.AnyElement, bracket.Inside[0].Term!.Where);
             Assert.Equal(2.5, back.Grouping[0].A);
             Assert.Equal(ClashActionKind.Assign, back.Cards[1].Action);
             Assert.Equal("Mechanical", back.Cards[1].Value);
@@ -386,7 +408,7 @@ namespace CamelWorks.Core.Tests
         {
             var rules = new ClashRuleSet();
 
-            rules.Cards.Add(new ClashCard("Off", new PredicateSpec("always"),
+            rules.Cards.Add(new ClashCard("Off", new ResultQuery(),
                                           ClashActionKind.Suppress) { IsEnabled = false });
 
             Assert.Single(rules.Cards);
@@ -399,7 +421,7 @@ namespace CamelWorks.Core.Tests
         {
             // Not read as the first entry of the enum. A card saved as something newer must not
             // come back as Suppress and then be run: the list is acted on, not only displayed.
-            var json = new ClashCard("Odd", new PredicateSpec("always"), ClashActionKind.Suppress)
+            var json = new ClashCard("Odd", new ResultQuery(), ClashActionKind.Suppress)
                 .ToJson()
                 .Set("action", JsonValue.String("Incinerate"));
 

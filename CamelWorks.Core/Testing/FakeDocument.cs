@@ -393,6 +393,24 @@ namespace CamelWorks.Core.Testing
         /// <inheritdoc />
         public IReadOnlyList<string> TreePath { get; }
 
+        /// <summary>
+        /// The element above this one, set by whoever built the tree.
+        ///
+        /// Nesting is opt-in on the fake: most tests need one flat element and would otherwise
+        /// have to build a chain of parents to get one.
+        /// </summary>
+        public FakeItem? Above { get; set; }
+
+        /// <inheritdoc />
+        public IModelItem? Parent
+        {
+            get
+            {
+                GuardStale();
+                return Above;
+            }
+        }
+
         /// <inheritdoc />
         public bool HasGeometry { get; }
 

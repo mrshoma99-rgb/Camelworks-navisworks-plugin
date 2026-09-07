@@ -12,6 +12,7 @@ using CamelWorks.Core.Data;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Project;
+using CamelWorks.Core.Search;
 using CamelWorks.Core.Store;
 using CamelWorks.Core.Testing;
 using CamelWorks.UI.Shell;
@@ -439,6 +440,29 @@ namespace CamelWorks.Studio
             seat.Findings.Save();
         }
 
+        /// <summary>A search of one condition.</summary>
+        /// <param name="term">The condition.</param>
+        private static ResultQuery Search(QueryTerm term)
+        {
+            var query = new ResultQuery(QueryJoin.All);
+
+            query.Inside.Add(new ResultQuery(term));
+
+            return query;
+        }
+
+        /// <summary>A search of two conditions, both of which have to hold.</summary>
+        /// <param name="first">One condition.</param>
+        /// <param name="second">The other.</param>
+        private static ResultQuery Group(QueryTerm first, QueryTerm second)
+        {
+            var query = Search(first);
+
+            query.Inside.Add(new ResultQuery(second));
+
+            return query;
+        }
+
         /// <summary>
         /// The Filter tab with a project's rules on it.
         ///
@@ -456,36 +480,98 @@ namespace CamelWorks.Studio
             var seat = Seated();
             var rules = new ClashRuleSet();
 
-            rules.Cards.Add(new ClashCard(
-                "Insulation grazing insulation",
-                new PredicateSpec("maxVolume") { A = 0.001 }, ClashActionKind.Suppress));
+            // Searches of every shape the editor draws: one condition, a stack of two, a bracket,
+            // an element property read from an ancestor, and a number range.
+            rules.Cards.Add(new ClashCard("Insulation grazing insulation",
+                Search(new QueryTerm(ResultFields.Column(ClashFindings.Distance), QueryOp.AtMost)
+                {
+                    Number = 0.001,
+                }),
+                ClashActionKind.Suppress));
+
+            var sleeves = new ResultQuery(QueryJoin.All);
+
+            sleeves.Inside.Add(new ResultQuery(
+                new QueryTerm(ResultFields.Category, QueryOp.Is)
+                {
+                    Where = QueryWhere.AnyElement,
+                    Text = "Sleeves",
+                }));
+
+            sleeves.Inside.Add(new ResultQuery(
+                new QueryTerm(ResultFields.Property("Element", "Mark"), QueryOp.StartsWith)
+                {
+                    Where = QueryWhere.AnyElement,
+                    Text = "REV21",
+                    Ancestors = 1,
+                }));
 
             rules.Cards.Add(new ClashCard(
                 "Sleeves already coordinated against the structural openings schedule REV21",
-                new PredicateSpec("bothInSet") { Name = "Sleeves REV21" }, ClashActionKind.Suppress));
+                sleeves, ClashActionKind.Suppress));
 
-            rules.Cards.Add(new ClashCard(
-                "Touching, not passing through",
-                new PredicateSpec("distance") { A = 0, B = 0.005 }, ClashActionKind.Flag));
+            rules.Cards.Add(new ClashCard("Touching, not passing through",
+                Search(new QueryTerm(ResultFields.Column(ClashFindings.Distance), QueryOp.Between)
+                {
+                    Number = 0,
+                    Number2 = 0.005,
+                }),
+                ClashActionKind.Flag));
 
-            rules.Cards.Add(new ClashCard(
-                "Ducts through structural framing",
-                new PredicateSpec("eitherInSet") { Name = "WSC_DUCTS_REV21_ISSUED" },
-                ClashActionKind.Assign) { Value = "Mechanical" });
+            var ducts = new ResultQuery(QueryJoin.All);
 
-            rules.Cards.Add(new ClashCard(
-                "Cable tray",
-                new PredicateSpec("category") { Name = "Cable Tray" },
+            ducts.Inside.Add(new ResultQuery(
+                new QueryTerm(ResultFields.Category, QueryOp.Is)
+                {
+                    Where = QueryWhere.FirstElement,
+                    Text = "Ducts",
+                }));
+
+            var framing = new ResultQuery(QueryJoin.Any);
+
+            framing.Inside.Add(new ResultQuery(
+                new QueryTerm(ResultFields.Category, QueryOp.Is)
+                {
+                    Where = QueryWhere.SecondElement,
+                    Text = "Structural Framing",
+                }));
+
+            framing.Inside.Add(new ResultQuery(
+                new QueryTerm(ResultFields.Category, QueryOp.Is)
+                {
+                    Where = QueryWhere.SecondElement,
+                    Text = "Structural Columns",
+                }));
+
+            ducts.Inside.Add(framing);
+
+            rules.Cards.Add(new ClashCard("Ducts through structural framing", ducts,
+                                          ClashActionKind.Assign) { Value = "Mechanical" });
+
+            rules.Cards.Add(new ClashCard("Cable tray not yet grouped",
+                Group(new QueryTerm(ResultFields.Category, QueryOp.Is)
+                      {
+                          Where = QueryWhere.AnyElement,
+                          Text = "Cable Tray",
+                      },
+                      new QueryTerm(ResultFields.Group, QueryOp.IsEmpty)),
                 ClashActionKind.Group) { Value = "Electrical containment" });
 
-            rules.Cards.Add(new ClashCard(
-                "Sprinkler branches already agreed",
-                new PredicateSpec("propertyContains") { Name = "System Name", Value = "SPR" },
+            rules.Cards.Add(new ClashCard("Sprinkler branches already agreed",
+                Group(new QueryTerm(ResultFields.Property("Element", "System Name"), QueryOp.Contains)
+                      {
+                          Where = QueryWhere.AnyElement,
+                          Text = "SPR",
+                      },
+                      new QueryTerm(ResultFields.Status, QueryOp.Is) { Text = "Active" }),
                 ClashActionKind.Status) { Value = "Approved" });
 
-            rules.Cards.Add(new ClashCard(
-                "Duplicated by the coordination model",
-                new PredicateSpec("sameModel"), ClashActionKind.Remove) { IsEnabled = false });
+            rules.Cards.Add(new ClashCard("Duplicated by the coordination model",
+                Search(new QueryTerm(ResultFields.Model, QueryOp.Same)
+                {
+                    Where = QueryWhere.BetweenElements,
+                }),
+                ClashActionKind.Remove) { IsEnabled = false });
 
             // The bands live on the Settings tab now, and are written here so that tab has a
             // stack to draw.

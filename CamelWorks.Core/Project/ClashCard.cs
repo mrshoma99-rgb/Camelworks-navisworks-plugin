@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using CamelWorks.Core.Findings;
+using CamelWorks.Core.Search;
 using CamelWorks.Core.Store;
 
 namespace CamelWorks.Core.Project
@@ -44,9 +45,9 @@ namespace CamelWorks.Core.Project
     {
         /// <summary>Create a card.</summary>
         /// <param name="name">What it is called, on the board and in the list.</param>
-        /// <param name="when">What it finds.</param>
+        /// <param name="when">The search that finds them.</param>
         /// <param name="action">What it does to what it finds.</param>
-        public ClashCard(string name, PredicateSpec when, ClashActionKind action)
+        public ClashCard(string name, ResultQuery when, ClashActionKind action)
         {
             _name = string.IsNullOrWhiteSpace(name)
                 ? throw new ArgumentException("name is required", nameof(name))
@@ -57,7 +58,7 @@ namespace CamelWorks.Core.Project
         }
 
         private string _name;
-        private PredicateSpec _when;
+        private ResultQuery _when;
 
         /// <summary>What it is called.</summary>
         /// <remarks>
@@ -70,8 +71,8 @@ namespace CamelWorks.Core.Project
             set => _name = string.IsNullOrWhiteSpace(value) ? _name : value.Trim();
         }
 
-        /// <summary>What it finds.</summary>
-        public PredicateSpec When
+        /// <summary>The search that finds what it acts on.</summary>
+        public ResultQuery When
         {
             get => _when;
             set => _when = value ?? _when;
@@ -89,8 +90,18 @@ namespace CamelWorks.Core.Project
         /// </summary>
         public string? Value { get; set; }
 
-        /// <summary>Off cards stay in the list, in their place, and do nothing.</summary>
+        /// <summary>Off rules stay in the list, in their place, and do nothing.</summary>
         public bool IsEnabled { get; set; } = true;
+
+        /// <summary>
+        /// How many clauses were dropped reading this rule back, and nought for every rule this
+        /// build wrote.
+        ///
+        /// A rule saved by a newer build can hold a clause this one cannot read. Dropping it
+        /// quietly would widen what the rule finds, so the count is kept and the rule arrives
+        /// turned off with the screen saying why.
+        /// </summary>
+        public int Lost { get; set; }
 
         /// <summary>True when the action needs a value and has none.</summary>
         public bool NeedsValue =>
@@ -153,9 +164,13 @@ namespace CamelWorks.Core.Project
             if (json == null || json.Kind != JsonKind.Object) return null;
 
             var name = json["name"].AsString();
-            var when = PredicateSpec.FromJson(json["when"]);
 
-            if (string.IsNullOrWhiteSpace(name) || when == null) return null;
+            if (string.IsNullOrWhiteSpace(name)) return null;
+
+            // A clause this build cannot read is dropped by the reader and counted. Widening a
+            // rule silently is the one thing a search must not do, so a rule that lost one is
+            // turned off rather than left to run over more than it was written for.
+            var when = ResultQuery.FromJson(json["when"], out var lost);
 
             // An action this build does not know is not read as the first one in the enum: a card
             // saved by a newer build as "Remove" must not come back as "Suppress" and then be run.
@@ -165,12 +180,14 @@ namespace CamelWorks.Core.Project
             return new ClashCard(name!, when, action)
             {
                 Value = json["value"].AsString(),
-                IsEnabled = json["enabled"].AsString() != "no",
+                IsEnabled = lost == 0 && json["enabled"].AsString() != "no",
+                Lost = lost,
             };
         }
 
         /// <inheritdoc />
-        public override string ToString() => Name + ": " + When.Describe() + " → " + Does;
+        public override string ToString() =>
+            Name + ": " + When.Clauses + " clause(s) → " + Does;
     }
 
     /// <summary>What one card would do, or did.</summary>

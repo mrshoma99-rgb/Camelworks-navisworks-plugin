@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using CamelWorks.Core.Clash;
+using CamelWorks.Core.Search;
 using CamelWorks.Core.Findings;
 
 namespace CamelWorks.Core.Project
@@ -54,43 +55,42 @@ namespace CamelWorks.Core.Project
     /// </summary>
     public static class ClashCardRun
     {
-        /// <summary>What each card would do, changing nothing.</summary>
-        /// <param name="cards">The cards, in the order they run.</param>
-        /// <param name="items">The results to run them over.</param>
-        /// <param name="findingOf">The finding behind one result, or null when it has none.</param>
+        /// <summary>What each rule would do, changing nothing.</summary>
+        /// <param name="cards">The rules, in the order they run.</param>
+        /// <param name="findings">The results to run them over.</param>
+        /// <param name="world">Where the search reads elements, columns and issues.</param>
         public static IReadOnlyList<ClashCardOutcome> Plan(
-            IEnumerable<ClashCard>? cards, IEnumerable<ClashItem>? items,
-            Func<string?, Finding?> findingOf) =>
-            Walk(cards, items, findingOf, null);
+            IEnumerable<ClashCard>? cards, IEnumerable<Finding>? findings, IResultWorld world) =>
+            Walk(cards, findings, world, null);
 
         /// <summary>
         /// Run the cards and write what they say.
         /// </summary>
-        /// <param name="cards">The cards, in the order they run.</param>
-        /// <param name="items">The results to run them over.</param>
-        /// <param name="findingOf">The finding behind one result, or null when it has none.</param>
+        /// <param name="cards">The rules, in the order they run.</param>
+        /// <param name="findings">The results to run them over.</param>
+        /// <param name="world">Where the search reads elements, columns and issues.</param>
         /// <param name="writer">Where the four document-side actions go.</param>
         public static IReadOnlyList<ClashCardOutcome> Apply(
-            IEnumerable<ClashCard>? cards, IEnumerable<ClashItem>? items,
-            Func<string?, Finding?> findingOf, IClashCardWriter writer) =>
-            Walk(cards, items, findingOf,
+            IEnumerable<ClashCard>? cards, IEnumerable<Finding>? findings, IResultWorld world,
+            IClashCardWriter writer) =>
+            Walk(cards, findings, world,
                  writer ?? throw new ArgumentNullException(nameof(writer)));
 
         /// <summary>The walk both passes share.</summary>
-        /// <param name="cards">The cards.</param>
-        /// <param name="items">The results.</param>
-        /// <param name="findingOf">The finding behind one result.</param>
+        /// <param name="cards">The rules.</param>
+        /// <param name="findings">The results.</param>
+        /// <param name="world">Where the search reads elements, columns and issues.</param>
         /// <param name="writer">Where writes go, or null to change nothing.</param>
         private static IReadOnlyList<ClashCardOutcome> Walk(
-            IEnumerable<ClashCard>? cards, IEnumerable<ClashItem>? items,
-            Func<string?, Finding?> findingOf, IClashCardWriter? writer)
+            IEnumerable<ClashCard>? cards, IEnumerable<Finding>? findings, IResultWorld world,
+            IClashCardWriter? writer)
         {
-            if (findingOf == null) throw new ArgumentNullException(nameof(findingOf));
+            if (world == null) throw new ArgumentNullException(nameof(world));
 
             var outcomes = new List<ClashCardOutcome>();
-            var standing = (items ?? Array.Empty<ClashItem>()).ToList();
+            var standing = (findings ?? Array.Empty<Finding>()).Where(one => one != null).ToList();
 
-            // What earlier cards took off the board, so a later card does not act on it. Held here
+            // What earlier rules took off the board, so a later rule does not act on it. Held here
             // rather than read back off the finding, because a plan writes nothing and still has
             // to answer the same question the run does.
             var gone = new HashSet<string>(StringComparer.Ordinal);
@@ -102,35 +102,29 @@ namespace CamelWorks.Core.Project
                 if (card.NeedsValue)
                 {
                     outcomes.Add(new ClashCardOutcome(card, 0, 0,
-                        "This card has no " + Asks(card.Action) + " to set."));
+                        "This rule has no " + Asks(card.Action) + " to set."));
 
                     continue;
                 }
 
-                var when = card.When.Build();
                 var found = new List<Finding>();
-                var matched = 0;
 
-                foreach (var item in standing)
+                foreach (var finding in standing)
                 {
-                    if (item.FindingId != null && gone.Contains(item.FindingId)) continue;
+                    if (gone.Contains(finding.Id)) continue;
 
                     // Already off the board, because a previous run took it off or the result is
                     // no longer in the document. A re-run of the same list has to see what the
-                    // list left, or the second card would act on results the first one removed
+                    // list left, or the second rule would act on results the first one removed
                     // the first time and not the second.
-                    if (Off(findingOf(item.FindingId))) continue;
+                    if (Off(finding)) continue;
 
-                    if (!when.Matches(item)) continue;
+                    if (!ResultSearch.Matches(card.When, finding, world)) continue;
 
-                    matched++;
-
-                    var finding = findingOf(item.FindingId);
-
-                    if (finding != null) found.Add(finding);
+                    found.Add(finding);
                 }
 
-                outcomes.Add(Did(card, matched, found, writer, gone));
+                outcomes.Add(Did(card, found.Count, found, writer, gone));
             }
 
             return outcomes;
