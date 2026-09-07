@@ -1107,41 +1107,23 @@ namespace CamelWorks.UI.Views
 
                 preview.Children.Clear();
 
-                // Every row drawn is accounted for. The count was renames and refusals only, so
-                // a plan of twenty-one tests announced nine and nine and drew twenty-one rows.
-                var same = plan.Count - changing - refused;
-
-                var counts = new List<string> { Ui.Count(plan.Count, "test") };
-
-                counts.Add(changing + " renamed");
-
-                if (same > 0) counts.Add(same + " already right");
-                if (refused > 0) counts.Add(refused + " the naming cannot write");
-
                 var title = Ui.Line("What it would write", 1, true);
 
                 title.Margin = new Thickness(0, 0, 0, 2);
 
                 preview.Children.Add(title);
-                preview.Children.Add(Ui.Small(string.Join("  ·  ", counts)));
 
-                var rows = Ui.Stack();
-
-                rows.Margin = new Thickness(0, 8, 0, 0);
-                rows.Children.Add(Headings());
-
-                foreach (var step in plan.Take(200)) rows.Children.Add(Step(step));
-
-                if (plan.Count > 200)
-                {
-                    var more = Ui.Small("and " + Ui.Count(plan.Count - 200, "more test")
-                                        + ", not drawn here.");
-
-                    more.Margin = new Thickness(0, 6, 0, 0);
-                    rows.Children.Add(more);
-                }
-
-                preview.Children.Add(rows);
+                // Drawn by Ui.Plan, which was generalised from this pane: every row accounted
+                // for, before and after on one line, the refusal written in the row, a skipped
+                // row muted rather than red, and a cap that says how many are left. This is the
+                // surface the primitive is copied from, so it draws it first.
+                preview.Children.Add(Ui.Plan(
+                    plan.Select(step => new Planned(
+                        step.Was,
+                        step.Changes ? step.Now : null,
+                        step.Why != NamingRefusal.None ? NamingWrite.Said(step.Why) : null))
+                        .ToList(),
+                    "test", "renamed", "the naming cannot write"));
 
                 var act = Ui.Primary(changing == 0
                                          ? "Nothing to rename"
@@ -1349,53 +1331,7 @@ namespace CamelWorks.UI.Views
             return row;
         }
 
-        /// <summary>One test's line in the plan: what it is called, and what it would become.</summary>
-        /// <param name="step">The step.</param>
-        private static UIElement Step(NamingStep step)
-        {
-            var arrow = Cell("→", "Faint");
 
-            arrow.HorizontalAlignment = HorizontalAlignment.Center;
-
-            var row = Twin(
-                Cell(step.Was, "Muted"),
-                arrow,
-                Cell(step.Why != NamingRefusal.None
-                         ? NamingWrite.Said(step.Why)
-                         : step.Changes ? step.Now ?? string.Empty : "unchanged",
-                     // Muted, not red. A step this run leaves alone is a row the plan skipped,
-                     // and red is what the product uses for something that went wrong; a preview
-                     // of forty skipped tests read as forty errors.
-                     step.Why != NamingRefusal.None ? "Muted"
-                     : step.Changes ? "Accent" : "Muted"));
-
-            row.Margin = new Thickness(0, 0, 0, 4);
-
-            return row;
-        }
-
-        /// <summary>One name in the plan, trimmed to its column and carried in full on the tip.</summary>
-        /// <param name="said">The text.</param>
-        /// <param name="ink">Which skin colour it takes.</param>
-        private static TextBlock Cell(string said, string ink)
-        {
-            var made = new TextBlock
-            {
-                Text = said,
-                FontSize = 11,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                ToolTip = said.Length == 0 ? null : said,
-            }.Wearing("Body");
-
-            // After the style, which turns wrapping on: with it on, a long name wrapped to a
-            // second line and the trimming never came into it.
-            made.TextWrapping = TextWrapping.NoWrap;
-
-            made.Tint(TextBlock.ForegroundProperty, ink);
-
-            return made;
-        }
 
         /// <summary>
         /// The fields to pick from, numbers first.

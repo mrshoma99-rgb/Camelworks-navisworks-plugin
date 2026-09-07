@@ -198,6 +198,35 @@ namespace CamelWorks.UI.Views
     }
 
     /// <summary>
+    /// One row of a plan: what it is now, what an action would make of it, and why it would not.
+    /// </summary>
+    public sealed class Planned
+    {
+        /// <summary>Name one row of the plan.</summary>
+        /// <param name="was">What it is called now.</param>
+        /// <param name="becomes">What it would become, or null when nothing would change.</param>
+        /// <param name="refused">Why the action cannot touch it, or null when it can.</param>
+        public Planned(string was, string? becomes = null, string? refused = null)
+        {
+            Was = was ?? string.Empty;
+            Becomes = becomes;
+            Refused = refused;
+        }
+
+        /// <summary>What it is called now.</summary>
+        public string Was { get; }
+
+        /// <summary>What it would become, or null.</summary>
+        public string? Becomes { get; }
+
+        /// <summary>Why the action cannot touch it, or null.</summary>
+        public string? Refused { get; }
+
+        /// <summary>Whether this row would actually change.</summary>
+        public bool Changes => Refused == null && !string.IsNullOrEmpty(Becomes);
+    }
+
+    /// <summary>
     /// The state a screen is in, when it is in one worth saying.
     ///
     /// Four states, and each has one tone. A screen that cannot do its job because the seat will
@@ -2991,6 +3020,127 @@ namespace CamelWorks.UI.Views
         /// <param name="message">The note.</param>
         public static UIElement Info(string message) =>
             Banner(message, Glyphs.Info, "BlueBg", "BlueBd", "BlueTx");
+
+        /// <summary>
+        /// What a bulk write would do, drawn before it is done.
+        ///
+        /// Generalised from the rename preview, which is the only surface in the product that
+        /// gets this right, and which every other bulk write needs: applying a returned pack to
+        /// the board, writing an export, setting a status on picked rows.
+        ///
+        /// Seven properties, and each is load-bearing:
+        ///
+        /// - Every affected row is drawn, not only the changing ones, and the counts sum to the
+        ///   total. A preview that lists only changes leaves the reader unable to tell "not
+        ///   listed" from "not considered".
+        /// - Before and after on one line, so the comparison needs no memory and no scrolling.
+        /// - The reason a row is skipped is written in the row, in words.
+        /// - A skipped row is muted, not red: a preview of forty skipped items must not read as
+        ///   forty errors.
+        /// - The caller's action carries the count this returns, so the button says what it will
+        ///   do rather than "Apply".
+        /// - A cap with an explicit remainder line, rather than a silent truncation.
+        /// - Cause and effect near each other: the caller redraws this in place as its settings
+        ///   change.
+        /// </summary>
+        /// <param name="rows">Every row the action would consider, in the order it considers them.</param>
+        /// <param name="unit">What one row is, singular.</param>
+        /// <param name="done">What a changed row has had done to it, past tense.</param>
+        /// <param name="cannot">Why a refused row is refused, as a group.</param>
+        /// <param name="cap">How many rows to draw before saying how many are left.</param>
+        public static UIElement Plan(IReadOnlyList<Planned> rows, string unit, string done,
+                                     string cannot, int cap = 200)
+        {
+            if (rows == null) throw new ArgumentNullException(nameof(rows));
+
+            var changing = rows.Count(one => one.Changes);
+            var refused = rows.Count(one => one.Refused != null);
+            var same = rows.Count - changing - refused;
+
+            var counts = new List<string> { Count(rows.Count, unit), changing + " " + done };
+
+            if (same > 0) counts.Add(same + " already right");
+            if (refused > 0) counts.Add(refused + " " + cannot);
+
+            var held = Stack(Small(string.Join("  ·  ", counts)));
+
+            var drawn = Stack();
+
+            drawn.Margin = new Thickness(0, 8, 0, 0);
+
+            foreach (var row in rows.Take(cap)) drawn.Children.Add(PlannedRow(row));
+
+            if (rows.Count > cap)
+            {
+                var more = Small("and " + Count(rows.Count - cap, "more " + unit)
+                                 + ", not drawn here.");
+
+                more.Margin = new Thickness(0, 6, 0, 0);
+                drawn.Children.Add(more);
+            }
+
+            held.Children.Add(drawn);
+
+            return held;
+        }
+
+        /// <summary>How many rows of a plan would change, for the action's caption.</summary>
+        /// <param name="rows">The plan.</param>
+        public static int Changing(IReadOnlyList<Planned> rows) =>
+            rows == null ? 0 : rows.Count(one => one.Changes);
+
+        /// <summary>One row of a plan: what it is now, an arrow, and what it would become.</summary>
+        /// <param name="row">The row.</param>
+        private static UIElement PlannedRow(Planned row)
+        {
+            var line = new Grid { Margin = new Thickness(0, 0, 0, 4) };
+
+            line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(24) });
+            line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            var was = PlannedCell(row.Was, "Muted");
+
+            var arrow = PlannedCell("→", "Faint");
+
+            arrow.HorizontalAlignment = HorizontalAlignment.Center;
+
+            // Muted for a row this run leaves alone, accent for one it changes. Red is what the
+            // product uses for something that went wrong, and a skipped row is not that.
+            var becomes = PlannedCell(row.Refused ?? (row.Changes ? row.Becomes! : "unchanged"),
+                                      row.Changes ? "Accent" : "Muted");
+
+            Grid.SetColumn(arrow, 1);
+            Grid.SetColumn(becomes, 2);
+
+            line.Children.Add(was);
+            line.Children.Add(arrow);
+            line.Children.Add(becomes);
+
+            return line;
+        }
+
+        /// <summary>One name in a plan, trimmed to its column and carried in full on the tip.</summary>
+        /// <param name="said">The text.</param>
+        /// <param name="ink">Which palette key it takes.</param>
+        private static TextBlock PlannedCell(string said, string ink)
+        {
+            var made = new TextBlock
+            {
+                Text = said,
+                FontSize = 11,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                ToolTip = said.Length == 0 ? null : said,
+            }.Wearing("Body");
+
+            // After the style, which turns wrapping on: with it on, a long name wraps to a second
+            // line and the trimming never comes into it.
+            made.TextWrapping = TextWrapping.NoWrap;
+            made.Tint(TextBlock.ForegroundProperty, ink);
+
+            return made;
+        }
 
         /// <summary>
         /// The state a screen is in, said the same way on every screen that is in it.
