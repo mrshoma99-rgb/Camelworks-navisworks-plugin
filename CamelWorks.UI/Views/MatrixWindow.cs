@@ -598,13 +598,7 @@ namespace CamelWorks.UI.Views
                 _said.CornerRadius = new CornerRadius(8);
 
                 // Floating over the grid rather than above it, so it carries its own edge.
-                _said.Effect = new System.Windows.Media.Effects.DropShadowEffect
-                {
-                    BlurRadius = 14,
-                    ShadowDepth = 2,
-                    Opacity = 0.18,
-                    Direction = 270,
-                };
+                _said.Raised();
                 _said.Child = inside;
                 _said.Visibility = Visibility.Collapsed;
 

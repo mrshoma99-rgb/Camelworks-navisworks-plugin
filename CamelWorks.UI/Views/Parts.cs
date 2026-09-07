@@ -2690,14 +2690,6 @@ namespace CamelWorks.UI.Views
                 // this the shadow is drawn and immediately cut off on every side.
                 Margin = new Thickness(8),
                 Child = content,
-                Effect = new DropShadowEffect
-                {
-                    BlurRadius = 14,
-                    ShadowDepth = 2,
-                    Direction = 270,
-                    Opacity = 0.18,
-                    Color = Colors.Black,
-                },
             };
 
             // The theme sheet is merged onto the card itself. A popup's child is not in the
@@ -2711,6 +2703,7 @@ namespace CamelWorks.UI.Views
 
             card.Tint(Border.BackgroundProperty, "Card");
             card.Tint(Border.BorderBrushProperty, "Bd");
+            card.Raised();
 
             return card;
         }

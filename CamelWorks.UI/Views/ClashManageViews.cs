@@ -1799,13 +1799,7 @@ namespace CamelWorks.UI.Views
                 panel.Tint(Border.BackgroundProperty, "Card");
                 panel.Tint(Border.BorderBrushProperty, "Bd");
 
-                panel.Effect = new System.Windows.Media.Effects.DropShadowEffect
-                {
-                    BlurRadius = 12,
-                    ShadowDepth = 2,
-                    Direction = 270,
-                    Opacity = 0.18,
-                };
+                panel.Raised();
 
                 return panel;
             }

@@ -624,6 +624,26 @@ namespace CamelWorks.UI.Views
         // own pre-flight rows had to be rebuilt to work around.
         // -----------------------------------------------------------------------------------
 
+        /// <summary>
+        /// Put one of the skin's two depths on an element.
+        ///
+        /// Five shadows were written by hand in three specs across the sheet and three screens,
+        /// two of them leaving Direction unset, so a dropdown's shadow and a floating panel's fell
+        /// different ways on one screen.
+        /// </summary>
+        /// <param name="element">What to raise.</param>
+        /// <param name="floating">True for a panel over the work, false for a popover.</param>
+        /// <typeparam name="T">Anything that can carry an effect.</typeparam>
+        public static T Raised<T>(this T element, bool floating = false) where T : UIElement
+        {
+            var key = floating ? "Shadow.Floating" : "Shadow.Raised";
+
+            if (Skin.Sheet[key] is System.Windows.Media.Effects.Effect depth)
+                element.Effect = depth;
+
+            return element;
+        }
+
         /// <summary>Bind one property to a palette key, so it repaints when the theme changes.</summary>
         /// <param name="element">What to paint.</param>
         /// <param name="property">Which property.</param>

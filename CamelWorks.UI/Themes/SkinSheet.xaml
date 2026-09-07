@@ -103,6 +103,32 @@
     <GradientStop Color="#0D83DA" Offset="1"/>
   </LinearGradientBrush>
 
+  <!-- ════════════════════════════════ Depth ════════════════════════════════
+       Two levels, and both name their direction. Five shadows were written by hand in three
+       different specs across the sheet and three screens; two of them left Direction unset, so a
+       dropdown's shadow and a floating panel's fell different ways on the same screen.
+
+       The colour is fixed rather than themed, which is the half of this that is still open: in
+       the dark palette a black shadow reads as an absence of edge rather than as depth. Doing it
+       properly means the palette applying effects as well as brushes. -->
+
+  <DropShadowEffect x:Key="Shadow.Raised" BlurRadius="14" ShadowDepth="2" Direction="270"
+                    Opacity="0.18" Color="#000000"/>
+
+  <DropShadowEffect x:Key="Shadow.Floating" BlurRadius="22" ShadowDepth="4" Direction="270"
+                    Opacity="0.22" Color="#000000"/>
+
+  <!-- ════════════════════════════════ Space ════════════════════════════════
+       Four steps. Six hundred and seventy-eight margins are written as literals in a hundred and
+       ninety-one distinct shapes; these do not retro-fit those, they stop the count growing and
+       give the next screen something to reach for. -->
+
+  <sys:Double x:Key="Space.1">4</sys:Double>
+  <sys:Double x:Key="Space.2">8</sys:Double>
+  <sys:Double x:Key="Space.3">12</sys:Double>
+  <sys:Double x:Key="Space.4">16</sys:Double>
+  <sys:Double x:Key="Space.5">24</sys:Double>
+
   <!-- ════════════════════════════════ Shape ════════════════════════════════
        Two radii, and the difference between them is load-bearing: a field is squarer than an
        action, so a text box and a button are told apart by outline before either is read. Ten
@@ -997,7 +1023,7 @@
               <Border Background="{DynamicResource Card}" BorderBrush="{DynamicResource Bd}" BorderThickness="1"
                       CornerRadius="8" MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
                       Margin="0,4,0,8" SnapsToDevicePixels="True">
-                <Border.Effect><DropShadowEffect BlurRadius="14" ShadowDepth="2" Opacity="0.18"/></Border.Effect>
+                <Border.Effect><StaticResource ResourceKey="Shadow.Raised"/></Border.Effect>
                 <ScrollViewer MaxHeight="260"><StackPanel IsItemsHost="True" Margin="0,4"/></ScrollViewer>
               </Border>
             </Popup>
@@ -1215,7 +1241,7 @@
         <ControlTemplate TargetType="ToolTip">
           <Border Background="{DynamicResource Card}" BorderBrush="{DynamicResource Bd}"
                   BorderThickness="1" CornerRadius="8" Padding="10,7">
-            <Border.Effect><DropShadowEffect BlurRadius="14" ShadowDepth="2" Opacity="0.20"/></Border.Effect>
+            <Border.Effect><StaticResource ResourceKey="Shadow.Raised"/></Border.Effect>
             <ContentPresenter/>
           </Border>
         </ControlTemplate>
