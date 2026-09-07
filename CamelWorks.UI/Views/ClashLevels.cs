@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Data;
 
 namespace CamelWorks.UI.Views
@@ -138,6 +139,14 @@ namespace CamelWorks.UI.Views
                 foot.Children.Add(says);
             }
 
+            // Working the storeys out reads the height of every element in the federation, which
+            // is the most expensive read this product makes. It is a press somebody chooses,
+            // once, rather than something every board load pays for.
+            var worked = Ui.Stack();
+
+            var derive = Ui.Runner("Work them out from the model", worked, job =>
+                Derive(plan, job, worked, Keep, Redraw), primary: false);
+
             void Add() => Ui.Safely(() => Adding(plan, near, millimetres, Keep, Redraw));
 
             var unit = Ui.Choice(new[] { Metres, Millimetres },
@@ -169,7 +178,88 @@ namespace CamelWorks.UI.Views
             held.Children.Add(foot);
             held.Children.Add(undo);
 
+            held.Children.Add(Ui.Small("Or have them worked out from where the elements actually "
+                + "sit. What it finds is added to the list above, named after each height, for you "
+                + "to rename to the client's own words."));
+
+            held.Children.Add(derive);
+            held.Children.Add(worked);
+
             return held;
+        }
+
+        /// <summary>
+        /// Work the storeys out of the model and put what is found in the plan.
+        ///
+        /// A histogram of where elements sit, which is what <see cref="LevelSet.Derive"/> does.
+        /// The heights it finds are added to whatever the plan already holds rather than
+        /// replacing it: a coordinator who has typed three storeys and wants the rest found
+        /// keeps the three they typed, and a height already claimed is refused by the plan.
+        /// </summary>
+        /// <param name="plan">The storeys, added to in place.</param>
+        /// <param name="job">The run this is part of, for progress and for stopping.</param>
+        /// <param name="said">Where it reports what it found.</param>
+        /// <param name="keep">Writes the plan to the project file.</param>
+        /// <param name="redraw">Redraws the list.</param>
+        private static void Derive(LevelPlan plan, Job job, Panel said, Func<bool> keep,
+                                   Action redraw)
+        {
+            var session = Host.Current;
+
+            if (session == null)
+            {
+                said.Children.Add(Ui.Line(Host.NoModel));
+                return;
+            }
+
+            var scale = session.MetresPerUnit;
+            var elevations = new List<double>();
+
+            job.Say("Measuring the model...");
+
+            foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
+            {
+                if (!item.HasGeometry) continue;
+
+                elevations.Add(item.Bounds.MinZ * scale);
+
+                if (!job.Step(elevations.Count, "elements measured")) return;
+            }
+
+            if (elevations.Count == 0)
+            {
+                said.Children.Add(Ui.Note("Nothing loaded has geometry to measure."));
+                return;
+            }
+
+            var found = LevelSet.Derive(elevations);
+            var added = 0;
+
+            foreach (var band in found.Bands)
+                if (plan.Add(band.Name, band.Elevation)) added++;
+
+            if (added == 0)
+            {
+                said.Children.Add(Ui.Note("Nothing new: the heights it found are already claimed "
+                    + "by storeys in the list."));
+                return;
+            }
+
+            if (!keep())
+            {
+                said.Children.Add(Ui.Problem("The project file would not take them."));
+                return;
+            }
+
+            redraw();
+
+            said.Children.Add(Ui.Done(Ui.Count(added, "level") + " added, from "
+                + Ui.Count(found.ElementsConsidered, "element") + ". "
+                + (found.DiscardedClusters > 0
+                    ? Ui.Count(found.DiscardedClusters, "other height")
+                      + " had too little standing on them to be a storey. "
+                    : string.Empty)
+                + "Rename them to whatever the client calls them."));
         }
 
         /// <summary>The editor over a plan nobody can save, so the harness can draw it.</summary>

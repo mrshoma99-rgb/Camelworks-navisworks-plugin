@@ -428,7 +428,7 @@ namespace CamelWorks.UI.Views
         private static ClashProjection Project(Session session, Job job, IReadOnlyList<CheckRun> runs)
         {
             var scale = session.MetresPerUnit;
-            var levels = Levels(session, job, scale);
+            var levels = Levels(session);
 
             // Model display names once, not once per result: eighteen thousand results times a
             // linear scan over the model list is a pause somebody can feel.
@@ -451,47 +451,23 @@ namespace CamelWorks.UI.Views
         }
 
 
-        private static LevelSet? _levels;
-        private static string? _levelsShape;
-
-        private static LevelSet Levels(Session session, Job job, double scale)
+        /// <summary>
+        /// The levels every screen bands by: the storeys the project declares, or one default
+        /// level that everything is on.
+        ///
+        /// Nothing is derived here any more. Deriving read the bounds of every element in the
+        /// federation, which is the most expensive read the board ever made, and it ran on the
+        /// press somebody was waiting on. It is a button on Settings — Levels now, where it
+        /// writes the storeys it works out into the plan and every board afterwards reads them
+        /// like any other declared level.
+        /// </summary>
+        /// <param name="session">The open document.</param>
+        private static LevelSet Levels(Session session)
         {
-            // The project's own storeys, when it declares any. Settings holds a level list for
-            // exactly this, and deriving levels instead walked the whole federation reading the
-            // bounds of every element — the most expensive read the board makes, and one the
-            // project had already answered.
             var declared = LevelPlan
                 .FromJson(session.Store.Section(ProjectStore.ProfileSection)[LevelPlan.Key]);
 
-            if (!declared.IsEmpty) return declared.Levels();
-
-            // Nothing declared, so they are derived. Cached against its shape, so the second board
-            // of the day costs nothing and a reload after an append derives afresh.
-            var shape = string.Join("|", session.Model.Models.Select(m => m.Scope))
-                        + "@" + scale.ToString("R", CultureInfo.InvariantCulture);
-
-            if (_levels != null && string.Equals(_levelsShape, shape, StringComparison.Ordinal))
-                return _levels;
-
-            job.Say("Working out levels...");
-
-            var elevations = new List<double>();
-
-            foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
-            {
-                if (!item.HasGeometry) continue;
-                elevations.Add(item.Bounds.MinZ * scale);
-
-                if (!job.Step(elevations.Count, "elements measured"))
-                    return LevelSet.Empty;
-            }
-
-            var derived = LevelSet.Derive(elevations);
-
-            _levels = derived;
-            _levelsShape = shape;
-
-            return derived;
+            return declared.IsEmpty ? LevelSet.Flat : declared.Levels();
         }
 
         /// <summary>

@@ -109,6 +109,32 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void The_default_level_holds_everything_including_what_is_below_it()
+        {
+            var levels = LevelSet.Flat;
+
+            Assert.Equal(LevelSource.Default, levels.Source);
+            Assert.Equal("Level 0", Assert.Single(levels.Bands).Name);
+
+            Assert.Equal("Level 0", levels.LevelAt(0));
+            Assert.Equal("Level 0", levels.LevelAt(42.5));
+
+            // A basement is on it too. A declared storey at zero would band it as below.
+            Assert.Equal("Level 0", levels.LevelAt(-6));
+            Assert.Equal(new[] { "Level 0" }, levels.Spans(-6, -3));
+
+            Assert.Contains("declares no storeys", levels.Provenance());
+        }
+
+        [Fact]
+        public void A_declared_storey_at_zero_still_bands_a_basement_as_below_it()
+        {
+            var levels = LevelSet.Declared(Storeys());
+
+            Assert.Null(levels.LevelAt(-6));
+        }
+
+        [Fact]
         public void The_chain_prefers_the_grid_then_the_property_then_the_guess()
         {
             var grid = LevelSet.FromGrid(Storeys());
