@@ -843,261 +843,702 @@ namespace CamelWorks.UI.Views
         // Rules
         // ===================================================================================
 
-        /// <summary>Suppress and flag, then group, then assign — one pipeline, saved with the project.</summary>
-        public static UIElement Rules() => new RulesScreen().Build();
+        /// <summary>
+        /// The rules that shape the board, on the live seat.
+        ///
+        /// The rules are project-file state and the project file sits beside the open model, so
+        /// there is nowhere to write them until a model is open. The screen itself takes a seat
+        /// rather than a session, so it can be drawn without one.
+        /// </summary>
+        public static UIElement Rules()
+        {
+            var seat = Host.Current;
 
+            if (seat == null)
+                return Bench.Surface(null, null, Ui.Stack(Ui.Empty(
+                    "No model is open.",
+                    "Rules are kept in the project file beside the model, so there is nowhere to "
+                    + "write them yet. Open the model these rules belong to.")));
+
+            return Rules(seat);
+        }
+
+        /// <summary>The rules screen on a given seat.</summary>
+        /// <param name="seat">The seat. Its project file is where the rules are read and written.</param>
+        public static UIElement Rules(ISeat seat) => new RulesScreen(seat).Build();
+
+        /// <summary>
+        /// Rules for the clash results on the board: criteria and an action, in three ordered
+        /// stages.
+        ///
+        /// The engine behind this is clash-shaped — <see cref="ClashRuleSet"/> and
+        /// <see cref="ClashPipeline"/> work on <see cref="ClashItem"/> — so the screen states that
+        /// scope rather than implying it covers the clearance and fall-hazard results the board
+        /// also carries.
+        /// </summary>
         private sealed class RulesScreen
         {
+            /// <summary>What a new rule does, as the composer offers it.</summary>
+            private const string ActSuppress = "Suppress";
+
+            /// <summary>Keep the result and mark it.</summary>
+            private const string ActFlag = "Flag";
+
+            /// <summary>Add a step to the grouping stack.</summary>
+            private const string ActGroup = "Group";
+
+            /// <summary>Give a group to a party.</summary>
+            private const string ActAssign = "Assign";
+
+            /// <summary>How wide a paragraph is allowed to be, in device pixels — about 80 characters.</summary>
+            private const double TextWidth = 620;
+
+            private readonly ISeat _seat;
+
+            /// <summary>The live session, or null on a seat with no document. Only the preview needs it.</summary>
+            private readonly Session? _live;
+
             private ClashRuleSet _rules = new ClashRuleSet();
+
             private readonly StackPanel _filters = Ui.Stack();
             private readonly StackPanel _grouping = Ui.Stack();
             private readonly StackPanel _assigns = Ui.Stack();
-            private readonly StackPanel _status = Ui.Stack();
+            private readonly StackPanel _preview = Ui.Stack();
+            private readonly StackPanel _saved = Ui.Stack();
+            private readonly StackPanel _composerSaid = Ui.Stack();
+
+            private readonly ComboBox _act;
+            private readonly TextBox _name;
+            private readonly ComboBox _party;
+            private readonly SpecEditor _when;
+            private readonly SpecEditor _by;
+            private readonly Panel _nameField;
+            private readonly Panel _partyField;
+
+            internal RulesScreen(ISeat seat)
+            {
+                _seat = seat ?? throw new ArgumentNullException(nameof(seat));
+                _live = seat as Session;
+
+                // Each section is its own shared-size scope, so the columns line up down a list
+                // of fifteen rules without the three lists having to agree with each other.
+                Grid.SetIsSharedSizeScope(_filters, true);
+                Grid.SetIsSharedSizeScope(_grouping, true);
+                Grid.SetIsSharedSizeScope(_assigns, true);
+
+                _act = Ui.Choice(new[] { ActSuppress, ActFlag, ActGroup, ActAssign }, ActSuppress,
+                                 _ => Retune(), 240);
+
+                _name = Ui.Text(string.Empty, "Named after its criteria", null, 200);
+
+                var parties = seat.Profile.Parties.ToList();
+                if (parties.Count == 0) parties.Add("Unassigned");
+
+                _party = Ui.Choice(parties, parties[0], null, 200);
+
+                // The three combining kinds are left out. They take nested rules, this editor has
+                // nowhere to put one, and a "Not" with nothing inside it builds a rule that
+                // matches nothing. A saved file that holds one still lists and runs it.
+                _when = new SpecEditor("Criteria",
+                                       PredicateSpec.Kinds.Where(k => k.Input != SpecInput.Nested).ToList(),
+                                       Retune);
+
+                _by = new SpecEditor("Group by", GroupingSpec.Kinds, Retune);
+
+                _nameField = Ui.Field("Rule name", _name);
+                _partyField = Ui.Field("Assign to", _party);
+            }
 
             internal UIElement Build()
             {
-                var session = Host.Current;
+                _rules = ClashRuleSet.FromJson(_seat.Store.Section(ProjectStore.ClashSection)[ClashKeys.Rules]);
 
-                if (session == null)
-                    return Bench.Surface(null, null, Ui.Stack(Ui.Empty("No model is open.", Host.NoModel)));
+                Retune();
+                Redraw();
 
-                _rules = ClashRuleSet.FromJson(session.Store.Section(ProjectStore.ClashSection)[ClashKeys.Rules]);
+                var save = Ui.Primary("Save rules", Save);
 
-                Redraw(session);
+                var help = Ui.Icon(Glyphs.Info, "How rules are applied", Explain);
 
-                var save = Ui.Button("Save rules", () =>
-                {
-                    _status.Children.Clear();
+                // Two acts, drawn as two. Saving writes the project file and is the filled
+                // button; the preview runs the pipeline, writes nothing, and puts its answer on
+                // the stage rather than in the footer.
+                var run = _live == null
+                    ? Ui.Blocked("Try these on the board",
+                                 "A preview reads the results, which needs an open model.")
+                    : Ui.Runner("Try these on the board", _preview, job => Preview(_live, job),
+                                primary: false);
 
-                    session.Store.Section(ProjectStore.ClashSection).Set(ClashKeys.Rules, _rules.ToJson());
-
-                    _status.Children.Add(session.Store.Save()
-                        ? Ui.Done("Saved. The board uses these the next time it loads.")
-                        : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
-                });
-
-                // The tab's own purpose line says "previewed before it is applied", and there was
-                // no preview: you saved, went to Triage, and reloaded the board to find out what
-                // you had done. This is that preview, and it is the panel's answer — the four
-                // figures the rules exist to move.
-                var tryOut = Ui.Runner("Try these on the board", _status, job =>
-                {
-                    var notes = new List<string>();
-                    // A preview and not a run: it writes no journal, records no board and does
-                    // not become what the report and the BCF are taken from. Without that, trying
-                    // a rule out left the next real read comparing against the preview and
-                    // reporting nothing changed.
-                    var board = CoordinateViews.Build(session, job, notes, _rules, preview: true);
-
-                    foreach (var note in notes) _status.Children.Add(Ui.Note(note));
-
-                    if (board == null) return;
-
-                    var funnel = board.Funnel;
-
-                    _status.Children.Add(Ui.Across(
-                        Ui.Figure(funnel.Input.ToString("N0", CultureInfo.InvariantCulture), "from the engine"),
-                        Ui.Figure(funnel.Suppressed.ToString("N0", CultureInfo.InvariantCulture), "suppressed",
-                                  funnel.Suppressed > 0 ? Tone.Warn : Tone.Plain),
-                        Ui.Figure(funnel.Groups.ToString("N0", CultureInfo.InvariantCulture), "issues"),
-                        Ui.Figure(funnel.Unassigned.ToString("N0", CultureInfo.InvariantCulture), "unassigned",
-                                  funnel.Unassigned > 0 ? Tone.Warn : Tone.Good)));
-
-                    _status.Children.Add(Ui.Line(funnel.ToString(), 0.8));
-
-                    if (funnel.RulesApplied.Count > 0)
-                        _status.Children.Add(Ui.Line("Rules: " + string.Join(", ", funnel.RulesApplied), 0.7));
-
-                    _status.Children.Add(Ui.Small("Nothing has been saved. This is what the board "
-                                                  + "would look like if it were."));
-                });
-
-                // The pipeline is the working material, so it is the stage: three stretches under
-                // small-caps labels, in the order the rules run. The one action is the preview -
-                // the save is the quiet act beside the answer it makes true.
-                return Bench.Surface(
-                    null,
-                    tryOut,
-                    Ui.Stack(
-                        Ui.Eyebrow("1 · Suppress and flag"),
-                        Ui.Small("Applied to every result before anything else."),
-                        _filters,
-                        Ui.Eyebrow("2 · Group"),
-                        Ui.Small("Outermost rule first. Empty means the built-in stack."),
-                        _grouping,
-                        Ui.Eyebrow("3 · Assign"),
-                        Ui.Small("First match wins."),
-                        _assigns,
-                        Ui.Actions(save),
-                        _status,
-                        Ui.Small("With nothing here the board still works: it groups by model pair, "
-                                 + "then level, then proximity, and assigns nothing. These rules "
-                                 + "narrow that; they do not switch it on.")));
+                return Bench.Surface(Setup(), Ui.Across(help, run, save), Stage());
             }
 
-            private void Redraw(Session session)
+            /// <summary>The composer: one rule at a time, in the panel the anatomy keeps options in.</summary>
+            private UIElement Setup()
+            {
+                // Ui.Heading rather than Bench.Group, which titles a group in upper case. One
+                // heading style on this screen, sentence case, in the panel as on the stage.
+                var head = Ui.Heading("Add a rule");
+                head.Margin = new Thickness(0, 0, 0, 10);
+
+                _when.View.Margin = new Thickness(0, 0, 0, 10);
+                _by.View.Margin = new Thickness(0, 0, 0, 10);
+
+                return Ui.Stack(
+                    head,
+                    Ui.Field("Action", _act),
+                    _when.View,
+                    _by.View,
+                    _partyField,
+                    _nameField,
+                    Ui.Actions(Ui.Button("Add rule", Add)),
+                    _composerSaid);
+            }
+
+            /// <summary>The rules themselves, in the order they run.</summary>
+            private UIElement Stage() =>
+                Ui.Stack(
+                    Say("Each rule has criteria and an action. Saved rules run over the clash "
+                        + "results when the board loads: suppress and flag first, then group, "
+                        + "then assign."),
+                    _saved,
+                    _preview,
+                    Head("Suppress and flag"),
+                    Say("Runs on every result, in this order; the first rule that suppresses a "
+                        + "result stops the rules under it."),
+                    _filters,
+                    Head("Group"),
+                    Say("Runs on what is left, outermost rule first; a group is named by their "
+                        + "answers joined in that order."),
+                    _grouping,
+                    Head("Assign"),
+                    Say("Runs on the groups, first match wins; a party set by hand is never "
+                        + "overwritten."),
+                    _assigns);
+
+            /// <summary>A section heading: sentence case, one size, one weight.</summary>
+            /// <param name="text">The heading.</param>
+            private static TextBlock Head(string text)
+            {
+                var head = Ui.Heading(text);
+                head.Margin = new Thickness(0, 20, 0, 2);
+                return head;
+            }
+
+            /// <summary>A line of orientation, capped at a readable measure.</summary>
+            /// <param name="text">The line.</param>
+            private static TextBlock Say(string text)
+            {
+                var line = Ui.Line(text, 0.75);
+                line.MaxWidth = TextWidth;
+                line.HorizontalAlignment = HorizontalAlignment.Left;
+                return line;
+            }
+
+            /// <summary>Redraw the three lists from the rule set.</summary>
+            private void Redraw()
             {
                 _filters.Children.Clear();
                 _grouping.Children.Clear();
                 _assigns.Children.Clear();
 
-                foreach (var filter in _rules.Filters.ToList())
+                if (_rules.Filters.Count == 0)
+                    _filters.Children.Add(Ui.Empty(
+                        "No suppress or flag rules.",
+                        "Every result the tests report reaches the board.",
+                        "Add a suppress rule", () => Compose(ActSuppress)));
+
+                for (var at = 0; at < _rules.Filters.Count; at++)
                 {
-                    var row = new WrapPanel();
-                    row.Children.Add(Ui.Check(string.Empty, filter.IsEnabled, v => filter.IsEnabled = v));
-                    row.Children.Add(Ui.Pill(filter.Suppress ? "suppress" : "flag",
-                        filter.Suppress ? Tone.Warn : Tone.Plain));
-                    row.Children.Add(Ui.Line(filter.Name, 1, true));
-                    row.Children.Add(Ui.Line(filter.When.Describe(), 0.75));
+                    var filter = _rules.Filters[at];
+                    var here = at;
 
-                    var drop = Ui.Icon(Glyphs.Bin, "Remove this suppress-or-flag rule", () => { _rules.Filters.Remove(filter); Redraw(session); });
-                    row.Children.Add(drop);
-
-                    Space(row);
-                    _filters.Children.Add(row);
+                    _filters.Children.Add(Rule(
+                        here,
+                        Tick(filter.IsEnabled, on => { filter.IsEnabled = on; Touched(); }),
+                        filter.Suppress ? "Suppress" : "Flag",
+                        filter.Suppress ? Tone.Warn : Tone.Plain,
+                        filter.Name,
+                        filter.When.Describe(),
+                        here > 0 ? () => Move(_rules.Filters, here, -1) : (Action?)null,
+                        here < _rules.Filters.Count - 1 ? () => Move(_rules.Filters, here, 1) : (Action?)null,
+                        () => Drop(_rules.Filters, here),
+                        "Remove this rule"));
                 }
 
-                _filters.Children.Add(NewFilter(session));
+                if (_rules.Grouping.Count == 0)
+                    _grouping.Children.Add(Ui.Empty(
+                        "No grouping rules.",
+                        "The board groups by model pair, then level, then results within "
+                        + Metres(_seat.Profile.ClashProximity) + " of each other.",
+                        "Add a grouping rule", () => Compose(ActGroup)));
 
-                foreach (var group in _rules.Grouping.ToList())
+                for (var at = 0; at < _rules.Grouping.Count; at++)
                 {
-                    var row = new WrapPanel();
-                    row.Children.Add(Ui.Line(group.Describe(), 1));
+                    var step = _rules.Grouping[at];
+                    var here = at;
+                    var title = step.Descriptor?.Title ?? step.Kind;
+                    var said = step.Describe();
 
-                    var drop = Ui.Icon(Glyphs.Bin, "Remove this grouping step", () => { _rules.Grouping.Remove(group); Redraw(session); });
-                    row.Children.Add(drop);
-
-                    Space(row);
-                    _grouping.Children.Add(row);
+                    _grouping.Children.Add(Rule(
+                        here,
+                        null,
+                        "Group",
+                        Tone.Plain,
+                        title,
+                        said.StartsWith(title, StringComparison.Ordinal)
+                            ? said.Substring(title.Length).Trim()
+                            : said,
+                        here > 0 ? () => Move(_rules.Grouping, here, -1) : (Action?)null,
+                        here < _rules.Grouping.Count - 1 ? () => Move(_rules.Grouping, here, 1) : (Action?)null,
+                        () => Drop(_rules.Grouping, here),
+                        "Remove this grouping rule"));
                 }
 
-                _grouping.Children.Add(NewGrouping(session));
+                if (_rules.Assigns.Count == 0)
+                    _assigns.Children.Add(Ui.Empty(
+                        "No assignment rules.",
+                        "Groups reach the board with no party, and are assigned by hand there.",
+                        "Add an assignment rule", () => Compose(ActAssign)));
 
-                foreach (var assign in _rules.Assigns.ToList())
+                for (var at = 0; at < _rules.Assigns.Count; at++)
                 {
-                    var row = new WrapPanel();
-                    row.Children.Add(Ui.Check(string.Empty, assign.IsEnabled, v => assign.IsEnabled = v));
-                    row.Children.Add(Ui.Line(assign.Party, 1, true));
-                    row.Children.Add(Ui.Line("gets " + assign.When.Describe(), 0.75));
+                    var assign = _rules.Assigns[at];
+                    var here = at;
 
-                    var drop = Ui.Icon(Glyphs.Bin, "Remove this assignment", () => { _rules.Assigns.Remove(assign); Redraw(session); });
-                    row.Children.Add(drop);
+                    _assigns.Children.Add(Rule(
+                        here,
+                        Tick(assign.IsEnabled, on => { assign.IsEnabled = on; Touched(); }),
+                        "Assign",
+                        Tone.Plain,
+                        assign.Party,
+                        "when " + assign.When.Describe(),
+                        here > 0 ? () => Move(_rules.Assigns, here, -1) : (Action?)null,
+                        here < _rules.Assigns.Count - 1 ? () => Move(_rules.Assigns, here, 1) : (Action?)null,
+                        () => Drop(_rules.Assigns, here),
+                        "Remove this assignment rule"));
+                }
+            }
 
-                    Space(row);
-                    _assigns.Children.Add(row);
+            /// <summary>
+            /// One rule as one line: its place in the order, whether it is on, what it does, and
+            /// what it matches — all of it legible without opening the rule.
+            /// </summary>
+            /// <param name="at">Its index, counted from zero.</param>
+            /// <param name="tick">Its on-off box, or null for a rule that has none.</param>
+            /// <param name="action">What it does, as the pill.</param>
+            /// <param name="tone">How the pill reads.</param>
+            /// <param name="name">What it is called, or what it groups by.</param>
+            /// <param name="criteria">What it matches.</param>
+            /// <param name="up">Move it earlier, or null when it is already first.</param>
+            /// <param name="down">Move it later, or null when it is already last.</param>
+            /// <param name="drop">Remove it.</param>
+            /// <param name="removes">What the remove button says it removes.</param>
+            private static UIElement Rule(int at, UIElement? tick, string action, Tone tone,
+                                          string name, string criteria, Action? up, Action? down,
+                                          Action drop, string removes)
+            {
+                var row = new Grid { Margin = new Thickness(0, 0, 0, 1) };
+
+                var columns = new[]
+                {
+                    ("no", GridLength.Auto), ("on", GridLength.Auto), ("act", GridLength.Auto),
+                    ("name", GridLength.Auto), (string.Empty, new GridLength(1, GridUnitType.Star)),
+                    (string.Empty, GridLength.Auto), (string.Empty, GridLength.Auto),
+                    (string.Empty, GridLength.Auto),
+                };
+
+                foreach (var (group, width) in columns)
+                {
+                    var column = new ColumnDefinition { Width = width };
+                    if (group.Length > 0) column.SharedSizeGroup = group;
+                    row.ColumnDefinitions.Add(column);
                 }
 
-                _assigns.Children.Add(NewAssign(session));
-            }
-
-            private static void Space(Panel row)
-            {
-                foreach (var child in row.Children.OfType<FrameworkElement>())
-                    child.Margin = new Thickness(0, 2, 7, 2);
-            }
-
-            private UIElement NewFilter(Session session)
-            {
-                var name = Ui.Text("New rule", null, 140);
-                var suppress = Ui.Choice(new[] { "suppress", "flag" }, "suppress", null, 100);
-                var editor = new SpecEditor(PredicateSpec.Kinds);
-
-                var add = Ui.Icon(Glyphs.Add, "Add this rule", () =>
+                void Put(UIElement? cell, int column)
                 {
-                    var spec = editor.Spec();
-                    if (spec == null) return;
+                    if (cell == null) return;
 
-                    _rules.Filters.Add(new FilterSpec(
-                        name.Text.Trim().Length == 0 ? spec.Describe() : name.Text.Trim(),
-                        spec,
-                        (suppress.SelectedItem as string) != "flag"));
+                    if (cell is FrameworkElement element)
+                    {
+                        element.VerticalAlignment = VerticalAlignment.Center;
+                        element.Margin = new Thickness(0, 0, 8, 0);
+                    }
 
-                    Redraw(session);
-                });
+                    Grid.SetColumn(cell, column);
+                    row.Children.Add(cell);
+                }
 
-                return Ui.Stack(Ui.Across(name, suppress), editor.View, Ui.Across(add));
+                var index = Ui.Line((at + 1).ToString(CultureInfo.InvariantCulture) + ".", 0.7);
+                index.MinWidth = 18;
+
+                var title = Ui.Line(name, 1, true);
+                title.MaxWidth = 220;
+                title.TextWrapping = TextWrapping.NoWrap;
+                title.TextTrimming = TextTrimming.CharacterEllipsis;
+                title.ToolTip = name;
+
+                // One line per rule, trimmed rather than wrapped: a list where every row is the
+                // same height is one that can be read down.
+                var said = Ui.Line(criteria, 0.75);
+                said.TextWrapping = TextWrapping.NoWrap;
+                said.TextTrimming = TextTrimming.CharacterEllipsis;
+                if (criteria.Length > 0) said.ToolTip = criteria;
+
+                Put(index, 0);
+                Put(tick, 1);
+                Put(Ui.Pill(action, tone), 2);
+                Put(title, 3);
+                Put(said, 4);
+                Put(Step(Glyphs.Up, "Move up", up), 5);
+                Put(Step(Glyphs.Down, "Move down", down), 6);
+                Put(Ui.Icon(Glyphs.Bin, removes, drop, "RedTx"), 7);
+
+                return row;
             }
 
-            private UIElement NewGrouping(Session session)
+            /// <summary>A move button, drawn unavailable at the end of the list rather than left out.</summary>
+            /// <param name="glyph">Which arrow.</param>
+            /// <param name="tip">What it does.</param>
+            /// <param name="act">The move, or null when there is nowhere to move.</param>
+            private static UIElement Step(string glyph, string tip, Action? act)
             {
-                var editor = new SpecEditor(GroupingSpec.Kinds);
+                var button = Ui.Icon(glyph, tip, act);
+                button.IsEnabled = act != null;
+                return button;
+            }
 
-                var add = Ui.Icon(Glyphs.Add, "Add this rule", () =>
+            /// <summary>A rule's on-off box.</summary>
+            /// <param name="on">Where it starts.</param>
+            /// <param name="onChanged">What to do when it is switched.</param>
+            private static UIElement Tick(bool on, Action<bool> onChanged)
+            {
+                var box = Ui.Check(string.Empty, on, onChanged);
+                box.ToolTip = "Run this rule";
+                return box;
+            }
+
+            /// <summary>Move a rule up or down its list.</summary>
+            /// <typeparam name="T">The rule type.</typeparam>
+            /// <param name="list">The list it is in.</param>
+            /// <param name="at">Where it is now.</param>
+            /// <param name="by">How far to move it.</param>
+            private void Move<T>(IList<T> list, int at, int by)
+            {
+                var to = at + by;
+                if (at < 0 || at >= list.Count || to < 0 || to >= list.Count) return;
+
+                var moved = list[at];
+                list.RemoveAt(at);
+                list.Insert(to, moved);
+
+                Touched();
+                Redraw();
+            }
+
+            /// <summary>Take a rule out of its list.</summary>
+            /// <typeparam name="T">The rule type.</typeparam>
+            /// <param name="list">The list it is in.</param>
+            /// <param name="at">Where it is.</param>
+            private void Drop<T>(IList<T> list, int at)
+            {
+                if (at < 0 || at >= list.Count) return;
+
+                list.RemoveAt(at);
+                Touched();
+                Redraw();
+            }
+
+            /// <summary>Point the composer at one kind of rule, from a section that has none.</summary>
+            /// <param name="act">Which action to compose.</param>
+            private void Compose(string act)
+            {
+                _act.SelectedItem = act;
+                Retune();
+            }
+
+            /// <summary>Show the fields this action needs, and warn about a combination that empties the board.</summary>
+            private void Retune()
+            {
+                var act = _act.SelectedItem as string ?? ActSuppress;
+
+                _when.View.Visibility = act == ActGroup ? Visibility.Collapsed : Visibility.Visible;
+                _by.View.Visibility = act == ActGroup ? Visibility.Visible : Visibility.Collapsed;
+                _partyField.Visibility = act == ActAssign ? Visibility.Visible : Visibility.Collapsed;
+
+                _nameField.Visibility = act == ActSuppress || act == ActFlag
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+
+                _composerSaid.Children.Clear();
+
+                if (act == ActSuppress && _when.Kind()?.Id == "always")
+                    _composerSaid.Children.Add(Ui.Note("These criteria match every result, so this "
+                        + "rule would take the whole board off. Narrow it first."));
+            }
+
+            /// <summary>Add the composed rule to its list.</summary>
+            private void Add()
+            {
+                _composerSaid.Children.Clear();
+
+                var act = _act.SelectedItem as string ?? ActSuppress;
+
+                if (act == ActGroup)
                 {
-                    var kind = editor.Kind();
+                    var kind = _by.Kind();
                     if (kind == null) return;
 
-                    _rules.Grouping.Add(new GroupingSpec(kind.Id)
+                    if (kind.Input == SpecInput.Text && _by.Name() == null)
                     {
-                        A = editor.Number(),
-                        Name = editor.Name(),
-                    });
+                        _composerSaid.Children.Add(Ui.Problem("This rule needs a " + _by.Wants() + "."));
+                        return;
+                    }
 
-                    Redraw(session);
-                });
+                    _rules.Grouping.Add(new GroupingSpec(kind.Id) { A = _by.Number(), Name = _by.Name() });
+                }
+                else
+                {
+                    var kind = _when.Kind();
+                    var spec = _when.Spec();
 
-                return Ui.Stack(editor.View, Ui.Across(add));
+                    if (kind == null || spec == null) return;
+
+                    if ((kind.Input == SpecInput.Text || kind.Input == SpecInput.NameAndValue)
+                        && spec.Name == null)
+                    {
+                        _composerSaid.Children.Add(Ui.Problem("This rule needs a " + _when.Wants() + "."));
+                        return;
+                    }
+
+                    if (act == ActAssign)
+                    {
+                        _rules.Assigns.Add(new AssignSpec(spec, _party.SelectedItem as string ?? "Unassigned"));
+                    }
+                    else
+                    {
+                        var typed = _name.Text.Trim();
+
+                        _rules.Filters.Add(new FilterSpec(typed.Length == 0 ? spec.Describe() : typed,
+                                                          spec, act == ActSuppress));
+                        _name.Text = string.Empty;
+                    }
+                }
+
+                Touched();
+                Redraw();
             }
 
-            private UIElement NewAssign(Session session)
+            /// <summary>Say that the rule set on screen is no longer what the project file holds.</summary>
+            private void Touched()
             {
-                var parties = session.Profile.Parties.ToList();
-                if (parties.Count == 0) parties.Add("Unassigned");
+                _saved.Children.Clear();
+                _saved.Children.Add(Say("Edited. Nothing is written to the project file until "
+                                        + "Save rules is pressed."));
+            }
 
-                var party = parties[0];
-                var picker = Ui.Choice(parties, party, p => party = p);
-                var editor = new SpecEditor(PredicateSpec.Kinds);
+            /// <summary>Write the rule set to the project file.</summary>
+            private void Save()
+            {
+                _saved.Children.Clear();
 
-                var add = Ui.Icon(Glyphs.Add, "Add this rule", () =>
+                _seat.Store.Section(ProjectStore.ClashSection).Set(ClashKeys.Rules, _rules.ToJson());
+
+                if (!_seat.Store.Save())
                 {
-                    var spec = editor.Spec();
-                    if (spec == null) return;
+                    _saved.Children.Add(Ui.Problem(_seat.Store.LastSaveProblem
+                                                   ?? "Could not write the project file."));
+                    return;
+                }
 
-                    _rules.Assigns.Add(new AssignSpec(spec, party));
-                    Redraw(session);
-                });
+                var count = _rules.Filters.Count + _rules.Grouping.Count + _rules.Assigns.Count;
 
-                return Ui.Stack(Ui.Across(picker), editor.View, Ui.Across(add));
+                _seat.Record(ActivityKind.Setup, "Saved " + Ui.Count(count, "clash rule") + ".");
+                _saved.Children.Add(Ui.Done("Saved. The board applies these rules the next time it loads."));
+            }
+
+            /// <summary>
+            /// Run the pipeline with the rules on screen and report what they would do.
+            ///
+            /// A preview, not a run: it writes no journal and does not become the board the report
+            /// and the BCF are taken from, so trying a rule out cannot leave the next read
+            /// comparing against it.
+            /// </summary>
+            /// <param name="session">The live session.</param>
+            /// <param name="job">The job, for progress and Stop.</param>
+            private void Preview(Session session, Job job)
+            {
+                var notes = new List<string>();
+                var board = CoordinateViews.Build(session, job, notes, _rules, preview: true);
+
+                foreach (var note in notes) _preview.Children.Add(Ui.Note(note));
+
+                if (board == null) return;
+
+                var funnel = board.Funnel;
+
+                _preview.Children.Add(Ui.Across(
+                    Ui.Figure(Tallied(funnel.Input), "results read"),
+                    Ui.Figure(Tallied(funnel.Suppressed), "suppressed",
+                              funnel.Suppressed > 0 ? Tone.Warn : Tone.Plain),
+                    Ui.Figure(Tallied(funnel.Flagged), "flagged"),
+                    Ui.Figure(Tallied(funnel.Groups), "groups"),
+                    Ui.Figure(Tallied(funnel.Assigned), "groups assigned"),
+                    Ui.Figure(Tallied(funnel.Unassigned), "groups unassigned",
+                              funnel.Unassigned > 0 ? Tone.Warn : Tone.Good)));
+
+                var idle = _rules.Filters
+                    .Where(f => f.IsEnabled && !funnel.RulesApplied.Contains(f.Name, StringComparer.Ordinal))
+                    .Select(f => f.Name)
+                    .ToList();
+
+                if (idle.Count > 0)
+                    _preview.Children.Add(Say(Ui.Count(idle.Count, "rule") + " matched nothing: "
+                                              + string.Join(", ", idle) + "."));
+
+                if (funnel.Ungroupable > 0)
+                    _preview.Children.Add(Say(Ui.Count(funnel.Ungroupable, "result")
+                        + " no grouping rule could place. They reach the board in one group "
+                        + "called Ungrouped."));
+
+                _preview.Children.Add(Say("Nothing was written. Press Save rules to keep these."));
+            }
+
+            /// <summary>A count as it reads in a scoreboard.</summary>
+            /// <param name="count">The count.</param>
+            private static string Tallied(int count) => count.ToString("N0", CultureInfo.InvariantCulture);
+
+            /// <summary>A distance in metres, as it reads in a sentence.</summary>
+            /// <param name="metres">The distance.</param>
+            private static string Metres(double metres) =>
+                (metres > 0 ? metres : 5.0).ToString("0.###", CultureInfo.InvariantCulture) + " m";
+
+            /// <summary>
+            /// The reference matter, behind one symbol rather than standing under the lists.
+            ///
+            /// Every sentence here answers "why is it in this order", which is asked once.
+            /// </summary>
+            private void Explain() =>
+                Ui.Configure("How rules are applied", null,
+                    new Ui.Page("The order", () => Ui.Stack(
+                        Part("Suppress and flag",
+                             "Runs on every result before anything else, so a result the "
+                             + "coordinator has decided is not a clash never reaches a group. A "
+                             + "result stops at the first rule that suppresses it, so a flag rule "
+                             + "under a suppress rule that matches the same result never runs."),
+                        Part("Group",
+                             "Runs on what suppression left. Each rule answers with one part of "
+                             + "the group name, and the parts are joined in the order the rules "
+                             + "are listed, so the first rule is the outermost division of the "
+                             + "board. A result no rule can answer for is reported rather than "
+                             + "grouped."),
+                        Part("Assign",
+                             "Runs on the groups, because the group is the unit of "
+                             + "responsibility. The first rule whose criteria match any result in "
+                             + "the group wins, and a group already given to a party by hand is "
+                             + "left alone."))),
+                    new Ui.Page("With no rules", () => Ui.Stack(
+                        Part("What runs",
+                             "An empty rule set is a working one. The board groups by model pair, "
+                             + "then level, then results within "
+                             + Metres(_seat.Profile.ClashProximity) + " of each other, and "
+                             + "assigns nothing. Rules narrow that; they do not switch it on."),
+                        Part("What these rules cover",
+                             "Clash results only. The board also carries clearance and "
+                             + "fall-hazard results, and no rule here is applied to them."),
+                        Part("When they take effect",
+                             "Saved rules are read when the board loads. Saving here does not "
+                             + "rearrange a board that is already open."))));
+
+            /// <summary>One passage of the help window: a sentence-case heading and its paragraph.</summary>
+            /// <param name="title">What it is about.</param>
+            /// <param name="text">The passage.</param>
+            private static UIElement Part(string title, string text)
+            {
+                var head = Ui.Heading(title);
+                head.Margin = new Thickness(0, 0, 0, 4);
+
+                var body = Ui.Small(text);
+                body.MaxWidth = TextWidth;
+                body.Margin = new Thickness(0, 0, 0, 16);
+
+                return Ui.Stack(head, body);
             }
         }
 
         /// <summary>
-        /// One editor that can draw every rule, because every rule says what it needs.
+        /// One editor that can draw every rule kind, labelled from the kind it is set to.
         ///
         /// Without this each of the thirteen predicates and ten grouping rules would need its own
         /// row of controls, and adding a rule to Core would mean remembering to add one here.
         /// </summary>
         private sealed class SpecEditor
         {
-            private readonly ComboBox _kind;
-            private readonly TextBox _first = Ui.Text(string.Empty, null, 110);
-            private readonly TextBox _second = Ui.Text(string.Empty, null, 110);
-            private readonly TextBlock _hint = Ui.Line(string.Empty, 0.6);
             private readonly IReadOnlyList<SpecKind> _kinds;
+            private readonly ComboBox _kind;
+            private readonly TextBox _first = Ui.Text(string.Empty, null, 90);
+            private readonly TextBox _second = Ui.Text(string.Empty, null, 90);
 
-            internal SpecEditor(IReadOnlyList<SpecKind> kinds)
+            private readonly TextBlock _firstLabel =
+                new TextBlock { Margin = new Thickness(0, 0, 0, 4) }.Wearing("Lbl");
+
+            private readonly TextBlock _secondLabel =
+                new TextBlock { Margin = new Thickness(0, 0, 0, 4) }.Wearing("Lbl");
+
+            private readonly StackPanel _firstBox;
+            private readonly StackPanel _secondBox;
+            private readonly Action? _onChanged;
+
+            /// <summary>Build an editor over one set of kinds.</summary>
+            /// <param name="label">What the kind dropdown is called.</param>
+            /// <param name="kinds">The kinds it offers.</param>
+            /// <param name="onChanged">Called when the kind changes.</param>
+            internal SpecEditor(string label, IReadOnlyList<SpecKind> kinds, Action? onChanged)
             {
                 _kinds = kinds;
+                _onChanged = onChanged;
 
-                _kind = Ui.Choice(kinds.Select(k => k.Title), kinds[0].Title, _ => Update(), 190);
-                Update();
+                _kind = Ui.Choice(kinds.Select(k => k.Title), kinds[0].Title, _ =>
+                {
+                    Relabel();
+                    _onChanged?.Invoke();
+                }, 240);
 
-                View = Ui.Across(_kind, _first, _second, _hint);
+                _first.MaxWidth = 130;
+                _second.MaxWidth = 130;
+
+                _firstBox = Ui.Stack(_firstLabel, _first);
+                _secondBox = Ui.Stack(_secondLabel, _second);
+
+                View = Ui.Stack(Ui.Field(label, _kind), Ui.Across(_firstBox, _secondBox));
+
+                Relabel();
             }
 
-            internal UIElement View { get; }
+            /// <summary>The dropdown and its operand fields.</summary>
+            internal StackPanel View { get; }
 
+            /// <summary>The kind now picked, or null when the dropdown holds something unknown.</summary>
             internal SpecKind? Kind()
             {
                 var title = _kind.SelectedItem as string;
                 return _kinds.FirstOrDefault(k => string.Equals(k.Title, title, StringComparison.Ordinal));
             }
 
+            /// <summary>What the first field is asking for, for a validation line.</summary>
+            internal string Wants()
+            {
+                var kind = Kind();
+                return kind == null ? "value" : FirstLabel(kind).ToLowerInvariant();
+            }
+
+            /// <summary>The first field as a number, or zero.</summary>
             internal double Number() =>
                 double.TryParse(_first.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var n) ? n : 0;
 
+            /// <summary>The first field as text, or null when it is empty.</summary>
             internal string? Name() => _first.Text.Trim().Length == 0 ? null : _first.Text.Trim();
 
+            /// <summary>The rule the fields describe, or null when no kind is picked.</summary>
             internal PredicateSpec? Spec()
             {
                 var kind = Kind();
@@ -1130,17 +1571,59 @@ namespace CamelWorks.UI.Views
                 return spec;
             }
 
-            private void Update()
+            /// <summary>
+            /// What the operand boxes are called, per kind, with the unit in the label.
+            ///
+            /// Held here rather than on <see cref="SpecKind"/> so the rule engine keeps one hint
+            /// string and this screen carries its own wording. A kind this does not name falls
+            /// back to that hint.
+            /// </summary>
+            /// <param name="kind">The kind.</param>
+            private static string FirstLabel(SpecKind kind) => kind.Id switch
+            {
+                "maxVolume" => "Volume (m³)",
+                "distance" => "From (m)",
+                "angle" => "From (°)",
+                "eitherInSet" => "Set name",
+                "bothInSet" => "Set name",
+                "propertyEquals" => "Property",
+                "propertyContains" => "Property",
+                "category" => "Category",
+                "proximity" => "Distance (m)",
+                "property" => "Property",
+                _ => Capital(kind.Hint),
+            };
+
+            /// <summary>What the second box is called, for the kinds that have one.</summary>
+            /// <param name="kind">The kind.</param>
+            private static string SecondLabel(SpecKind kind) => kind.Id switch
+            {
+                "distance" => "To (m)",
+                "angle" => "To (°)",
+                "propertyEquals" => "Equals",
+                "propertyContains" => "Contains",
+                _ => "Value",
+            };
+
+            /// <summary>A hint written as a label.</summary>
+            /// <param name="text">The hint.</param>
+            private static string Capital(string text) =>
+                text.Length == 0 ? "Value" : char.ToUpperInvariant(text[0]) + text.Substring(1);
+
+            /// <summary>Label the operand boxes for the kind now picked, and hide the ones it has no use for.</summary>
+            private void Relabel()
             {
                 var kind = Kind();
                 if (kind == null) return;
 
-                _hint.Text = kind.Hint;
-                _first.Visibility = kind.Input == SpecInput.None || kind.Input == SpecInput.Nested
+                _firstLabel.Text = FirstLabel(kind);
+                _secondLabel.Text = SecondLabel(kind);
+
+                _firstBox.Visibility = kind.Input == SpecInput.None || kind.Input == SpecInput.Nested
                     ? Visibility.Collapsed
                     : Visibility.Visible;
 
-                _second.Visibility = kind.Input == SpecInput.Range || kind.Input == SpecInput.NameAndValue
+                _secondBox.Visibility = kind.Input == SpecInput.Range || kind.Input == SpecInput.NameAndValue
                     ? Visibility.Visible
                     : Visibility.Collapsed;
             }

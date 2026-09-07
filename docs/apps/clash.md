@@ -437,14 +437,17 @@ Manager's own **New issue**, working on any elements rather than only beside a c
 
 ## Filter Clashes / Matrix
 
-- **Filter Clashes** (called "Rules" before, which said nothing about what it does) is the
-  reduction between the engine and the issue list, in the order it runs: **suppress and flag**
-  every raw result against a predicate, **group** what survives (empty means the built-in
-  model-pair → level → proximity stack), then **assign** first-match-wins. Its one action is
-  *Try these on the board* — it builds the board with the unsaved edits and shows the four
-  figures the rules exist to move — and nothing is written until Save. It acts on clash results,
-  never on issues: a rule that quietly closed something a person wrote a sentence about would be
-  the worst behaviour in the product.
+- **Filter Clashes** is the reduction between the engine and the issue list, in the order it
+  runs: **suppress and flag** every raw result against criteria, **group** what survives (empty
+  means the built-in model-pair → level → proximity stack), then **assign** first-match-wins.
+  Each rule is one line — its place in the order, whether it is on, what it does, and what it
+  matches — and all three stages are ordered, so every rule carries move-up and move-down. New
+  rules are composed in the options panel, one at a time.
+  Two actions, and they are different acts: *Try these on the board* runs the pipeline with the
+  edits on screen and reports results read, suppressed, flagged, groups, assigned and
+  unassigned, writing nothing; *Save rules* is the primary and writes the project file, which
+  the board reads the next time it loads. It acts on clash results, never on issues, and never
+  on the clearance and fall-hazard results the board also carries.
 - **The matrix has three ways in**: by hand (categories picked from the model's own search
   sets, selection sets or whole models — never typed), read back out of the model's existing
   tests (each test's sides become categories, each distinct kind-and-tolerance becomes a
