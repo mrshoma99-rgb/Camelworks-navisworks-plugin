@@ -1461,19 +1461,12 @@ namespace CamelWorks.UI.Views
             {
                 switch (field)
                 {
-                    case ResultFields.Status:
-                        return Offering(FindingStatusWords.Words);
-
-                    case ResultFields.Priority:
-                        return Offering(Ranks());
-
-                    case ResultFields.Assignee:
-                        return Offering(Parties());
-
                     case ResultFields.Orientation:
                         return Offering(new[] { ElementGeometry.Vertical,
                                                 ElementGeometry.Horizontal });
 
+                    // The three the seat alone can name: Core cannot see which checks are on
+                    // this edition, which tests the document holds, or what is loaded.
                     case ResultFields.Source:
                         return _seat.Checks.All
                             .Select(one => new SearchEditor.Choice(one.Key, one.Name))
@@ -1486,10 +1479,11 @@ namespace CamelWorks.UI.Views
                         return Offering(_seat.ModelNames());
 
                     default:
-                        // The rest are read off the results the board already holds, so a group,
-                        // a stage or a label that exists is offered and one that does not is not
-                        // invented.
-                        return Offering(Seen(field));
+                        // Everything else is one vocabulary, in Core: what the project declares
+                        // and what the results on the board actually carry, merged. The Filter
+                        // tab used to derive its own, so a status added to the lattice reached
+                        // three screens out of four.
+                        return Offering(ResultVocabulary.Of(field, Held(), _seat.Profile));
                 }
             }
 
@@ -1527,26 +1521,6 @@ namespace CamelWorks.UI.Views
             /// <summary>The results the register holds, without reading the document.</summary>
             private IReadOnlyList<Finding> Held() =>
                 _seat.Findings.Findings.Present.ToList();
-
-            /// <summary>What the results on the board actually say under a field.</summary>
-            /// <param name="field">The field id.</param>
-            private IReadOnlyList<string> Seen(string field)
-            {
-                switch (field)
-                {
-                    case ResultFields.Group:
-                        return Ui.Listed(Held().Select(one => one.Group));
-
-                    case ResultFields.Stage:
-                        return Ui.Listed(Held().Select(one => one.Stage));
-
-                    case ResultFields.Label:
-                        return Ui.Listed(Held().SelectMany(one => one.Labels));
-
-                    default:
-                        return Array.Empty<string>();
-                }
-            }
 
             /// <summary>The project's parties, never empty.</summary>
             private IReadOnlyList<string> Parties()

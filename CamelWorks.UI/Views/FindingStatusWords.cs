@@ -20,22 +20,16 @@ namespace CamelWorks.UI.Views
     /// </summary>
     internal static class FindingStatusWords
     {
-        /// <summary>The five statuses, in lattice order.</summary>
-        internal static IReadOnlyList<FindingStatus> All { get; } = new[]
-        {
-            FindingStatus.New,
-            FindingStatus.Active,
-            FindingStatus.Reviewed,
-            FindingStatus.Approved,
-            FindingStatus.Resolved,
-        };
-
         /// <summary>
-        /// The five words, in the same order as <see cref="All"/>.
+        /// The five statuses, in lattice order.
         ///
-        /// For the widgets that take a list of options as strings.
+        /// The lattice's own list. This file used to write it out again, so the order and the
+        /// membership were stated twice and could drift.
         /// </summary>
-        internal static IReadOnlyList<string> Words { get; } = Named(All);
+        internal static IReadOnlyList<FindingStatus> All => FindingStatusLattice.All;
+
+        /// <summary>The five words, in the same order as <see cref="All"/>.</summary>
+        internal static IReadOnlyList<string> Words => FindingStatusLattice.Names;
 
         /// <summary>How a status reads.</summary>
         /// <param name="status">The status.</param>
