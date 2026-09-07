@@ -232,10 +232,15 @@ namespace CamelWorks.UI.Views
             {
                 var named = storeys.Select(one => one.Name).ToList();
 
-                var chosen = !string.IsNullOrWhiteSpace(settings.LevelName)
-                             && named.Contains(settings.LevelName!, StringComparer.OrdinalIgnoreCase)
-                    ? settings.LevelName!
-                    : Typed;
+                // Whatever the test says, kept in the list. A test written against a project whose
+                // storeys have since been renamed named one this list may not hold, and dropping it
+                // showed "A typed elevation" for a test that had a storey picked.
+                if (!string.IsNullOrWhiteSpace(settings.LevelName)
+                    && !named.Contains(settings.LevelName!, StringComparer.OrdinalIgnoreCase))
+                    named.Add(settings.LevelName!);
+
+                var chosen = string.IsNullOrWhiteSpace(settings.LevelName)
+                    ? Typed : settings.LevelName!;
 
                 var picker = Ui.Choice(new[] { Typed }.Concat(named).ToList(), chosen, pick =>
                 {
@@ -258,7 +263,7 @@ namespace CamelWorks.UI.Views
                     });
                 }, 230);
 
-                if (storeys.Count == 0)
+                if (named.Count == 0)
                 {
                     picker.IsEnabled = false;
                     picker.ToolTip = "This project declares no storeys yet.";
