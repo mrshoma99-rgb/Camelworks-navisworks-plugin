@@ -4013,13 +4013,20 @@ namespace CamelWorks.UI.Views
                 // between a board that fits and a board scrolled off its row verbs, and a column
                 // somebody added on purpose should not cost them the verbs.
                 //
-                // The name takes twice what either item does, and all three give ground before
-                // the table starts scrolling sideways. The design fixes Item 1 and Item 2 at 118
-                // apiece and lets only the name flex, which adds up to 862 - wider than the board
-                // is at the window's own default size. The picture that came back was a table
-                // scrolled off its own status and assignee columns, which are the two things this
-                // screen was rebuilt to put on the row. Horizontal scroll is meant to be the last
-                // resort here, not the resting state.
+                // The two element columns take the room, and the name gives it up.
+                //
+                // It was the other way round: the name took twice what either item did. The name
+                // is "Clash1", "Clash2", "Clash3" — the host's own numbering, the same width on
+                // every row and no help in telling one row from another. The item columns hold
+                // what the board exists to say, and a real one holds "Basic Wall: SW-01
+                // Plasterboard 140mm [214880]". At a share of one apiece they came out at 90
+                // pixels and every Architecture row read "Basic Wall: E…", so a coordinator could
+                // not tell two rows apart by looking at them.
+                //
+                // All three still give ground before the table scrolls sideways. Fixing the item
+                // columns at their full width adds up to more than the board is wide at the
+                // window's default size, and a table scrolled off its own status and assignee
+                // columns loses the two things this screen was rebuilt to put on the row.
                 var tight = Added.Count > 0;
 
                 // Walked in the order the columns are drawn in rather than written out in a fixed
@@ -4030,7 +4037,9 @@ namespace CamelWorks.UI.Views
                 {
                     if (string.Equals(name, Named, StringComparison.Ordinal))
                     {
-                        Named2(Named, 2, tight ? 110 : 130);
+                        // A share of one, and the smallest floor of the three. The host's row
+                        // number is a label, not a fact about the clash.
+                        Named2(Named, 1, tight ? 82 : 96);
                         continue;
                     }
 
@@ -4071,10 +4080,14 @@ namespace CamelWorks.UI.Views
                     // a column scrolls sideways off its own row verbs on the second one. It takes
                     // a share of what there is and ellipsises, with the whole value on the
                     // tooltip.
-                    Named2(name, 1,
-                           column != null && column.Kind == ColumnKind.Element
-                               ? (tight ? 74 : 90)
-                               : 76);
+                    // An element column takes three shares, because a model's own name for a
+                    // thing is three or four words and a code, and it is the fact the row is
+                    // about. Everything else added to the board takes one.
+                    var element = column != null && column.Kind == ColumnKind.Element;
+
+                    Named2(name,
+                           element ? 3 : 1,
+                           element ? (tight ? 120 : 150) : 76);
                 }
 
                 // Four row buttons, at the tighter margin the bar below sets on them. The
