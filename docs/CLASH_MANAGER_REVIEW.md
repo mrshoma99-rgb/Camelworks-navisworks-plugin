@@ -299,6 +299,42 @@ tests, reports the count and strands the user with no route to Create.
    same-conflict distance, band above and below, grid resolution, pattern names.
 7. Zero-count buttons: `Include 0 tests`, `Accept 0 answers`, `Take out 0
    packs`, `Include these 0`. Live-looking, unable to act, silent about why.
+### C7. The three Settings sections the first pass missed
+
+Team, Disciplines and Manage had no harness page, so the first review covered
+three of six sections. Drawn now, the Team section is the most extreme instance
+of every finding in section B.
+
+**Settings ▸ Team.**
+
+1. **Forty-two controls in a six-by-seven grid.** Name, Email and BCF folder are
+   text boxes; Role, Team and Company are dropdowns. They interleave, and
+   nothing but a chevron separates them. This is finding B1 at its worst.
+2. **Six of the seven columns clip their content** at 1150px: "Project archi",
+   "Setting-out e", "Vos Architect", "Meridian ME", "d.whitfield@northga",
+   "s.haddad@meridian". The one thing a roster is for — reading who is on the
+   job and how to reach them — is the thing this table cannot do.
+3. **The Team column is an empty dropdown on every row**, with no value and no
+   placeholder, so an unset field and a broken one look the same.
+4. **The roster knows who has left the job and the table does not show it.**
+   `TeamMember` carries an active flag; the inactive member is drawn exactly
+   like the other five.
+5. **Six identical Browse buttons** for a field most projects never set carry
+   more visual weight than the six people's names.
+6. **A roster is read far more often than it is edited, and there is no read
+   state at all.** Every value is a live control.
+7. "Remove from the roster" is another zero-count verb.
+
+**Settings ▸ Manage.** The nav entry says "Manage" and the section heading says
+"Bands" — the only place in the product where a section does not agree with its
+own nav. Its whole content is three lines and one dropdown in a 1180×412 pane,
+and the sentence saying there are no bands sits above the control that would add
+one rather than in the empty state.
+
+**Settings ▸ Disciplines.** On a project with no models the section is one empty
+state, correctly written. It is centred in the pane while the heading above it is
+left-aligned, so the two do not share an axis — finding B11 again.
+
 ## E. Do the seven tabs read as one application?
 
 No. Counted across the set:
