@@ -166,7 +166,9 @@ def main():
     # surface here". Four tools live outside the table by design - Review's palette, the two
     # acts, and Help - and each has its own route through ToolViews.
     apps_source = read("Shell/Apps.cs")
-    on_apps = re.findall(r'new AppTab\("[^"]+", "([a-z]+)"\)', apps_source)
+    # The optional third argument marks a tab as a tool rather than a step; it does not change
+    # which tool the tab reaches, so it is matched and ignored.
+    on_apps = re.findall(r'new AppTab\("[^"]+", "([a-z]+)"(?:\s*,[^)]*)?\)', apps_source)
 
     seen_app = {}
     for tool_id in on_apps:
