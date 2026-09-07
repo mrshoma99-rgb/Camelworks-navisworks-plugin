@@ -249,9 +249,9 @@ namespace CamelWorks.Studio
             Page("app-clash-create-empty", "Clash Manager · Create, no tests yet", 620,
                  () => Creating(null)),
 
-            // The form that makes one clash test. It is a modal in the product, so what is drawn
-            // is its body: the two sides, the kind and the tolerance, with both sides unset, which
-            // is the state it opens in and the one that has to say what to do next.
+            // The form that makes one clash test, as the Create tab's panel holds it: the two
+            // sides, the kind and the tolerance, with both sides unset, which is the state it
+            // opens in and the one that has to say what to do next.
             // Not in the render's default list; named on dispatch.
             Page("app-clash-new", "Clash Manager · A new clash test", 620, NewClash),
         };
@@ -260,7 +260,12 @@ namespace CamelWorks.Studio
         private static UIElement NewClash()
         {
             var seat = Seated();
-            var clash = seat.Checks.All.OfType<ClashCheck>().First();
+
+            // Built here rather than looked for on the seat. The harness seat has no clash
+            // engine, so it registers no clash check and this page failed on every render with
+            // "sequence contains no elements" — the one page whose whole point is to be looked at
+            // was the one nobody could see.
+            var clash = new ClashCheck(seat.Clash, seat.MetresPerUnit, seat.ClashProblem);
 
             var body = new Border
             {

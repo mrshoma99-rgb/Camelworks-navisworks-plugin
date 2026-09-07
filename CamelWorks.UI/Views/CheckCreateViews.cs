@@ -210,30 +210,26 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private UIElement Listing()
             {
-                var grid = new Grid();
-
-                grid.RowDefinitions.Add(new RowDefinition
-                    { Height = new GridLength(1, GridUnitType.Star) });
-                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-                var rows = new ScrollViewer
-                {
-                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                    Content = Ui.Stack(_log, _list),
-                };
-
-                Ui.WheelThrough(rows);
-                Ui.SetFills(rows, true);
-
-                grid.Children.Add(rows);
+                // A dock, not a grid with a scroller in its star row. The table is a ListView and
+                // scrolls itself; putting it inside a second scroller sized to the pane left it
+                // measured against a height it did not use, and the rows drew at the foot of an
+                // otherwise empty pane. Docked, the verbs take their line at the bottom and the
+                // table fills what is left, which is what every other two-pane bench here does.
+                var body = new DockPanel { LastChildFill = true };
 
                 var pinned = Ui.Loose(_picking);
 
-                Grid.SetRow(pinned, 1);
-                grid.Children.Add(pinned);
+                DockPanel.SetDock(pinned, Dock.Bottom);
+                body.Children.Add(pinned);
 
-                return grid;
+                DockPanel.SetDock(_log, Dock.Top);
+                body.Children.Add(Ui.Loose(_log));
+
+                Ui.SetFills(body, true);
+
+                body.Children.Add(Ui.Loose(_list));
+
+                return body;
             }
 
             /// <summary>

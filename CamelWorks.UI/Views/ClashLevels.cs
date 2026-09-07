@@ -178,9 +178,13 @@ namespace CamelWorks.UI.Views
             held.Children.Add(foot);
             held.Children.Add(undo);
 
-            held.Children.Add(Ui.Small("Or have them worked out from where the elements actually "
-                + "sit. What it finds is added to the list above, named after each height, for you "
-                + "to rename to the client's own words."));
+            var derived = Ui.Small("Or have them worked out from where the elements actually sit. "
+                + "What it finds is added to the list above, named after each height, for you to "
+                + "rename to the client's own words.");
+
+            derived.Margin = new Thickness(0, 10, 0, 0);
+
+            held.Children.Add(derived);
 
             held.Children.Add(derive);
             held.Children.Add(worked);
