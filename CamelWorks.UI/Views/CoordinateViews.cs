@@ -1633,14 +1633,11 @@ namespace CamelWorks.UI.Views
         // Report
         // ===================================================================================
 
-        /// <summary>PDF, XLSX or HTML from the board, with nothing to configure first.</summary>
         /// <summary>
-        /// Where the board stands, said at the top of every Issue Link tab.
+        /// What the board holds, over the report about to be written.
         ///
-        /// Everything in Issue Link issues the board, and the board lives in Clash Manager. A tab
-        /// that only says so at the press — "the board has not been built yet" — has already let
-        /// somebody set up a report of nothing. So each tab opens on the fact: loaded and how many
-        /// issues, or not loaded with Clash Manager's Board one press away, loading on arrival.
+        /// The board is built on Manage and every report is taken from it, so this tab opens on
+        /// whether there is one rather than saying so at the press.
         /// </summary>
         /// <param name="whenMissing">What pressing on without a board means, on this tab.</param>
         private static UIElement BoardState(string whenMissing)
@@ -1648,59 +1645,78 @@ namespace CamelWorks.UI.Views
             var board = LastBoard;
 
             if (board == null)
-                return LoadHere("The board is not loaded. " + whenMissing);
+                return LoadHere("No board is loaded. " + whenMissing);
 
-            return Ui.Line("On the board: " + Ui.Count(board.Groups.Count, "issue") + ", "
+            return Bench.Scope("On the board: " + Ui.Count(board.Groups.Count, "issue") + ", "
                 + Ui.Count(board.Groups.Sum(g => g.Items.Count), "clash")
-                + (string.IsNullOrEmpty(LastBoardLabel) ? string.Empty : " — " + LastBoardLabel)
-                + ". This tab sends that board.", 0.75);
+                + (string.IsNullOrEmpty(LastBoardLabel) ? string.Empty : " — " + LastBoardLabel));
         }
 
         /// <summary>
-        /// What leaves after a report or a file has left: the other format, and the way back.
+        /// Where the same board goes next, offered once a report has been written.
         ///
-        /// The Thursday issue is rarely one artefact — the PDF goes to the meeting, the BCF or the
-        /// clash file goes to whoever answers in a tool — and the reply lands the following week.
-        /// Saying so at the moment of a successful send is what keeps the round trip one workflow
-        /// instead of three windows somebody has to remember are related.
+        /// A report is read and filed; the answers come back as BCF, which is the Exchange tab.
+        /// The two buttons this used to draw named an app id and two tool ids that do not exist,
+        /// so both only ever reported that there is no such app.
         /// </summary>
-        /// <param name="into">Where the send just reported.</param>
-        /// <param name="also">The other formats worth sending, as tool ids of this app's tabs.</param>
-        private static void NextSteps(Panel into, params string[] also)
+        /// <param name="into">Where the write just reported.</param>
+        private static void NextSteps(Panel into)
         {
-            var buttons = new List<UIElement?>();
+            into.Children.Add(Ui.Actions(Ui.Quiet("Open the Exchange tab",
+                () => Ui.Told(Shell.AppWindow.Show("clash", "exchange")))));
 
-            foreach (var tool in also)
-            {
-                var here = tool;
-
-                buttons.Add(Ui.Quiet(
-                    here == "bcf" ? "Send it as BCF too"
-                    : here == "clashxml" ? "Send it as a clash file too"
-                    : "Write the report to go with it",
-                    () => Ui.Told(Shell.AppWindow.Show("issues", here))));
-            }
-
-            into.Children.Add(Ui.Actions(buttons.FirstOrDefault(), buttons.Skip(1).ToArray()));
-
-            into.Children.Add(Ui.Small("When an answered file comes back, the BCF tab reads it "
-                + "against this board — and several reviewers' returns come together on Merge."));
+            into.Children.Add(Ui.Small("Exchange sends the same board as BCF and reads the "
+                + "answers back onto it."));
         }
 
-        public static UIElement Report() => new ReportScreen().Build();
+        /// <summary>
+        /// The report, on the live seat.
+        ///
+        /// A report is written from the board, which is built from the open model, so there is
+        /// nothing to write without one. The screen itself takes a seat rather than a session, so
+        /// it can be drawn without one.
+        /// </summary>
+        public static UIElement Report()
+        {
+            var seat = Host.Current;
 
-        /// <summary>The penetration schedule, as its own tool rather than a template choice.</summary>
-        internal static UIElement PenetrationsReport() =>
-            new ReportScreen("Penetration schedule").Build();
+            if (seat == null)
+                return Bench.Surface(null, null, Ui.Stack(Ui.Empty(
+                    "No model is open.",
+                    "A report is written from the clash board, and the board is built from the "
+                    + "results in the open model. Open the model this report is about.")));
+
+            return Report(seat);
+        }
+
+        /// <summary>The report screen on a given seat.</summary>
+        /// <param name="seat">The seat. Its project file holds the settings and the revisions.</param>
+        public static UIElement Report(ISeat seat) => new ReportScreen(seat).Build();
+
+        /// <summary>The penetration schedule, as its own tool rather than a document choice.</summary>
+        internal static UIElement PenetrationsReport()
+        {
+            var seat = Host.Current;
+
+            if (seat == null)
+                return Bench.Surface(null, null, Ui.Stack(Ui.Empty(
+                    "No model is open.",
+                    "The schedule lists what the model says passes through structure, so it "
+                    + "needs that model open.")));
+
+            return new ReportScreen(seat, "Penetration schedule").Build();
+        }
 
         /// <summary>
-        /// The report, and who it is for.
+        /// The report: which document, who it is for, and what goes in it.
         ///
-        /// A single report of the whole board is the one nobody sends. What actually leaves the
-        /// office on a Friday is one list per subcontractor, holding their groups and nothing else,
-        /// and producing those by hand from a full report is an afternoon of filtering and saving.
-        /// So the audience is part of writing it, and "one file each" is a checkbox rather than a
-        /// morning.
+        /// Three documents come off one board — the full report, the field pack and the
+        /// penetration schedule — and each can be written for one party or for everybody, with a
+        /// revision letter kept per party.
+        ///
+        /// The board is clash-shaped, so these documents carry the clash results and the issues
+        /// raised by hand on the board. The screen states that rather than implying it covers the
+        /// clearance and fall-hazard findings the same project holds.
         /// </summary>
         private sealed class ReportScreen
         {
@@ -1714,7 +1730,7 @@ namespace CamelWorks.UI.Views
             private const string FullReport = "Full report";
 
             /// <summary>One issue per page in large type, for a hand and a wall.</summary>
-            private const string FieldPack = "Field pack - one issue per page";
+            private const string FieldPack = "Field pack";
 
             /// <summary>Services through structure, for the pour.</summary>
             private const string Penetration = "Penetration schedule";
@@ -1741,35 +1757,57 @@ namespace CamelWorks.UI.Views
             };
 
             private readonly StackPanel _results = Ui.Stack();
-            private readonly StackPanel _markers = Ui.Stack();
+
+            /// <summary>The seat. Everything the screen reads without a document comes from here.</summary>
+            private readonly ISeat _seat;
+
+            /// <summary>The live session, or null on a seat with no document. Writing needs one.</summary>
+            private readonly Session? _live;
 
             /// <summary>What this tab was last told, so it does not ask again.</summary>
-            private readonly ToolMemory _kept =
-                ToolMemory.Of(Host.Current?.Store, "coordinate.report");
+            private readonly ToolMemory _kept;
 
             private readonly TextBox _path;
             private readonly TextBox _template;
 
+            /// <summary>The line under the document picker, retuned when the pick changes.</summary>
+            private readonly TextBlock _what = Ui.Small(string.Empty);
+
+            /// <summary>The three controls an empty result blames, so it can offer the way back.</summary>
+            private ComboBox? _for;
+
+            private CheckBox? _changed;
+
+            private CheckBox? _split;
+
             private string _units;
 
             /// <summary>
-            /// Which template this screen is fixed to, or null when the user picks.
+            /// Which document this screen is fixed to, or null when the user picks.
             ///
             /// The penetration schedule is its own ribbon button: a structural engineer asking for
             /// the list before a pour is not writing a clash report, and a window that answers
-            /// "which of three reports?" first is asking a question they do not have.
+            /// "which of three documents?" first is asking a question they do not have.
             /// </summary>
             private readonly string? _locked;
 
-            internal ReportScreen(string? locked = null)
+            /// <summary>Open the screen on a seat.</summary>
+            /// <param name="seat">The seat. Its project file holds the settings and the revisions.</param>
+            /// <param name="locked">The one document this screen writes, or null when the user picks.</param>
+            internal ReportScreen(ISeat seat, string? locked = null)
             {
+                _seat = seat ?? throw new ArgumentNullException(nameof(seat));
+                _live = seat as Session;
+
                 _locked = locked;
                 if (locked != null) _mode = locked;
 
-                _path = Ui.Text(_kept.Text("folder"), text => _kept.Set("folder", text), 340);
+                _kept = ToolMemory.Of(seat.Store, "coordinate.report");
+
+                _path = Ui.Text(_kept.Text("folder"), text => _kept.Set("folder", text), 200);
 
                 _template = Ui.Text(_kept.Text("name", Deliverable.DefaultTemplate),
-                                    text => _kept.Set("name", text), 340);
+                                    text => _kept.Set("name", text), 200);
 
                 _units = _kept.Text("units", FromDocument) ?? FromDocument;
 
@@ -1788,131 +1826,173 @@ namespace CamelWorks.UI.Views
             private bool _keyPlan;
             private bool _perParty;
 
+            /// <summary>How wide a paragraph is allowed to be, in device pixels — about 80 characters.</summary>
+            private const double TextWidth = 620;
+
+            /// <summary>How wide the options panel is. Its one text field is capped by it.</summary>
+            private const double PanelWidth = 360;
+
             internal UIElement Build()
             {
-                var session = Host.Current;
-
                 var parties = new List<string> { Everyone, Nobody };
-                if (session != null) parties.AddRange(session.Profile.Parties);
+                parties.AddRange(_seat.Profile.Parties);
 
-                // The three explanations that used to sit in a stack of amber notes, one per
-                // template, all visible at once. Only one of them is ever about the report being
-                // written, and which one is a thing the screen already knows.
-                var what = Ui.Small(Explain(_mode));
+                _for = Ui.Choice(parties, _audience, a => _audience = a, 150);
 
-                var format = Ui.Choice(new[] { "PDF", "XLSX", "HTML" }, _format,
-                                       f => { _format = f; _kept.Set("format", f); }, 120);
-                var audience = Ui.Choice(parties, _audience, a => _audience = a, 180);
+                var format = Ui.Segmented(new[] { "PDF", "XLSX", "HTML" }, _format,
+                                          f => { _format = f; _kept.Set("format", f); });
 
-                var mode = Ui.Choice(new[] { FullReport, FieldPack, Penetration }, _mode, m =>
-                {
-                    _mode = m;
-                    what.Text = Explain(m);
-                });
+                _changed = Ui.Check("Only issues that are new or back after being resolved",
+                                    _changedOnly,
+                                    v => { _changedOnly = v; _kept.Set("changedOnly", v); });
 
-                // Locked: the template is the tool, so the picker is not a choice this window has.
-                var contents = _locked == null ? Ui.Field("Contents", mode) : null;
-
-                var changed = Ui.Check("Only what the last run had not seen", _changedOnly,
-                                       v => { _changedOnly = v; _kept.Set("changedOnly", v); });
-
-                var pictures = Ui.Check("A picture of each group", _pictures,
-                                        v => { _pictures = v; _kept.Set("pictures", v); });
-
-                var plan = Ui.Check("A plan of the site with every issue marked", _keyPlan,
+                var plan = Ui.Check("A site plan with every issue numbered on it", _keyPlan,
                                     v => { _keyPlan = v; _kept.Set("keyPlan", v); });
 
-                var split = Ui.Check("One file per party, not one file", _perParty,
-                                     v => { _perParty = v; _kept.Set("perParty", v); });
+                _split = Ui.Check("A separate file for each party", _perParty,
+                                  v => { _perParty = v; _kept.Set("perParty", v); });
 
-                var write = Ui.Runner("Write the report", _results, Write);
+                var pictures = Ui.Check("A rendered view of each issue", _pictures,
+                                        v => { _pictures = v; _kept.Set("pictures", v); });
 
-                _results.Children.Add(BoardState("Writing will build it fresh from the tests "
-                    + "and the saved rules."));
+                var cost = Ui.Small("A rendered view moves the model view while it runs, once "
+                                    + "per issue.");
 
-                _results.Children.Add(Bench.Ready(
-                    "Writes the board out for whoever it is for, from a built-in template.",
-                    "Each issue takes the next revision letter, and its cover says which one it "
-                    + "supersedes."));
-
-                // The rail keeps what is chosen per report; where it lands, what the markers
-                // look like and the way over to a file are decided once for the job and live in
-                // the window behind the symbols beside the press.
-                var foot = new WrapPanel();
-
-                foot.Children.Add(write);
-                foot.Children.Add(new Border { Width = 14 });
-                foot.Children.Add(Ui.Icon(Glyphs.Folder, "Where it goes and what it is called",
-                                          () => Configure("where")));
-                foot.Children.Add(Ui.Icon(Glyphs.Sphere, "Markers in the model",
-                                          () => Configure("markers")));
-                foot.Children.Add(Ui.Icon(Glyphs.Onward, "Send it as an exchange file",
-                                          () => Configure("file")));
-
-                return Bench.Surface(
-                    Ui.Stack(
-                        Bench.Group("",
-                            contents,
-                            what,
-                            Ui.Field("For", audience),
-                            Ui.Field("Format", format)),
-                        Bench.Group("What else is in it",
-                            changed,
-                            plan,
-                            split,
-                            pictures,
-                            Ui.Small("A picture moves your view while it runs and puts it back "
-                                     + "afterwards. On a board of two hundred groups that is two "
-                                     + "hundred renders, so it is off until you ask for it."))),
-                    foot,
-                    Ui.Stack(
-                        _results,
-                        _markers));
-            }
-
-            /// <summary>
-            /// What one symbol beside the press is for, in a window of its own.
-            ///
-            /// Titled with the section the symbol named. All three used to open the same
-            /// three-section window called "Report", so nothing about the window said which of
-            /// them had been pressed.
-            /// </summary>
-            /// <param name="section">Which section the symbol names.</param>
-            private void Configure(string section)
-            {
-                Ui.Page page;
-
-                switch (section)
+                // Only the full report has a site plan, and the schedule has no pictures at all.
+                // Shown against the document rather than left on screen doing nothing.
+                void Retune()
                 {
-                    case "markers":
-                        page = new Ui.Page("Markers", Markers);
-                        break;
+                    _what.Text = Explain(_mode);
 
-                    case "file":
-                        page = new Ui.Page("Exchange file", Exchange);
-                        break;
+                    plan.Visibility = _mode == FullReport ? Visibility.Visible : Visibility.Collapsed;
 
-                    default:
-                        page = new Ui.Page("Where it goes", () => Bench.Group("Where it goes",
-                            Ui.PathField("Write to", _path, PathKind.Folder,
-                                         hint: "blank writes it beside the document"),
-                            Ui.Field("Name it", _template,
-                                     "carries " + string.Join(", ", Deliverable.Tokens))));
-                        break;
+                    var images = _mode != Penetration;
+
+                    pictures.Visibility = images ? Visibility.Visible : Visibility.Collapsed;
+                    cost.Visibility = images ? Visibility.Visible : Visibility.Collapsed;
                 }
 
-                Ui.Configure(page.Name, null, page);
+                var document = Ui.Choice(new[] { FullReport, FieldPack, Penetration }, _mode, m =>
+                {
+                    _mode = m;
+                    Retune();
+                }, 200);
+
+                Retune();
+
+                // Locked: the document is the tool, so the picker is not a choice this window has.
+                var setup = Ui.Stack(
+                    _locked == null ? Ui.Field("Document", document) : null,
+                    _what,
+                    Ui.Across(Ui.Field("Recipient", _for), Ui.Field("File format", format)),
+                    Head("What else is in it"),
+                    _changed,
+                    plan,
+                    _split,
+                    pictures,
+                    cost,
+                    Head("Where it goes"),
+                    Ui.PathField("Folder", _path, PathKind.Folder,
+                                 hint: "blank writes it to your Documents folder"),
+                    Ui.Field("File name", _template,
+                             "tokens: " + string.Join(", ", Deliverable.Tokens)));
+
+                var help = Ui.Icon(Glyphs.Info, "What goes in each document", Help);
+                var markers = Ui.Icon(Glyphs.Sphere, "Markers in the model", Markers);
+
+                var write = _live == null
+                    ? Ui.Blocked("Write the report",
+                                 "A report is written from the board, which needs an open model.")
+                    : Ui.Runner("Write the report", _results, Write);
+
+                // The scope, the coverage and the way to load a board are kept out of _results:
+                // a runner clears its output panel on every press, so anything put there is gone
+                // the first time the button is used and never comes back.
+                var stage = Ui.Stack(
+                    _live == null
+                        ? Ui.Empty("No model is open.",
+                                   "The report is written from the clash board, which is built "
+                                   + "from the results in the open model.")
+                        : BoardState("Writing builds it fresh from the tests and the saved rules."),
+                    Say(Covers()),
+                    Bench.Ready("Writes the document out and gives it the next revision letter."),
+                    _results);
+
+                return Bench.Surface(setup, Ui.Across(help, markers, write), stage, PanelWidth);
             }
 
             /// <summary>
-            /// The clashes, in the model.
-            ///
-            /// A clash is a row on a board and a camera position, and both need somebody driving
-            /// the mouse. A walkthrough, a site meeting or a subcontractor's own copy of the model
-            /// needs the clash where the clash is: a ball hanging in the air where the duct meets
-            /// the beam, visible from across the room and still there tomorrow.
+            /// A section heading in the options panel: sentence case, one size, one weight.
             /// </summary>
-            private UIElement Markers()
+            /// <remarks>
+            /// Not <see cref="Bench.Group"/>, whose label goes through <c>Ui.Eyebrow</c> and comes
+            /// out upper case. Worked around here rather than in Bench, which is shared: changing
+            /// it there restyles every screen that groups options.
+            /// </remarks>
+            /// <param name="text">The heading.</param>
+            private static TextBlock Head(string text)
+            {
+                var head = Ui.Heading(text);
+                head.Margin = new Thickness(0, 18, 0, 4);
+                return head;
+            }
+
+            /// <summary>A line of orientation, capped at a readable measure.</summary>
+            /// <param name="text">The line.</param>
+            private static TextBlock Say(string text)
+            {
+                var line = Ui.Line(text, 0.75);
+                line.MaxWidth = TextWidth;
+                line.HorizontalAlignment = HorizontalAlignment.Left;
+                return line;
+            }
+
+            /// <summary>
+            /// What these documents cover, and what the project holds that they do not.
+            ///
+            /// The board is the clash results and the issues raised by hand on it. The clearance
+            /// and fall-hazard checks write into the same register and none of their findings
+            /// reach a report, so the count is stated here rather than left to be discovered by
+            /// whoever reads the PDF.
+            /// </summary>
+            private string Covers()
+            {
+                var covers = "Covers the clash board: clash results, and issues raised by hand.";
+
+                // The two kinds the Manage board carries beside clash. Health, IDS and compare
+                // findings are also in this register and belong to other apps, so naming them
+                // here would read as a list of everything this report is not.
+                var beside = new[] { FindingSource.Headroom, FindingSource.FallHazard };
+
+                var others = _seat.Findings.Findings.Present
+                    .Where(f => beside.Contains(f.Source, StringComparer.OrdinalIgnoreCase))
+                    .GroupBy(f => f.Source, StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(one => one.Key, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                if (others.Count == 0) return covers;
+
+                return covers + " Not in it: " + string.Join(", ", others.Select(one =>
+                    Ui.Count(one.Count(), Kind(one.Key) + " result"))) + ".";
+            }
+
+            /// <summary>What a check's findings are called, in that check's own words.</summary>
+            /// <param name="key">The finding's source.</param>
+            private string Kind(string key) =>
+                (_seat.Checks.Find(key)?.Name ?? key).ToLowerInvariant();
+
+            /// <summary>
+            /// The clashes as geometry: one marker per clash, written as an OBJ the host appends.
+            ///
+            /// Behind its own symbol rather than on the surface. It produces a model file rather
+            /// than a document, and it is set up once for a job rather than once per report.
+            /// </summary>
+            private void Markers() =>
+                Ui.Configure("Markers in the model", null,
+                             new Ui.Page("Markers in the model", MarkerSetup));
+
+            /// <summary>The marker settings and the run, inside the window the symbol opened.</summary>
+            private UIElement MarkerSetup()
             {
                 var recipe = new MarkerRecipe();
 
@@ -1947,33 +2027,38 @@ namespace CamelWorks.UI.Views
 
                 var units = Ui.Choice(Units, _units, pick => { _units = pick; _kept.Set("units", pick); }, 160);
 
-                var write = Ui.Runner("Make them", _markers, primary: false,
-                                      work: job => Mark(job, recipe));
+                // The run reports into this window. Its answers used to be written to a panel on
+                // the tab behind it, so nothing appeared until the window was closed.
+                var said = Ui.Stack();
 
-                // One marker per clash, grouped by test, as ordinary geometry the host can select,
-                // hide and remove. A setup group rather than its own card: the fields are inputs
-                // and the secondary runner sits at the group's foot, with its answer on the stage.
-                return Bench.Group("Put the clashes in the model",
+                return Ui.Stack(
+                    Say("One marker per clash on the board, grouped by test, written as an OBJ "
+                        + "file that can be appended to the model."),
                     Ui.Field("Shape", shape),
-                    Ui.Field("Across", size, "millimetres, on screen"),
-                    Ui.Field("The model is in", units,
-                             "only needed if the document does not say"),
-                    write);
+                    Ui.Field("Marker diameter (mm)", size),
+                    Ui.Field("Model units", units),
+                    Ui.Runner("Make the markers", said, job => Mark(job, recipe, said),
+                              primary: false),
+                    said);
             }
 
-            private void Mark(Job job, MarkerRecipe recipe)
+            /// <summary>Write the markers, reporting into the window the settings are in.</summary>
+            /// <param name="job">The run this is part of.</param>
+            /// <param name="recipe">The shape and size the settings above describe.</param>
+            /// <param name="said">Where this run reports, inside the markers window.</param>
+            private void Mark(Job job, MarkerRecipe recipe, Panel said)
             {
-                _markers.Children.Clear();
+                said.Children.Clear();
 
-                var session = Host.Current;
-                if (session == null) { _markers.Children.Add(Ui.Line(Host.NoModel)); return; }
+                var session = _live;
+                if (session == null) { said.Children.Add(Ui.Line(Host.NoModel)); return; }
 
                 var board = LastBoard;
 
                 if (board == null)
                 {
-                    _markers.Children.Add(LoadHere("The board has not been built yet, and this "
-                        + "marks what the board holds."));
+                    said.Children.Add(LoadHere("No board is loaded, and this marks what the "
+                        + "board holds."));
                     return;
                 }
 
@@ -1984,7 +2069,7 @@ namespace CamelWorks.UI.Views
 
                 if (metres == null)
                 {
-                    _markers.Children.Add(Ui.Problem("This document is in \"" + word + "\", which is "
+                    said.Children.Add(Ui.Problem("This document is in \"" + word + "\", which is "
                         + "not a unit CamelWorks converts. Say which unit it is in the box above, or "
                         + "the markers would land in the wrong place and look like an empty model."));
                     return;
@@ -2005,9 +2090,9 @@ namespace CamelWorks.UI.Views
                 var items = board.Groups.SelectMany(g => g.Items).ToList();
                 var mesh = ClashMarkers.Write(items, recipe);
 
-                if (mesh.Refusal != null) { _markers.Children.Add(Ui.Problem(mesh.Refusal)); return; }
+                if (mesh.Refusal != null) { said.Children.Add(Ui.Problem(mesh.Refusal)); return; }
 
-                foreach (var warning in mesh.Warnings) _markers.Children.Add(Ui.Note(warning));
+                foreach (var warning in mesh.Warnings) said.Children.Add(Ui.Note(warning));
 
                 var dialog = new Microsoft.Win32.SaveFileDialog
                 {
@@ -2036,24 +2121,24 @@ namespace CamelWorks.UI.Views
                 }
                 catch (Exception e)
                 {
-                    _markers.Children.Add(Ui.Problem("Could not write it: " + Ui.Describe(e)));
+                    said.Children.Add(Ui.Problem("Could not write it: " + Ui.Describe(e)));
                     return;
                 }
 
-                _markers.Children.Add(Ui.Done("Wrote " + mesh.Explain() + " to " + obj));
+                said.Children.Add(Ui.Done("Wrote " + mesh.Explain() + " to " + obj));
 
-                _markers.Children.Add(Ui.Actions(Ui.Primary("Bring them in", () =>
+                said.Children.Add(Ui.Actions(Ui.Primary("Bring them in", () =>
                 {
                     try
                     {
-                        _markers.Children.Add(session.Model.Document.TryAppendFile(obj)
+                        said.Children.Add(session.Model.Document.TryAppendFile(obj)
                             ? Ui.Done("Appended. They are in the Selection Tree under their tests, "
                                       + "and in the host's file list if you want them out again.")
                             : Ui.Problem("The host would not append that file."));
                     }
                     catch (Exception e)
                     {
-                        _markers.Children.Add(Ui.Problem("Could not append it: " + Ui.Describe(e)));
+                        said.Children.Add(Ui.Problem("Could not append it: " + Ui.Describe(e)));
                     }
                 })));
 
@@ -2064,47 +2149,73 @@ namespace CamelWorks.UI.Views
                 session.Record(ActivityKind.Export, "made clash markers: " + mesh.Explain(), obj);
             }
 
-            /// <summary>
-            /// The other half of a coordination cycle: the file the reviewer works in.
-            ///
-            /// A report is read and filed. A clash file is opened, worked through, and sent back -
-            /// and it is the only clash format the rest of the industry has agreed on. Without it
-            /// this tab ends at a PDF, and the answers come back as an email.
-            /// </summary>
-            private UIElement Exchange()
-            {
-                var open = Ui.Quiet("Clash file...", () =>
-                {
-                    var problem = ToolViews.Open("clashxml");
-                    if (problem != null) _results.Children.Add(Ui.Problem(problem));
-                });
-
-                // The clash file has its own tool; this is the way over to it, at the end of setup.
-                return Bench.Group("Exchange file",
-                    open,
-                    Ui.Small("BCF, which Solibri, BIMcollab, Revizto and every other reviewing "
-                             + "tool opens. A file that comes back lands on the elements it left "
-                             + "from."));
-            }
-
-            /// <summary>What the chosen template actually produces, in the reader's terms.</summary>
+            /// <summary>One line saying what the chosen document is, at the point it is chosen.</summary>
+            /// <param name="mode">Which document.</param>
             private static string Explain(string mode) => mode switch
             {
-                FieldPack => "The same board set for a site cabin: one issue per page, type big "
-                             + "enough to read one-handed, and a line to sign against.",
+                FieldPack => "One issue per page, in type big enough to read one-handed, with a "
+                             + "line to sign against.",
 
-                Penetration => "Every service that goes through structure - what the model says it "
-                               + "is and where. No opening size derived and no host thickness "
-                               + "inferred: those dimensions are used to cut concrete and must not be "
-                               + "estimated.",
+                Penetration => "Every service that passes through structure, as the model states "
+                               + "it — no opening size derived.",
 
-                _ => "The whole board, laid out for a desk: every issue with its clashes, party "
-                     + "and priority.",
+                _ => "Every issue on the board with its clashes, party and priority.",
             };
+
+            /// <summary>
+            /// The reference matter, behind one symbol rather than standing on the surface.
+            ///
+            /// Three documents, a revision rule and a coverage limit: each is read once and then
+            /// known, so none of them is worth a paragraph beside a control.
+            /// </summary>
+            private void Help() =>
+                Ui.Configure("What goes in each document", null,
+                    new Ui.Page("The three documents", () => Ui.Stack(
+                        Part("Full report",
+                             "The whole board laid out for a desk: the funnel the board was "
+                             + "narrowed by, what changed since the last run, then every issue "
+                             + "with its clashes, party and priority."),
+                        Part("Field pack",
+                             "The same board set for a site cabin: one issue per page, large "
+                             + "type, and a line to sign against."),
+                        Part("Penetration schedule",
+                             "Every service the model shows passing through structure, with what "
+                             + "it is and where. No opening size is derived and no host thickness "
+                             + "is inferred: those dimensions are used to cut concrete and are "
+                             + "not estimated here."))),
+                    new Ui.Page("Revisions and coverage", () => Ui.Stack(
+                        Part("Revisions",
+                             "Each issue takes the next revision letter and its cover names the "
+                             + "one it supersedes. Each party has its own sequence, so writing "
+                             + "one file per party moves only that party's letter on."),
+                        Part("What is covered",
+                             "The clash board: the clash results the engine reported and the "
+                             + "issues raised by hand on the board. Clearance and fall-hazard "
+                             + "findings are held in the same register and are not written into "
+                             + "any of these documents."),
+                        Part("Where it goes",
+                             "The folder and the file name are kept per project. A blank folder "
+                             + "writes to your Documents folder, and the name is filled in from "
+                             + "the tokens listed under it."))));
+
+            /// <summary>One passage of the help window: a sentence-case heading and its paragraph.</summary>
+            /// <param name="title">What it is about.</param>
+            /// <param name="text">The passage.</param>
+            private static UIElement Part(string title, string text)
+            {
+                var head = Ui.Heading(title);
+                head.Margin = new Thickness(0, 0, 0, 4);
+
+                var body = Ui.Small(text);
+                body.MaxWidth = TextWidth;
+                body.Margin = new Thickness(0, 0, 0, 16);
+
+                return Ui.Stack(head, body);
+            }
 
             private void Write(Job job)
             {
-                var session = Host.Current;
+                var session = _live;
                 if (session == null) { _results.Children.Add(Ui.Line(Host.NoModel)); return; }
 
                 var board = LastBoard;
@@ -2134,9 +2245,7 @@ namespace CamelWorks.UI.Views
 
                 if (groups.Count == 0)
                 {
-                    _results.Children.Add(Ui.Empty("Nothing to report.",
-                        "No group on the board matches this filter. Check the selected audience if "
-                        + "results were expected."));
+                    _results.Children.Add(Nothing());
                     return;
                 }
 
@@ -2163,7 +2272,7 @@ namespace CamelWorks.UI.Views
 
                 // Not after a penetration schedule: that goes to the structural engineer as the
                 // document it is, and nobody answers a pour list through a BCF tool.
-                if (_mode != Penetration) NextSteps(_results, "bcf", "clashxml");
+                if (_mode != Penetration) NextSteps(_results);
 
                 session.Record(ActivityKind.Report,
                     "wrote a " + _format + " clash report, revision " + revision, file);
@@ -2191,8 +2300,11 @@ namespace CamelWorks.UI.Views
 
                 if (parties.Count == 0)
                 {
-                    _results.Children.Add(Ui.Empty("No recipients.",
-                        "No group on the board is assigned, and there are no unassigned ones either."));
+                    _results.Children.Add(Ui.Empty(
+                        "No recipients.",
+                        "No issue on the board is assigned to a party, and there are no "
+                        + "unassigned ones either.",
+                        "Write one file instead", () => { if (_split != null) _split.IsChecked = false; }));
                     return;
                 }
 
@@ -2233,10 +2345,33 @@ namespace CamelWorks.UI.Views
 
                 _results.Children.Add(Ui.Line("Wrote " + Ui.Count(written, "file") + ".", 1, true));
 
-                if (written > 0 && _mode != Penetration) NextSteps(_results, "bcf", "clashxml");
+                if (written > 0 && _mode != Penetration) NextSteps(_results);
 
                 session.Record(ActivityKind.Report,
                     "wrote " + Ui.Count(written, "clash report") + ", one per party");
+            }
+
+            /// <summary>
+            /// Nothing matched, said against the setting that caused it and carrying the control
+            /// that undoes it.
+            /// </summary>
+            private UIElement Nothing()
+            {
+                if (_changedOnly)
+                    return Ui.Empty(
+                        "Nothing new to report.",
+                        "Every issue this filter would report was on the last run as well.",
+                        "Report the whole board",
+                        () => { if (_changed != null) _changed.IsChecked = false; });
+
+                if (_audience != Everyone)
+                    return Ui.Empty(
+                        "Nothing to report for " + _audience + ".",
+                        "No issue on the board is theirs.",
+                        "Report everyone",
+                        () => { if (_for != null) _for.SelectedItem = Everyone; });
+
+                return Ui.Empty("Nothing to report.", "The board holds no issues.");
             }
 
             /// <summary>Which groups belong in a report for this audience.</summary>
