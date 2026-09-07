@@ -250,6 +250,8 @@ namespace CamelWorks.Core.Testing
         /// <inheritdoc />
         public ClashTestSides? Sides(string testId)
         {
+            _log.Add("Sides " + testId);
+
             var test = IsAvailable ? Found(testId) : null;
 
             return test == null

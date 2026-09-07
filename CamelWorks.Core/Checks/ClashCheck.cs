@@ -300,15 +300,22 @@ namespace CamelWorks.Core.Checks
         /// <summary>
         /// Every clash test in the document, without reading a result.
         ///
-        /// Two host calls per test — the test list, then its two sides — which is what the rail
-        /// costs before anybody presses Read.
+        /// One host call for the list, and one more per test whose shape is not already held.
+        /// The shape was re-read for every test on every call, and the Create tab calls this
+        /// after every edit to any test's settings: on a federation with a hundred and sixty
+        /// tests that is a hundred and sixty test-tree walks and three hundred and twenty
+        /// saved-set lookups per edit, on the thread drawing the screen.
+        ///
+        /// Held is safe because every way the shape can change goes through this class and drops
+        /// its entry — <see cref="Make"/>, <see cref="Retune"/> and <see cref="Read"/> — and the
+        /// settings panel asks <see cref="Sides"/>, which always re-reads.
         /// </summary>
         public IReadOnlyList<CheckRun> Runs()
         {
             var found = new List<CheckRun>();
 
             foreach (var test in _source.Tests())
-                found.Add(Run(test, Shape(test.Id, reread: true)));
+                found.Add(Run(test, Shape(test.Id)));
 
             return found;
         }

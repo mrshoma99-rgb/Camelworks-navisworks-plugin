@@ -222,6 +222,47 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void Listing_the_tests_again_does_not_ask_the_host_what_each_one_is_between()
+        {
+            var seat = Seat();
+            var check = new ClashCheck(seat);
+
+            Assert.Equal(2, check.Runs().Count);
+            Assert.Equal(2, Sided(seat));
+
+            // The Create tab lists the tests again after every settings edit. The shape only
+            // changes through this class, so the second listing costs the test list alone.
+            check.Runs();
+            check.Runs();
+
+            Assert.Equal(2, Sided(seat));
+        }
+
+        [Fact]
+        public void Retuning_a_test_makes_the_next_listing_ask_the_host_about_it_again()
+        {
+            var seat = Seat();
+            var check = new ClashCheck(seat);
+
+            check.Runs();
+            check.Retune("t1", 0.05, MatrixTest.Clearance, out var problem);
+
+            Assert.Null(problem);
+
+            check.Runs();
+
+            // t1 alone: the other test's shape is untouched by the retune.
+            Assert.Equal(3, Sided(seat));
+            Assert.Equal(2, seat.Log.Count(said => string.Equals(said, "Sides t1",
+                                                                 StringComparison.Ordinal)));
+        }
+
+        /// <summary>How many times the engine was asked what a test is between.</summary>
+        /// <param name="seat">The engine.</param>
+        private static int Sided(FakeClashSource seat) =>
+            seat.Log.Count(said => said.StartsWith("Sides", StringComparison.Ordinal));
+
+        [Fact]
         public void Results_the_tests_report_but_do_not_hand_over_are_counted_in_a_note()
         {
             var seat = Seat().Unkeyed(4);
@@ -574,6 +615,7 @@ namespace CamelWorks.Core.Tests
             // element keys itself would return the same number and index the federation to get it.
             Assert.Equal(new[] { "SelectResults t1" },
                          seat.Log.Where(said => !said.StartsWith("Tests", StringComparison.Ordinal)
+                                                && !said.StartsWith("Sides", StringComparison.Ordinal)
                                                 && !said.StartsWith("Results", StringComparison.Ordinal)));
             Assert.Equal(seat.Results("t1").Select(one => one.Id), seat.Selected);
             Assert.Equal(4, selected);

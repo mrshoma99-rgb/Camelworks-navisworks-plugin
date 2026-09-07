@@ -456,10 +456,17 @@ namespace CamelWorks.UI.Views
 
         private static LevelSet Levels(Session session, Job job, double scale)
         {
-            // Deriving levels reads the elevation of every element in the federation — the most
-            // expensive read the board makes, and one whose answer only changes when the
-            // federation does. Cached against its shape, so the second board of the day costs
-            // nothing and a reload after an append derives afresh.
+            // The project's own storeys, when it declares any. Settings holds a level list for
+            // exactly this, and deriving levels instead walked the whole federation reading the
+            // bounds of every element — the most expensive read the board makes, and one the
+            // project had already answered.
+            var declared = LevelPlan
+                .FromJson(session.Store.Section(ProjectStore.ProfileSection)[LevelPlan.Key]);
+
+            if (!declared.IsEmpty) return declared.Levels();
+
+            // Nothing declared, so they are derived. Cached against its shape, so the second board
+            // of the day costs nothing and a reload after an append derives afresh.
             var shape = string.Join("|", session.Model.Models.Select(m => m.Scope))
                         + "@" + scale.ToString("R", CultureInfo.InvariantCulture);
 
