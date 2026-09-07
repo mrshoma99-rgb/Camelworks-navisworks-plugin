@@ -897,23 +897,17 @@ namespace CamelWorks.UI.Views
                         Ui.Told(Shell.AppWindow.Show("clash", "manage"));
                     }));
 
-                var row = new Grid();
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-                row.Children.Add(said);
-
-                // Primary bottom-right, which is where this product's one action always sits.
+                // Ui.Foot, like every other tab. This built its own row — a two-column grid with
+                // Ui.Blocked, which is itself a footer row, nested in the right-hand column — so
+                // the screen carried one footer anatomy inside another, and Bench could not tell
+                // the grid was meant to spread. Content-sized and pushed right, the left column
+                // got no width and its line was arranged over the one beside it: "0 tests in this
+                // project" under "There is no test to run."
                 var press = blocked == null
-                    ? Ui.Runner(caption, _log, RunNow)
-                    : Ui.Blocked(caption, blocked);
+                    ? (UIElement)Ui.Runner(caption, _log, RunNow)
+                    : Ui.Cannot(caption, blocked);
 
-                press.VerticalAlignment = VerticalAlignment.Center;
-
-                Grid.SetColumn(press, 1);
-                row.Children.Add(press);
-
-                _foot.Content = row;
+                _foot.Content = Ui.Foot(press, null, said);
             }
 
             /// <summary>Run whatever the footer's button covers.</summary>
