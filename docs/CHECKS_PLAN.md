@@ -1378,15 +1378,19 @@ The target set:
 |---|---|
 | Manage | Every check's results, under a picker. |
 | Clash matrix | Unchanged. |
-| **Checks** | One tab, replacing "Clearance Check", holding the set-up for every check that has saved runs: clearance, fall hazard, and whatever follows. Its own picker selects which check's runs are being set up. |
+| **Clearance** | The set-up for this project's clear-height runs, replacing "Clearance Check". |
+| **Fall hazard** | The set-up for this project's fall-hazard runs. |
 | Filter Clashes | Unchanged, clash only. |
 | Report | Unchanged. |
 | Exchange | BCF in and out, following the Manage tab's check (4.4). |
 
-**Three set-up tabs would be wrong.** Clearance and fall hazard set-up are the same
-shape — a run list, a side picker or two, a handful of numbers — and a tab per check
-puts the tab strip back where the board was: one screen per check. One "Checks" tab
-with a check picker matches what the Manage tab does with results.
+**The single "Checks" tab this section first specified was wrong.** It held both
+set-ups behind a check picker of its own, on the argument that clearance and fall
+hazard are the same shape. The owner asked for the opposite and it is what is built:
+a set-up tab per check, and the Manage tab as the one viewer where the picker
+switches which check's results are being read. The picker is a viewer control; it was
+never a way to swap set-up screens, and having it do both cost the Checks tab a
+frame, a screen dispatch and a run id shared between two screens.
 
 Files the relevant phases edit, named so nobody discovers them late:
 `CamelWorks.UI/Shell/Apps.cs` (the tab declarations),
@@ -1958,8 +1962,10 @@ issue, the relation both ways and a viewpoint.
   the set-up-to-results hand-off.
 - Attach-to-an-existing-issue on the set drift screen, deferred from Phase 1
   because it needs an issue picker rather than a mechanical edit.
-- The tab set of 4.1: "Clearance Check" becomes "Checks" in `Apps.cs`, with its own
-  check picker over the set-up screens; `Surfaces.cs` rewired.
+- The tab set of 4.1: "Clearance Check" becomes a **Clearance** tab and a **Fall
+  hazard** tab in `Apps.cs`, one set-up screen each; `Surfaces.cs` rewired. This
+  shipped first as one "Checks" tab with a check picker over the two set-up screens,
+  which was wrong and is corrected in 4.1.
 - `ClearanceCheck : ICheck` with `HostEcho` null, `Grouping` null, `Naming` through
   `CheckRunStore`, a runner, geometry through the element locator, and four declared
   columns.
@@ -1991,8 +1997,10 @@ issue, the relation both ways and a viewpoint.
   document for are the model list and a traversal, and `ISeat.Models()` and
   `ISeat.Visible()` already answer both. `MatrixWindow.Surface(ISeat)` is the
   template that already works.
-- `Panels.cs` gains the Checks tab page and the Manage board's picker; neither goes
-  in the `ui-shots` default. `docs/apps/clash.md` updated for both tabs.
+- `Panels.cs` gains the set-up tab's page and the Manage board's picker; neither goes
+  in the `ui-shots` default. `docs/apps/clash.md` updated for both tabs. (The page
+  shipped as `app-clash-checks` and is now `app-clash-clearance`, following the tab
+  split in 4.1.)
 
 **Done when.** In `Core.Tests`: two named clearance runs over overlapping geometry
 produce disjoint findings, and running one leaves the other's findings present; a
@@ -2003,8 +2011,8 @@ to this check's; a run saved and never run is distinguishable from a run that fo
 nothing, and both from a run that resolved to nothing and therefore marked nothing
 absent. In the harness:
 `validate-shots.py` and `validate-reachable-screens.py` pass with the new pages, and
-the Checks tab draws over `ISeat` with no Navisworks assembly loaded, which is what
-`Check(ISeat)` buys. `ClearanceViews.cs` is under 750 lines. Whether the Manage tab
+the Clearance tab draws over `ISeat` with no Navisworks assembly loaded, which is what
+`Setup(ISeat)` buys. `ClearanceViews.cs` is under 750 lines. Whether the Manage tab
 draws clearance results correctly is not verifiable here and is a licensed-seat check
 before release.
 
@@ -2179,11 +2187,10 @@ Adding fall hazard in Phase 11 touched the board, the register, the columns, the
 journal, the delta and the pack writer nowhere, which is the claim the plan rests on.
 What it did cost, and what a check using every capability would still find:
 
-- **A per-check screen registry is missing.** The Checks tab holds one set-up screen at
-  a time and `AppWindow` caches a tab's surface, so swapping screens is a dispatch
-  inside `ClearanceViews`. About half of `FallHazardViews` is the run list, the picking
-  bar and the Manage hand-off restated. The fix is the UI-side twin of
-  `CheckCatalogue`.
+- **A per-check screen registry is missing.** Each check now has a set-up tab of its
+  own (4.1), so the dispatch inside `ClearanceViews` is gone, but about half of
+  `FallHazardViews` is still the run list, the picking bar and the Manage hand-off
+  restated. The fix is the UI-side twin of `CheckCatalogue`.
 - **The duplicate finder reads the `Item 1` and `Item 2` facts.** It falls back to
   element keys, which every check carries, so behaviour degrades rather than breaking.
   The Duplicates verb is a silent no-op on a check with no pairs, rather than saying so.

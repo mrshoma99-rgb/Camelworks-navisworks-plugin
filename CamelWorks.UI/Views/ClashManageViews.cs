@@ -146,7 +146,7 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// What the Checks tab asked to show, applied to the next visit once.
+        /// What a set-up tab asked to show, applied to the next visit once.
         ///
         /// The hand-off from set-up: pressing Run there should arrive here with that check picked
         /// and that run selected, rather than on a board still showing whatever was last read.
@@ -1332,7 +1332,7 @@ namespace CamelWorks.UI.Views
             private const double RailWidth = 372;
 
             /// <summary>
-            /// Take up whatever the Checks tab asked to show, once.
+            /// Take up whatever a set-up tab asked to show, once.
             ///
             /// The hand-off from set-up. Applied before anything is drawn, so pressing Run there
             /// lands on that check's board with that run selected.
@@ -1358,6 +1358,25 @@ namespace CamelWorks.UI.Views
             /// and found nothing — is an answer rather than an absence and belongs on the board
             /// itself, where the rows would have been.
             /// </summary>
+            /// <summary>
+            /// Which tab sets this check's runs up, by its tool id and by the name on the tab.
+            ///
+            /// Clearance and fall hazard each have a set-up tab of their own; they were briefly
+            /// one "Checks" tab. Everything else in this app is a clash test, and clash tests are
+            /// built on the matrix.
+            /// </summary>
+            /// <param name="check">The check the board is showing.</param>
+            private static (string Id, string Tab) SetUpOn(ICheck check)
+            {
+                if (string.Equals(check.Key, FindingSource.Headroom, StringComparison.Ordinal))
+                    return ("clearance", "Clearance");
+
+                if (string.Equals(check.Key, FindingSource.FallHazard, StringComparison.Ordinal))
+                    return ("fallhazard", "Fall hazard");
+
+                return ("matrix", "Clash matrix");
+            }
+
             private UIElement NothingYet()
             {
                 var check = Check;
@@ -1371,12 +1390,13 @@ namespace CamelWorks.UI.Views
                                     check.Unavailable ?? "This seat cannot offer it.");
 
                 var saved = check.Runs();
+                var setup = SetUpOn(check);
 
                 if (saved.Count == 0)
                     return Ui.Empty("No " + check.Name.ToLowerInvariant() + " " + check.RunWord + "s yet.",
-                                    "A " + check.RunWord + " is set up on the Checks tab, and what it "
-                                    + "finds lands here.",
-                                    "Set one up", () => Ui.Told(Shell.AppWindow.Show("clash", "checks")));
+                                    "A " + check.RunWord + " is set up on the " + setup.Tab
+                                    + " tab, and what it finds lands here.",
+                                    "Set one up", () => Ui.Told(Shell.AppWindow.Show("clash", setup.Id)));
 
                 var waiting = saved.Where(one => one.LastRunTicks == 0).ToList();
 
@@ -1385,7 +1405,7 @@ namespace CamelWorks.UI.Views
                                     Ui.Count(waiting.Count, check.RunWord)
                                     + " saved and never run. Reading measures nothing on its own; "
                                     + "the run is what fills this board.",
-                                    "Set up and run", () => Ui.Told(Shell.AppWindow.Show("clash", "checks")));
+                                    "Set up and run", () => Ui.Told(Shell.AppWindow.Show("clash", setup.Id)));
 
                 return Bench.Ready(
                     "Reading pulls every " + check.ResultWord + " these " + check.RunWord

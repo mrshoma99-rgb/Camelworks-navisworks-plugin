@@ -13,10 +13,11 @@ using CamelWorks.Core.Project;
 namespace CamelWorks.UI.Views
 {
     /// <summary>
-    /// Checks: the set-up for every check whose runs this project owns.
+    /// Clearance: the set-up for this project's clear-height runs.
     ///
-    /// One tab with a check picker rather than a tab per check. Clearance set-up and fall-hazard
-    /// set-up are the same shape — a run list, a side picker or two and a handful of numbers.
+    /// Its own tab, beside Fall hazard. The two were briefly one "Checks" tab with a check picker
+    /// inside it; a set-up tab per check is what the product asks for, and the common viewer is
+    /// the Manage tab, where the picker belongs.
     ///
     /// The results are not here. A clearance breach is a place to argue about, assign and close,
     /// which is a clash result in everything but how it was found, so it is worked on the Manage
@@ -26,81 +27,38 @@ namespace CamelWorks.UI.Views
     /// Both inputs are model-fed: every search set and selection set the document holds, the
     /// current selection, or everything loaded. The one guess it offers is labelled as a guess and
     /// says which words it matches.
+    ///
+    /// The runs are project-file state, so the screen is whole without a model. Nothing here
+    /// collapses to a notice: the runs are listed, and one can be made, renamed, edited and
+    /// deleted with nothing open. What needs a document — running the check, the pickers that read
+    /// the document's sets, and surface detection — is disabled and says why.
     /// </summary>
     public static class ClearanceViews
     {
         /// <summary>The words the guess matches, on the element's category or type.</summary>
         internal static IReadOnlyList<string> WalkingWords => ClearanceCheck.WalkingWords;
 
-        // Which check is being set up and which of its runs, held between visits: a federation
-        // sweep is a minute of traversal and glancing at another tab must not cost it.
-        private static string _checkKey = FindingSource.Headroom;
-
         /// <summary>
-        /// Which run is being set up, across every check's set-up screen.
+        /// Which run is being set up, held between visits.
         ///
-        /// Shared rather than one per screen because the tab holds one run at a time: the picker
-        /// swaps which check is showing, and a run id belongs to whichever check is.
+        /// This screen's own, not shared with any other check's screen. A federation sweep is a
+        /// minute of traversal and glancing at another tab must not cost it.
         /// </summary>
         internal static string? Picked { get; set; }
 
         /// <summary>
         /// The surface, for a desk to bench.
-        ///
-        /// A frame rather than a screen, because the tab holds one check's set-up at a time and
-        /// the picker swaps it. The tab's surface is built once and kept by the app window, so a
-        /// screen swap has to happen inside it.
         /// </summary>
         /// <param name="seat">The seat this is running in.</param>
-        public static UIElement Check(ISeat seat)
-        {
-            var frame = new ContentControl();
-
-            Draw(frame, seat);
-
-            return frame;
-        }
-
-        /// <summary>
-        /// Put the set-up of whichever check is showing into the tab's frame.
-        ///
-        /// The one place that knows which screen belongs to which check. A check with no set-up
-        /// screen of its own falls back to the clearance screen's run list, which states that it
-        /// has none rather than drawing an empty tab.
-        /// </summary>
-        /// <param name="frame">The tab's frame, or null when there is nothing to draw into.</param>
-        /// <param name="seat">The seat this is running in.</param>
-        internal static void Draw(ContentControl? frame, ISeat seat)
-        {
-            if (frame == null) return;
-
-            frame.Content = seat.Checks.Find(_checkKey) is FallCheck
-                ? FallHazardViews.Setup(seat, frame)
-                : (UIElement)new Screen(seat, frame).Build();
-        }
-
-        /// <summary>
-        /// Set up another check's runs. Nothing on one of these screens belongs to two checks, so
-        /// the whole set-up is swapped rather than redrawn.
-        /// </summary>
-        /// <param name="frame">The tab's frame.</param>
-        /// <param name="seat">The seat this is running in.</param>
-        /// <param name="check">The check picked.</param>
-        internal static void Pick(ContentControl? frame, ISeat seat, ICheck check)
-        {
-            _checkKey = check.Key;
-            Picked = null;
-            FallHazardViews.Forget();
-
-            Draw(frame, seat);
-        }
+        public static UIElement Setup(ISeat seat) => new Screen(seat).Build();
 
         static ClearanceViews() => Host.WhenDocumentChanges(Forget);
 
         /// <summary>
-        /// Forget what was detected, so the next visit starts clean. Surfaces detected in the
-        /// federation that was open are not surfaces in the one that is. The runs themselves are in
-        /// the project file and survive, which is the point of saving them.
+        /// Forget what was detected and which run was picked, so the next visit starts clean.
+        /// Surfaces detected in the federation that was open are not surfaces in the one that is.
+        /// The runs themselves are in the project file and survive, which is the point of saving
+        /// them.
         /// </summary>
         internal static void Forget()
         {
@@ -124,82 +82,91 @@ namespace CamelWorks.UI.Views
         private sealed class Screen
         {
             private readonly ISeat _seat;
-            private readonly ContentControl? _frame;
 
             private readonly StackPanel _log = Ui.Stack();
             private readonly StackPanel _runs = Ui.Stack();
-            private readonly StackPanel _picker = Ui.Stack();
+            private readonly StackPanel _head = Ui.Stack();
 
-            internal Screen(ISeat seat, ContentControl? frame)
-            {
-                _seat = seat;
-                _frame = frame;
-            }
+            internal Screen(ISeat seat) => _seat = seat;
 
             private Measure Units => _seat.Profile.Units;
 
-            /// <summary>Every check with set-up of its own, in the order the picker lists them.</summary>
-            private IReadOnlyList<ICheck> Checks => _seat.Checks.All;
+            /// <summary>The clearance check, or null when this session registered none.</summary>
+            private ClearanceCheck? Clearance =>
+                _seat.Checks.All.OfType<ClearanceCheck>().FirstOrDefault();
 
-            /// <summary>The check being set up, or null when this session registered none.</summary>
-            private ICheck? Current =>
-                _seat.Checks.Find(_checkKey) ?? Checks.FirstOrDefault();
+            /// <summary>Why the check cannot be run here, or null when it can.</summary>
+            private string? Blocked
+            {
+                get
+                {
+                    var check = Clearance;
 
-            /// <summary>The clearance check, when that is the one showing.</summary>
-            private ClearanceCheck? Clearance => Current as ClearanceCheck;
+                    if (check == null)
+                        return "This session registered no clearance check, which is a fault in "
+                               + "this build.";
+
+                    return check.IsAvailable
+                        ? null
+                        : check.Unavailable ?? "This seat cannot offer it.";
+                }
+            }
 
             /// <summary>The run being set up, or null when none is picked.</summary>
             private CheckRunSpec? Run() => Clearance?.Spec(Picked);
 
-            /// <summary>The run's settings, or the defaults when there is no run.</summary>
-            private ClearanceSettings Settings() => ClearanceSettings.From(Run());
-
             internal UIElement Build()
             {
-                var run = Ui.Runner("Run", _log, RunNow);
-
-                RedrawPicker();
+                RedrawHead();
                 RedrawRuns();
 
-                return Bench.Surface(null, Foot(run),
-                                     Ui.Stack(_picker, _log, _runs));
+                return Bench.Surface(null, Foot(), Ui.Stack(_head, _log, _runs));
             }
 
-            /// <summary>The action row: run, then the windows the set-up lives in.</summary>
-            /// <param name="run">The Run button.</param>
-            private UIElement Foot(UIElement run)
+            /// <summary>
+            /// The action row: run, then the windows the set-up lives in.
+            ///
+            /// Run is drawn disabled with its reason when the check cannot run. A primary button
+            /// over a notice saying there is nothing to measure is a press that reports its own
+            /// failure.
+            /// </summary>
+            private UIElement Foot()
             {
                 var row = new WrapPanel();
+                var blocked = Blocked;
 
-                row.Children.Add(run);
+                row.Children.Add(blocked == null
+                    ? (UIElement)Ui.Runner("Run", _log, RunNow)
+                    : Ui.Blocked("Run", blocked));
+
                 row.Children.Add(new Border { Width = 14 });
 
                 row.Children.Add(Ui.Icon(Glyphs.Ruler, "What to measure", () => Configure("measure")));
                 row.Children.Add(Ui.Icon(Glyphs.Filter, "Scope and reductions", () => Configure("scope")));
-                row.Children.Add(Ui.Icon(Glyphs.Layers, "Detected walkable surfaces",
-                                         () => Configure("detected")));
+
+                // Detection reads the document's triangles, so with no model there is nothing to
+                // detect. The symbol stays on the row, greyed, with the reason on it.
+                var detected = Ui.Icon(Glyphs.Layers, blocked ?? ClearanceSettings.Detected,
+                                       () => Configure("detected"));
+
+                detected.IsEnabled = blocked == null;
+
+                row.Children.Add(detected);
 
                 return row;
             }
 
-            /// <summary>Which check's runs are being set up, above the list of them.</summary>
-            private void RedrawPicker()
+            /// <summary>The one verb that makes a run, above the list of them.</summary>
+            private void RedrawHead()
             {
-                _picker.Children.Clear();
+                _head.Children.Clear();
 
                 var row = new WrapPanel();
 
-                row.Children.Add(CheckPicker.Draw(Checks, Current, _seat.Findings.Findings, Pick));
-                row.Children.Add(new Border { Width = 10 });
                 row.Children.Add(Ui.Icon(Glyphs.Add, "A new run", NewRun));
 
-                _picker.Children.Add(Ui.Loose(row));
+                _head.Children.Add(Ui.Loose(row));
             }
-
-            /// <summary>Set up another check's runs, which is another screen in the same frame.</summary>
-            /// <param name="check">The check picked.</param>
-            private void Pick(ICheck check) =>
-                Ui.Safely(() => ClearanceViews.Pick(_frame, _seat, check));
 
             /// <summary>
             /// The runs this check has saved, with what each covers and when it last ran. A run
@@ -210,21 +177,20 @@ namespace CamelWorks.UI.Views
             {
                 _runs.Children.Clear();
 
-                var check = Current;
+                var check = Clearance;
 
                 if (check == null)
                 {
-                    _runs.Children.Add(Ui.Empty("This session registered no checks.",
+                    _runs.Children.Add(Ui.Empty("This session registered no clearance check.",
                         "Nothing here has set-up of its own, which is a fault in this build."));
 
                     return;
                 }
 
+                // Said, not substituted for the list. The runs are in the project file, so a seat
+                // that cannot measure can still list them and set one up; only Run is blocked.
                 if (!check.IsAvailable)
-                {
                     _runs.Children.Add(Ui.Info(check.Unavailable ?? "This seat cannot offer it."));
-                    return;
-                }
 
                 var saved = check.Runs();
 
@@ -329,7 +295,7 @@ namespace CamelWorks.UI.Views
             /// <param name="say">Where the outcome goes.</param>
             private void Ran(IReadOnlyList<string> runIds, Func<int, bool>? onProgress, Panel say)
             {
-                var check = Current;
+                var check = Clearance;
 
                 if (check?.Runner == null || runIds.Count == 0)
                 {
@@ -377,7 +343,7 @@ namespace CamelWorks.UI.Views
             /// <param name="runIds">The runs to select.</param>
             private void Onward(IReadOnlyList<string> runIds)
             {
-                var check = Current;
+                var check = Clearance;
 
                 if (check == null) return;
 
@@ -403,7 +369,7 @@ namespace CamelWorks.UI.Views
 
                 Parts.Ask(said, "Call it", one.Name, "Rename", name =>
                 {
-                    if (Current?.Naming?.Rename(one.Id, name) != true) return;
+                    if (Clearance?.Naming?.Rename(one.Id, name) != true) return;
 
                     RedrawRuns();
 
@@ -426,7 +392,7 @@ namespace CamelWorks.UI.Views
                 Parts.Sure(said, "Delete " + Ui.Count(runs.Count, "run") + " and "
                            + Ui.Count(found, "finding") + "?", "Delete", () =>
                 {
-                    Current?.Runner?.Delete(runs.Select(one => one.Id).ToList());
+                    Clearance?.Runner?.Delete(runs.Select(one => one.Id).ToList());
 
                     if (runs.Any(one => string.Equals(one.Id, Picked, StringComparison.Ordinal)))
                         Picked = null;
@@ -543,12 +509,13 @@ namespace CamelWorks.UI.Views
                                          }), 90),
                                  "how far under the minimum is worth reporting"),
                         Ui.Field("Measure up from",
-                                 Ui.Choice(from, chosen,
+                                 Reading(Ui.Choice(from, chosen,
                                            pick => Keep(one => one.Surfaces = pick == said ? ClearanceSettings.Detected : pick),
-                                           420),
+                                           420)),
                                  "the walking surface"),
                         Ui.Field("Measure up to",
-                                 Ui.Choice(to, settings.Targets, pick => Keep(one => one.Targets = pick), 210),
+                                 Reading(Ui.Choice(to, settings.Targets,
+                                                   pick => Keep(one => one.Targets = pick), 210)),
                                  "what might be too low over it"),
                         Ui.Small("A 2.100 m corridor measured at 2.098 m is not a coordination "
                                  + "issue and the same corridor at 1.850 m is. The clear height is "
@@ -559,10 +526,14 @@ namespace CamelWorks.UI.Views
                                  + "takes anything whose category or type contains "
                                  + string.Join(", ", WalkingWords)
                                  + ". Name a set instead and nothing is guessed at all."),
-                        sets.Count == 0
-                            ? Ui.Note("This document holds no saved sets yet. Build one in Set Builder "
-                                      + "and it appears in both lists.")
-                            : null));
+                        Blocked != null
+                            ? Ui.Note("Both lists read the document, so they are fixed until a "
+                                      + "model is open. The name, the folder and the two heights "
+                                      + "are the run's own and can be set now.")
+                            : sets.Count == 0
+                                ? Ui.Note("This document holds no saved sets yet. Build one in Set "
+                                          + "Builder and it appears in both lists.")
+                                : null));
             }
 
             private UIElement ScopePage()
@@ -587,8 +558,8 @@ namespace CamelWorks.UI.Views
                                                    one.Levels.Add(pick);
                                            }), 220),
                                  "the storeys this project declares"),
-                        Ui.Field("Zone", Pickers.Set(settings.Zone,
-                                                     pick => Keep(one => one.Zone = pick), 220),
+                        Ui.Field("Zone", Reading(Pickers.Set(settings.Zone,
+                                                             pick => Keep(one => one.Zone = pick), 220)),
                                  "a saved set the run is confined to"),
                         Ui.Small("Without a scope the first federation run returns every soffit in "
                                  + "the building. A level narrows what is reported; a zone narrows "
@@ -599,14 +570,15 @@ namespace CamelWorks.UI.Views
                                       + "them out from the geometry and they appear here.")
                             : null),
                     Bench.Group("Left out of what is over the surface",
-                        Ui.Field("Category", Pickers.Category(settings.Ignore.FirstOrDefault(),
-                                                              pick => Keep(one =>
-                                                              {
-                                                                  one.Ignore.Clear();
+                        Ui.Field("Category",
+                                 Reading(Pickers.Category(settings.Ignore.FirstOrDefault(),
+                                                          pick => Keep(one =>
+                                                          {
+                                                              one.Ignore.Clear();
 
-                                                                  if (!string.IsNullOrWhiteSpace(pick))
-                                                                      one.Ignore.Add(pick);
-                                                              }), 220)),
+                                                              if (!string.IsNullOrWhiteSpace(pick))
+                                                                  one.Ignore.Add(pick);
+                                                          }), 220))),
                         Ui.Small("Every sprinkler head, light fitting and smoke detector is under "
                                  + "the minimum somewhere. Naming the category here is the "
                                  + "difference between a board of coordination issues and four "
@@ -622,6 +594,24 @@ namespace CamelWorks.UI.Views
                         Ui.Small("A slab under a plant room has a thousand things above it and one "
                                  + "of them is the lowest. Turn this off when the answer wanted is "
                                  + "every duct rather than the one that has to move.")));
+            }
+
+            /// <summary>
+            /// A picker whose contents come off the document, greyed with the reason when there is
+            /// no document to read. Its list is empty in that state, and an empty list somebody can
+            /// still open says nothing about why.
+            /// </summary>
+            /// <param name="picker">The picker.</param>
+            private ComboBox Reading(ComboBox picker)
+            {
+                var blocked = Blocked;
+
+                if (blocked == null) return picker;
+
+                picker.IsEnabled = false;
+                picker.ToolTip = blocked;
+
+                return picker;
             }
 
             /// <summary>Every saved set this document holds, named once.</summary>

@@ -1414,6 +1414,45 @@ namespace CamelWorks.UI.Views
         public static System.Windows.Controls.Button Primary(string caption, Action onClick) =>
             Press(caption, onClick, "PrimaryBtn");
 
+        /// <summary>
+        /// The screen's main action as it is drawn when it cannot be pressed: the caption greyed,
+        /// and the reason on the same line.
+        ///
+        /// A filled button drawn live over a notice saying the work is impossible is a press that
+        /// reports its own failure, and the reader has to press it to find that out. The reason
+        /// belongs beside the control, not under the screen.
+        ///
+        /// Only for an action that is blocked by the seat rather than by what has been filled in.
+        /// A form that is merely incomplete says so where the field is.
+        /// </summary>
+        /// <param name="caption">What the button would say.</param>
+        /// <param name="why">Why it cannot be pressed, in the user's terms.</param>
+        public static Panel Blocked(string caption, string why)
+        {
+            var go = new System.Windows.Controls.Button
+            {
+                Content = caption ?? string.Empty,
+                IsEnabled = false,
+                ToolTip = why,
+            };
+
+            go.Wearing("PrimaryBtn");
+
+            var said = Small(why ?? string.Empty);
+
+            said.Margin = new Thickness(10, 0, 0, 0);
+            said.VerticalAlignment = VerticalAlignment.Center;
+            said.TextWrapping = TextWrapping.Wrap;
+            said.MaxWidth = 380;
+
+            var row = new WrapPanel { Margin = new Thickness(0, Gap, 0, 0) };
+
+            row.Children.Add(go);
+            row.Children.Add(said);
+
+            return row;
+        }
+
         /// <summary>A supporting action, with no border until it is hovered.</summary>
         /// <param name="caption">What it says.</param>
         /// <param name="onClick">What it does.</param>

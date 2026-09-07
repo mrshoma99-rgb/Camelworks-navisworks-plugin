@@ -21,7 +21,7 @@ and the column order. Picking a check rebuilds the tab, and the rebuilt tab draw
 board as it was left.
 
 **Four empty states, not one.** The check is unavailable, and it says why; the check is available
-and nothing is saved to run, and it links to the Checks tab; a run is saved and has never been run,
+and nothing is saved to run, and it links to that check's set-up tab; a run is saved and never run,
 and it offers Run; a run ran and found nothing, which is an answer and says so with the date. The
 last two are opposite facts and used to be one blank pane.
 
@@ -456,11 +456,18 @@ Manager's own **New issue**, working on any elements rather than only beside a c
   The matrix survives tab switches, and the legend's test type now actually reaches the host —
   it was silently Hard for every cell before.
 
-## Checks — the set-up for the tests no clash engine runs
+## Clearance — the set-up for the check no clash engine runs
 
 The tab was "Clearance Check" and held both the set-up and its own copy of the board. It now holds
-the set-up only, for every check whose runs this project owns, under a picker of its own. Its
-results are on Manage.
+the set-up only, for this project's clear-height runs. Its results are on Manage.
+
+- *Was wrong, and is undone:* both set-ups were briefly put behind one **Checks** tab with a check
+  picker inside it, on the argument that clearance and fall hazard are the same shape. The tab set
+  is now **Clearance** and **Fall hazard**, one set-up screen each, and the check picker is the
+  Manage tab's — Manage is the common viewer, and switching which check's results are being read
+  is what the picker is for. The single tab cost a `ContentControl` frame on the tab, a screen
+  dispatch in `ClearanceViews`, and one `Picked` run id shared between two screens that hold
+  different runs. All three are gone.
 
 - *Was wrong:* the tab was a second Manage board. `ClearanceViews` carried its own row type, its
   own banding, filtering, property columns, marker export, BCF export and issue attach.
@@ -490,8 +497,16 @@ results are on Manage.
   seat answers all three.
 - **The hand-off:** pressing Run goes to the Manage tab with that check picked and that run
   selected, the same way the Exchange tab is handed its tests.
+- *Was wrong:* with no model open the screen collapsed to a single notice — no run list, no way to
+  make a run, and a live primary **Run** drawn under a line saying there was nothing to measure.
+  Runs are project-file state and nothing about listing or editing one needs a document. **Both
+  set-up tabs now keep the run list, the new-run verb and the picking bar in that state**, state
+  the reason once as a notice above the list, and grey what genuinely needs a document: Run, the
+  detected-surfaces window, and the pickers fed by the document's sets, each carrying the reason.
+  The same applies on a seat whose primitive reader refuses triangles, which is how the state is
+  reachable with a model loaded.
 
-## Checks ▸ Fall hazard — the second check on the tab
+## Fall hazard — the second set-up tab
 
 A hole in a slab clashes with nothing, and the clearance check has no surface over it to measure
 down from, so neither reports one. Fall hazard draws a plan of one level from the floor triangles
@@ -549,12 +564,10 @@ every floor edge facing such an opening with no handrail along it.
   area, the widest gap and the length of edge with no handrail. An opening fills two of them and a
   dangerous run the other two.
 - **What adding this check touched.** One class implementing `ICheck`, one `CheckCatalogue.Add`
-  call per seat, a set-up screen and a harness page. The board, the register, the columns, the
-  journal, the delta and the pack writer took no edit at all. What it did cost is the Checks tab's
-  own frame: the tab holds one check's set-up at a time and the picker has to swap it, so
-  `ClearanceViews.Check` now draws into a frame and names which screen belongs to which check.
-  That dispatch is one method, and it is the only place in the product that knows a check has a
-  set-up screen of its own.
+  call per seat, a tab, a set-up screen and two harness pages. The board, the register, the
+  columns, the journal, the delta and the pack writer took no edit at all. A second check now
+  costs a tab entry, a tool entry and a `Surfaces.cs` case, which is the same cost every other
+  tab in the product carries.
 - *Not verifiable here:* nothing in this check has been run against real geometry. The raster, the
   findings and the settings are covered by unit tests on synthetic meshes, and what a real
   federation's floors rasterise to at a real level is a licensed-seat check before release.

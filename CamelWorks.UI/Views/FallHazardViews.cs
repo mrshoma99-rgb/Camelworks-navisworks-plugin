@@ -10,31 +10,27 @@ using CamelWorks.Core.Project;
 namespace CamelWorks.UI.Views
 {
     /// <summary>
-    /// Checks ▸ Fall hazard: the set-up for a run that looks for holes in a floor and edges with
-    /// no handrail.
+    /// Fall hazard: the set-up for a run that looks for holes in a floor and edges with no
+    /// handrail.
     ///
-    /// The second set-up screen on the Checks tab, beside clearance, and the shape is the same: a
-    /// check picker, the runs this project has saved, and the settings of the run being set up in
-    /// windows off the action row. Nine settings is why they are in windows: a tab that laid them
-    /// beside the run list would be a form somebody scrolls rather than a list of runs.
+    /// Its own tab, beside Clearance. The two were briefly one "Checks" tab with a check picker
+    /// inside it; a set-up tab per check is what the product asks for, and the common viewer is
+    /// the Manage tab, where the picker belongs.
+    ///
+    /// Nine settings is why they are in windows off the action row: a tab that laid them beside the
+    /// run list would be a form somebody scrolls rather than a list of runs.
     ///
     /// The results are not here. An opening to cover and an edge to rail are places to argue
     /// about, assign and close, so they are worked on the Manage board with everything else, and
     /// pressing Run goes there.
+    ///
+    /// The runs are project-file state, so the screen is whole without a model. Nothing here
+    /// collapses to a notice: the runs are listed, and one can be made, renamed, edited and
+    /// deleted with nothing open. What needs a document — running the check and the pickers that
+    /// read the document's sets — is disabled and says why.
     /// </summary>
     public static class FallHazardViews
     {
-        /// <summary>
-        /// The surface, for a desk to bench.
-        /// </summary>
-        /// <param name="seat">The seat this is running in.</param>
-        /// <param name="frame">
-        /// The tab's frame, so picking another check swaps the set-up in place. Null draws the
-        /// screen on its own, which is what the render harness wants.
-        /// </param>
-        public static UIElement Setup(ISeat seat, ContentControl? frame = null) =>
-            new Screen(seat, frame).Build();
-
         /// <summary>
         /// Which fall-hazard run the set-up screen is on, across a redraw.
         ///
@@ -43,6 +39,12 @@ namespace CamelWorks.UI.Views
         /// <see cref="Drawn"/> moved it as a side effect of drawing a page for the harness.
         /// </summary>
         internal static string? Picked { get; set; }
+
+        /// <summary>
+        /// The surface, for a desk to bench.
+        /// </summary>
+        /// <param name="seat">The seat this is running in.</param>
+        public static UIElement Setup(ISeat seat) => new Screen(seat).Build();
 
         static FallHazardViews() => Host.WhenDocumentChanges(Forget);
 
@@ -69,7 +71,7 @@ namespace CamelWorks.UI.Views
             // screen's.
             Picked = run.Id;
 
-            var screen = new Screen(seat, null);
+            var screen = new Screen(seat);
 
             return Ui.Stack(screen.ReadPage(), screen.JudgePage());
         }
@@ -79,42 +81,62 @@ namespace CamelWorks.UI.Views
         private sealed class Screen
         {
             private readonly ISeat _seat;
-            private readonly ContentControl? _frame;
 
             private readonly StackPanel _log = Ui.Stack();
             private readonly StackPanel _runs = Ui.Stack();
-            private readonly StackPanel _picker = Ui.Stack();
+            private readonly StackPanel _head = Ui.Stack();
 
-            internal Screen(ISeat seat, ContentControl? frame)
-            {
-                _seat = seat;
-                _frame = frame;
-            }
+            internal Screen(ISeat seat) => _seat = seat;
 
             private Core.Measurement.Measure Units => _seat.Profile.Units;
 
             /// <summary>The fall-hazard check, or null when this session registered none.</summary>
             private FallCheck? Check => _seat.Checks.All.OfType<FallCheck>().FirstOrDefault();
 
+            /// <summary>Why the check cannot be run here, or null when it can.</summary>
+            private string? Blocked
+            {
+                get
+                {
+                    var check = Check;
+
+                    if (check == null)
+                        return "This session registered no fall-hazard check, which is a fault in "
+                               + "this build.";
+
+                    return check.IsAvailable
+                        ? null
+                        : check.Unavailable ?? "This seat cannot offer it.";
+                }
+            }
+
             /// <summary>The run being set up, or null when none is picked.</summary>
             private CheckRunSpec? Run() => Check?.Spec(Picked);
 
             internal UIElement Build()
             {
-                RedrawPicker();
+                RedrawHead();
                 RedrawRuns();
 
-                return Bench.Surface(null, Foot(Ui.Runner("Run", _log, RunNow)),
-                                     Ui.Stack(_picker, _log, _runs));
+                return Bench.Surface(null, Foot(), Ui.Stack(_head, _log, _runs));
             }
 
-            /// <summary>The action row: run, then the windows the set-up lives in.</summary>
-            /// <param name="run">The Run button.</param>
-            private UIElement Foot(UIElement run)
+            /// <summary>
+            /// The action row: run, then the windows the set-up lives in.
+            ///
+            /// Run is drawn disabled with its reason when the check cannot run. A primary button
+            /// over a notice saying there is nothing to read is a press that reports its own
+            /// failure.
+            /// </summary>
+            private UIElement Foot()
             {
                 var row = new WrapPanel();
+                var blocked = Blocked;
 
-                row.Children.Add(run);
+                row.Children.Add(blocked == null
+                    ? (UIElement)Ui.Runner("Run", _log, RunNow)
+                    : Ui.Blocked("Run", blocked));
+
                 row.Children.Add(new Border { Width = 14 });
 
                 row.Children.Add(Ui.Icon(Glyphs.Layers, "What to read", () => Configure("read")));
@@ -123,25 +145,17 @@ namespace CamelWorks.UI.Views
                 return row;
             }
 
-            /// <summary>Which check's runs are being set up, above the list of them.</summary>
-            private void RedrawPicker()
+            /// <summary>The one verb that makes a run, above the list of them.</summary>
+            private void RedrawHead()
             {
-                _picker.Children.Clear();
+                _head.Children.Clear();
 
                 var row = new WrapPanel();
 
-                row.Children.Add(CheckPicker.Draw(_seat.Checks.All, Check, _seat.Findings.Findings,
-                                                  Pick));
-                row.Children.Add(new Border { Width = 10 });
                 row.Children.Add(Ui.Icon(Glyphs.Add, "A new run", NewRun));
 
-                _picker.Children.Add(Ui.Loose(row));
+                _head.Children.Add(Ui.Loose(row));
             }
-
-            /// <summary>Set up another check's runs, which is another screen in the same frame.</summary>
-            /// <param name="check">The check picked.</param>
-            private void Pick(ICheck check) =>
-                Ui.Safely(() => ClearanceViews.Pick(_frame, _seat, check));
 
             /// <summary>
             /// The runs this check has saved, with what each covers and when it last ran.
@@ -160,11 +174,10 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
+                // Said, not substituted for the list. The runs are in the project file, so a seat
+                // that cannot read a plan can still list them and set one up; only Run is blocked.
                 if (!check.IsAvailable)
-                {
                     _runs.Children.Add(Ui.Info(check.Unavailable ?? "This seat cannot offer it."));
-                    return;
-                }
 
                 var saved = check.Runs();
 
@@ -446,17 +459,18 @@ namespace CamelWorks.UI.Views
                                  "how the board's rail files it")),
                     Bench.Group("What to read",
                         Ui.Field("Floor from",
-                                 Ui.Choice(Offered(sides, settings.Floors), settings.Floors,
-                                           pick => Keep(one => one.Floors = pick), 300),
+                                 Reading(Ui.Choice(Offered(sides, settings.Floors), settings.Floors,
+                                                   pick => Keep(one => one.Floors = pick), 300)),
                                  "the slabs the plan is drawn from"),
                         Ui.Field("Handrails from",
-                                 Ui.Choice(Offered(optional, settings.Handrails), settings.Handrails,
-                                           pick => Keep(one => one.Handrails = pick), 300),
+                                 Reading(Ui.Choice(Offered(optional, settings.Handrails),
+                                                   settings.Handrails,
+                                                   pick => Keep(one => one.Handrails = pick), 300)),
                                  "what protects an edge"),
                         Ui.Field("Obstructions from",
-                                 Ui.Choice(Offered(optional, settings.Obstructions),
-                                           settings.Obstructions,
-                                           pick => Keep(one => one.Obstructions = pick), 300),
+                                 Reading(Ui.Choice(Offered(optional, settings.Obstructions),
+                                                   settings.Obstructions,
+                                                   pick => Keep(one => one.Obstructions = pick), 300)),
                                  "equipment that plugs an opening"),
                         Ui.Small("Every list is this model's own search sets and selection sets, "
                                  + "the current selection, or everything loaded. Name a set of "
@@ -485,10 +499,14 @@ namespace CamelWorks.UI.Views
                                  + "thickness. It is also why a column or a stair through the "
                                  + "band reads as solid floor rather than as a hole, which is the "
                                  + "largest thing this check gets wrong and is written down."),
-                        Sets().Count == 0
-                            ? Ui.Note("This document holds no saved sets yet. Build one in Set "
-                                      + "Builder and it appears in all three lists.")
-                            : null));
+                        Blocked != null
+                            ? Ui.Note("All three lists read the document, so they are fixed until "
+                                      + "a model is open. The name, the folder, the level and the "
+                                      + "band are the run's own and can be set now.")
+                            : Sets().Count == 0
+                                ? Ui.Note("This document holds no saved sets yet. Build one in Set "
+                                          + "Builder and it appears in all three lists.")
+                                : null));
             }
 
             internal UIElement JudgePage()
@@ -543,6 +561,24 @@ namespace CamelWorks.UI.Views
                         Ui.Small("The smallest break is the width of a person, not of the gap: "
                                  + "a 300 mm break between two handrails is too narrow to fall "
                                  + "through. Leave it at nothing and every break is reported.")));
+            }
+
+            /// <summary>
+            /// A picker whose contents come off the document, greyed with the reason when there is
+            /// no document to read. Its list is empty in that state, and an empty list somebody can
+            /// still open says nothing about why.
+            /// </summary>
+            /// <param name="picker">The picker.</param>
+            private ComboBox Reading(ComboBox picker)
+            {
+                var blocked = Blocked;
+
+                if (blocked == null) return picker;
+
+                picker.IsEnabled = false;
+                picker.ToolTip = blocked;
+
+                return picker;
             }
 
             /// <summary>One side's list, with whatever it is set to kept in it.</summary>

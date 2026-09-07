@@ -169,24 +169,29 @@ namespace CamelWorks.Studio
             Page("app-clash-clearance-surfaces", "Clash Manager · Clearance, what to measure", 760,
                  Walkable),
 
-            // The Checks tab itself, over a seat with nothing in it: the check picker, the run
-            // list and the empty state a project with no runs saved opens on. The shipping screen
-            // rather than a drawing of it, which is what Check(ISeat) buys — before the widening
-            // this tab took a Session and could only be looked at on a licensed seat.
+            // The Clearance tab itself, over a seat with nothing in it: the run list, the verb
+            // that makes a run, and the Run the seat cannot press with its reason. The shipping
+            // screen rather than a drawing of it, which is what Setup(ISeat) buys — before the
+            // widening this tab took a Session and could only be looked at on a licensed seat.
             // Not in the render's default list; named on dispatch.
-            Page("app-clash-checks", "Clash Manager · Checks", 760,
-                 () => ClearanceViews.Check(Seated())),
+            Page("app-clash-clearance", "Clash Manager · Clearance set-up", 760,
+                 () => ClearanceViews.Setup(Seated())),
 
             // The Manage board's check picker, opened. A menu lives in a popup and a popup needs
             // a screen to open on, so the greyed entry and its reason — the state this control
             // exists for — had never been drawn.
             Page("app-clash-picker", "Clash Manager · The check picker", 420, Picker),
 
-            // The fall-hazard set-up, which is nine settings in two windows off the action row.
-            // The windows are what the page is for: the tab's own frame is the same shape as
-            // app-clash-checks, and a window needs a screen to open on that this harness has not.
+            // The Fall hazard tab itself, over the same empty seat, for the same reason.
             // Not in the render's default list; named on dispatch.
-            Page("app-clash-fall", "Clash Manager · Fall hazard set-up", 900, Falling),
+            Page("app-clash-fall", "Clash Manager · Fall hazard set-up", 760,
+                 () => FallHazardViews.Setup(Seated())),
+
+            // Its nine settings, which live in two windows off that tab's action row. A window
+            // needs a screen to open on and this harness has none, so without this page the
+            // settings could only be looked at on a licensed seat.
+            // Not in the render's default list; named on dispatch.
+            Page("app-clash-fall-settings", "Clash Manager · Fall hazard settings", 900, Falling),
         };
 
         /// <summary>
@@ -217,7 +222,7 @@ namespace CamelWorks.Studio
 
             check.Put(spec);
 
-            return Deck("clash", "checks",
+            return Deck("clash", "fallhazard",
                         Bench.Surface(null, Ui.Runner("Run", Ui.Stack(), _ => { }),
                                       FallHazardViews.Drawn(seat, spec)));
         }
@@ -745,7 +750,7 @@ namespace CamelWorks.Studio
                 Ui.Small("Both ticks are off to start with: the geometric answer is the default, "
                          + "and a stair with a soffit too low over it is still worth reporting."));
 
-            return Deck("clash", "checks",
+            return Deck("clash", "clearance",
                         Bench.Surface(null, Ui.Runner("Run", Ui.Stack(), _ => { }),
                                       Ui.Stack(measure, detected)));
         }
