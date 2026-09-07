@@ -3374,7 +3374,10 @@ namespace CamelWorks.UI.Views
                               + (When(entry).Length == 0 ? string.Empty : ", run " + When(entry)),
                 };
 
-                var words = new DockPanel { LastChildFill = true };
+                // No filling child: the title has its own panel now, and what is left in here is
+                // the "showing n of m" line, which is docked right and must stay there rather than
+                // being stretched across whatever the row has spare.
+                var words = new DockPanel { LastChildFill = false };
 
                 if (Check?.Naming != null)
                 {
@@ -3406,6 +3409,22 @@ namespace CamelWorks.UI.Views
                     words.Children.Add(said.Wearing("Hint"));
                 }
 
+                // The title claims its width before the controls do.
+                //
+                // It was added last, as the child that fills whatever the rest had left, and the
+                // rest are a search box, a five-part status strip and five symbols: on an ordinary
+                // pane the name of the test being worked came out as "L03 MEP v..." beside two
+                // hundred pixels of nothing. It is docked first now, between a floor and a
+                // ceiling, so it is the strip that gives way rather than the one thing on the row
+                // that says what is being looked at.
+                var naming = new DockPanel
+                {
+                    LastChildFill = true,
+                    MinWidth = 150,
+                    MaxWidth = 320,
+                    Margin = new Thickness(0, 0, 10, 0),
+                };
+
                 // The kind's symbol before the name, so the board says what sort of thing it is
                 // showing without being read. The rail below it lists one kind, and the words for
                 // the kind are on the title's tooltip; this is the mark the eye finds first.
@@ -3418,12 +3437,13 @@ namespace CamelWorks.UI.Views
                     mark.ToolTip = Check.Name;
 
                     DockPanel.SetDock(mark, Dock.Left);
-                    words.Children.Add(mark);
+                    naming.Children.Add(mark);
                 }
 
-                // The name last, so it is the child that fills what the rest have left and the
-                // one that gives way when there is not enough for everybody.
-                words.Children.Add(head.Wearing("Head"));
+                naming.Children.Add(head.Wearing("Head"));
+
+                DockPanel.SetDock(naming, Dock.Left);
+                row.Children.Insert(0, naming);
 
                 row.Children.Add(words);
 

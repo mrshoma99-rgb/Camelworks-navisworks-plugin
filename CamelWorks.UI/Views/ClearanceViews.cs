@@ -202,14 +202,11 @@ namespace CamelWorks.UI.Views
             {
                 var blocked = Blocked;
 
+                // Never greyed. It is a setting on the run, editable with no document open like
+                // every other field on this panel; what needs a document is looking at what
+                // detection found, and that is the link below.
                 var tick = Ui.Check(DetectSaid, settings.DetectSurfaces,
                                     on => Keep(one => one.DetectSurfaces = on));
-
-                if (blocked != null)
-                {
-                    tick.IsEnabled = false;
-                    tick.ToolTip = blocked;
-                }
 
                 if (!settings.DetectSurfaces)
                     return Ui.Stack(tick, Ui.Small(DetectHint(Units, settings.MinPatchAreaSquareMetres,
