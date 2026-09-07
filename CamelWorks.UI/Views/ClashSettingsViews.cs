@@ -210,13 +210,20 @@ namespace CamelWorks.UI.Views
 
                 var rail = new StackPanel { Margin = new Thickness(8, 10, 8, 10) };
 
-                // What applies everywhere first, then a page per tab. A coordinator looking for a
-                // setting knows either what it is about or which screen it changes, and the rail
-                // answers both without them having to guess which tab hid it.
-                Railed(rail, "Everywhere",
-                       Part.Units, Part.Levels, Part.Disciplines, Part.Team);
-
-                Railed(rail, "Per tab", Part.Naming, Part.Board);
+                // One list, named for what each section is about.
+                //
+                // It was two groups on two axes: "Everywhere" held Units, Levels, Disciplines and
+                // Team — subjects — and "Per tab" held Create and Manage, which are screens. A
+                // reader had to know which scheme a row was using before they could scan it, and
+                // two of the six rows named a tab rather than what they held: "Create" opened a
+                // pane headed "Test naming", "Manage" one headed "Bands".
+                //
+                // Naming was filed under Create because that is where tests are made. It is read
+                // by the board's banding, its filtering and its sorting, by the renumber and by
+                // every export — which is the reasoning this tab rejects for the other five.
+                Railed(rail, null,
+                       Part.Units, Part.Levels, Part.Disciplines, Part.Team,
+                       Part.Naming, Part.Board);
 
                 var side = new Border
                 {
@@ -265,21 +272,26 @@ namespace CamelWorks.UI.Views
                 Part.Levels => "Levels",
                 Part.Disciplines => "Disciplines",
                 Part.Team => "Team",
-                Part.Naming => "Create",
-                Part.Board => "Manage",
+                Part.Naming => "Test naming",
+                Part.Board => "Bands",
                 _ => "Units and distances",
             };
 
-            /// <summary>One heading on the rail, and the sections under it.</summary>
+            /// <summary>Sections on the rail, under a heading where there is one.</summary>
             /// <param name="rail">The rail.</param>
-            /// <param name="title">What the group is called.</param>
+            /// <param name="title">What the group is called, or null for no heading.</param>
             /// <param name="parts">Its sections, in the order they read.</param>
-            private void Railed(Panel rail, string title, params Part[] parts)
+            private void Railed(Panel rail, string? title, params Part[] parts)
             {
-                var head = Ui.Small(title.ToUpperInvariant());
+                // A heading only where there is more than one group to tell apart. One list of
+                // six subjects needs no word over it saying they are settings.
+                if (title != null)
+                {
+                    var head = Ui.Small(title.ToUpperInvariant());
 
-                head.Margin = new Thickness(10, rail.Children.Count == 0 ? 0 : 14, 10, 4);
-                rail.Children.Add(head);
+                    head.Margin = new Thickness(10, rail.Children.Count == 0 ? 0 : 14, 10, 4);
+                    rail.Children.Add(head);
+                }
 
                 foreach (var part in parts)
                 {
