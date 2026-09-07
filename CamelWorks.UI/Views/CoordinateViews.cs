@@ -1220,8 +1220,8 @@ namespace CamelWorks.UI.Views
                 }
 
                 var table = Ui.Table(rows,
-                    ("#", 28), ("On", 38), ("Card", 170), ("Finds", 0), ("Does", 190),
-                    ("Found", 62), ("Changed", 74)).Ticking(1);
+                    ("#", 28), ("On", 38), ("Card", 200), ("Finds", 0), ("Does", 175),
+                    ("Found", 58), ("Changed", 68)).Ticking(1);
 
                 return Ui.Picking(table,
                     new Ui.OnPicked("Earlier", (picked, said) => Shift(_rules.Cards, picked, -1)),
