@@ -2539,7 +2539,7 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>The find box in the corner, and whether it has been wired yet.</summary>
-            private readonly TextBox _finder = Ui.Text(string.Empty, null, Ui.Wide.Number);
+            private readonly TextBox _finder = Ui.Text(string.Empty, null, Ui.Wide.Tight);
             private bool _finding;
 
             /// <summary>

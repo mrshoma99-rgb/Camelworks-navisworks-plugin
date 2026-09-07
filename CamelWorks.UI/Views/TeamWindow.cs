@@ -376,8 +376,10 @@ namespace CamelWorks.UI.Views
             // tick while the headings, which carry one too, sized independently.
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(26) });
 
-            // Name, Role, Team, Company, Email, BCF folder.
-            foreach (var share in new[] { 1.3, 1.1, 0.9, 1.1, 1.3, 1.6 })
+            // Name, Role, Team, Company, Email, BCF folder. Weighted by what each holds: an
+            // address is the longest value on the row and a team is the shortest, and at even
+            // shares five of the six columns elided their contents.
+            foreach (var share in new[] { 1.2, 1.0, 0.8, 1.1, 1.7, 1.6 })
                 grid.ColumnDefinitions.Add(new ColumnDefinition
                 {
                     Width = new GridLength(share, GridUnitType.Star),
@@ -445,7 +447,7 @@ namespace CamelWorks.UI.Views
 
             // The name is the identity, so changing it is a remove and an add rather than an
             // edit in place - and the list is drawn again because the order may have moved.
-            var name = Ui.Text(member.Name, null, Ui.Wide.Number);
+            var name = Ui.Text(member.Name, null, 0);
 
             name.LostFocus += (s, e) => Ui.Safely(() =>
             {
@@ -486,7 +488,7 @@ namespace CamelWorks.UI.Views
             Put(grid, Suggesting(roster.Parties, member.Party,
                                  typed => { member.Party = Or(typed); onEdit(); }), 4);
 
-            var email = Ui.Text(member.Email ?? string.Empty, "nobody@", null, Ui.Wide.Number);
+            var email = Ui.Text(member.Email ?? string.Empty, "nobody@", null, 0);
 
             email.LostFocus += (s, e) => Ui.Safely(() =>
             {
@@ -499,7 +501,7 @@ namespace CamelWorks.UI.Views
             // A folder, with a Browse, because a job that issues clashes by folder rather than
             // by email has nowhere else to put it - and typing a share path by hand is how the
             // wrong consultant gets somebody else's clashes.
-            var folder = Ui.Text(member.Folder ?? string.Empty, "where they go", null, Ui.Wide.Number);
+            var folder = Ui.Text(member.Folder ?? string.Empty, "where they go", null, 0);
 
             folder.LostFocus += (s, e) => Ui.Safely(() =>
             {
@@ -511,6 +513,16 @@ namespace CamelWorks.UI.Views
             // which in a table is a cell taller than the ones beside it holding a box that sits
             // lower than all of them.
             Put(grid, Ui.PathRow(folder, PathKind.Folder), 6);
+
+            // Off the job, said on the row. The flag decides who the board offers when a clash is
+            // assigned, so a roster that does not show it is a list where two of the rows behave
+            // differently from the rest for no visible reason.
+            if (!member.IsActive)
+            {
+                grid.Opacity = 0.6;
+                grid.ToolTip = member.Name + " is off the job. They keep the clashes already "
+                             + "assigned to them and are not offered for new ones.";
+            }
 
             var off = Ui.Icon(Glyphs.Bin, "Remove from the roster", () =>
             {
@@ -548,6 +560,7 @@ namespace CamelWorks.UI.Views
 
             private readonly TextBlock _count = Ui.Small(string.Empty);
             private readonly Button _off;
+            private readonly Button _job;
             private readonly Action _onShape;
             private bool _filling;
 
@@ -569,6 +582,29 @@ namespace CamelWorks.UI.Views
                 _count.Margin = new Thickness(0, 0, 10, 0);
 
                 _off = Ui.Danger("Remove from the roster", () => { });
+
+                // The non-destructive half of the same job. IsActive decides who appears in every
+                // assignment list on the board, and nothing in the editor could see or set it: a
+                // person who has left the job could only be deleted, which loses the clashes
+                // already assigned to them.
+                _job = Ui.Quiet("Take off the job", () => { });
+                _job.Margin = new Thickness(0, 0, 8, 0);
+
+                _job.Click += (s, e) => Ui.Safely(() =>
+                {
+                    var these = _roster.Members.Where(one => _ticked.Contains(one.Id)).ToList();
+
+                    if (these.Count == 0) return;
+
+                    // Back on the job only when every one of them is off it, so a mixed selection
+                    // has one unambiguous outcome.
+                    var back = these.All(one => !one.IsActive);
+
+                    foreach (var one in these) one.IsActive = back;
+
+                    onEdit();
+                    onShape();
+                });
 
                 Grid.SetColumn(_every, 0);
                 headings.Children.Add(Ui.Loose(_every));
@@ -593,7 +629,7 @@ namespace CamelWorks.UI.Views
                     });
                 });
 
-                Bar = Ui.Across(_count, _off);
+                Bar = Ui.Across(_count, _job, _off);
                 Bar.Margin = new Thickness(0, 6, 0, 0);
 
                 Refresh();
@@ -616,6 +652,16 @@ namespace CamelWorks.UI.Views
                     ? "Remove these " + picked.ToString(CultureInfo.CurrentCulture)
                       + " from the roster"
                     : "Remove from the roster";
+
+                var these = _roster.Members.Where(one => _ticked.Contains(one.Id)).ToList();
+
+                _job.IsEnabled = picked > 0;
+                _job.Content = these.Count > 0 && these.All(one => !one.IsActive)
+                    ? "Put back on the job"
+                    : "Take off the job";
+
+                _job.ToolTip = "A member off the job keeps the clashes already assigned to them "
+                             + "and is not offered when new ones are assigned.";
 
                 // Set, not raised: the box writes back through its own handlers, and a refresh
                 // that fired them would tick or untick the roster as a side effect of counting it.
@@ -647,7 +693,10 @@ namespace CamelWorks.UI.Views
             {
                 IsEditable = true,
                 Text = current ?? string.Empty,
-                MinWidth = 74,
+
+                // None of its own. Every cell on this row sits in a shared grid whose columns
+                // carry the minimum; a cell that sets a second one stops the column shrinking.
+                MinWidth = 0,
 
                 // The same height a text box takes, so a row of both reads as one line.
                 MinHeight = 31,

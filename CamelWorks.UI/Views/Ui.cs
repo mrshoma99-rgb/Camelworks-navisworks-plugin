@@ -2205,6 +2205,9 @@ namespace CamelWorks.UI.Views
         /// </summary>
         public static class Wide
         {
+            /// <summary>A single character or a two-digit figure: a symbol, a separator, a floor.</summary>
+            public const double Tight = 70;
+
             /// <summary>A figure and its unit: 250, 16 mm, 3.</summary>
             public const double Number = 100;
 

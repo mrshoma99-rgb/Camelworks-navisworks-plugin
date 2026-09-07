@@ -80,7 +80,7 @@ namespace CamelWorks.UI.Views
             var trouble = Ui.Stack();
             var body = Ui.Stack();
 
-            var name = Ui.Text(held.Symbol, "A", typed => held.Symbol = typed.Trim(), Ui.Wide.Number);
+            var name = Ui.Text(held.Symbol, "A", typed => held.Symbol = typed.Trim(), Ui.Wide.Tight);
 
             // A cell is thirty-eight pixels wide and nothing was clipping it. The field invites "a
             // letter, a mark or a word", and a word overdrew its neighbours in the grid and in the
@@ -88,7 +88,7 @@ namespace CamelWorks.UI.Views
             // name, and a name belongs in the legend line beside it.
             name.MaxLength = 4;
 
-            var mm = Ui.Text(units.Bare(held.Tolerance), null, Ui.Wide.Number);
+            var mm = Ui.Text(units.Bare(held.Tolerance), null, Ui.Wide.Tight);
 
             body.Children.Add(Ui.Field("What the cells say", name,
                 "A letter or a short mark — whatever the sheet this matrix came from uses. Four "

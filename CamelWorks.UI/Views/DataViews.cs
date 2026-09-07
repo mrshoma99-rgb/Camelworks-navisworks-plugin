@@ -2195,7 +2195,7 @@ namespace CamelWorks.UI.Views
                     recipe.Levels = n;
             }, 70);
 
-            var separator = Ui.Text(recipe.Separator, text => recipe.Separator = text, Ui.Wide.Number);
+            var separator = Ui.Text(recipe.Separator, text => recipe.Separator = text, Ui.Wide.Tight);
             var prefix = Ui.Text(recipe.Prefix, text => recipe.Prefix = text, Ui.Wide.Number);
 
             var root = Ui.Check("Keep the file name as the first level", false, v => recipe.SkipRoot = !v);

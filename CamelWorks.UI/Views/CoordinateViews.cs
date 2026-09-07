@@ -2537,8 +2537,8 @@ namespace CamelWorks.UI.Views
         {
             private readonly IReadOnlyList<SpecKind> _kinds;
             private readonly ComboBox _kind;
-            private readonly TextBox _first = Ui.Text(string.Empty, null, Ui.Wide.Number);
-            private readonly TextBox _second = Ui.Text(string.Empty, null, Ui.Wide.Number);
+            private readonly TextBox _first = Ui.Text(string.Empty, null, Ui.Wide.Tight);
+            private readonly TextBox _second = Ui.Text(string.Empty, null, Ui.Wide.Tight);
 
             private readonly TextBlock _firstLabel =
                 new TextBlock { Margin = new Thickness(0, 0, 0, 4) }.Wearing("Lbl");

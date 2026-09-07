@@ -1242,7 +1242,7 @@ namespace CamelWorks.UI.Views
                 var name = Ui.Text("New layer", null, Ui.Wide.Name);
                 var note = Ui.Text(string.Empty, null, Ui.Wide.Phrase);
                 var colour = Ui.Text(string.Empty, null, Ui.Wide.Number);
-                var transparency = Ui.Text(string.Empty, null, Ui.Wide.Number);
+                var transparency = Ui.Text(string.Empty, null, Ui.Wide.Tight);
 
                 var decides = "leave visibility alone";
                 var visibility = Ui.Choice(new[] { "leave visibility alone", "show", "hide" }, decides, v => decides = v);
@@ -1670,7 +1670,7 @@ namespace CamelWorks.UI.Views
             private UIElement Rename(Session session)
             {
                 var pattern = Ui.Text("{n}. {name}", null, Ui.Wide.Name);
-                var start = Ui.Text("1", null, Ui.Wide.Number);
+                var start = Ui.Text("1", null, Ui.Wide.Tight);
 
                 var run = Ui.Runner("Rename them", _say, primary: false, work: job =>
                 {
