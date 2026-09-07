@@ -507,7 +507,7 @@ namespace CamelWorks.UI.Views
             // lower than all of them.
             Put(grid, Ui.PathRow(folder, PathKind.Folder), 6);
 
-            var off = Ui.Icon(Glyphs.Bin, "Take them off the team", () =>
+            var off = Ui.Icon(Glyphs.Bin, "Remove from the roster", () =>
             {
                 ticked.Remove(member.Id);
                 roster.Remove(member.Id);
@@ -563,7 +563,7 @@ namespace CamelWorks.UI.Views
                 _count.VerticalAlignment = VerticalAlignment.Center;
                 _count.Margin = new Thickness(0, 0, 10, 0);
 
-                _off = Ui.Danger("Take them off the team", () => { });
+                _off = Ui.Danger("Remove from the roster", () => { });
 
                 Grid.SetColumn(_every, 0);
                 headings.Children.Add(Ui.Loose(_every));
@@ -577,8 +577,8 @@ namespace CamelWorks.UI.Views
 
                     if (going.Count == 0) return;
 
-                    Parts.Sure(said, "Take " + Ui.Count(going.Count, "person") + " off the team?",
-                               "Take them off", () =>
+                    Parts.Sure(said, "Remove " + Ui.Count(going.Count, "person")
+                               + " from the roster?", "Remove", () =>
                     {
                         foreach (var one in going) _roster.Remove(one.Id);
 
@@ -608,8 +608,9 @@ namespace CamelWorks.UI.Views
 
                 _off.IsEnabled = picked > 0;
                 _off.Content = picked > 1
-                    ? "Take these " + picked.ToString(CultureInfo.CurrentCulture) + " off the team"
-                    : "Take them off the team";
+                    ? "Remove these " + picked.ToString(CultureInfo.CurrentCulture)
+                      + " from the roster"
+                    : "Remove from the roster";
 
                 // Set, not raised: the box writes back through its own handlers, and a refresh
                 // that fired them would tick or untick the roster as a side effect of counting it.

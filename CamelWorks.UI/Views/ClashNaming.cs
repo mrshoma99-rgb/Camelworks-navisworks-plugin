@@ -847,9 +847,10 @@ namespace CamelWorks.UI.Views
         /// <summary>
         /// The fields a pattern's tokens name.
         ///
-        /// Only what a field is called and whether it exists. How a field is filled in — counted
-        /// down the axis, the same on every line — is about a matrix's rows and columns, and is
-        /// set on the matrix's own Fields window rather than here, where there are no rows.
+        /// What a field is called, how it is filled in, and whether it exists. How it is filled
+        /// in used to be set only on the matrix's own Fields window, so a field added here was
+        /// typed line by line whatever it was for and the control that changed that was a window
+        /// away.
         /// </summary>
         private static void Fields(Panel into, NamingBook book, FrameworkElement? near,
                                    Action touch, Action redraw)
@@ -912,6 +913,7 @@ namespace CamelWorks.UI.Views
             var row = new Grid();
 
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
@@ -930,6 +932,22 @@ namespace CamelWorks.UI.Views
             Grid.SetColumn(title, 0);
             row.Children.Add(title);
 
+            // How the field is filled in, beside what it is called. Adding one asked for a name
+            // and nothing else, so every field arrived typed line by line whatever it was for,
+            // and the one control that changed that was on another window.
+            var fill = Ui.Choice(Fills.Select(Filled).ToList(), Filled(field.Fill), picked =>
+            {
+                field.Fill = Fills.First(one => Filled(one) == picked);
+                touch();
+            }, 140);
+
+            fill.VerticalAlignment = VerticalAlignment.Center;
+            fill.Margin = new Thickness(10, 0, 0, 0);
+            fill.ToolTip = "How this field gets its value on each line.";
+
+            Grid.SetColumn(fill, 1);
+            row.Children.Add(fill);
+
             var tokens = new TextBlock
             {
                 Text = Tokens(field),
@@ -942,7 +960,7 @@ namespace CamelWorks.UI.Views
 
             tokens.Tint(TextBlock.ForegroundProperty, "Muted");
 
-            Grid.SetColumn(tokens, 1);
+            Grid.SetColumn(tokens, 2);
             row.Children.Add(tokens);
 
             if (!field.IsBuiltIn)
@@ -958,7 +976,7 @@ namespace CamelWorks.UI.Views
                 drop.ToolTip = "Remove this field. Patterns that used it stop reading until "
                                + "the token is taken out of them.";
 
-                Grid.SetColumn(drop, 2);
+                Grid.SetColumn(drop, 3);
                 row.Children.Add(drop);
             }
 
@@ -966,6 +984,20 @@ namespace CamelWorks.UI.Views
 
             return card;
         }
+
+        /// <summary>The ways a field can be filled in, in the order the picker offers them.</summary>
+        private static readonly MatrixFill[] Fills =
+            { MatrixFill.ByHand, MatrixFill.Series, MatrixFill.Same };
+
+        /// <summary>How a way of filling a field reads.</summary>
+        /// <param name="fill">The way.</param>
+        private static string Filled(MatrixFill fill) =>
+            fill switch
+            {
+                MatrixFill.Series => "Counted down the axis",
+                MatrixFill.Same => "The same on every line",
+                _ => "Typed line by line",
+            };
 
         /// <summary>The two tokens a field writes, as a pattern carries them.</summary>
         private static string Tokens(MatrixField field)

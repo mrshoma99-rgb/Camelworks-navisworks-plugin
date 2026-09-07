@@ -573,6 +573,12 @@ namespace CamelWorks.UI.Views
 
                 offered.AddRange(Disciplines.All);
 
+                // The project's own words after the ones a file name can be read as. A job with a
+                // facade package or a vertical-transport model could not file them at all while
+                // the only disciplines on offer were the built-in ones.
+                foreach (var own in Own())
+                    if (!offered.Contains(own, StringComparer.OrdinalIgnoreCase)) offered.Add(own);
+
                 var rows = models.Select(one => new TableRow(one,
                     one.Title,
                     string.IsNullOrWhiteSpace(Read(one.Key)) ? NoDiscipline : Read(one.Key)!))
@@ -606,6 +612,67 @@ namespace CamelWorks.UI.Views
 
                         Show(Part.Disciplines);
                     })));
+
+                held.Children.Add(Adding());
+
+                return held;
+            }
+
+            /// <summary>The discipline words this project has added to the built-in ones.</summary>
+            private IReadOnlyList<string> Own() =>
+                (Read(ProfileKeys.OwnDisciplines) ?? string.Empty)
+                    .Split(',')
+                    .Select(one => one.Trim())
+                    .Where(one => one.Length > 0)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+            /// <summary>Add a discipline this project has and CamelWorks does not know.</summary>
+            private UIElement Adding()
+            {
+                var held = Ui.Stack();
+
+                held.Children.Add(Ui.Small("CamelWorks knows "
+                    + Ui.Count(Disciplines.All.Count, "discipline")
+                    + " it can read off a file name. Add the ones this job has that it does not."));
+
+                var own = Own();
+
+                if (own.Count > 0)
+                    held.Children.Add(Ui.Across(own
+                        .Select(one => (UIElement)Parts.FilterChip(string.Empty, one, () =>
+                        {
+                            Set(ProfileKeys.OwnDisciplines,
+                                string.Join(", ", Own().Where(two =>
+                                    !string.Equals(two, one, StringComparison.OrdinalIgnoreCase))));
+
+                            Show(Part.Disciplines);
+                        }))
+                        .ToArray()));
+
+                var add = Ui.Button("Add a discipline", () => Parts.Ask(held,
+                    "What this job calls it", string.Empty, "Add", said =>
+                {
+                    var wanted = said.Trim();
+
+                    if (wanted.Length == 0) return;
+
+                    // Refused rather than added twice: a second "Facade" in the list is a second
+                    // entry in every picker that reads it, and a model can only be on one.
+                    if (Disciplines.All.Contains(wanted, StringComparer.OrdinalIgnoreCase)
+                        || Own().Contains(wanted, StringComparer.OrdinalIgnoreCase))
+                        return;
+
+                    Set(ProfileKeys.OwnDisciplines, string.Join(", ", Own().Concat(new[] { wanted })));
+
+                    Show(Part.Disciplines);
+                }));
+
+                add.HorizontalAlignment = HorizontalAlignment.Left;
+                add.Margin = new Thickness(0, 6, 0, 0);
+
+                held.Children.Add(add);
+                held.Margin = new Thickness(0, 12, 0, 0);
 
                 return held;
             }
