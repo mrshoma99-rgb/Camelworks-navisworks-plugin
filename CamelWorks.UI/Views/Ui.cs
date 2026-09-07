@@ -569,10 +569,17 @@ namespace CamelWorks.UI.Views
         public static TextBlock Code(string text) =>
             new TextBlock { Text = text }.Wearing("Mono");
 
-        /// <summary>A small upper-case label above a group of things.</summary>
+        /// <summary>
+        /// A small label above a group of things.
+        ///
+        /// Sentence case, as written. This upper-cased its text until every section heading in
+        /// the product read as shouting, and a heading and a pane title were indistinguishable
+        /// because both arrived here. The "Caps" style still sets the size, weight and colour;
+        /// only the case is the caller's.
+        /// </summary>
         /// <param name="text">The label.</param>
         public static TextBlock Eyebrow(string text) =>
-            new TextBlock { Text = (text ?? string.Empty).ToUpperInvariant() }.Wearing("Caps");
+            new TextBlock { Text = text ?? string.Empty }.Wearing("Caps");
 
         /// <summary>A number and its label, for a scoreboard.</summary>
         /// <param name="value">The number, already formatted.</param>

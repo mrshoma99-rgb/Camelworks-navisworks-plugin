@@ -164,10 +164,10 @@ namespace CamelWorks.UI.Shell
                + "on the Manage tab.",
                "Run"),
 
-            Of("rules", "Filter Clashes", ToolShape.Window, Glyph.Filter,
+            Of("rules", "Filter", ToolShape.Window, Glyph.Filter,
                "Suppress what does not matter, group what is one issue, and assign what is left - "
                + "one pipeline, previewed before any of it is applied.",
-               "Try these on the board"),
+               "Save rules"),
 
             Of("issuelist", "Issues", ToolShape.Window, Glyph.Report,
                "Every issue on this project, however it was raised: by hand, from clash results, "
@@ -192,7 +192,7 @@ namespace CamelWorks.UI.Shell
                "Send each party the clashes that are theirs as BCF, and take their answers back "
                + "onto the board, showing where two of them disagree rather than letting the last "
                + "one win.",
-               "Preview the export"),
+               "Write the packs"),
 
             // ---- Compare ----------------------------------------------------------------------
 

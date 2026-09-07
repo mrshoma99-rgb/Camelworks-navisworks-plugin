@@ -17,20 +17,18 @@ using CamelWorks.UI.Shell;
 namespace CamelWorks.UI.Views
 {
     /// <summary>
-    /// The one door a clash file goes out of and comes back through.
+    /// The Exchange tab: BCF packs out, returned BCF packs back in.
     ///
-    /// A coordination round has two halves and they are weeks apart. On Monday the coordinator
-    /// sends each trade the clashes that are theirs: not the board, a pack per recipient, narrowed
-    /// to what that trade is being asked about. On Thursday the packs come back, each holding the
-    /// same clashes with a handful answered, and the answers have to land on the board without
-    /// anybody retyping them.
+    /// Two modes, one round. Export writes a pack per recipient, narrowed to the clashes that
+    /// recipient is being asked about. Import reads the returned packs, says what each answer
+    /// would do to the board, marks the clashes two parties answered differently, and applies
+    /// what has been accepted.
     ///
-    /// Both halves are here because they are one round. They were three tabs - one that wrote a
-    /// file, one that read a file, one that merged several - so setting up an issue and taking one
-    /// back were in different places, and neither said what the other had done.
+    /// One tab rather than three, because the return leg has to know what went out: the packs
+    /// are matched back to the board by the identity the export wrote.
     ///
-    /// BCF, and only BCF. It is what Solibri, BIMcollab, Revizto, BIMTrack and the issue trackers
-    /// projects are actually run on, so a pack written here is one the architect can open.
+    /// BCF only. It is the format Solibri, BIMcollab, Revizto, BIMTrack and the common issue
+    /// trackers read, so a pack written here opens in the tool the recipient already runs.
     /// </summary>
     public static class ClashExchangeViews
     {
@@ -98,7 +96,7 @@ namespace CamelWorks.UI.Views
         /// <param name="store">The project file, which holds the profiles and the storeys.</param>
         /// <param name="projectName">The project's name, for the packs it writes.</param>
         /// <param name="board">The board to send, or null to take the last clash run's.</param>
-        /// <param name="importing">True to open on the import half rather than the export half.</param>
+        /// <param name="importing">True to open on the import mode rather than the export mode.</param>
         /// <param name="findings">
         /// Where an applied answer is written to last. Null draws the screen without one, which is
         /// what the harness does; applying then reaches the live board and says so.
@@ -108,17 +106,23 @@ namespace CamelWorks.UI.Views
         /// receiving tool selects by, where each element sits, and the rendered pictures. Null
         /// writes the pack without them and the tab says what that costs.
         /// </param>
+        /// <param name="returned">
+        /// Returned packs to open with, by path, read before the surface is built. For the design
+        /// harness, which cannot press a file dialog: without it the import mode can only ever be
+        /// drawn with nothing chosen.
+        /// </param>
         public static UIElement Drawn(ProjectStore store, string? projectName = null,
                                       IReadOnlyList<ClashGroup>? board = null,
                                       bool importing = false, FindingStore? findings = null,
-                                      Session? session = null) =>
+                                      Session? session = null,
+                                      IReadOnlyList<string>? returned = null) =>
             new Desk(store, projectName ?? "Untitled project", board, importing, findings,
-                     session).View;
+                     session, returned).View;
 
-        /// <summary>The two halves of a round.</summary>
+        /// <summary>The two modes of the tab: writing packs out.</summary>
         private const string SendOut = "Export";
 
-        /// <summary>The two halves of a round.</summary>
+        /// <summary>The two modes of the tab: reading returned packs back.</summary>
         private const string TakeBack = "Import";
 
         private sealed class Desk
@@ -129,15 +133,24 @@ namespace CamelWorks.UI.Views
             private readonly List<ExportProfile> _profiles = new List<ExportProfile>();
             private ExportProfile _profile = new ExportProfile();
 
-            private readonly ContentControl _half = new ContentControl();
+            private readonly ContentControl _page = new ContentControl();
 
             // -------------------------------------------------------------------------------
-            // The send-out half
+            // The export mode
             // -------------------------------------------------------------------------------
 
-            private readonly StackPanel _tests = Ui.Stack();
+            /// <summary>
+            /// The tests table and its verbs.
+            ///
+            /// A dock panel rather than a stack: the pane gives its body a fixed height, and a
+            /// stack hands each child the height it asks for, so a table longer than the pane was
+            /// clipped at the bottom edge with no scrollbar. Docked, the verbs take their line and
+            /// the table gets what is left, which is a height its own scroller can work in.
+            /// </summary>
+            private readonly DockPanel _tests = new DockPanel { LastChildFill = true };
             private readonly StackPanel _testsSaid = Ui.Stack();
-            private readonly StackPanel _results = Ui.Stack();
+            /// <summary>The results table, its filter bar and its verbs. Docked, as above.</summary>
+            private readonly DockPanel _results = new DockPanel { LastChildFill = true };
             private readonly StackPanel _resultsSaid = Ui.Stack();
             private readonly StackPanel _sending = Ui.Stack();
 
@@ -152,16 +165,18 @@ namespace CamelWorks.UI.Views
             private System.Windows.Threading.DispatcherTimer? _typing;
 
             // -------------------------------------------------------------------------------
-            // The take-back half
+            // The import mode
             // -------------------------------------------------------------------------------
 
             /// <summary>The packs chosen, by path, in the order they were chosen.</summary>
             private readonly List<string> _returns = new List<string>();
 
-            private readonly StackPanel _files = Ui.Stack();
+            /// <summary>The packs table and its verbs. Docked, as the export tables are.</summary>
+            private readonly DockPanel _files = new DockPanel { LastChildFill = true };
             private readonly StackPanel _packsSaid = Ui.Stack();
             private readonly StackPanel _back = Ui.Stack();
-            private readonly StackPanel _rows = Ui.Stack();
+            /// <summary>The returned rows, their verbs and what the answers become. Docked.</summary>
+            private readonly DockPanel _rows = new DockPanel { LastChildFill = true };
             private readonly StackPanel _rowsSaid = Ui.Stack();
             private readonly StackPanel _applied = Ui.Stack();
 
@@ -170,8 +185,14 @@ namespace CamelWorks.UI.Views
 
             private ExchangeReading? _reading;
 
-            /// <summary>The primary of the import half, kept so reading a pack can turn it on.</summary>
-            private FrameworkElement? _apply;
+            /// <summary>The primary of the import mode, kept so reading a pack can turn it on.</summary>
+            private System.Windows.Controls.Button? _apply;
+
+            /// <summary>Where the row filter is drawn, once there are rows for it to narrow.</summary>
+            private readonly ContentControl _show = new ContentControl();
+
+            /// <summary>Whether the import mode is drawn as two panes rather than as one statement.</summary>
+            private bool _paned;
 
             private UIElement? _out;
             private UIElement? _in;
@@ -188,7 +209,8 @@ namespace CamelWorks.UI.Views
 
             internal Desk(ProjectStore store, string projectName,
                           IReadOnlyList<ClashGroup>? board = null, bool importing = false,
-                          FindingStore? findings = null, Session? session = null)
+                          FindingStore? findings = null, Session? session = null,
+                          IReadOnlyList<string>? returned = null)
             {
                 _store = store;
                 _projectName = projectName;
@@ -199,10 +221,27 @@ namespace CamelWorks.UI.Views
 
                 Load();
 
+                if (returned != null) _returns.AddRange(returned);
+
+                // Read before the surface is built: the import mode has one shape with packs and
+                // another without, and it is built from whichever is true at that moment.
+                if (_returns.Count > 0)
+                {
+                    try
+                    {
+                        Receive(null);
+                    }
+                    catch (Exception e)
+                    {
+                        _back.Children.Add(Ui.Problem(
+                            "These packs could not be read: " + Ui.Describe(e)));
+                    }
+                }
+
                 View = Build();
             }
 
-            /// <summary>Which half is on show when the desk opens.</summary>
+            /// <summary>Which mode is on show when the desk opens.</summary>
             private readonly bool _importing;
 
             internal UIElement View { get; }
@@ -217,7 +256,7 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// Every clash on the board, flattened once.
             ///
-            /// Drawing the export half asks for this a dozen times over — the facets, the values
+            /// Drawing the export mode asks for this a dozen times over — the facets, the values
             /// behind each filter chip, the counts, the selection — and each ask walked every
             /// group of an eighteen-thousand-result board and built a new list.
             /// </summary>
@@ -259,26 +298,141 @@ namespace CamelWorks.UI.Views
 
                 var first = _importing ? _in : _out;
 
-                if (first != null) _half.Content = Ui.Loose(first);
+                if (first != null) _page.Content = Ui.Loose(first);
 
-                return _half;
+                return _page;
             }
 
-            /// <summary>Put the chosen half on show, detaching the other first.</summary>
-            /// <param name="half">Which half was pressed.</param>
-            private void Half(string half)
+            /// <summary>Put the chosen mode on show, detaching the other first.</summary>
+            /// <param name="mode">Which mode was pressed.</param>
+            private void Mode(string mode)
             {
-                // Detached before the other goes in, or the half being left is still claimed by
+                // Detached before the other goes in, or the mode being left is still claimed by
                 // this holder when it is handed back to it.
-                var wanted = half == TakeBack ? _in : _out;
+                var wanted = mode == TakeBack ? _in : _out;
 
-                _half.Content = null;
+                _page.Content = null;
 
-                if (wanted != null) _half.Content = Ui.Loose(wanted);
+                if (wanted != null) _page.Content = Ui.Loose(wanted);
             }
 
-            private UIElement Switch(string here) =>
-                Ui.Segmented(new[] { SendOut, TakeBack }, here, Half);
+            /// <summary>
+            /// The Export/Import switch, on its own line above the controls of the mode showing.
+            ///
+            /// The two are separate modes with separate controls, so the switch stands alone
+            /// rather than sitting in the strip as one field among the settings.
+            /// </summary>
+            /// <param name="here">The mode on show.</param>
+            /// <param name="aside">What belongs on the right of the same line, or null.</param>
+            private UIElement Modes(string here, UIElement? aside)
+            {
+                var row = new DockPanel
+                {
+                    LastChildFill = false,
+                    Margin = new Thickness(0, 0, 0, 10),
+                };
+
+                var tabs = Ui.Segmented(new[] { SendOut, TakeBack }, here, Mode);
+
+                DockPanel.SetDock(tabs, Dock.Left);
+                row.Children.Add(tabs);
+
+                if (aside != null)
+                {
+                    DockPanel.SetDock(aside, Dock.Right);
+                    row.Children.Add(aside);
+                }
+
+                return row;
+            }
+
+            /// <summary>
+            /// A heading over a group of strip fields, or over a group in a settings window.
+            ///
+            /// Local rather than <see cref="Bench.Group"/> and <see cref="Ui.Eyebrow"/>: both draw
+            /// their label upper-cased, and headings on this screen are sentence case.
+            /// </summary>
+            /// <param name="text">The heading.</param>
+            private static TextBlock Heading(string text) =>
+                new TextBlock
+                {
+                    Text = text,
+                    FontWeight = FontWeights.SemiBold,
+                    Margin = new Thickness(0, 0, 0, 4),
+                }.Wearing("Body");
+
+            /// <summary>
+            /// A labelled group of fields, laid out left to right.
+            /// </summary>
+            /// <param name="label">What the fields have in common.</param>
+            /// <param name="fields">The fields.</param>
+            private static UIElement Grouped(string label, params UIElement?[] fields)
+            {
+                var row = new WrapPanel();
+
+                foreach (var field in fields)
+                {
+                    if (field == null) continue;
+
+                    if (field is FrameworkElement element)
+                        element.Margin = new Thickness(0, 0, 14, 0);
+
+                    row.Children.Add(Ui.Loose(field));
+                }
+
+                var stack = new StackPanel { Margin = new Thickness(0, 0, 28, 0) };
+
+                stack.Children.Add(Heading(label));
+                stack.Children.Add(row);
+
+                return stack;
+            }
+
+            /// <summary>
+            /// A pane's heading and its counts, for the "say" slot of <see cref="Bench.Pane"/>.
+            ///
+            /// The pane's own label slot is drawn upper-cased, so it is left empty and the
+            /// heading is drawn here in sentence case.
+            /// </summary>
+            /// <param name="title">The pane's name.</param>
+            /// <param name="counts">The live line the screen keeps and redraws.</param>
+            private static UIElement PaneHead(string title, Panel counts)
+            {
+                var row = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+
+                row.Children.Add(new TextBlock
+                {
+                    Text = title,
+                    FontWeight = FontWeights.SemiBold,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 10, 0),
+                }.Wearing("Body"));
+
+                counts.VerticalAlignment = VerticalAlignment.Center;
+
+                row.Children.Add(Ui.Loose(counts));
+
+                return row;
+            }
+
+            /// <summary>
+            /// Hold a pane's one card at the top of it.
+            ///
+            /// A pane body is a <see cref="DockPanel"/> whose last child fills, so an empty state
+            /// dropped into an otherwise empty pane would be stretched down the whole of it.
+            /// </summary>
+            /// <param name="card">The card.</param>
+            private static UIElement Topped(UIElement card)
+            {
+                if (card is FrameworkElement element)
+                    element.VerticalAlignment = VerticalAlignment.Top;
+
+                return card;
+            }
 
             // -------------------------------------------------------------------------------
             // -------------------------------------------------------------------------------
@@ -295,38 +449,69 @@ namespace CamelWorks.UI.Views
             /// to and the storey it stands on. Both are tables, so both sort by heading, pick by
             /// click and shift-click, and act on the count.
             ///
-            /// The strip holds what is changed while working - the profile, the search, the split.
-            /// Everything set up once is behind the two symbols on the action row.
+            /// The strip holds two groups: what goes out, and how the packs are written.
+            /// Everything set up once is behind the two buttons on the action row.
             /// </summary>
             private UIElement SendingOut()
             {
-                var strip = Ui.Across(
-                    Ui.Field("Half", Switch(SendOut)),
-                    Ui.Field("Check", Selected()),
-                    Ui.Field("Export profile", Saved()),
-                    Ui.Field("Find a test", _find),
-                    Ui.Field("One file per", Splitting()),
-                    Ui.Field("Order inside each file", Sorting()));
+                // A wrap panel of the group's own, not Ui.Across: that sets a six-pixel margin on
+                // everything it is given, which is the gutter between two fields and too little
+                // between two groups.
+                var groups = new WrapPanel();
 
-                var foot = new WrapPanel();
+                groups.Children.Add(Grouped("What goes out",
+                                            Ui.Field("Kind", Kind()),
+                                            Ui.Field("Find a test", _find)));
+
+                groups.Children.Add(Grouped("How the packs are written",
+                                            Ui.Field("Packs", Splitting()),
+                                            Ui.Field("Order in each pack", Sorting())));
+
+                var strip = Ui.Stack(Modes(SendOut, Setup()), groups);
+
+                var foot = new DockPanel { LastChildFill = false };
 
                 // Labelled. Two symbols beside a primary say nothing about what they open, and
                 // the funnel is the same picture the results filter uses a few inches away.
-                var scope = Ui.Quiet("Export scope\u2026", () => Configure("in"));
-                var saved = Ui.Quiet("Save as a profile\u2026", () => Configure("profile"));
+                var scope = Ui.Quiet("Export scope…", () => Configure("in"));
+                var saved = Ui.Quiet("Save as a profile…", () => Configure("profile"));
 
-                scope.ToolTip = "Which statuses go out, and whether folders travel with them.";
+                scope.ToolTip = "Which statuses go out, what each topic carries, and whether "
+                              + "folders travel with them.";
                 saved.ToolTip = "Keep these settings under a name, so the next round is one press.";
                 scope.VerticalAlignment = VerticalAlignment.Center;
                 saved.VerticalAlignment = VerticalAlignment.Center;
                 saved.Margin = new Thickness(6, 0, 0, 0);
 
+                DockPanel.SetDock(scope, Dock.Left);
+                DockPanel.SetDock(saved, Dock.Left);
                 foot.Children.Add(scope);
                 foot.Children.Add(saved);
-                foot.Children.Add(new Border { Width = 12 });
 
-                foot.Children.Add(Ui.Commit("Preview the export", "Write", "pack",
-                                            Rehearse, Publish));
+                // The write is the primary and it sits bottom right. The preview is the same run
+                // without the files, so it is the secondary beside it rather than the only action
+                // on the screen.
+                var write = Ui.Runner("Write the packs", _sending, Publish);
+                var preview = Ui.Runner("Preview the export", _sending,
+                                        job => Rehearse(job, _sending), primary: false);
+
+                var acts = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+
+                // Both flat against the footer's own padding, or the runner's top gap would set
+                // the two buttons eight pixels apart vertically.
+                preview.Margin = new Thickness(0, 0, 8, 0);
+                write.Margin = new Thickness(0);
+
+                acts.Children.Add(preview);
+                acts.Children.Add(write);
+
+                DockPanel.SetDock(acts, Dock.Right);
+                foot.Children.Add(acts);
 
                 // Live, but not per keystroke. Every letter rebuilds the tests table, which on a
                 // job of any size is a tenth of a second between one letter and the next.
@@ -344,37 +529,82 @@ namespace CamelWorks.UI.Views
                 DrawTests();
                 DrawResults();
 
-                // A pane's label and its "say" share one clipped row, so the say is one short
-                // line and everything else - the filter bar, the picking bar - is in the body
-                // with the table it acts on.
+                // The pane label slot is drawn upper-cased, so both panes are headed through the
+                // "say" slot instead and the label is left empty.
+                // The pane bodies are fields this screen redraws in place, and a pane puts the
+                // body it is given inside a border of its own. Loosed on the way in, or the
+                // second build hands one element to a second parent.
                 return Bench.Split(strip,
-                                   Bench.Pane("Tests", _testsSaid, _tests, null, scrolls: false),
-                                   Bench.Pane("Results", _resultsSaid, _results, null,
-                                              scrolls: false),
+                                   Bench.Pane(string.Empty, PaneHead("Tests", _testsSaid),
+                                              Ui.Loose(_tests), null, scrolls: false),
+                                   Bench.Pane(string.Empty, PaneHead("Results", _resultsSaid),
+                                              Ui.Loose(_results), null, scrolls: false),
                                    Ui.Stack(foot, _sending),
                                    leftWidth: 460);
             }
 
             /// <summary>
-            /// Which check is being exchanged, and the way to change it.
+            /// Which kind of test is being exchanged, and where it is chosen.
             ///
-            /// Read-only here on purpose: see <see cref="CheckKey"/>.
+            /// Read-only here on purpose: see <see cref="CheckKey"/>. Drawn as the value it is
+            /// rather than as a button, with the way to change it beside it.
             /// </summary>
-            private UIElement Selected()
+            private UIElement Kind()
             {
-                var named = Named(CheckKey);
+                var row = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
 
-                var link = Ui.Quiet(named + " \u2014 change on Manage",
-                                    () => Ui.Told(Shell.AppWindow.Show("clash", "manage")));
+                var named = new TextBlock
+                {
+                    Text = Named(CheckKey),
+                    VerticalAlignment = VerticalAlignment.Center,
+                }.Wearing("Body");
 
-                link.ToolTip = "The Manage tab holds the check. This tab exchanges whatever it "
-                             + "has selected, so the two cannot disagree.";
+                var link = Ui.Link("Change on Manage",
+                                   () => Ui.Told(Shell.AppWindow.Show("clash", "manage")));
 
-                return link;
+                link.ToolTip = "The Manage tab holds the selected kind. This tab exchanges "
+                             + "whatever it has selected, so the two cannot disagree.";
+                link.VerticalAlignment = VerticalAlignment.Center;
+                link.Margin = new Thickness(10, 0, 0, 0);
+
+                row.Children.Add(named);
+                row.Children.Add(link);
+
+                return row;
             }
 
             /// <summary>
-            /// What a check is called on screen.
+            /// The saved setup, beside the mode switch.
+            ///
+            /// A profile restores the whole export - tests, filter, order and split - so it sits
+            /// with the page rather than in either group of settings it overwrites.
+            /// </summary>
+            private UIElement Setup()
+            {
+                var row = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+
+                row.Children.Add(new TextBlock
+                {
+                    Text = "Saved setup",
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 8, 0),
+                }.Wearing("Lbl"));
+
+                row.Children.Add(Saved());
+
+                return row;
+            }
+
+            /// <summary>
+            /// What a kind of test is called on screen.
             ///
             /// The tab holds a check key and not the check itself — the check over a document is
             /// built by the Manage tab and this desk draws without one — so the key is worded here
@@ -386,12 +616,12 @@ namespace CamelWorks.UI.Views
             {
                 switch (checkKey)
                 {
-                    case FindingSource.Clash: return "Clash detection";
+                    case FindingSource.Clash: return "Clash";
                     case FindingSource.Headroom: return "Clearance";
                     case FindingSource.SetDrift: return "Set drift";
                     case FindingSource.FallHazard: return "Fall hazard";
                     case FindingSource.Ids: return "IDS";
-                    default: return string.IsNullOrWhiteSpace(checkKey) ? "Clash detection" : checkKey;
+                    default: return string.IsNullOrWhiteSpace(checkKey) ? "Clash" : checkKey;
                 }
             }
 
@@ -498,8 +728,8 @@ namespace CamelWorks.UI.Views
 
                 if (all.Count == 0)
                 {
-                    _tests.Children.Add(Ui.Empty("No tests on the board.",
-                                                 "Run them on the Manage tab first."));
+                    _tests.Children.Add(Topped(Ui.Empty("No tests on the board.",
+                                                        "Run them on the Manage tab first.")));
 
                     return;
                 }
@@ -527,13 +757,23 @@ namespace CamelWorks.UI.Views
 
                 Ui.SetFills(_tests, true);
 
-                _tests.Children.Add(Ui.Loose(table));
-
-                _tests.Children.Add(Ui.Picking(table,
-                    new Ui.OnPicked("Include these {n}", (picked, said) =>
+                // Captions read as instructions rather than as statements: with nothing picked,
+                // "Include these 0" reads as a count of something.
+                var verbs = Ui.Picking(table,
+                    new Ui.OnPicked("Include {n} tests", (picked, said) =>
                         Included(picked, said, on: true), primary: true),
-                    new Ui.OnPicked("Exclude these {n}", (picked, said) =>
-                        Included(picked, said, on: false))));
+                    new Ui.OnPicked("Exclude {n} tests", (picked, said) =>
+                        Included(picked, said, on: false)));
+
+                // The verb bar takes its line at the bottom of the pane and the table fills what
+                // is left, so a table longer than the pane scrolls instead of being cut off at
+                // the bottom edge. Ui.Picking returns the table stacked above its own bar, and a
+                // stack gives the table the height it asks for, which is the whole of it - so the
+                // table is taken back out of that stack and docked as the filling child.
+                DockPanel.SetDock(verbs, Dock.Bottom);
+
+                _tests.Children.Add(verbs);
+                _tests.Children.Add(Ui.Loose(table));
 
                 DrawTestsSaid();
             }
@@ -548,10 +788,20 @@ namespace CamelWorks.UI.Views
                 var all = Tests();
                 var chosen = all.Count(one => Sending(one.Name));
 
+                // What is going, once. How many rows the table holds and how many are picked is
+                // the verb bar's line, a few pixels below this one.
+                //
+                // The search is counted too, or the line says six tests over a table showing two.
+                var found = _search.Length == 0
+                    ? all.Count
+                    : all.Count(one => Holds(one.Name) || Holds(one.Folder));
+
                 _testsSaid.Children.Add(Ui.Small(
-                    chosen + " of " + all.Count + " included · "
-                    + Ui.Count(all.Where(one => Sending(one.Name)).Sum(one => one.Count),
-                               "result")));
+                    chosen + " of " + Ui.Count(all.Count, "test") + " included"
+                    + (_search.Length == 0
+                        ? string.Empty
+                        : " · " + found.ToString(CultureInfo.InvariantCulture)
+                          + " match the search")));
             }
 
             /// <summary>Include or exclude the tests picked in the table.</summary>
@@ -608,16 +858,19 @@ namespace CamelWorks.UI.Views
                 _results.Children.Clear();
                 _resultsSaid.Children.Clear();
 
-                _results.Children.Add(Filters());
+                var filters = Filters();
+
+                DockPanel.SetDock(filters, Dock.Top);
+                _results.Children.Add(filters);
 
                 var scope = Scope();
 
                 if (scope.Count == 0)
                 {
-                    _results.Children.Add(Ui.Empty("Nothing in scope.",
+                    _results.Children.Add(Topped(Ui.Empty("Nothing in scope.",
                         Tests().Any(one => Sending(one.Name))
                             ? "No result of the included tests meets the filter."
-                            : "No test is included."));
+                            : "No test is included.")));
 
                     return;
                 }
@@ -637,10 +890,8 @@ namespace CamelWorks.UI.Views
 
                 Ui.SetFills(_results, true);
 
-                _results.Children.Add(Ui.Loose(table));
-
-                _results.Children.Add(Ui.Picking(table,
-                    new Ui.OnPicked("Leave out these {n}", (picked, said) =>
+                var verbs = Ui.Picking(table,
+                    new Ui.OnPicked("Leave out {n} clashes", (picked, said) =>
                     {
                         var held = picked.OfType<ClashItem>().ToList();
 
@@ -656,27 +907,32 @@ namespace CamelWorks.UI.Views
                             Ui.Count(held.Count, "clash") + " left out of the packs."));
 
                         Redraw();
-                    })));
+                    }));
+
+                DockPanel.SetDock(verbs, Dock.Bottom);
+
+                if (_dropped.Count > 0)
+                {
+                    var dropped = Ui.Across(
+                        Ui.Small(Ui.Count(_dropped.Count, "clash") + " left out by hand."),
+                        Ui.Link("Put them back",
+                                () => Ui.Safely(() => { _dropped.Clear(); Rebuild(); })));
+
+                    // Docked first, so it lands under the verb bar rather than over it.
+                    DockPanel.SetDock(dropped, Dock.Bottom);
+                    _results.Children.Add(dropped);
+                }
+
+                _results.Children.Add(verbs);
+
+                // Last, and taken back out of the stack Ui.Picking put it in, so the table fills
+                // what the docked rows left and scrolls in it.
+                _results.Children.Add(Ui.Loose(table));
 
                 var rounds = Rounds(scope);
 
                 _resultsSaid.Children.Add(Ui.Small(
-                    scope.Count.ToString("N0", CultureInfo.InvariantCulture) + " of "
-                    + Ui.Count(Results().Count, "result") + " · "
-                    + Ui.Count(rounds.Count, "pack")));
-
-                // What the pack carries beyond the list. The writer puts a camera and a snapshot
-                // on every topic and never said so, which is why the export read as a file of
-                // titles a reviewer would have to find in the model themselves.
-                _resultsSaid.Children.Add(Ui.Small(
-                    "Each clash goes out as a topic with a viewpoint: a camera on the clash "
-                    + "point, both elements highlighted, and a snapshot."));
-
-                if (_dropped.Count > 0)
-                    _results.Children.Add(Ui.Across(
-                        Ui.Small(Ui.Count(_dropped.Count, "clash") + " left out by hand."),
-                        Ui.Link("Put them back",
-                                () => Ui.Safely(() => { _dropped.Clear(); Rebuild(); }))));
+                    Ui.Count(scope.Count, "result") + " in " + Ui.Count(rounds.Count, "pack")));
             }
 
             /// <summary>
@@ -721,13 +977,26 @@ namespace CamelWorks.UI.Views
 
                 foreach (var facet in facets) bar.Children.Add(Chip(facet));
 
-                var add = Ui.Link("and one more…", () => { });
+                // The rest of the parameters, counted and named. "and one more" said neither how
+                // many there were nor what they were about.
+                var rest = ClashFacets.Every(Results(), Storeys(), Issued())
+                    .Where(one => !facets.Any(shown => string.Equals(shown.Key, one.Key,
+                                                                     StringComparison.OrdinalIgnoreCase)))
+                    .ToList();
 
-                add.Click += (s, e) => Ui.Safely(() => Parts.PopMenu(add, Facets()));
-                add.Margin = new Thickness(4, 2, 0, 2);
-                add.VerticalAlignment = VerticalAlignment.Center;
+                if (rest.Count > 0)
+                {
+                    var add = Ui.Link("Add a filter (" + rest.Count.ToString(CultureInfo.InvariantCulture)
+                                      + " more)", () => { });
 
-                bar.Children.Add(add);
+                    add.Click += (s, e) => Ui.Safely(() => Parts.PopMenu(add, Facets()));
+                    add.Margin = new Thickness(4, 2, 0, 2);
+                    add.VerticalAlignment = VerticalAlignment.Center;
+                    add.ToolTip = "Filter on: " + string.Join(", ", rest.Take(12).Select(one => one.Title))
+                                + (rest.Count > 12 ? ", and more" : string.Empty) + ".";
+
+                    bar.Children.Add(add);
+                }
 
                 // What the filters are keeping out. A bar of chips says what is let through and
                 // never how much of the board that leaves behind, which is the number a
@@ -890,7 +1159,8 @@ namespace CamelWorks.UI.Views
                 }
 
                 var page = new Ui.Page(facet.Title,
-                    () => Bench.Group(facet.Title + " values to include", box));
+                    () => Bench.Group(string.Empty,
+                                      Heading(facet.Title + " values to include"), box));
 
                 Ui.Configure(facet.Title, () =>
                 {
@@ -910,63 +1180,68 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Which parameter the run is split by, so one press writes a pack each.
+            /// How the results going out are divided into packs.
             ///
-            /// A chooser rather than a link, and named for what it does to the output: "one file
-            /// per assigned to" writes the mechanical contractor's clashes into one pack and the
-            /// structural engineer's into another. "One pack for everything" does not split.
+            /// Named for the file it produces: "One pack per assigned to" writes the mechanical
+            /// contractor's clashes into one pack and the structural engineer's into another.
             /// </summary>
             private UIElement Splitting()
             {
                 var offered = new List<string> { Whole };
 
-                offered.AddRange(ClashFacets.Every(Results(), Storeys(), Issued()).Select(one => one.Title));
+                offered.AddRange(ClashFacets.Every(Results(), Storeys(), Issued())
+                    .Select(one => PerPack + Lowered(one.Title)));
 
-                var here = _profile.SplitBy == null ? Whole : Titled(_profile.SplitBy);
+                var here = _profile.SplitBy == null
+                    ? Whole
+                    : PerPack + Lowered(Titled(_profile.SplitBy));
 
                 if (!offered.Contains(here)) offered.Add(here);
 
                 var box = Ui.Choice(offered, here, said =>
                 {
-                    _profile.SplitBy = said == Whole ? null : Keyed(said);
+                    _profile.SplitBy = said == Whole ? null : Keyed(Stripped(said, PerPack));
                     Rebuild();
-                }, 170);
+                }, 210);
 
-                box.ToolTip = "Writes one pack per value, each holding only that party's "
-                              + "clashes.";
+                box.ToolTip = "One pack per value of the parameter chosen, each holding only that "
+                              + "party's clashes.";
 
                 return box;
             }
 
-            /// <summary>Which parameter the results are written in the order of.</summary>
+            /// <summary>Which parameter the clashes inside each pack are ordered by.</summary>
             private UIElement Sorting()
             {
                 var offered = new List<string> { AsFound };
 
-                offered.AddRange(ClashFacets.Every(Results(), Storeys(), Issued()).Select(one => one.Title));
+                offered.AddRange(ClashFacets.Every(Results(), Storeys(), Issued())
+                    .Select(one => By + Lowered(one.Title)));
 
-                var here = _profile.Pick.Sort == null ? AsFound : Titled(_profile.Pick.Sort);
+                var here = _profile.Pick.Sort == null ? AsFound : By + Lowered(Titled(_profile.Pick.Sort));
 
                 if (!offered.Contains(here)) offered.Add(here);
 
                 var box = Ui.Choice(offered, here, said =>
                 {
-                    _profile.Pick.Sort = said == AsFound ? null : Keyed(said);
+                    _profile.Pick.Sort = said == AsFound ? null : Keyed(Stripped(said, By));
                     Rebuild();
-                }, 150);
+                }, 190);
 
                 box.ToolTip = "The order the clashes are written in, which is not the order the "
                               + "table happens to be sorted in.";
 
+                // Only where there is an order to reverse. Left in place it was a symbol that was
+                // permanently unavailable on the setting the screen opens on.
+                if (_profile.Pick.Sort == null) return box;
+
                 var way = Ui.Icon(_profile.Pick.Descending ? Glyphs.Down : Glyphs.Up,
-                                  _profile.Pick.Descending ? "Largest first" : "Smallest first",
+                                  _profile.Pick.Descending ? "Descending" : "Ascending",
                                   () => Ui.Safely(() =>
                                   {
                                       _profile.Pick.Descending = !_profile.Pick.Descending;
                                       Rebuild();
                                   }));
-
-                way.IsEnabled = _profile.Pick.Sort != null;
 
                 return Ui.Across(box, way);
             }
@@ -974,8 +1249,29 @@ namespace CamelWorks.UI.Views
             /// <summary>What the split chooser calls writing everything into one pack.</summary>
             private const string Whole = "One pack for everything";
 
-            /// <summary>What the order chooser calls leaving the results as they came.</summary>
-            private const string AsFound = "As they came";
+            /// <summary>What the split chooser puts before a parameter's name.</summary>
+            private const string PerPack = "One pack per ";
+
+            /// <summary>What the order chooser calls the order the results came off the board in.</summary>
+            private const string AsFound = "As on the board";
+
+            /// <summary>What the order chooser puts before a parameter's name.</summary>
+            private const string By = "By ";
+
+            /// <summary>A parameter's title, as it reads inside a phrase.</summary>
+            /// <param name="title">The title.</param>
+            private static string Lowered(string title) =>
+                string.IsNullOrEmpty(title)
+                    ? title
+                    : char.ToLowerInvariant(title[0]) + title.Substring(1);
+
+            /// <summary>The parameter's title out of a chooser's phrase.</summary>
+            /// <param name="said">What the chooser holds.</param>
+            /// <param name="prefix">The phrase's leading words.</param>
+            private static string Stripped(string said, string prefix) =>
+                said.StartsWith(prefix, StringComparison.Ordinal)
+                    ? said.Substring(prefix.Length)
+                    : said;
 
             /// <summary>The saved key behind a parameter's on-screen title.</summary>
             /// <param name="title">What it is called on screen.</param>
@@ -984,16 +1280,16 @@ namespace CamelWorks.UI.Views
                     .FirstOrDefault(one => string.Equals(one.Title, title,
                                                          StringComparison.OrdinalIgnoreCase))?.Key;
 
-            /// <summary>Draw the whole half again, for the controls captioned by their own value.</summary>
+            /// <summary>Draw the export mode again, for the controls captioned by their own value.</summary>
             private void Rebuild()
             {
                 _out = SendingOut();
 
-                if (ReferenceEquals(_half.Content, _in)) return;
+                if (ReferenceEquals(_page.Content, _in)) return;
 
-                _half.Content = null;
+                _page.Content = null;
 
-                if (_out != null) _half.Content = Ui.Loose(_out);
+                if (_out != null) _page.Content = Ui.Loose(_out);
             }
 
             private string Titled(string? key) =>
@@ -1009,14 +1305,14 @@ namespace CamelWorks.UI.Views
             /// <summary>Work out the packs without writing any of them.</summary>
             /// <param name="job">The run, for its progress line.</param>
             /// <param name="into">Where the detail is drawn.</param>
-            private int Rehearse(Job job, Panel into)
+            private void Rehearse(Job job, Panel into)
             {
                 var going = Going();
 
                 if (going.Count == 0)
                 {
                     into.Children.Add(Ui.Problem("No clash meets the filter."));
-                    return 0;
+                    return;
                 }
 
                 var rounds = Rounds(going);
@@ -1049,8 +1345,6 @@ namespace CamelWorks.UI.Views
                 into.Children.Add(Ui.Small(Framing(going.Count)));
 
                 _ = job;
-
-                return rounds.Count;
             }
 
             /// <summary>
@@ -1241,8 +1535,6 @@ namespace CamelWorks.UI.Views
                 var when = DateTime.UtcNow.Ticks;
                 var wrote = 0;
 
-                _sending.Children.Clear();
-
                 // The GlobalIds a receiving tool selects by and the route to each element, read
                 // once for everything going out rather than once per pack: the first read after a
                 // model change pays for the federation index, and a split by assignee writes
@@ -1331,61 +1623,123 @@ namespace CamelWorks.UI.Views
             // -------------------------------------------------------------------------------
 
             /// <summary>
-            /// The same anatomy as the export half, because it is the same shape of job.
+            /// The same anatomy as the export mode once there are packs to work on.
             ///
             /// Left is where the answers came from - one pack per party - and right is what they
             /// say about the board. A pack can be taken out and the rows redraw without it, which
             /// is the question a coordinator has when one trade's file turns out to be last week's.
             ///
+            /// With nothing chosen there is nothing for two panes to hold, so the mode opens as
+            /// one statement and the action that ends it.
+            ///
             /// Nothing is applied by reading. The right-hand table is what would happen; the
-            /// action row is what does it.
+            /// footer action is what does it.
             /// </summary>
             private UIElement TakingBack()
             {
-                var reading = Ui.Runner("Read the packs", _back, Receive, primary: false);
+                // The primary of the mode, bottom right and always drawn as a button. Off until
+                // there is something to apply, and drawn at the secondary weight while it is off:
+                // the primary style paints no plate and no border when it is disabled.
+                var applying = Ui.RunParts("Apply to the board", _applied, Apply);
 
-                reading.VerticalAlignment = VerticalAlignment.Bottom;
+                _apply = applying.Buttons.Children.OfType<System.Windows.Controls.Button>()
+                                 .FirstOrDefault();
 
-                var strip = Ui.Across(
-                    Ui.Field("Half", Switch(TakeBack)),
-                    Ui.Field("Returned packs", Ui.Quiet("Choose files…", Chosen)),
-                    Ui.Field("Show", Showing()),
-                    reading);
+                if (_returns.Count == 0)
+                {
+                    _paned = false;
 
-                var foot = new WrapPanel();
+                    DrawReading();
 
-                // Off until there is something to apply. A primary that is always live on a
-                // screen whose left half is empty is a press that does nothing and says nothing.
-                _apply = Ui.Runner("Apply to the board", _applied, Apply);
-                _apply.IsEnabled = false;
-                _apply.ToolTip = "Read the returned packs first.";
+                    var alone = Ui.Stack(
+                        Modes(TakeBack, null),
+                        Ui.Empty("No packs chosen.",
+                                 "Choose the .bcfzip files the parties returned. Each pack is "
+                                 + "read as it is chosen.",
+                                 "Choose returned packs…",
+                                 () => Ui.Safely(() => { if (Choosing()) Receive(null); })),
+                        _back);
 
-                foot.Children.Add(Ui.Loose(_apply));
+                    return Bench.Surface(null, Ui.Stack(applying.Buttons, applying.Progress,
+                                                        _applied), alone);
+                }
+
+                _paned = true;
+
+                // One press: the packs are read as they are chosen. Choosing and then reading
+                // were two buttons whose order had to be learned.
+                var choose = Ui.Runner("Choose more packs…", _back,
+                                       job => { if (Choosing()) Receive(job); }, primary: false);
+
+                choose.Margin = new Thickness(0);
+
+                var strip = Ui.Stack(
+                    Modes(TakeBack, null),
+                    Ui.Across(choose, _show));
+
+                var foot = new DockPanel { LastChildFill = false };
+
+                var acts = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+
+                acts.Children.Add(Ui.Loose(applying.Buttons));
+
+                DockPanel.SetDock(acts, Dock.Right);
+                foot.Children.Add(acts);
 
                 DrawPacks();
                 DrawReading();
 
+                // The pane label slot is drawn upper-cased, so both panes are headed through the
+                // "say" slot instead and the label is left empty.
                 return Bench.Split(strip,
-                                   Bench.Pane("Packs", _packsSaid, _files, null, scrolls: false),
-                                   Bench.Pane("Returned clashes", _rowsSaid, _rows, null,
-                                              scrolls: false),
-                                   Ui.Stack(foot, _back, _applied),
+                                   Bench.Pane(string.Empty, PaneHead("Packs", _packsSaid),
+                                              Ui.Loose(_files), null, scrolls: false),
+                                   Bench.Pane(string.Empty,
+                                              PaneHead("Returned clashes", _rowsSaid),
+                                              Ui.Loose(_rows), null, scrolls: false),
+                                   Ui.Stack(foot, applying.Progress, _back, _applied),
                                    leftWidth: 400);
             }
 
-            /// <summary>Which returned rows are listed: all of them, or only what needs a person.</summary>
-            private UIElement Showing()
+            /// <summary>Draw the import mode again, for the states it has different shapes in.</summary>
+            private void Remade()
             {
+                _in = TakingBack();
+
+                if (ReferenceEquals(_page.Content, _out)) return;
+
+                _page.Content = null;
+
+                if (_in != null) _page.Content = Ui.Loose(_in);
+            }
+
+            /// <summary>
+            /// Which returned rows are listed: all of them, or only what needs a person.
+            ///
+            /// Drawn only once there are rows to narrow. A filter over an empty list is a control
+            /// that cannot do anything.
+            /// </summary>
+            private void DrawShowing()
+            {
+                _show.Content = null;
+
+                if (_reading == null || _reading.Rows.Count == 0) return;
+
                 var box = Ui.Choice(new[] { Everything, Changing, Conflicts }, _showing, said =>
                 {
                     _showing = said;
                     DrawReading();
-                }, 150);
+                }, 170);
 
                 box.ToolTip = "A pack of four hundred clashes usually holds a dozen answers. "
                               + "This is how to see only those.";
 
-                return box;
+                _show.Content = Ui.Field("Show", box);
             }
 
             /// <summary>Every returned row.</summary>
@@ -1398,11 +1752,12 @@ namespace CamelWorks.UI.Views
             private const string Conflicts = "Only the conflicts";
 
             /// <summary>Take several packs at once, which is how they arrive.</summary>
-            private void Chosen()
+            /// <returns>True when the list of packs changed and the packs need reading.</returns>
+            private bool Choosing()
             {
                 var picked = Ui.AskToOpenMany("Returned packs", ClashFile.Filter);
 
-                if (picked.Count == 0) return;
+                if (picked.Count == 0) return false;
 
                 foreach (var file in picked)
                     if (!_returns.Contains(file, StringComparer.OrdinalIgnoreCase))
@@ -1415,8 +1770,11 @@ namespace CamelWorks.UI.Views
 
                 _reading = null;
 
-                DrawPacks();
-                DrawReading();
+                // The mode has two shapes - nothing chosen, and packs to work on - so the first
+                // choice rebuilds it rather than filling panes that are not on screen.
+                if (!_paned) Remade();
+
+                return true;
             }
 
             /// <summary>
@@ -1438,14 +1796,9 @@ namespace CamelWorks.UI.Views
                 _files.Children.Clear();
                 _packsSaid.Children.Clear();
 
-                if (_returns.Count == 0)
-                {
-                    _files.Children.Add(Ui.Empty("No packs chosen.",
-                        "Choose the .bcfzip files the parties returned. The party is read from "
-                        + "the file name, and can be corrected on the row once they are listed."));
-
-                    return;
-                }
+                // Nothing chosen is drawn as one statement by the mode itself, not as an empty
+                // pane in a two-pane layout.
+                if (_returns.Count == 0) return;
 
                 var rows = _returns.Select(one =>
                 {
@@ -1476,10 +1829,8 @@ namespace CamelWorks.UI.Views
 
                 Ui.SetFills(_files, true);
 
-                _files.Children.Add(Ui.Loose(table));
-
-                _files.Children.Add(Ui.Picking(table,
-                    new Ui.OnPicked("Say who these {n} are from", (picked, said) =>
+                var verbs = Ui.Picking(table,
+                    new Ui.OnPicked("Name the party on {n} packs", (picked, said) =>
                     {
                         var held = picked.OfType<string>().ToList();
 
@@ -1503,15 +1854,11 @@ namespace CamelWorks.UI.Views
 
                             _reading = null;
 
-                            DrawPacks();
-                            DrawReading();
-
-                            _rowsSaid.Children.Add(Ui.Note(
-                                "Read the packs again to see them under the new name. What has "
-                                + "been decided is kept."));
+                            // Read again under the new name. What has been decided is put back.
+                            Receive(null);
                         }));
                     }, primary: true),
-                    new Ui.OnPicked("Take out these {n}", (picked, said) =>
+                    new Ui.OnPicked("Take out {n} packs", (picked, said) =>
                     {
                         var held = picked.OfType<string>().ToList();
 
@@ -1529,9 +1876,16 @@ namespace CamelWorks.UI.Views
 
                         _reading = null;
 
-                        DrawPacks();
-                        DrawReading();
-                    })));
+                        // Back to the one-statement shape when the last pack goes; otherwise the
+                        // rest are read again without it.
+                        if (_returns.Count == 0) Remade();
+                        else Receive(null);
+                    }));
+
+                DockPanel.SetDock(verbs, Dock.Bottom);
+
+                _files.Children.Add(verbs);
+                _files.Children.Add(Ui.Loose(table));
 
                 _packsSaid.Children.Add(Ui.Small(
                     _reading == null
@@ -1541,10 +1895,14 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>Read every pack chosen, and say what would happen.</summary>
-            /// <param name="job">The run.</param>
-            private void Receive(Job job)
+            /// <param name="job">The run, or null when the read follows an edit to the list.</param>
+            private void Receive(Job? job)
             {
                 var packs = new List<ExchangePack>();
+
+                // The runner clears its own output before the work; a read started by anything
+                // else has to clear it here, or two reads' messages stack up.
+                if (job == null) _back.Children.Clear();
 
                 foreach (var file in _returns)
                 {
@@ -1554,7 +1912,7 @@ namespace CamelWorks.UI.Views
                         return;
                     }
 
-                    job.Say("Reading " + Path.GetFileName(file) + "...");
+                    job?.Say("Reading " + Path.GetFileName(file) + "...");
 
                     byte[] bytes;
 
@@ -1577,13 +1935,7 @@ namespace CamelWorks.UI.Views
                                                ClashFile.Read(bytes), Path.GetFileName(file)));
                 }
 
-                if (packs.Count == 0)
-                {
-                    _back.Children.Add(Ui.Empty("No packs chosen.",
-                        "Choose the files the parties returned."));
-
-                    return;
-                }
+                if (packs.Count == 0) return;
 
                 _reading = ClashExchange.Read(packs, Results());
 
@@ -1646,24 +1998,30 @@ namespace CamelWorks.UI.Views
                 _rows.Children.Clear();
                 _rowsSaid.Children.Clear();
 
+                DrawShowing();
+
                 if (_apply != null)
                 {
                     var ready = _reading != null && _reading.Rows.Count > 0;
 
                     _apply.IsEnabled = ready;
+
+                    // The filled primary style paints no plate and no border while it is
+                    // disabled, so an unavailable primary reads as a grey word rather than as a
+                    // button. Worn at the secondary weight until there is something to apply.
+                    _apply.Wearing(ready ? "PrimaryBtn" : "Btn");
+
                     _apply.ToolTip = ready
                         ? null
                         : _reading == null
-                            ? "Read the returned packs first."
+                            ? "Choose the returned packs first."
                             : "These packs answer no clash on this board.";
                 }
 
                 if (_reading == null)
                 {
-                    _rows.Children.Add(Ui.Empty("Nothing read yet.",
-                        "Choose the returned packs on the left. Where two parties answered one "
-                        + "clash differently the row is marked as a conflict, and applied only "
-                        + "once a side is chosen."));
+                    _rows.Children.Add(Topped(Ui.Empty("Not read yet.",
+                        "Choose the returned packs on the left.")));
 
                     return;
                 }
@@ -1676,14 +2034,18 @@ namespace CamelWorks.UI.Views
 
                 if (showing.Count == 0)
                 {
-                    _rows.Children.Add(Ui.Empty(
+                    _rows.Children.Add(Topped(Ui.Empty(
                         _showing == Everything
                             ? "These packs answer no clash on this board."
                             : "Nothing here to decide.",
                         _showing == Everything
                             ? "The parties may have worked against an earlier model issue."
                             : "Every returned answer either agrees with the board or has been "
-                              + "decided."));
+                              + "decided.",
+                        _showing == Everything ? null : "Show everything returned",
+                        _showing == Everything
+                            ? (Action?)null
+                            : () => Ui.Safely(() => { _showing = Everything; DrawReading(); }))));
 
                     return;
                 }
@@ -1710,8 +2072,6 @@ namespace CamelWorks.UI.Views
                     ("Returned", 90), ("Parties", 130), ("Apply", 60)).Multi();
 
                 Ui.SetFills(_rows, true);
-
-                _rows.Children.Add(Ui.Loose(table));
 
                 var settling = Ui.Link("Resolve the conflict…", () => { });
 
@@ -1776,22 +2136,32 @@ namespace CamelWorks.UI.Views
                 says.Children.Add(settling);
                 says.Children.Add(noting);
 
-                _rows.Children.Add(Ui.Picking(table, says,
-                    new Ui.OnPicked("Accept these {n}", (picked, said) =>
+                var verbs = Ui.Picking(table, says,
+                    new Ui.OnPicked("Accept {n} answers", (picked, said) =>
                         Decide(picked, said, row =>
                         {
                             if (row.Settled != null) row.Take = true;
                         }), primary: true),
-                    new Ui.OnPicked("Reject these {n}", (picked, said) =>
-                        Decide(picked, said, row => row.Take = false))));
+                    new Ui.OnPicked("Reject {n} answers", (picked, said) =>
+                        Decide(picked, said, row => row.Take = false)));
+
+                var under = Ui.Stack();
 
                 if (_reading.Strangers.Count > 0)
-                    _rows.Children.Add(Ui.Note(
+                    under.Children.Add(Ui.Note(
                         Ui.Count(_reading.Strangers.Count, "result")
                         + " reference elements this federation does not hold, which usually "
                         + "means a party worked against an earlier model issue."));
 
-                DrawStatusMapping();
+                DrawStatusMapping(under);
+
+                // Docked first, so what the answers become lands under the verb bar.
+                DockPanel.SetDock(under, Dock.Bottom);
+                DockPanel.SetDock(verbs, Dock.Bottom);
+
+                _rows.Children.Add(under);
+                _rows.Children.Add(verbs);
+                _rows.Children.Add(Ui.Loose(table));
 
                 _rowsSaid.Children.Add(Ui.Small(
                     showing.Count.ToString("N0", CultureInfo.InvariantCulture) + " shown · "
@@ -1809,20 +2179,21 @@ namespace CamelWorks.UI.Views
             /// "Rejected" is ordinary. The mapping used to be applied silently, which left no way
             /// to see that forty answers had become Active.
             /// </summary>
-            private void DrawStatusMapping()
+            /// <param name="into">Where the two lines are drawn.</param>
+            private void DrawStatusMapping(Panel into)
             {
                 var words = _reading?.StatusWords;
 
                 if (words == null || words.Count == 0) return;
 
-                _rows.Children.Add(Ui.Small("Returned statuses become "
+                into.Children.Add(Ui.Small("Returned statuses become "
                     + string.Join(", ", words.Select(Said)) + "."));
 
                 var guessed = _reading!.Guessed;
 
                 if (guessed.Count == 0) return;
 
-                _rows.Children.Add(Ui.Note(
+                into.Children.Add(Ui.Note(
                     "This project's vocabulary does not hold "
                     + string.Join(", ", guessed.Select(one => "\"" + one.Word + "\"")) + ". "
                     + (guessed.Count == 1 ? "It is read" : "They are read")
@@ -1963,9 +2334,11 @@ namespace CamelWorks.UI.Views
             /// <param name="section">Which section the symbol names.</param>
             private void Configure(string section)
             {
+                // The group carries no label: the window is already titled with the section's
+                // name, and the group's own label is drawn upper-cased.
                 var page = section == "profile"
-                    ? new Ui.Page("Export profile", () => Bench.Group("Export profile", Profiles()))
-                    : new Ui.Page("Export scope", () => Bench.Group("Export scope", Statuses()));
+                    ? new Ui.Page("Export profile", () => Bench.Group(string.Empty, Profiles()))
+                    : new Ui.Page("Export scope", () => Bench.Group(string.Empty, Statuses()));
 
                 Ui.Configure(page.Name, Rebuild, page);
             }
@@ -1975,7 +2348,7 @@ namespace CamelWorks.UI.Views
             {
                 var box = Ui.Stack();
 
-                box.Children.Add(Ui.Eyebrow("Statuses"));
+                box.Children.Add(Heading("Statuses"));
 
                 foreach (FindingStatus status in Enum.GetValues(typeof(FindingStatus)))
                 {
@@ -1994,7 +2367,16 @@ namespace CamelWorks.UI.Views
                 box.Children.Add(Ui.Check("Keep the folder structure", _profile.KeepGroups,
                                           on => _profile.KeepGroups = on));
 
-                box.Children.Add(Ui.Eyebrow("The viewpoint on each topic"));
+                var head = Heading("What each topic carries");
+
+                head.Margin = new Thickness(0, 14, 0, 4);
+
+                box.Children.Add(head);
+
+                // What a topic holds beyond its title, said where the settings that decide it
+                // are rather than in the results pane's header.
+                box.Children.Add(Ui.Small(
+                    "Every clash goes out as a topic with a viewpoint on the clash point."));
 
                 // Said in words rather than as the enum's own names. "North" alone is read as
                 // both "looking north" and "the north elevation", which are opposite cameras.
