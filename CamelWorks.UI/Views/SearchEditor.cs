@@ -305,9 +305,10 @@ namespace CamelWorks.UI.Views
                     : "Both this and what is above it. Press to accept either.",
             };
 
-            // The skin has no chip style, so this borrows the two washes it does have. Both are
-            // theme tokens, so the chips follow a dark seat like everything else.
-            press.Wearing("QuietBtn");
+            // The skin has no chip style. QuietBtn draws its own ground and ignores a Background
+            // set on it, so the two read as the same grey box; Btn honours it, which is what makes
+            // "and" and "or" tell apart down a column without reading each word.
+            press.Wearing("Btn");
 
             press.Tint(System.Windows.Controls.Control.BackgroundProperty,
                        either ? "AccentWash" : "BlueBg");
