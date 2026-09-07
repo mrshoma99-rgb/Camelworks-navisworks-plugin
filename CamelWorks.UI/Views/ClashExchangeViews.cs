@@ -459,10 +459,13 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private UIElement Kind()
             {
-                var row = new StackPanel
+                // Wrapped, not a horizontal stack. The kind and the way to change it are wider
+                // than the column this field sits in, and a stack that cannot wrap ran the link
+                // into the box beside it with no gap between them.
+                var row = new WrapPanel
                 {
-                    Orientation = Orientation.Horizontal,
                     VerticalAlignment = VerticalAlignment.Center,
+                    MaxWidth = 170,
                 };
 
                 var named = new TextBlock
@@ -477,7 +480,7 @@ namespace CamelWorks.UI.Views
                 link.ToolTip = "The Manage tab holds the selected kind. This tab exchanges "
                              + "whatever it has selected, so the two cannot disagree.";
                 link.VerticalAlignment = VerticalAlignment.Center;
-                link.Margin = new Thickness(10, 0, 0, 0);
+                link.Margin = new Thickness(0, 2, 0, 0);
 
                 // The symbol first, then the word. The same mark this kind carries in the Create
                 // list and the check picker, so the three screens name the kind the same way.
@@ -1626,7 +1629,7 @@ namespace CamelWorks.UI.Views
                                    Bench.Pane("Returned clashes", Ui.Loose(_rowsSaid),
                                               Ui.Loose(_rows), null, scrolls: false),
                                    Ui.Stack(foot, applying.Progress, _back, _applied),
-                                   leftWidth: 400);
+                                   leftWidth: 520);
             }
 
             /// <summary>Draw the import mode again, for the states it has different shapes in.</summary>
@@ -1746,8 +1749,12 @@ namespace CamelWorks.UI.Views
                     };
                 }).ToList();
 
+                // The file name takes what is left and the three others ask for what their own
+                // values need. The counts used to ask for the width of their headings, which on a
+                // pane this wide left the file name — the one column somebody reads to tell two
+                // packs apart — showing three characters and an ellipsis.
                 var table = Ui.Table(rows,
-                    ("Party", 130), ("File", 0), ("In the pack", 84), ("On this board", 92))
+                    ("Party", 110), ("File", 0), ("In pack", 62), ("On board", 70))
                     .Multi();
 
                 Ui.SetFills(_files, true);
