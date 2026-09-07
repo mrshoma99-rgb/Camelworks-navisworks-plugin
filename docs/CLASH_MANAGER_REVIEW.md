@@ -13,6 +13,22 @@ The document is in four parts.
 3. **Faults of fact** — defects found that are not judgment calls.
 4. **The plan** — the order of work.
 
+## How this review failed once, and the rule that follows
+
+Exchange's Kind field was a read-only value with a link to another tab. The
+review saw the symptom — "users click it and the recovery is a link off the tab"
+— and prescribed a better-looking read-only field, because the source carried a
+comment giving a reason: two pickers over one choice can disagree. That reason
+was false. Two pickers over one value cannot disagree; what could was the copy
+the code kept, and the comment was a bug describing itself.
+
+**A comment explaining why something cannot be done is a claim to check, not a
+constraint to design within.** Where a screen refuses an edit, this review must
+establish whether the refusal comes from the host, the data, or only from the
+code that wrote the refusal. Two refusals in the Clash Manager are real — the
+host will not re-point an existing clash test's two sides, and a report needs an
+open model. Kind's was not, and this document accepted it.
+
 Throughout, `[DS]` marks a change made once in the token or primitive layer that
 changes many screens; `[SCREEN]` marks work on one surface. The standing
 instruction on this work is that a shared pattern is fixed in the design system,
