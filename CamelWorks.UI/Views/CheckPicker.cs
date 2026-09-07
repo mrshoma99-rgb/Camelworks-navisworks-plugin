@@ -64,16 +64,29 @@ namespace CamelWorks.UI.Views
                 // only by their names, which is what this menu is for.
                 var symbol = Ui.CheckSymbol(one.Symbol);
 
+                var here = current != null
+                           && string.Equals(current.Key, one.Key, StringComparison.OrdinalIgnoreCase);
+
                 if (!one.IsAvailable)
                 {
-                    lines.Add(Parts.Entry.Barred(said, symbol,
-                                                 one.Unavailable ?? "This seat cannot offer it."));
+                    // The reason, and what the count beside it is then counting.
+                    //
+                    // The two lines read as a contradiction otherwise: "Clash detection — 116
+                    // open clashes" over "This Navisworks edition has no clash engine" says the
+                    // seat both has and has not got clashes. It has the findings; what it has
+                    // not got is a way to produce more.
+                    var why = one.Unavailable ?? "This seat cannot offer it.";
+
+                    if (Open(one, register) > 0)
+                        why += " The results already on the board stay where they are; what "
+                             + "cannot be done is running it again.";
+
+                    if (here) why = "Showing. " + why;
+
+                    lines.Add(Parts.Entry.Barred(said, symbol, why));
 
                     continue;
                 }
-
-                var here = current != null
-                           && string.Equals(current.Key, one.Key, StringComparison.OrdinalIgnoreCase);
 
                 lines.Add(here
                     ? Parts.Entry.Saying(said, symbol, "already showing", null)
@@ -92,14 +105,20 @@ namespace CamelWorks.UI.Views
         /// <param name="register">The findings, or null when there are none to count.</param>
         private static string Said(ICheck check, FindingRegister? register)
         {
-            var open = register == null
-                ? 0
-                : register.From(check.Key)
-                          .Count(one => one.IsPresent && FindingStatusLattice.IsOpen(one.Status));
+            var open = Open(check, register);
 
             return open == 0
                 ? check.Name
                 : check.Name + " — " + Ui.Count(open, "open " + check.ResultWord);
         }
+
+        /// <summary>How many of a check's findings are still open.</summary>
+        /// <param name="check">The check.</param>
+        /// <param name="register">The findings, or null when there are none to count.</param>
+        private static int Open(ICheck check, FindingRegister? register) =>
+            register == null
+                ? 0
+                : register.From(check.Key)
+                          .Count(one => one.IsPresent && FindingStatusLattice.IsOpen(one.Status));
     }
 }
