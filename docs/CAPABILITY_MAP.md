@@ -135,6 +135,7 @@ surface each type will be reached through rather than a screen that exists today
 
 | Engine | Surface |
 |---|---|
+| `ClashSetName` | **Clash Manager ▸ Create ▸ a new clash test** — one saved set on a side of a test, by name and by the folders it sits in. A side holds several of them, because a side is a discipline and a discipline is rarely one set; the folders are carried because a name is not an identity, and a federation has "MEP" under three different levels. |
 | `ClashCheck` | **Clash Manager ▸ Manage** — clash detection as a check: the host's own tests read through the clash seam, with the host echo, grouping, runner, naming, geometry and properties a licensed seat offers. The host handle stays private to it; a finding carries its host test and result id as facts. |
 | `FileCheck` | **Clash Manager ▸ Manage** — clash results read out of a file rather than a document: a baseline somebody exported, or a markup sent back. The same check with five capabilities null, which is how a seat with no clash engine still takes part in a review. |
 | `CheckCatalogue` | **Manage ▸ the check picker** — every check the session can offer, registered once when the document opens. Adding a check is one class and one `Add` call: no enum member, no switch, no board edit. An empty catalogue is the ordinary state of a seat with nothing available, and the picker says so. |

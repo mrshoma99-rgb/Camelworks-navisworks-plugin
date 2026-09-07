@@ -2237,6 +2237,11 @@ namespace CamelWorks.Nav.Clash
         /// silently stops covering it. It is also what Clash Detective itself does when a set is
         /// picked by hand, so a test CamelWorks made and one made by hand behave the same way.
         /// </summary>
+        /// <summary>The sets a side names that this document has not got, in one phrase.</summary>
+        /// <param name="missing">What could not be found.</param>
+        private static string Missing(IReadOnlyList<string> missing) =>
+            "The sets " + string.Join(", ", missing);
+
         private bool Fill(ClashSelection selection, ClashSide side)
         {
             switch (side.Kind)
@@ -2264,19 +2269,44 @@ namespace CamelWorks.Nav.Clash
                 case ClashSideKind.Set:
                 {
                     var sets = _document.Document.SelectionSets;
-                    var found = Find(sets.Value, side.Name, side.Path);
+                    var sources = new SelectionSourceCollection();
+                    var missing = new List<string>();
 
-                    if (found == null)
+                    // One source per set, all on the one side. A side is a discipline and a
+                    // discipline is rarely one set; the host's selection takes several sources,
+                    // and each stays a source, so a search set on this side still re-resolves.
+                    foreach (var wanted in side.Named)
                     {
-                        LastProblem = string.IsNullOrEmpty(side.Path)
-                            ? "There is no set called \"" + side.Name + "\" in this document."
-                            : "There is no set called \"" + side.Name + "\" in \"" + side.Path
-                              + "\" any more. It has been renamed, moved or deleted.";
+                        var found = Find(sets.Value, wanted.Name, wanted.Path);
+
+                        if (found == null) { missing.Add(wanted.ToString()); continue; }
+
+                        sources.Add(sets.CreateSelectionSource(found));
+                    }
+
+                    if (sources.Count == 0)
+                    {
+                        LastProblem = missing.Count <= 1
+                            ? "There is no set called \"" + side.Name
+                              + "\" in this document any more. It has been renamed, moved or "
+                              + "deleted."
+                            : "None of the sets this side is built from are in this document any "
+                              + "more: " + string.Join(", ", missing) + ".";
 
                         return false;
                     }
 
-                    var sources = new SelectionSourceCollection { sets.CreateSelectionSource(found) };
+                    // Some resolved and some did not: a test between half of what was asked for
+                    // is a test that reports the wrong thing, so it is refused rather than made.
+                    if (missing.Count > 0)
+                    {
+                        LastProblem = missing.Count == 1
+                            ? "The set \"" + missing[0] + "\" is not in this document any more."
+                            : Missing(missing) + " are not in this document any more.";
+
+                        return false;
+                    }
+
                     selection.Selection.CopyFrom(sources);
                     return true;
                 }

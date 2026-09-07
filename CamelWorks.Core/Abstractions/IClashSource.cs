@@ -359,10 +359,10 @@ namespace CamelWorks.Core.Abstractions
     /// </summary>
     public sealed class ClashSide
     {
-        private ClashSide(ClashSideKind kind, string? name, IReadOnlyList<string> scopes,
-                          IReadOnlyList<ElementKey> keys, string? path = null)
+        private ClashSide(ClashSideKind kind, IReadOnlyList<ClashSetName> named,
+                          IReadOnlyList<string> scopes, IReadOnlyList<ElementKey> keys)
         {
-            Kind = kind; Name = name; Scopes = scopes; Keys = keys; Path = path;
+            Kind = kind; Named = named; Scopes = scopes; Keys = keys;
         }
 
         /// <summary>
@@ -373,13 +373,28 @@ namespace CamelWorks.Core.Abstractions
         /// one a depth-first walk reaches first, so a matrix pointed at four different disciplines
         /// tests one of them four times.
         /// </summary>
-        public string? Path { get; }
+        public string? Path => Named.Count == 0 ? null : Named[0].Path;
 
         /// <summary>Which of the three this is.</summary>
         public ClashSideKind Kind { get; }
 
-        /// <summary>The set name, when the side is a saved set.</summary>
-        public string? Name { get; }
+        /// <summary>
+        /// The first set's name, when the side is saved sets.
+        ///
+        /// For the callers that only ever put one set on a side. <see cref="Named"/> is what a
+        /// side actually holds.
+        /// </summary>
+        public string? Name => Named.Count == 0 ? null : Named[0].Name;
+
+        /// <summary>
+        /// The saved sets this side is made of, in the order they were chosen.
+        ///
+        /// More than one, because a side is a discipline and a discipline is rarely one set: the
+        /// host takes a selection built from several sources, and a side that could hold only one
+        /// meant making the same test three times or building a set whose only purpose was to be
+        /// the union of three others.
+        /// </summary>
+        public IReadOnlyList<ClashSetName> Named { get; }
 
         /// <summary>The model scopes, when the side is one or more whole models.</summary>
         public IReadOnlyList<string> Scopes { get; }
@@ -401,29 +416,64 @@ namespace CamelWorks.Core.Abstractions
         /// </summary>
         /// <param name="scopes">The model scopes.</param>
         public static ClashSide Models(IReadOnlyList<string> scopes) =>
-            new ClashSide(ClashSideKind.Models, null, scopes ?? Array.Empty<string>(),
-                          Array.Empty<ElementKey>());
+            new ClashSide(ClashSideKind.Models, Array.Empty<ClashSetName>(),
+                          scopes ?? Array.Empty<string>(), Array.Empty<ElementKey>());
 
         /// <summary>A saved selection or search set, by name, kept as a source so it re-resolves.</summary>
         /// <param name="name">The set's name in the host.</param>
         /// <param name="path">The folders it sits in, innermost last, or null.</param>
         public static ClashSide Set(string name, string? path = null) =>
-            new ClashSide(ClashSideKind.Set, name, Array.Empty<string>(),
-                          Array.Empty<ElementKey>(), path);
+            Sets(new[] { new ClashSetName(name, path) });
+
+        /// <summary>Several saved sets at once, each kept as a source so it re-resolves.</summary>
+        /// <param name="named">The sets, in the order they were chosen.</param>
+        public static ClashSide Sets(IReadOnlyList<ClashSetName> named) =>
+            new ClashSide(ClashSideKind.Set, named ?? Array.Empty<ClashSetName>(),
+                          Array.Empty<string>(), Array.Empty<ElementKey>());
 
         /// <summary>A fixed list of elements.</summary>
         /// <param name="keys">The elements.</param>
         public static ClashSide Elements(IReadOnlyList<ElementKey> keys) =>
-            new ClashSide(ClashSideKind.Elements, null, Array.Empty<string>(),
-                          keys ?? Array.Empty<ElementKey>());
+            new ClashSide(ClashSideKind.Elements, Array.Empty<ClashSetName>(),
+                          Array.Empty<string>(), keys ?? Array.Empty<ElementKey>());
 
         /// <inheritdoc />
         public override string ToString() => Kind switch
         {
             ClashSideKind.Models => Scopes.Count == 1 ? "one model" : Scopes.Count + " models",
-            ClashSideKind.Set => "set " + Name,
+            ClashSideKind.Set => Named.Count == 1 ? "set " + Name : Named.Count + " sets",
             _ => Keys.Count + " elements",
         };
+    }
+
+    /// <summary>One saved set a side is made of: its name, and the folders it sits in.</summary>
+    public sealed class ClashSetName
+    {
+        /// <summary>Name a set.</summary>
+        /// <param name="name">The set's name in the host.</param>
+        /// <param name="path">The folders it sits in, innermost last, or null.</param>
+        public ClashSetName(string name, string? path = null)
+        {
+            Name = name ?? string.Empty;
+            Path = path;
+        }
+
+        /// <summary>The set's name in the host.</summary>
+        public string Name { get; }
+
+        /// <summary>
+        /// The folders it sits in, innermost last, or null when none were recorded.
+        ///
+        /// A name is not an identity. A real document has "MEP" inside Level 01, another inside
+        /// Level 02, and more under package folders. Resolved by name, all of them become
+        /// whichever one a depth-first walk reaches first, so a matrix pointed at four different
+        /// disciplines tests one of them four times.
+        /// </summary>
+        public string? Path { get; }
+
+        /// <inheritdoc />
+        public override string ToString() =>
+            string.IsNullOrEmpty(Path) ? Name : Path + " / " + Name;
     }
 
     /// <summary>Which of the three a <see cref="ClashSide"/> is.</summary>

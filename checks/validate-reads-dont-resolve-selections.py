@@ -47,7 +47,14 @@ RESOLVES = re.compile(
 # CreateSelectionSource is fine when a side is being *written* - the source is the thing stored.
 # It is only the wholesale sourcing of every set in the document that was a problem, and that is
 # what the name below caught.
-ALLOWED_LINE = re.compile(r"selection\.Selection\.CopyFrom|sources\s*=\s*new SelectionSourceCollection")
+#
+# `sources.Add` is the same writing path with more than one set on a side: the collection is
+# built up rather than in one initialiser. Still the sets named on one side of one test, never
+# every set in the document.
+ALLOWED_LINE = re.compile(
+    r"selection\.Selection\.CopyFrom"
+    r"|sources\s*=\s*new SelectionSourceCollection"
+    r"|sources\.Add\s*\(")
 
 
 def main():

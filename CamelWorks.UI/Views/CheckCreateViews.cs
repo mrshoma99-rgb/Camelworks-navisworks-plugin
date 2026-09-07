@@ -137,6 +137,9 @@ namespace CamelWorks.UI.Views
             /// <summary>The document's clash tests as a check, built once because reading is host calls.</summary>
             private ClashCheck? _clash;
 
+            /// <summary>The form for a clash test being made, or null when none is.</summary>
+            private UIElement? _making;
+
             internal Screen(ISeat seat)
             {
                 _seat = seat;
@@ -538,9 +541,14 @@ namespace CamelWorks.UI.Views
             /// settings panel afterwards.
             /// </summary>
             /// <param name="check">The clash check.</param>
-            private void NewClash(ClashCheck check) =>
-                ClashTestViews.New(_seat, check, Next(check, "Clash"), id =>
+            private void NewClash(ClashCheck check)
+            {
+                // In the panel, where every other kind of test is set up, rather than in a window
+                // over the tab. Nothing is made until the form's own press.
+                _making = ClashTestViews.Panel(_seat, check, Next(check, "Clash"), id =>
                 {
+                    _making = null;
+
                     Reload();
 
                     PickedCheck = check.Key;
@@ -549,7 +557,17 @@ namespace CamelWorks.UI.Views
                     RedrawList();
                     RedrawPanel();
                     RedrawFoot();
+                }, () =>
+                {
+                    _making = null;
+
+                    RedrawPanel();
+                    RedrawFoot();
                 });
+
+                RedrawPanel();
+                RedrawFoot();
+            }
 
             /// <summary>Save a new fall-hazard test and pick it.</summary>
             /// <param name="check">The fall-hazard check.</param>
@@ -604,6 +622,14 @@ namespace CamelWorks.UI.Views
 
             private void RedrawPanel()
             {
+                // A test being made owns the panel until it is made or abandoned: it is the only
+                // thing on this tab that is not yet in the list beside it.
+                if (_making != null)
+                {
+                    _panel.Content = Ui.Loose(_making);
+                    return;
+                }
+
                 var picked = Picked();
 
                 if (picked == null)

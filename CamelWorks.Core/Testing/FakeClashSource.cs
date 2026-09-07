@@ -398,8 +398,8 @@ namespace CamelWorks.Core.Testing
             {
                 ToleranceMetres = spec.Tolerance,
                 Kind = spec.Kind,
-                SetA = spec.A?.Name,
-                SetB = spec.B?.Name,
+                SetA = Sided(spec.A),
+                SetB = Sided(spec.B),
             };
 
             _tests.Add(made);
@@ -739,6 +739,13 @@ namespace CamelWorks.Core.Testing
             // call had added them.
             return wanted.Count * 2;
         }
+
+        /// <summary>What a side is called, as the host would name it back.</summary>
+        /// <param name="side">The side.</param>
+        private static string? Sided(ClashSide? side) =>
+            side == null || side.Named.Count == 0
+                ? null
+                : string.Join(" + ", side.Named.Select(one => one.Name));
 
         // ---- Plumbing ---------------------------------------------------------------------
 

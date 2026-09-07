@@ -250,6 +250,36 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void A_side_can_be_built_from_several_saved_sets()
+        {
+            var seat = Seat();
+            var check = new ClashCheck(seat);
+
+            var side = ClashSide.Sets(new[]
+            {
+                new ClashSetName("Mechanical", "Level 03"),
+                new ClashSetName("Electrical", "Level 03"),
+            });
+
+            Assert.Equal(2, side.Named.Count);
+
+            // Name and Path answer for the first, which is what the callers that only ever put
+            // one set on a side read.
+            Assert.Equal("Mechanical", side.Name);
+            Assert.Equal("Level 03", side.Path);
+
+            var made = check.Make(
+                new ClashTestSpec("L03 MEP v ELE", side, ClashSide.Set("Structure"), 0.025),
+                out var problem);
+
+            Assert.Null(problem);
+            Assert.NotNull(made);
+
+            // The host names the side back as what it is between, not as one of the two.
+            Assert.Equal("Mechanical + Electrical", check.Sides(made!.Value.Id)!.SetA);
+        }
+
+        [Fact]
         public void A_test_between_sides_the_document_will_not_describe_is_not_copied()
         {
             var check = new ClashCheck(Seat());
