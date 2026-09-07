@@ -1620,34 +1620,75 @@ namespace CamelWorks.UI.Views
         /// <param name="onPicked">Records the choice.</param>
         /// <param name="width">How wide the press is.</param>
         /// <param name="blocked">Why it cannot be changed, or null when it can.</param>
-        public static System.Windows.Controls.Button Source(FrameworkElement? near,
-                                                            IReadOnlyList<string> offered,
-                                                            string chosen, string prompt,
-                                                            Action<string> onPicked,
-                                                            double width = 380,
-                                                            string? blocked = null)
+        public static UIElement Source(FrameworkElement? near,
+                                       IReadOnlyList<string> offered,
+                                       string chosen, string prompt,
+                                       Action<string> onPicked,
+                                       double width = 380,
+                                       string? blocked = null)
         {
             if (offered == null) throw new ArgumentNullException(nameof(offered));
             if (onPicked == null) throw new ArgumentNullException(nameof(onPicked));
 
-            var press = Ui.Button(chosen, () => Choose(near!, prompt, offered, chosen, null, null,
-                                                       said =>
+            // Drawn as the dropdown it stands in for, not as a button. A source field sits beside
+            // an ordinary Ui.Choice — the levels on the clearance panel — and a plain button next
+            // to a combo reads as a disabled box: same rectangle, no chevron, nothing saying it
+            // opens. Whether the list is short enough for a combo or long enough to need a search
+            // window is this file's business, not something the eye should have to tell apart.
+            var said = new TextBlock
             {
-                if (said.Length == 0) return;
+                Text = chosen,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            };
 
-                onPicked(said);
-            }));
+            said.Tint(TextBlock.ForegroundProperty, "Text");
 
-            press.Width = width;
-            press.HorizontalContentAlignment = HorizontalAlignment.Left;
+            var row = new DockPanel { LastChildFill = true };
+
+            var mark = Ui.Glyph(Glyphs.Down, 12, "Muted", new Thickness(8, 0, 0, 0));
+
+            DockPanel.SetDock(mark, Dock.Right);
+            row.Children.Add(mark);
+            row.Children.Add(said);
+
+            var box = new Border
+            {
+                Width = width,
+                MinHeight = 28,
+                Padding = new Thickness(8, 4, 8, 4),
+                CornerRadius = new CornerRadius(4),
+                BorderThickness = new Thickness(1),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Cursor = Cursors.Hand,
+                Child = row,
+            };
+
+            box.Tint(Border.BackgroundProperty, "Card");
+            box.Tint(Border.BorderBrushProperty, "FieldBd");
 
             if (blocked != null)
             {
-                press.IsEnabled = false;
-                press.ToolTip = blocked;
+                box.IsEnabled = false;
+                box.Opacity = 0.55;
+                box.ToolTip = blocked;
+
+                return box;
             }
 
-            return press;
+            box.ToolTip = prompt;
+
+            box.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
+                Choose(near!, prompt, offered, chosen, null, null, picked =>
+                {
+                    if (picked.Length == 0) return;
+
+                    onPicked(picked);
+                }));
+
+            Lights(box, "Hover");
+
+            return box;
         }
 
         /// <summary>
