@@ -478,16 +478,61 @@ namespace CamelWorks.UI.Views
 
                 held.Children.Add(Rowed(units, inches));
 
+                // Both distances are stored in metres and were labelled "(m)" whatever the unit
+                // above them said. On a feet-and-inches job the pane read "Lengths in: Feet and
+                // inches" directly over two boxes marked (m), and a coordinator reading the label
+                // as feet and typing 16 set a 16-metre grouping distance, which collapses every
+                // band on the board. They are written and read in the project's own unit now, and
+                // parsed on commit rather than on every keystroke, so "5m" or "abc" no longer
+                // reaches the project file.
+                var shown = Measure.Of(lengths, Denominator(fraction));
+
                 held.Children.Add(Rowed(
-                    Ui.Field("Grouping distance (m)",
-                             Ui.Text(grouping, typed => Set(ProfileKeys.ClashProximity, typed),
-                                     120)),
-                    Ui.Field("Same-conflict distance (m)",
-                             Ui.Text(duplicate, typed => Set(ProfileKeys.DuplicateBand, typed),
-                                     120))));
+                    Distance("Grouping distance", ProfileKeys.ClashProximity, grouping, shown),
+                    Distance("Same-conflict distance", ProfileKeys.DuplicateBand, duplicate,
+                             shown)));
 
                 return held;
             }
+
+            /// <summary>
+            /// A distance held in metres, written and read in the project's own unit.
+            /// </summary>
+            /// <param name="label">What the distance is, without its unit.</param>
+            /// <param name="key">Which setting it is.</param>
+            /// <param name="metres">What it holds now, as the profile stores it.</param>
+            /// <param name="units">The unit the project writes lengths in.</param>
+            private UIElement Distance(string label, string key, string? metres, Measure units) =>
+                Ui.Field(label + " (" + units.LengthUnit + ")",
+                         Ui.Settled(Said(units, metres), string.Empty, typed =>
+                         {
+                             if (typed.Trim().Length == 0)
+                             {
+                                 Set(key, null);
+                                 return;
+                             }
+
+                             if (units.TryRead(typed, out var read) && read >= 0)
+                                 Set(key, read.ToString("0.###", CultureInfo.InvariantCulture));
+                         }, 120),
+                         null, Need.Optional);
+
+            /// <summary>A stored distance in metres, written in the project's own unit.</summary>
+            /// <param name="units">The unit the project writes lengths in.</param>
+            /// <param name="metres">What the profile holds, or null.</param>
+            private static string Said(Measure units, string? metres) =>
+                double.TryParse(metres, NumberStyles.Float, CultureInfo.InvariantCulture,
+                                out var value)
+                    ? units.Bare(value)
+                    : string.Empty;
+
+            /// <summary>The inch denominator a stored setting names, or the usual sixteenth.</summary>
+            /// <param name="fraction">What the profile holds, or null.</param>
+            private static int Denominator(string? fraction) =>
+                int.TryParse(fraction, NumberStyles.Integer, CultureInfo.InvariantCulture,
+                             out var read) && read > 0
+                    ? read
+                    : 16;
 
             /// <summary>What the Manage tab's board does with the results it is given.</summary>
             private UIElement BoardPart()
