@@ -64,6 +64,12 @@ namespace CamelWorks.Core.Testing
             /// <summary>What the second element is called.</summary>
             internal string? NameB { get; set; }
 
+            /// <summary>Which category the first element belongs to.</summary>
+            internal string? CategoryA { get; set; }
+
+            /// <summary>Which category the second element belongs to.</summary>
+            internal string? CategoryB { get; set; }
+
             /// <summary>What each side of this result says under a property, by category and name.</summary>
             internal Dictionary<string, string> Properties { get; } =
                 new Dictionary<string, string>(StringComparer.Ordinal);
@@ -230,11 +236,14 @@ namespace CamelWorks.Core.Testing
         /// The board's two widest columns are these names, and a fake that left them null drew a
         /// board whose "First item" and "Second item" columns were empty on every row. Every
         /// judgment made about that screen's layout was made against a board missing the two
-        /// facts it exists to state.
+        /// facts it exists to state. The categories go the same way, into the filter facets.
         /// </summary>
         /// <param name="a">What the first element is called.</param>
         /// <param name="b">What the second element is called.</param>
-        public FakeClashSource Hitting(string? a, string? b)
+        /// <param name="categoryA">Which category the first element belongs to, or null.</param>
+        /// <param name="categoryB">Which category the second belongs to, or null.</param>
+        public FakeClashSource Hitting(string? a, string? b,
+                                       string? categoryA = null, string? categoryB = null)
         {
             if (_tests.Count == 0) throw new InvalidOperationException("add a test first");
 
@@ -246,6 +255,12 @@ namespace CamelWorks.Core.Testing
 
             result.NameA = a;
             result.NameB = b;
+
+            // The categories with the names, because an element has both and a fake that gives
+            // one and not the other leaves the board's filter facets empty while a real seat
+            // fills them. That is the same defect as the missing names, one field along.
+            result.CategoryA = categoryA;
+            result.CategoryB = categoryB;
 
             return this;
         }
@@ -277,6 +292,16 @@ namespace CamelWorks.Core.Testing
                 Name = one.Name,
                 NameA = one.NameA,
                 NameB = one.NameB,
+                CategoryA = one.CategoryA,
+                CategoryB = one.CategoryB,
+
+                // Derived from the trail rather than left at nought. The real readers carry both,
+                // and a screen that counts comments off a fake reporting none is a screen drawn
+                // without them.
+                CommentCount = one.Comments.Count,
+                LastComment = one.Comments.Count == 0
+                    ? null
+                    : one.Comments[one.Comments.Count - 1].Body,
                 GroupName = one.Group,
                 Comments = one.Comments.ToList(),
                 Distance = one.Distance,

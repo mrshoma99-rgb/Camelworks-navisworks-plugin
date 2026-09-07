@@ -710,6 +710,31 @@ namespace CamelWorks.Studio
                 },
             };
 
+        /// <summary>
+        /// Which category an element belongs to, as a model records it.
+        ///
+        /// Read off the front of the element's own name, because that is where a model puts it:
+        /// "Rectangular Duct: 450x250mm" is a Duct. The board's filter facets are built from
+        /// these, and a fixture that named the elements but not their categories would have left
+        /// those chips empty in every render — the same fault as the names, one field along.
+        /// </summary>
+        /// <param name="discipline">Which discipline it belongs to.</param>
+        /// <param name="at">Which clash, so it matches the element chosen for the same one.</param>
+        private static string Category(string discipline, int at)
+        {
+            var named = Element(discipline, at);
+            var colon = named.IndexOf(':');
+
+            if (colon <= 0) return discipline;
+
+            var head = named.Substring(0, colon).Trim();
+            var dash = head.IndexOf('-');
+
+            // "UB-Universal Beam" is a Structural Framing member; the code in front of the dash
+            // is the section, not the category.
+            return dash > 0 ? head.Substring(dash + 1).Trim() : head;
+        }
+
         /// <summary>One element of a discipline, by name.</summary>
         /// <param name="discipline">Which discipline it belongs to.</param>
         /// <param name="at">Which clash, so a board carries several of each.</param>
@@ -815,7 +840,8 @@ namespace CamelWorks.Studio
                     // The two element names and the depth. Without them the board drew its two
                     // widest columns empty on every row and an em-dash under Overlap, which is
                     // the board's whole subject missing from every render of it.
-                    engine.Hitting(Element(shape.A, at), Element(shape.B, at + 3));
+                    engine.Hitting(Element(shape.A, at), Element(shape.B, at + 3),
+                                   Category(shape.A, at), Category(shape.B, at + 3));
                     engine.Deep(Depth(at, shape.Tolerance));
 
                     var result = "r" + (++results).ToString(CultureInfo.InvariantCulture);
