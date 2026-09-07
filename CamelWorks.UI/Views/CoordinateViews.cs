@@ -904,7 +904,15 @@ namespace CamelWorks.UI.Views
             /// <summary>Where the press that might become a drag started.</summary>
             private Point _pressAt;
 
+            /// <summary>
+            /// The rules, all drawn to one width.
+            ///
+            /// The width is the list's, not each row's. Sized to their own text the cards came out
+            /// ragged down the left column, and a list whose edge moves with every name is one
+            /// nobody can see the order of.
+            /// </summary>
             private readonly StackPanel _list = Ui.Stack();
+
             private readonly StackPanel _pane = Ui.Stack();
             private readonly StackPanel _preview = Ui.Stack();
             private readonly StackPanel _saved = Ui.Stack();
@@ -914,6 +922,9 @@ namespace CamelWorks.UI.Views
             {
                 _seat = seat ?? throw new ArgumentNullException(nameof(seat));
                 _live = seat as Session;
+
+                _list.MaxWidth = 560;
+                _list.HorizontalAlignment = HorizontalAlignment.Left;
             }
 
             internal UIElement Build()
@@ -1051,8 +1062,6 @@ namespace CamelWorks.UI.Views
                     Margin = new Thickness(0, 0, 0, 6),
                     BorderThickness = new Thickness(1),
                     CornerRadius = new CornerRadius(4),
-                    MaxWidth = 560,
-                    HorizontalAlignment = HorizontalAlignment.Left,
                     Cursor = System.Windows.Input.Cursors.Hand,
                     AllowDrop = true,
                 };
