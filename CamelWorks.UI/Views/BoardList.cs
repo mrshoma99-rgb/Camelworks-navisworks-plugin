@@ -35,6 +35,14 @@ namespace CamelWorks.UI.Views
         {
             Build = build ?? throw new ArgumentNullException(nameof(build));
 
+            // The list takes the keyboard, not the rows. Row containers are recycled - the
+            // container holding row four hundred a moment ago is holding row twelve now - so
+            // focus parked on one would follow the scroll rather than the reader. There is no
+            // focus ring: the read row is already marked, and a second outline around the whole
+            // table would say the table was the thing selected.
+            Focusable = true;
+            FocusVisualStyle = null;
+
             // The three that make it virtualise: a panel that only realises what is visible,
             // recycling so scrolling reuses containers, and item scrolling so the panel knows
             // what a unit of scrolling is.
@@ -132,6 +140,47 @@ namespace CamelWorks.UI.Views
                         to.ScrollToVerticalOffset(wanted);
                 }), System.Windows.Threading.DispatcherPriority.Loaded);
             }
+        }
+
+        /// <summary>
+        /// Scroll one row into view, realising it if the panel has not built it yet.
+        ///
+        /// For the keyboard: moving down off the bottom of the screen has to bring the next row
+        /// on, and the row it moves to may not exist as a visual at all. A realised row is asked
+        /// to bring itself into view; an unrealised one is reached by scrolling to roughly where
+        /// it sits and then asking again once the panel has built that stretch.
+        /// </summary>
+        /// <param name="item">The item to show.</param>
+        public void Reveal(object? item)
+        {
+            if (item == null) return;
+
+            if (_live.TryGetValue(item, out var container))
+            {
+                container.BringIntoView();
+                return;
+            }
+
+            var scroll = Scroller();
+            var items = Items;
+
+            if (scroll == null || items == null || items.Count == 0) return;
+
+            var at = items.IndexOf(item);
+
+            if (at < 0) return;
+
+            scroll.UpdateLayout();
+
+            scroll.ScrollToVerticalOffset(
+                Math.Max(0, scroll.ScrollableHeight) * at / Math.Max(1, items.Count - 1));
+
+            // The panel builds the rows for that stretch on the next layout pass, so the row
+            // cannot be asked to show itself until after one.
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (_live.TryGetValue(item, out var built)) built.BringIntoView();
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
         }
 
         /// <summary>

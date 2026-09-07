@@ -56,6 +56,12 @@ namespace CamelWorks.Studio
             // needs a screen. Drawn as their lists, which is what the popups hold.
             Page("app-clash-menus", "Clash Manager · Manage, the menus", 820, BoardMenus),
 
+            // The keys the results table answers. A shortcuts sheet is the one page where a
+            // mistake is invisible in use - somebody presses the key, nothing happens, and they
+            // stop trusting the rest of the list - so it is drawn rather than assumed.
+            Page("app-clash-keys", "Clash Manager · Manage, the keyboard", 560,
+                 () => new Border { Padding = new Thickness(16), Child = BoardKeys.Drawn() }),
+
             // The same board with the rail's filter panel open: the disciplines, the folders and
             // the naming tokens this read actually holds, drawn as a card over the test list.
             Page("app-clash-finder", "Clash Manager · Manage, the filter panel open", 980,

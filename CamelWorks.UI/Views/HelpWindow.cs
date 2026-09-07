@@ -107,22 +107,22 @@ namespace CamelWorks.UI.Views
         ///
         /// A shortcuts list that includes one the product does not have is worse than no list: it
         /// sends somebody pressing a key that does nothing and then doubting the rest of the page.
-        /// Review mode is where the keys are, because that is the one screen somebody works through
-        /// a hundred items on without wanting to reach for the mouse.
+        /// This page listed eight keys belonging to a Review mode that was retired with the old
+        /// board, which is exactly the fault its own note warned against - so the list is now read
+        /// from <see cref="BoardKeys.All"/>, the same list the board answers.
         /// </summary>
         private static UIElement Shortcuts() => Chapter("Keys",
-            "In Review mode, opened from the ribbon while the board is loaded.",
-            Key("N  or  →", "the next issue"),
-            Key("P  or  ←", "the one before"),
-            Key("1", "mark it reviewed"),
-            Key("2", "mark it approved"),
-            Key("3", "mark it resolved"),
-            Key("0", "put it back to active"),
-            Key("B", "section box around this issue, on and off"),
-            Key("A", "write a note on it"),
-            Ui.Note("Everywhere else, the product is buttons. Navisworks owns the keyboard while its "
-                    + "own windows have focus, and a plug-in that claimed Ctrl+F or F2 for itself would "
-                    + "take it away from something the host already does."));
+            "On the Clash Manager's results table, while the table has the keyboard. Click a row "
+            + "to give it the keyboard.",
+            BoardKeys.All.Select(one => Key(one.Key, one.What.ToLowerInvariant()))
+                .Concat(new[]
+                {
+                    Ui.Note("Everywhere else, the product is buttons. Navisworks owns the keyboard "
+                            + "while its own windows have focus, and a plug-in that claimed Ctrl+F "
+                            + "or F2 for itself would take it away from something the host already "
+                            + "does."),
+                })
+                .ToArray());
 
         private static UIElement Key(string keys, string what)
         {

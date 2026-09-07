@@ -49,6 +49,9 @@ ALLOWED = {
     "JsonValue", "VersionedDocument", "SectionDiff",
     # The names of the keys the clash section holds. A list of strings, not a capability.
     "ClashKeys", "Retired",
+    # Which digit stands for which status when a board is worked from the keyboard. The
+    # capability is the board's key handling, which is UI; this is the map it reads.
+    "FindingStatusKeys",
     # Primitives.
     "Hash", "IfcGuid", "Measure", "BcfGuid",
     # File-format writers' internal blocks - the report IS the surface, not its parts.

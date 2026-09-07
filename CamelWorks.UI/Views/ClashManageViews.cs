@@ -1760,7 +1760,11 @@ namespace CamelWorks.UI.Views
                 {
                     var here = one;
 
-                    orders.Add(Parts.Entry.Act(here, null, () => { State.Sort = here; RedrawRail(); }));
+                    // A tick on the one in force. Here it is the right symbol: these are the
+                    // orders the list can be in, one of them is the order it is in, and without
+                    // the mark the menu says what is on offer and not what is happening.
+                    orders.Add(Parts.Entry.Act(here, Marks(here),
+                                               () => { State.Sort = here; RedrawRail(); }));
                 }
 
                 // The naming's own fields, under a heading, because sorting by phase and sorting
@@ -1777,13 +1781,18 @@ namespace CamelWorks.UI.Views
                     {
                         var here = ByToken + one;
 
-                        orders.Add(Parts.Entry.Act(Titled(one), null,
+                        orders.Add(Parts.Entry.Act(Titled(one), Marks(here),
                                                    () => { State.Sort = here; RedrawRail(); }));
                     }
                 }
 
                 return orders;
             }
+
+            /// <summary>The tick, on the order the rail is in, and nothing on the rest.</summary>
+            /// <param name="order">The order this line would set.</param>
+            private string? Marks(string order) =>
+                string.Equals(State.Sort, order, StringComparison.Ordinal) ? Glyphs.Tick : null;
 
             /// <summary>Whether anything is narrowing the rail.</summary>
             private bool Narrowed =>
@@ -4115,6 +4124,13 @@ namespace CamelWorks.UI.Views
                     }));
                 }
 
+                // The keys the table answers, on the table's own menu. There is nowhere else on
+                // the board to put it: the row of symbols above the table is already four
+                // unlabelled pictures, and a fifth would not say what it opens either.
+                items.Add(Parts.Entry.Rule());
+                items.Add(Parts.Entry.Act("Keyboard shortcuts", Glyphs.Keyboard,
+                                          BoardKeys.Show));
+
                 return items;
             }
 
@@ -4801,6 +4817,11 @@ namespace CamelWorks.UI.Views
                 {
                     _lines = Lines(entry, shape);
                     _list = new BoardList(Drawn) { ItemsSource = _lines };
+
+                    // Preview, and on the list rather than the window: the board owns these keys
+                    // only while the table itself has the keyboard, so nothing typed anywhere
+                    // else on the tab - or anywhere in Navisworks - reaches this.
+                    _list.PreviewKeyDown += (s, e) => Ui.Safely(() => Typed(e));
 
                     Grid.SetRow(_list, 1);
                     frame.Children.Add(Ui.Loose(_list));
@@ -5873,23 +5894,16 @@ namespace CamelWorks.UI.Views
                 var adding = (keys & System.Windows.Input.ModifierKeys.Control) != 0;
                 var run = (keys & System.Windows.Input.ModifierKeys.Shift) != 0;
 
+                // A press also gives the table the keyboard, so the keys below work without a
+                // separate act of focusing it. The row containers are not focusable - they are
+                // recycled - so the list itself takes it.
+                _list?.Focus();
+
                 // A plain press moves the eye, not the selection. Nothing is ticked, the bar
                 // stays down, and the row that was being read stops being the row being read.
                 if (!adding && !run)
                 {
-                    var leaving = _reading;
-
-                    _reading = id;
-                    State.PickedFrom = id;
-
-                    var moved = new HashSet<string>(StringComparer.Ordinal) { id };
-
-                    if (leaving != null) moved.Add(leaving);
-
-                    Repainted(moved);
-
-                    if (_focusOnClick) Look(id);
-
+                    Reading(id, reveal: false);
                     return;
                 }
 
@@ -5930,6 +5944,188 @@ namespace CamelWorks.UI.Views
                 against.Add(id);
 
                 Repainted(against);
+            }
+
+            /// <summary>
+            /// Move the eye to one row: repaint the row it left and the row it arrived at.
+            ///
+            /// The read row is not the selection. It is the row somebody is looking at, which is
+            /// what shows its verbs, what the camera follows when focus-on-click is on, and what
+            /// the keys below act on.
+            /// </summary>
+            /// <param name="id">The row to read.</param>
+            /// <param name="reveal">True to scroll it into view, for a move made from the keyboard.</param>
+            private void Reading(string id, bool reveal)
+            {
+                var leaving = _reading;
+
+                _reading = id;
+                State.PickedFrom = id;
+
+                var moved = new HashSet<string>(StringComparer.Ordinal) { id };
+
+                if (leaving != null) moved.Add(leaving);
+
+                Repainted(moved);
+
+                if (reveal)
+                    _list?.Reveal(_lines?.FirstOrDefault(
+                        l => string.Equals(l.Id, id, StringComparison.Ordinal)));
+
+                if (_focusOnClick) Look(id);
+            }
+
+            /// <summary>
+            /// The lines a keystroke can move to: the rows, not the bands.
+            ///
+            /// A band is a heading across the table. Landing on one would give the keys a row
+            /// with no status, no tick and nothing to focus, and pressing 3 there would look
+            /// like the board ignoring the keyboard.
+            /// </summary>
+            private List<BoardLine> Walkable() =>
+                _lines?.Where(l => l.Id.Length > 0).ToList() ?? new List<BoardLine>();
+
+            /// <summary>
+            /// The results one line stands for: a group's members, or the single clash.
+            ///
+            /// Every write verb on this screen takes results. A group row handed to one is
+            /// filtered out on the way in and the write reports that nothing was selected.
+            /// </summary>
+            /// <param name="id">The row.</param>
+            private List<Row> Resulting(string id)
+            {
+                var line = _lines?.FirstOrDefault(
+                    l => string.Equals(l.Id, id, StringComparison.Ordinal));
+
+                if (line?.GroupRow != null) return new List<Row>(line.GroupRow.Rows);
+
+                return line?.Clash == null ? new List<Row>() : new List<Row> { line.Clash };
+            }
+
+            /// <summary>
+            /// What the results table does with a keystroke.
+            ///
+            /// Three hundred results is three hundred rounds of mouse, menu, click without this,
+            /// and it is the single largest daily cost in the tool. The keys are listed in
+            /// <see cref="BoardKeys"/> and the sheet on the table's menu is drawn from the same
+            /// list, so the two cannot disagree.
+            ///
+            /// Two rules make it safe to leave on:
+            ///
+            /// <list type="bullet">
+            /// <item><description>A key held with any modifier is left alone. Ctrl, Alt and the
+            /// Windows key belong to the host and to the standard edit commands, and a plug-in
+            /// that claimed one would take it away from something Navisworks already
+            /// does.</description></item>
+            /// <item><description>A key typed while a box has the keyboard goes to the box. That
+            /// single rule covers the search field, the inline editors and any IME - typing 3
+            /// into "the board" must type a 3.</description></item>
+            /// </list>
+            ///
+            /// Nothing bound here takes work away. A status change does reach the Navisworks
+            /// document at once where the check has a host echo, so it is a real edit rather than
+            /// a pending one - but it is undone by setting the status back, which is why status
+            /// is on the keyboard and delete, remove and run are not.
+            /// </summary>
+            /// <param name="e">The keystroke.</param>
+            private void Typed(System.Windows.Input.KeyEventArgs e)
+            {
+                if (System.Windows.Input.Keyboard.Modifiers != System.Windows.Input.ModifierKeys.None)
+                    return;
+
+                if (Typing(System.Windows.Input.Keyboard.FocusedElement as DependencyObject)) return;
+
+                var meant = BoardKeys.Meaning(e.Key);
+
+                if (meant.Did == BoardKeys.Does.Nothing) return;
+
+                var walk = Walkable();
+
+                if (walk.Count == 0) return;
+
+                var at = _reading == null
+                    ? -1
+                    : walk.FindIndex(l => string.Equals(l.Id, _reading, StringComparison.Ordinal));
+
+                switch (meant.Did)
+                {
+                    case BoardKeys.Does.Up:
+                        Reading(walk[at <= 0 ? 0 : at - 1].Id, reveal: true);
+                        break;
+
+                    case BoardKeys.Does.Down:
+                        Reading(walk[at < 0 ? 0 : Math.Min(walk.Count - 1, at + 1)].Id, reveal: true);
+                        break;
+
+                    case BoardKeys.Does.Tick:
+                        if (_reading == null) return;
+
+                        if (!State.Picked.Remove(_reading)) State.Picked.Add(_reading);
+
+                        Repaint(_reading);
+                        break;
+
+                    case BoardKeys.Does.Status:
+                        if (_reading == null || meant.Status == null) return;
+
+                        Mark(Resulting(_reading).Cast<object>().ToList(), meant.Status.Value, _toast);
+                        break;
+
+                    case BoardKeys.Does.Focus:
+                        if (_reading == null) return;
+
+                        Focus(Resulting(_reading).Cast<object>().ToList(), _toast);
+                        break;
+
+                    case BoardKeys.Does.Clear:
+                        if (State.Picked.Count == 0) return;
+
+                        var was = new HashSet<string>(State.Picked, StringComparer.Ordinal);
+
+                        State.Picked.Clear();
+                        State.PickedFrom = null;
+
+                        Repainted(was);
+                        break;
+
+                    default:
+                        return;
+                }
+
+                e.Handled = true;
+            }
+
+            /// <summary>
+            /// Whether the keyboard is in something that takes typing.
+            ///
+            /// Walked up the tree rather than tested on the focused element alone: a combo box
+            /// hands focus to the text box inside its own template, and an element inside a
+            /// template of ours may sit under an editor several levels up.
+            /// </summary>
+            /// <param name="focused">What has the keyboard.</param>
+            private static bool Typing(DependencyObject? focused)
+            {
+                for (var at = focused; at != null; at = Parented(at))
+                {
+                    if (at is TextBox || at is System.Windows.Controls.PasswordBox) return true;
+                    if (at is ComboBox combo && combo.IsEditable) return true;
+                }
+
+                return false;
+            }
+
+            /// <summary>One step up the tree, taking the visual parent or the logical one.</summary>
+            /// <param name="from">Where to step from.</param>
+            private static DependencyObject? Parented(DependencyObject from)
+            {
+                if (from is System.Windows.Media.Visual || from is System.Windows.Media.Media3D.Visual3D)
+                {
+                    var up = System.Windows.Media.VisualTreeHelper.GetParent(from);
+
+                    if (up != null) return up;
+                }
+
+                return System.Windows.LogicalTreeHelper.GetParent(from);
             }
 
             /// <summary>
@@ -6477,10 +6673,12 @@ namespace CamelWorks.UI.Views
 
                     var here = status;
 
-                    // Not a tick. A tick beside a word means that word is the current one, and
-                    // five of them down a menu read as five states at once; these are verbs that
-                    // set a status, and the one already set is the one left out of the list.
-                    setting.Add(Parts.Entry.Act(FindingStatusWords.Of(here), Glyphs.Right,
+                    // No symbol. A tick beside a word means that word is the current one, and
+                    // five of them down a menu read as five states at once; a chevron means the
+                    // word opens a submenu, and five of those read as five submenus - which is
+                    // what the first attempt at this drew. These are verbs, and the heading over
+                    // them already says what they do.
+                    setting.Add(Parts.Entry.Act(FindingStatusWords.Of(here), null,
                         () => SetMany(picked, FindingStatusWords.Of(here), true)));
                 }
 
@@ -8384,7 +8582,12 @@ namespace CamelWorks.UI.Views
                 {
                     // This row, whatever else is ticked: the tooltip promises it and a press that
                     // meant one row here and twenty there is a press nobody can use quickly.
-                    Mark(new object[] { row }, status, _toast);
+                    //
+                    // Its results, not the board row itself. Every write verb on this screen
+                    // takes results, and a board row handed to one is filtered out on the way in
+                    // and comes back as "Nothing is selected" - a picker that opens, closes and
+                    // changes nothing.
+                    Mark(row.Rows.Cast<object>().ToList(), status, _toast);
                 });
 
                 // Handled here, or the press that sets a status also selects the row and opens

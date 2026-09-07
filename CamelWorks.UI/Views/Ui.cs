@@ -5333,6 +5333,14 @@ namespace CamelWorks.UI.Views
         /// <summary>An i in a circle: worth knowing.</summary>
         public const string Info = "M12,3 A9,9 0 1 0 12.01,3 M12,11 L12,16.5 M12,7.5 L12,7.9";
 
+        /// <summary>A keyboard: what the keys do.</summary>
+        public const string Keyboard = "M2.5,6.5 L21.5,6.5 L21.5,17.5 L2.5,17.5 Z "
+                                     + "M6,10 L6.2,10 M9,10 L9.2,10 M12,10 L12.2,10 "
+                                     + "M15,10 L15.2,10 M18,10 L18.2,10 "
+                                     + "M7.5,12.8 L7.7,12.8 M10.5,12.8 L10.7,12.8 "
+                                     + "M13.5,12.8 L13.7,12.8 M16.5,12.8 L16.7,12.8 "
+                                     + "M8,15.3 L16,15.3";
+
         /// <summary>An open box: there is nothing here.</summary>
         public const string Empty = "M4,7.5 L12,3.5 L20,7.5 L20,16.5 L12,20.5 L4,16.5 Z M4,7.5 L12,11.5 L20,7.5 M12,11.5 L12,20.5";
 
