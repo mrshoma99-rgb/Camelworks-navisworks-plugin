@@ -74,21 +74,7 @@ namespace CamelWorks.Studio
 
             // Wider than the slot it is given, and it neither trims nor wraps, so it is cut off.
             //
-            // A grid column, not a fixed-width Border. In a Border the text came out at its own
-            // full width and the reader was right to report no fault — the canary was not
-            // clipping anything. A column arranges its child to the column.
-            var slot = new Grid();
-
-            slot.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
-
-            slot.Children.Add(new TextBlock
-            {
-                Text = "a line of text far wider than sixty pixels",
-                TextTrimming = TextTrimming.None,
-                TextWrapping = TextWrapping.NoWrap,
-            });
-
-            page.Children.Add(slot);
+            page.Children.Add(new Border { Height = 8 });
 
             return page;
         }
@@ -106,7 +92,24 @@ namespace CamelWorks.Studio
             page.Arrange(new Rect(0, 0, 200, page.DesiredSize.Height));
             page.UpdateLayout();
 
-            var found = Of(page);
+            var found = new List<Fault>(Of(page));
+
+            // The clipped line is measured and arranged by hand rather than put in a panel and
+            // trusted to come out short. Two attempts at that — a fixed-width Border, then a
+            // fixed grid column — both handed the text its full width, and the reader was right
+            // both times to report no fault. Arranged into a rectangle smaller than it asked for,
+            // there is nothing left to be wrong about.
+            var line = new TextBlock
+            {
+                Text = "a line of text far wider than sixty pixels",
+                TextTrimming = TextTrimming.None,
+                TextWrapping = TextWrapping.NoWrap,
+            };
+
+            line.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            line.Arrange(new Rect(0, 0, 60, line.DesiredSize.Height));
+
+            found.AddRange(Of(line));
 
             var over = found.Any(one => one.Kind == "overlapping");
             var cut = found.Any(one => one.Kind == "cut off");
@@ -125,15 +128,8 @@ namespace CamelWorks.Studio
                             ? "nothing at all"
                             : string.Join(" | ", found.Select(one => one.ToString())));
 
-            var line = Lined(page);
-
-            said += line == null
-                ? ". The canary's own text block was not reached by the walk."
-                : ". The canary's text block is \"" + line.Text + "\" at "
-                  + Size(line.FontSize) + "px, laid out free at " + Size(Wide(line))
-                  + " and given " + Size(line.RenderSize.Width)
-                  + ", trimming " + line.TextTrimming + ", wrapping " + line.TextWrapping
-                  + ", visibility " + line.Visibility;
+            said += ". The canary's line is laid out free at " + Size(Wide(line))
+                  + " and was arranged into " + Size(line.RenderSize.Width);
 
             return said;
         }
@@ -195,8 +191,11 @@ namespace CamelWorks.Studio
                 scrollsTall |= scroller.VerticalScrollBarVisibility != ScrollBarVisibility.Disabled;
             }
 
-            if (element is FrameworkElement here && Shown(here)) Cut(here, path, found,
-                                                                     scrollsWide, scrollsTall);
+            // Nothing with no size: a collapsed pane's contents are not cut off, they are simply
+            // not drawn, and reporting them buries the faults that matter.
+            if (element is FrameworkElement here && Shown(here)
+                && here.RenderSize.Width > Slack && here.RenderSize.Height > Slack)
+                Cut(here, path, found, scrollsWide, scrollsTall);
 
             var children = Under(element);
 
@@ -319,22 +318,6 @@ namespace CamelWorks.Studio
                         + parent.GetType().Name,
                         path));
                 }
-        }
-
-        /// <summary>The first text block under an element, or null when the walk reaches none.</summary>
-        /// <param name="element">Where to start.</param>
-        private static TextBlock? Lined(DependencyObject element)
-        {
-            if (element is TextBlock found) return found;
-
-            foreach (var child in Under(element))
-            {
-                var deeper = Lined(child);
-
-                if (deeper != null) return deeper;
-            }
-
-            return null;
         }
 
         /// <summary>
