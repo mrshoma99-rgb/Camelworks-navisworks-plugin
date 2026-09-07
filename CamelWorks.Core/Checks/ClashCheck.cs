@@ -269,6 +269,54 @@ namespace CamelWorks.Core.Checks
         }
 
         /// <summary>
+        /// Make a copy of an existing test: the same two sides, kind and tolerance, under a new
+        /// name, with no results.
+        ///
+        /// A clash test could not be copied at all — the Create tab said so and sent people to the
+        /// matrix — although the host takes a new test between two sides and this class already
+        /// reads what a test is between. A side the host will not describe is the one case that
+        /// still cannot be copied, because a copy pointed at a side we had to guess at is a
+        /// different test wearing the same name.
+        /// </summary>
+        /// <param name="runId">The host's id for the test to copy.</param>
+        /// <param name="name">What the copy is called.</param>
+        /// <param name="folder">Which clash folder to put it in, or null for the root.</param>
+        /// <param name="problem">Why it could not be copied, or null when it was.</param>
+        /// <returns>The copy as the host now holds it, or null.</returns>
+        public ClashTestInfo? Copy(string runId, string name, string? folder, out string? problem)
+        {
+            var shape = Sides(runId);
+
+            if (shape == null)
+            {
+                problem = _source.LastProblem
+                          ?? "That test is no longer in this document.";
+                return null;
+            }
+
+            var a = Side(shape.SetA, shape.ScopesA);
+            var b = Side(shape.SetB, shape.ScopesB);
+
+            if (a == null || b == null)
+            {
+                problem = "This test is between selections the document will not describe, so it "
+                          + "cannot be copied. Copy it in Clash Detective instead.";
+                return null;
+            }
+
+            return Make(new ClashTestSpec(name, a, b, shape.ToleranceMetres, folder,
+                                          MatrixDiff.Kinded(shape.Kind)), out problem);
+        }
+
+        /// <summary>One side of a copy, or null when the host would not say what it is.</summary>
+        /// <param name="set">The saved set behind it, or null.</param>
+        /// <param name="scopes">The whole models behind it, when it is whole models.</param>
+        private static ClashSide? Side(string? set, IReadOnlyList<string> scopes) =>
+            !string.IsNullOrWhiteSpace(set) ? ClashSide.Set(set!)
+            : scopes.Count > 0 ? ClashSide.Models(scopes)
+            : null;
+
+        /// <summary>
         /// Change what an existing test is judged at, keeping the results it holds.
         ///
         /// The two things the host will change about a test that has already run. Re-pointing its

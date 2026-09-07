@@ -2889,6 +2889,51 @@ namespace CamelWorks.UI.Views
                 typeof(Ui),
                 new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.Inherits));
 
+        /// <summary>
+        /// Let the wheel reach this scroller from content that cannot use it.
+        ///
+        /// A table inside a scrolling pane is measured with unbounded height, so its own scroller
+        /// has nothing to scroll — and a WPF scroller with nothing to scroll still marks the wheel
+        /// handled, so the pane never sees it. The Create tab's list of tests did not respond to
+        /// the wheel at all for this reason.
+        ///
+        /// Tunnelling, so it runs before the table's scroller does. Any scroller between the
+        /// pointer and this one that can still move in the direction asked for keeps the wheel:
+        /// a pane whose body scrolls itself is untouched.
+        /// </summary>
+        /// <param name="outer">The pane's scroller.</param>
+        public static void WheelThrough(ScrollViewer outer)
+        {
+            if (outer == null) throw new ArgumentNullException(nameof(outer));
+
+            outer.PreviewMouseWheel += (sender, args) =>
+            {
+                if (args.Handled || args.Delta == 0) return;
+
+                var at = args.OriginalSource as DependencyObject;
+
+                while (at != null && !ReferenceEquals(at, outer))
+                {
+                    if (at is ScrollViewer inner && Moves(inner, args.Delta)) return;
+
+                    at = at is Visual || at is System.Windows.Media.Media3D.Visual3D
+                        ? VisualTreeHelper.GetParent(at)
+                        : LogicalTreeHelper.GetParent(at);
+                }
+
+                outer.ScrollToVerticalOffset(outer.VerticalOffset - args.Delta);
+                args.Handled = true;
+            };
+        }
+
+        /// <summary>Whether a scroller can still move the way the wheel was turned.</summary>
+        /// <param name="inner">The scroller.</param>
+        /// <param name="delta">The wheel, positive when scrolling up.</param>
+        private static bool Moves(ScrollViewer inner, int delta) =>
+            inner.ScrollableHeight > 0
+            && (delta < 0 ? inner.VerticalOffset < inner.ScrollableHeight
+                          : inner.VerticalOffset > 0);
+
         /// <summary>Say that this element's tables should fill the height they are given.</summary>
         /// <param name="element">The container.</param>
         /// <param name="on">True to let its tables grow.</param>

@@ -167,20 +167,21 @@ namespace CamelWorks.Nav.Clash
                 if (!Fill(test.SelectionA, spec.A)) return null;
                 if (!Fill(test.SelectionB, spec.B)) return null;
 
-                var root = clash.TestsData.Value.TestsRoot;
-
-                if (root == null)
-                {
-                    LastProblem = "The document's clash tests could not be reached.";
-                    return null;
-                }
-
                 // Use the folder the caller asked for, not the root. The spec has carried a folder
                 // since it was written and this dropped it, so a matrix told to put two hundred
                 // tests in "Matrix" put them all at the top level.
-                var into = Destination(clash, root, spec.Folder);
+                //
+                // Read after the folder is made, never before: making one replaces the tests tree,
+                // and the root fetched beforehand is a handle into the tree it replaced.
+                var into = string.IsNullOrWhiteSpace(spec.Folder)
+                    ? Root(clash)
+                    : Made(clash, spec.Folder!.Trim());
 
-                if (into == null) return null;
+                if (into == null)
+                {
+                    LastProblem = LastProblem ?? "The document's clash tests could not be reached.";
+                    return null;
+                }
 
                 // AddCopy, not Add: the host takes a copy of the test and owns it from then on, so
                 // the object built above is not the one in the document and must not be run.
@@ -807,40 +808,6 @@ namespace CamelWorks.Nav.Clash
             return true;
         }
 
-        /// <summary>
-        /// The folder a test should land in, made if it is not there yet, or the root.
-        /// </summary>
-        /// <param name="clash">The document's clash data.</param>
-        /// <param name="root">Where the tests live.</param>
-        /// <param name="folder">The folder's name, or nothing for the root.</param>
-        private GroupItem? Destination(DocumentClash clash, GroupItem root, string? folder)
-        {
-            if (string.IsNullOrWhiteSpace(folder)) return root;
-
-            var found = FolderIn(root, folder!.Trim());
-
-            if (found == null)
-            {
-                try
-                {
-                    clash.TestsData.TestsAddCopy(
-                        root, new ClashTestFolder { DisplayName = folder.Trim() });
-
-                    found = FolderIn(root, folder.Trim());
-                }
-                catch (Exception e)
-                {
-                    LastProblem = "The host refused to make the folder: " + e.Message;
-                    return null;
-                }
-            }
-
-            if (found == null)
-                LastProblem = "The host accepted the folder but it cannot be found again.";
-
-            return found;
-        }
-
         /// <inheritdoc />
         public bool Retune(string testId, double toleranceMetres, Core.Clash.MatrixTest kind)
         {
@@ -1036,20 +1003,38 @@ namespace CamelWorks.Nav.Clash
             var clash = Writable();
             if (clash == null) return false;
 
-            var root = clash.TestsData.Value.TestsRoot;
+            var wanted = string.IsNullOrWhiteSpace(folder) ? null : folder!.Trim();
 
-            if (root == null)
+            if (Root(clash) == null)
             {
                 LastProblem = "The document's clash tests could not be reached.";
                 return false;
             }
 
-            var destination = Destination(clash, root, folder);
-
-            if (destination == null) return false;
+            // The folder first, once, and nothing held across it. Every edit to the tests data
+            // replaces the tree, so a root, a folder or a test read before an edit is a handle
+            // into the tree that edit replaced: the moves that followed one were applied to
+            // objects the document no longer holds, and the tests stayed where they were.
+            if (wanted != null && Made(clash, wanted) == null) return false;
 
             foreach (var id in testIds ?? Array.Empty<string>())
             {
+                var root = Root(clash);
+
+                if (root == null)
+                {
+                    LastProblem = "The document's clash tests could not be reached.";
+                    return false;
+                }
+
+                var destination = wanted == null ? root : FolderIn(root, wanted);
+
+                if (destination == null)
+                {
+                    LastProblem = "The folder \"" + wanted + "\" is no longer in the document.";
+                    return false;
+                }
+
                 var test = FindTest(clash, id);
                 if (test == null) continue;
 
@@ -1072,6 +1057,49 @@ namespace CamelWorks.Nav.Clash
             }
 
             return true;
+        }
+
+        /// <summary>The document's clash tests root, read fresh, or null when it has none.</summary>
+        /// <param name="clash">The document's clash data.</param>
+        private static GroupItem? Root(DocumentClash clash) => clash.TestsData.Value.TestsRoot;
+
+        /// <summary>
+        /// The folder of this name at the root, making it when the document has none.
+        /// </summary>
+        /// <param name="clash">The document's clash data.</param>
+        /// <param name="folder">What the folder is called.</param>
+        /// <returns>The folder, or null when the host refused to make one.</returns>
+        private ClashTestFolder? Made(DocumentClash clash, string folder)
+        {
+            var root = Root(clash);
+
+            if (root == null)
+            {
+                LastProblem = "The document's clash tests could not be reached.";
+                return null;
+            }
+
+            var found = FolderIn(root, folder);
+
+            if (found != null) return found;
+
+            try
+            {
+                clash.TestsData.TestsAddCopy(root, new ClashTestFolder { DisplayName = folder });
+            }
+            catch (Exception e)
+            {
+                LastProblem = "The host refused to make the folder: " + e.Message;
+                return null;
+            }
+
+            // Re-read: the add replaced the tree, so the folder is looked for in the new one.
+            found = Root(clash) is GroupItem now ? FolderIn(now, folder) : null;
+
+            if (found == null)
+                LastProblem = "The host accepted the folder but it cannot be found again.";
+
+            return found;
         }
 
         /// <inheritdoc />

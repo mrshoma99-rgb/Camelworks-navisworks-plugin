@@ -71,15 +71,22 @@ namespace CamelWorks.UI.Views
                     : GridLength.Auto,
             });
 
-            var data = scrollStage
-                ? (UIElement)new ScrollViewer
+            UIElement data = stage;
+
+            if (scrollStage)
+            {
+                var staged = new ScrollViewer
                 {
                     VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                     HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                     Content = stage,
                     Padding = new Thickness(16, 12, 16, 16),
-                }
-                : stage;
+                };
+
+                Ui.WheelThrough(staged);
+
+                data = staged;
+            }
 
             var ground = new Border { Child = data };
             ground.Tint(Border.BackgroundProperty, "Bg");
@@ -87,17 +94,21 @@ namespace CamelWorks.UI.Views
 
             if (setup != null)
             {
+                var sidebar = new ScrollViewer
+                {
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    Content = setup,
+                    Padding = new Thickness(14, 12, 14, 12),
+                };
+
+                Ui.WheelThrough(sidebar);
+
                 var options = new Border
                 {
                     Width = shared ? double.NaN : width,
                     BorderThickness = new Thickness(1, 0, 0, 0),
-                    Child = new ScrollViewer
-                    {
-                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                        Content = setup,
-                        Padding = new Thickness(14, 12, 14, 12),
-                    },
+                    Child = sidebar,
                 };
 
                 options.Tint(Border.BackgroundProperty, "Pane");
@@ -347,13 +358,17 @@ namespace CamelWorks.UI.Views
 
             if (scrolls)
             {
-                under = new ScrollViewer
+                var scroller = new ScrollViewer
                 {
                     VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                     HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                     Content = body,
                     Padding = new Thickness(10, 4, 10, 8),
                 };
+
+                Ui.WheelThrough(scroller);
+
+                under = scroller;
             }
             else
             {

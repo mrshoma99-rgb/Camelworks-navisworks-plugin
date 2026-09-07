@@ -1194,8 +1194,14 @@ namespace CamelWorks.UI.Views
         /// <param name="starting">What the box starts with.</param>
         /// <param name="caption">What the commit button says.</param>
         /// <param name="onDone">Given the trimmed text, once somebody commits.</param>
+        /// <param name="offer">
+        /// Answers already in use, offered as chips under the box. A prompt that only takes typing
+        /// makes somebody remember and retype a name that is on the screen behind it, and a
+        /// misspelling makes a second folder rather than an error.
+        /// </param>
         public static void Ask(FrameworkElement near, string prompt, string? starting,
-                               string caption, Action<string> onDone)
+                               string caption, Action<string> onDone,
+                               IReadOnlyList<string>? offer = null)
         {
             _ = near;
 
@@ -1255,6 +1261,29 @@ namespace CamelWorks.UI.Views
 
             body.Children.Add(label.Wearing("Body"));
             body.Children.Add(box);
+
+            if (offer != null && offer.Count > 0)
+            {
+                var chips = new WrapPanel { Margin = new Thickness(0, 8, 0, 0), MaxWidth = 320 };
+
+                foreach (var one in offer)
+                {
+                    var named = one;
+
+                    var chip = Ui.Quiet(named, () =>
+                    {
+                        box.Text = named;
+                        box.SelectAll();
+                        box.Focus();
+                    });
+
+                    chip.Margin = new Thickness(0, 0, 6, 6);
+                    chips.Children.Add(chip);
+                }
+
+                body.Children.Add(chips);
+            }
+
             body.Children.Add(buttons);
 
             var ground = new Border { Child = body };

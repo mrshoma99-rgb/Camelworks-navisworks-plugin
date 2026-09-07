@@ -135,6 +135,26 @@ namespace CamelWorks.Core.Testing
             return this;
         }
 
+        /// <summary>Say what the last test added is between, and how it is judged.</summary>
+        /// <param name="setA">The saved set behind the first side, or null when it has none.</param>
+        /// <param name="setB">The saved set behind the second side, or null.</param>
+        /// <param name="toleranceMetres">Its tolerance, in metres.</param>
+        /// <param name="kind">Which kind of test it is.</param>
+        public FakeClashSource Between(string? setA, string? setB, double toleranceMetres = 0.025,
+                                       MatrixTest kind = MatrixTest.Hard)
+        {
+            if (_tests.Count == 0) throw new InvalidOperationException("add a test first");
+
+            var test = _tests[_tests.Count - 1];
+
+            test.SetA = setA;
+            test.SetB = setB;
+            test.ToleranceMetres = toleranceMetres;
+            test.Kind = kind;
+
+            return this;
+        }
+
         /// <summary>
         /// Make the last test added report more results than it hands over.
         ///

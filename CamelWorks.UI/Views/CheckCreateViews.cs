@@ -102,6 +102,9 @@ namespace CamelWorks.UI.Views
 
             private readonly StackPanel _log = Ui.Stack();
             private readonly ContentControl _list = new ContentControl();
+
+            /// <summary>The verbs under the list, pinned to the bottom of the pane.</summary>
+            private readonly ContentControl _picking = new ContentControl();
             private readonly ContentControl _panel = new ContentControl();
             private readonly ContentControl _foot = new ContentControl();
             private readonly TextBox _search;
@@ -186,13 +189,48 @@ namespace CamelWorks.UI.Views
                 RedrawPanel();
                 RedrawFoot();
 
-                var left = Bench.Pane("Tests", null, Ui.Stack(_log, _list), null);
+                var left = Bench.Pane("Tests", null, Listing(), null, scrolls: false);
                 var right = Bench.Pane("Settings", null, _panel, null);
 
                 // The list pane holds four columns of names; the settings pane holds fields
                 // capped at 380. Splitting the window evenly starved the columns and left the
                 // fields with white space they had no use for.
                 return Bench.Split(Strip(), left, right, _foot, 620);
+            }
+
+            /// <summary>
+            /// The list pane's body: the rows scroll, the verbs under them do not.
+            ///
+            /// The verbs were inside the scroller with the rows, so on a project with more tests
+            /// than fit the pane they were below the last row and had to be scrolled to. They act
+            /// on what is ticked, which is on screen, so they stay on screen.
+            /// </summary>
+            private UIElement Listing()
+            {
+                var grid = new Grid();
+
+                grid.RowDefinitions.Add(new RowDefinition
+                    { Height = new GridLength(1, GridUnitType.Star) });
+                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+                var rows = new ScrollViewer
+                {
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    Content = Ui.Stack(_log, _list),
+                };
+
+                Ui.WheelThrough(rows);
+                Ui.SetFills(rows, true);
+
+                grid.Children.Add(rows);
+
+                var pinned = Ui.Loose(_picking);
+
+                Grid.SetRow(pinned, 1);
+                grid.Children.Add(pinned);
+
+                return grid;
             }
 
             /// <summary>
@@ -301,6 +339,7 @@ namespace CamelWorks.UI.Views
                 {
                     _table = null;
                     _list.Content = Empty();
+                    _picking.Content = null;
                     RedrawFoot();
                     return;
                 }
@@ -308,6 +347,7 @@ namespace CamelWorks.UI.Views
                 if (shown.Count == 0)
                 {
                     _table = null;
+                    _picking.Content = null;
 
                     _list.Content = Ui.Empty("Nothing matches \"" + _query.Trim() + "\".",
                         Ui.Count(_all.Count, "test") + " in this project.", "Clear the search",
@@ -394,7 +434,8 @@ namespace CamelWorks.UI.Views
                 table.Menu(verbs.Select(one =>
                     new Ui.OnMenu(one.Caption, chosen => one.Act(chosen, _log))).ToArray());
 
-                _list.Content = Ui.Stack(table, Ui.Picking(table, verbs.ToArray()));
+                _list.Content = table;
+                _picking.Content = Ui.Picking(table, verbs.ToArray());
             }
 
             /// <summary>What the last run of a test found: never run, clean, or a count.</summary>
@@ -978,11 +1019,30 @@ namespace CamelWorks.UI.Views
                              fall, said);
                         break;
 
+                    case ClashCheck clash:
+                        var copy = clash.Copy(one.Run.Id, name, one.Run.Folder, out var refused);
+
+                        if (copy == null)
+                        {
+                            said.Children.Add(Ui.Problem(refused
+                                ?? "The host would not copy that test."));
+                            break;
+                        }
+
+                        PickedCheck = clash.Key;
+                        PickedRun = copy.Value.Id;
+
+                        Reload();
+                        RedrawPanel();
+                        RedrawFoot();
+
+                        said.Children.Add(Ui.Done("Copied. It is between the same two sides at the "
+                            + "same tolerance, and has not been run."));
+                        break;
+
                     default:
                         said.Children.Add(Ui.Note(
-                            one.Check.Name + " tests are not duplicated here. A clash test is a "
-                            + "row of the Clash matrix, and the matrix duplicates a row with its "
-                            + "two sides and its symbol."));
+                            one.Check.Name + " tests are not copied here."));
                         break;
                 }
             }
@@ -1081,15 +1141,38 @@ namespace CamelWorks.UI.Views
                 Parts.Ask(said, "Folder, or empty for none", chosen[0].Run.Folder ?? string.Empty,
                           "Move", folder =>
                 {
-                    var into = string.IsNullOrWhiteSpace(folder) ? null : folder;
+                    var into = string.IsNullOrWhiteSpace(folder) ? null : folder.Trim();
 
-                    foreach (var one in chosen) one.Check.Naming?.Refile(one.Run.Id, into);
+                    // What the host said, not what was asked of it. Every refusal used to be
+                    // dropped on the floor and the bar reported the whole selection moved.
+                    var refused = chosen
+                        .Where(one => one.Check.Naming?.Refile(one.Run.Id, into) != true)
+                        .ToList();
 
                     Reload();
 
-                    said.Children.Add(Ui.Done(Ui.Count(chosen.Count, "test") + " moved."));
-                });
+                    var moved = chosen.Count - refused.Count;
+
+                    if (moved > 0)
+                        said.Children.Add(Ui.Done(Ui.Count(moved, "test") + " moved"
+                            + (into == null ? " out of their folders." : " into " + into + ".")));
+
+                    if (refused.Count > 0)
+                        said.Children.Add(Ui.Problem(Ui.Count(refused.Count, "test")
+                            + " could not be moved: "
+                            + string.Join(", ", refused.Take(3).Select(one => one.Run.Name))
+                            + (refused.Count > 3 ? " and others." : ".")));
+                }, Folders());
             }
+
+            /// <summary>The folders the tests are already filed in, for the move prompt.</summary>
+            private IReadOnlyList<string> Folders() =>
+                _all.Select(one => one.Run.Folder)
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .Select(name => name!)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
 
             /// <summary>Delete tests, and the findings that name them.</summary>
             /// <param name="picked">The tests picked.</param>

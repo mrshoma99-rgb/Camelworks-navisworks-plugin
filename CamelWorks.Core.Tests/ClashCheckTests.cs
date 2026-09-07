@@ -221,6 +221,52 @@ namespace CamelWorks.Core.Tests
             Assert.Contains(read.Notes, note => note.Contains("t9", StringComparison.Ordinal));
         }
 
+        // ---------------------------------------------------------------------------------
+        // Copying a test
+        // ---------------------------------------------------------------------------------
+
+        [Fact]
+        public void A_test_is_copied_between_the_same_two_sides_at_the_same_tolerance()
+        {
+            var seat = Seat().Between("MEP", "Structure", 0.05, MatrixTest.Clearance);
+            var check = new ClashCheck(seat);
+
+            var made = check.Copy("t2", "L04 MEP v STR copy", "Weekly", out var problem);
+
+            Assert.Null(problem);
+            Assert.NotNull(made);
+            Assert.Equal("L04 MEP v STR copy", made!.Value.Name);
+            Assert.Equal("Weekly", made.Value.Folder);
+
+            // No results: it is a test to run, not last week's answers under a new name.
+            Assert.Equal(0, made.Value.ResultCount);
+
+            var shape = check.Sides(made.Value.Id);
+
+            Assert.Equal("MEP", shape!.SetA);
+            Assert.Equal("Structure", shape.SetB);
+            Assert.Equal(0.05, shape.ToleranceMetres);
+            Assert.Equal(MatrixTest.Clearance, MatrixDiff.Kinded(shape.Kind));
+        }
+
+        [Fact]
+        public void A_test_between_sides_the_document_will_not_describe_is_not_copied()
+        {
+            var check = new ClashCheck(Seat());
+
+            Assert.Null(check.Copy("t1", "A copy", null, out var problem));
+            Assert.Contains("cannot be copied", problem, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Copying_a_test_the_host_no_longer_has_says_so()
+        {
+            var check = new ClashCheck(Seat());
+
+            Assert.Null(check.Copy("t9", "A copy", null, out var problem));
+            Assert.NotNull(problem);
+        }
+
         [Fact]
         public void Listing_the_tests_again_does_not_ask_the_host_what_each_one_is_between()
         {
