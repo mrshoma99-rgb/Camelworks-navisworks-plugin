@@ -140,11 +140,85 @@ namespace CamelWorks.Core.Clash
         /// <param name="recipe">Size, shape, units and the ceiling.</param>
         /// <param name="materialFile">What the .mtl beside it will be called.</param>
         public static MarkerMesh Write(IEnumerable<ClashItem>? items, MarkerRecipe? recipe = null,
+                                       string materialFile = "clashes.mtl") =>
+            Marked((items ?? Array.Empty<ClashItem>())
+                       .Where(one => one != null)
+                       .Select(one => new Marker(one.TestName, one.Name, one.Status,
+                                                 one.X, one.Y, one.Z))
+                       .ToList(),
+                   recipe, materialFile, dropped: 0);
+
+        /// <summary>
+        /// Make the geometry from findings, whatever check produced them.
+        ///
+        /// A clearance shortfall and a fall hazard are points in the model like a clash, and a
+        /// rule that marks what it found has no reason to care which check reported it. A finding
+        /// whose producer gave no point cannot be marked and is counted rather than dropped
+        /// silently.
+        /// </summary>
+        /// <param name="findings">The results to mark.</param>
+        /// <param name="testName">What to file each one under, usually the run it came from.</param>
+        /// <param name="recipe">Size, shape, units and the ceiling.</param>
+        /// <param name="materialFile">What the .mtl beside it will be called.</param>
+        public static MarkerMesh Write(IEnumerable<Finding>? findings,
+                                       Func<Finding, string> testName,
+                                       MarkerRecipe? recipe = null,
                                        string materialFile = "clashes.mtl")
         {
+            if (testName == null) throw new ArgumentNullException(nameof(testName));
+
+            var held = (findings ?? Array.Empty<Finding>()).Where(one => one != null).ToList();
+
+            var placed = held
+                .Where(one => one.X != null && one.Y != null && one.Z != null)
+                .Select(one => new Marker(testName(one) ?? string.Empty, one.Title, one.Status,
+                                          one.X!.Value, one.Y!.Value, one.Z!.Value))
+                .ToList();
+
+            return Marked(placed, recipe, materialFile, held.Count - placed.Count);
+        }
+
+        /// <summary>One thing to mark, whichever kind of result it came from.</summary>
+        private sealed class Marker
+        {
+            internal Marker(string testName, string? name, FindingStatus status,
+                            double x, double y, double z)
+            {
+                TestName = testName ?? string.Empty;
+                Name = name;
+                Status = status;
+                X = x; Y = y; Z = z;
+            }
+
+            internal string TestName { get; }
+
+            internal string? Name { get; }
+
+            internal FindingStatus Status { get; }
+
+            internal double X { get; }
+
+            internal double Y { get; }
+
+            internal double Z { get; }
+        }
+
+        /// <summary>Make the geometry from whatever was resolved to a point.</summary>
+        /// <param name="all">What to mark.</param>
+        /// <param name="recipe">Size, shape, units and the ceiling.</param>
+        /// <param name="materialFile">What the .mtl beside it will be called.</param>
+        /// <param name="dropped">How many results carried no point.</param>
+        private static MarkerMesh Marked(List<Marker> all, MarkerRecipe? recipe,
+                                         string materialFile, int dropped)
+        {
             var how = recipe ?? new MarkerRecipe();
-            var all = (items ?? Array.Empty<ClashItem>()).Where(i => i != null).ToList();
             var warnings = new List<string>();
+
+            if (dropped > 0)
+                warnings.Add(Measure.Count(dropped)
+                             + (dropped == 1 ? " result carries" : " results carry")
+                             + " no point, so nothing was written for "
+                             + (dropped == 1 ? "it." : "them."));
 
             if (all.Count == 0)
                 return Refuse("There are no clashes to mark.", materialFile);

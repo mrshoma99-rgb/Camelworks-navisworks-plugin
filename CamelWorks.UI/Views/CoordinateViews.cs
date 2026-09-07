@@ -865,6 +865,11 @@ namespace CamelWorks.UI.Views
                 ClashActionKind.Group,
                 ClashActionKind.Assign,
                 ClashActionKind.Status,
+                ClashActionKind.Priority,
+                ClashActionKind.Label,
+                ClashActionKind.Comment,
+                ClashActionKind.Issue,
+                ClashActionKind.Markers,
                 ClashActionKind.Remove,
             };
 
@@ -1396,6 +1401,16 @@ namespace CamelWorks.UI.Views
                             "Written once. A rule that has already left this remark on a result "
                             + "does not leave it again.");
 
+                    case ClashActionKind.Markers:
+                        var box = Ui.Text(card.Value, typed => { card.Value = typed; Touched(); }, 300);
+
+                        return Ui.Field("Write them to",
+                            Ui.PathRow(box, PathKind.Save, "Wavefront OBJ|*.obj"),
+                            "One sphere per result, in metres, with a group per test and an "
+                            + "object per result so the tree is worth opening. A .mtl is written "
+                            + "beside it. Nothing about the results changes, so the file is "
+                            + "written afresh every time the rule runs.");
+
                     default:
                         return Ui.Stack();
                 }
@@ -1562,6 +1577,11 @@ namespace CamelWorks.UI.Views
                     ClashActionKind.Group => "Group",
                     ClashActionKind.Assign => "Assign",
                     ClashActionKind.Status => "Change status",
+                    ClashActionKind.Priority => "Set the priority",
+                    ClashActionKind.Label => "Label",
+                    ClashActionKind.Comment => "Write a remark",
+                    ClashActionKind.Issue => "Attach to an issue",
+                    ClashActionKind.Markers => "Write markers to a file",
                     ClashActionKind.Remove => "Remove",
                     _ => action.ToString(),
                 };
@@ -2379,6 +2399,60 @@ namespace CamelWorks.UI.Views
 
                 return true;
             }
+
+            /// <inheritdoc />
+            public bool Mark(IReadOnlyList<Finding> findings, string path)
+            {
+                LastProblem = null;
+
+                if (string.IsNullOrWhiteSpace(path))
+                {
+                    LastProblem = "This rule does not say where to write the markers.";
+                    return false;
+                }
+
+                var recipe = new MarkerRecipe
+                {
+                    // The recipe's radius is in metres and a finding's point is in model units,
+                    // which is the one conversion this file exists to get right.
+                    MetresPerUnit = _session.MetresPerUnit > 0 ? _session.MetresPerUnit : 1,
+                };
+
+                var mesh = ClashMarkers.Write(findings, RunOf, recipe);
+
+                if (!mesh.IsUsable)
+                {
+                    LastProblem = mesh.Refusal ?? "There was nothing to mark.";
+                    return false;
+                }
+
+                var obj = path.Trim();
+                var mtl = System.IO.Path.ChangeExtension(obj, ".mtl");
+
+                try
+                {
+                    // The .obj names the .mtl beside it, so the two travel together or the colours
+                    // are lost without anything saying why.
+                    var beside = System.IO.Path.GetFileName(mtl);
+
+                    System.IO.File.WriteAllText(obj,
+                        mesh.Text.Replace("mtllib " + mesh.MaterialFile, "mtllib " + beside));
+
+                    if (mesh.Materials.Length > 0) System.IO.File.WriteAllText(mtl, mesh.Materials);
+                }
+                catch (Exception e)
+                {
+                    LastProblem = "The markers could not be written: " + Ui.Describe(e);
+                    return false;
+                }
+
+                return true;
+            }
+
+            /// <summary>What to file a result's marker under: the run it came from.</summary>
+            /// <param name="finding">The result.</param>
+            private static string RunOf(Finding finding) =>
+                CheckFacts.RunsOf(finding).FirstOrDefault() ?? finding.Source;
 
             /// <inheritdoc />
             public bool Remove(IReadOnlyList<Finding> findings)
@@ -3253,7 +3327,7 @@ namespace CamelWorks.UI.Views
                     Ui.Field("Shape", shape),
                     Ui.Field("Marker diameter (mm)", size),
                     Ui.Field("Model units", units),
-                    Ui.Runner("Make the markers", said, job => Mark(job, recipe, said),
+                    Ui.Runner("Make the markers", said, job => Marking(job, recipe, said),
                               primary: false),
                     said);
             }
@@ -3262,7 +3336,7 @@ namespace CamelWorks.UI.Views
             /// <param name="job">The run this is part of.</param>
             /// <param name="recipe">The shape and size the settings above describe.</param>
             /// <param name="said">Where this run reports, inside the markers window.</param>
-            private void Mark(Job job, MarkerRecipe recipe, Panel said)
+            private void Marking(Job job, MarkerRecipe recipe, Panel said)
             {
                 said.Children.Clear();
 

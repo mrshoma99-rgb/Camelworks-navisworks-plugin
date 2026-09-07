@@ -39,6 +39,9 @@ namespace CamelWorks.Core.Project
 
         /// <summary>Attach them to an issue, raising it if it is not there yet.</summary>
         Issue = 9,
+
+        /// <summary>Write a marker sphere per result to an OBJ file.</summary>
+        Markers = 10,
     }
 
     /// <summary>
@@ -159,6 +162,10 @@ namespace CamelWorks.Core.Project
                     return said.Length == 0 ? "Set the priority" : "Set the priority to " + said;
                 case ClashActionKind.Issue:
                     return said.Length == 0 ? "Attach to an issue" : "Attach to \u201c" + said + "\u201d";
+                case ClashActionKind.Markers:
+                    return said.Length == 0
+                        ? "Write markers to a file"
+                        : "Write markers to " + said;
                 default: return action.ToString();
             }
         }
