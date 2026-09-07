@@ -613,8 +613,15 @@ screen. A numeric column header is left-aligned over right-aligned values, 43px
 apart. Three combos at three widths, none derived from content. "Saved setup" is
 350px and 60px away from "Save as a profile…", which writes into it.
 
-**Prescription.** `[SCREEN]` give the value a margin, or make it a read-only
-field with the change affordance inside its bounds; `[DS]` a read-only field
+Kind should not be read-only at all. The reasoning recorded on `CheckKey` was
+that two pickers over one choice can disagree; two pickers over one value cannot.
+What could disagree was the copy — `ClashExchangeViews.CheckKey` was a field of
+its own that the Manage tab overwrote on every draw — and the link was a
+workaround for that copy. This review accepted the premise and prescribed a
+better read-only field; it should have asked why the field was read-only.
+
+**Prescription.** `[SCREEN]` make Kind a picker over the same kinds Manage
+offers, writing the one selection both tabs read; `[DS]` a read-only field
 variant; `[DS]` one status renderer used by every table; `[DS]` a zero selection
 renders the verb without a count and disabled; `[DS]` pass the numeric flag into
 the header template; `[DS]` a control-width scale; `[SCREEN]` reunite the profile
