@@ -10095,8 +10095,11 @@ namespace CamelWorks.UI.Views
 
             /// <summary>The mark that goes with a view.</summary>
             /// <param name="which">The view.</param>
+            // Not Glyphs.Warn for priority. That is the severity mark the alert strips above this
+            // toolbar carry, so the control naming the current view was drawn as a warning about
+            // it. Sort reads as a ranking, which is what the view is.
             private static string ViewGlyph(Showing which) =>
-                which == Showing.Priority ? Glyphs.Warn
+                which == Showing.Priority ? Glyphs.Sort
                 : which == Showing.Results ? Glyphs.Report
                 : Glyphs.Palette;
 

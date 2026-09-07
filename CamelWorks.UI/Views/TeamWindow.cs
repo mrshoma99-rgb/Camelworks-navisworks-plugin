@@ -464,6 +464,11 @@ namespace CamelWorks.UI.Views
                 moved.Folder = member.Folder;
                 moved.Note = member.Note;
 
+                // Carried with the rest of them. TeamRoster.Add treats an id collision as a
+                // return to the job and sets this true, so correcting a typo in an off-the-job
+                // person's name put them back into every assignment list on the board.
+                moved.IsActive = member.IsActive;
+
                 roster.Remove(member.Id);
 
                 onEdit();

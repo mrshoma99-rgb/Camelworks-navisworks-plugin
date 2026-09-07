@@ -2903,9 +2903,11 @@ namespace CamelWorks.UI.Views
                 _live = seat as Session;
 
                 _locked = locked;
-                if (locked != null) _mode = locked;
 
                 _kept = ToolMemory.Of(seat.Store, "coordinate.report");
+
+                _mode = locked ?? _kept.Text("mode", FullReport) ?? FullReport;
+                _audience = _kept.Text("audience", Everyone) ?? Everyone;
 
                 _path = Ui.Text(_kept.Text("folder"), text => { _kept.Set("folder", text); Restate(); }, 200);
 
@@ -2922,8 +2924,11 @@ namespace CamelWorks.UI.Views
             }
 
             private string _format;
-            private string _mode = FullReport;
-            private string _audience = Everyone;
+            // Read back from the same memory the rest of the panel uses. These two were plain
+            // fields, so the two controls at the top - the ones that most change what comes out -
+            // reset on every reopen while the four checkboxes under them remembered.
+            private string _mode;
+            private string _audience;
             private bool _changedOnly;
             private bool _pictures;
             private bool _keyPlan;
@@ -2940,7 +2945,12 @@ namespace CamelWorks.UI.Views
                 var parties = new List<string> { Everyone, Nobody };
                 parties.AddRange(_seat.Profile.Parties);
 
-                _for = Ui.Choice(parties, _audience, a => { _audience = a; Restate(); }, 150);
+                _for = Ui.Choice(parties, _audience, a =>
+                {
+                    _audience = a;
+                    _kept.Set("audience", a);
+                    Restate();
+                }, 150);
 
                 var format = Ui.Segmented(new[] { "PDF", "XLSX", "HTML" }, _format,
                                           f => { _format = f; _kept.Set("format", f); Restate(); });
@@ -2980,6 +2990,7 @@ namespace CamelWorks.UI.Views
                 var document = Ui.Choice(new[] { FullReport, FieldPack, Penetration }, _mode, m =>
                 {
                     _mode = m;
+                    _kept.Set("mode", m);
                     Retune();
                 }, 200);
 

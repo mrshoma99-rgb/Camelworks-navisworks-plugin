@@ -517,8 +517,10 @@ namespace CamelWorks.UI.Views
                 + Ui.Count(board.Columns.Count, "column") + " take these fields"
                 + (pinned == 0
                     ? "."
-                    : "  ·  " + Ui.Count(pinned, "of them")
-                      + " keep a value typed by hand, outside these fields."));
+                    // Not Ui.Count: the unit here is a pronoun, and pluralising it wrote
+                    // "2 of thems" on the last line of the screen.
+                    : "  ·  " + pinned.ToString("N0", CultureInfo.InvariantCulture)
+                      + " of them keep a value typed by hand, outside these fields."));
 
             said.TextWrapping = TextWrapping.Wrap;
             said.Margin = new Thickness(0, 8, 0, 0);
