@@ -3066,9 +3066,11 @@ namespace CamelWorks.UI.Views
                 var help = Ui.Quiet("What goes in each document…", Help);
                 var markers = Ui.Quiet("Markers in the model…", Markers);
 
+                // The button, not a footer row of its own: this screen's footer is built below,
+                // and a Blocked row inside it was a second footer anatomy nested in the first.
                 var write = _live == null
-                    ? Ui.Blocked("Write the report",
-                                 "A report is written from the board, which needs an open model.")
+                    ? (UIElement)Ui.Cannot("Write the report",
+                                           "A report is written from the board, which needs an open model.")
                     : Ui.Runner("Write the report", _results, Write);
 
                 // The scope, the coverage and the way to load a board are kept out of _results:
@@ -3090,7 +3092,11 @@ namespace CamelWorks.UI.Views
 
                 Restate();
 
-                return Bench.Surface(setup, Ui.Across(help, markers, write), stage, PanelWidth);
+                // Ui.Foot, like every other tab. Across put the whole footer in a horizontal
+                // stack, so the two set-up presses crowded the primary instead of sitting at the
+                // far left and the blocking reason had nowhere of its own to be drawn.
+                return Bench.Surface(setup, Ui.Foot(write, null, Ui.Across(help, markers)),
+                                     stage, PanelWidth);
             }
 
             /// <summary>

@@ -1721,6 +1721,27 @@ namespace CamelWorks.UI.Views
             Press(caption, onClick, "PrimaryBtn");
 
         /// <summary>
+        /// The primary a screen cannot let anybody press yet, with why on it.
+        ///
+        /// The button alone, for a screen that builds its own footer row: <see cref="Foot"/> reads
+        /// the reason off the primary's tooltip, so the reason has to travel on the button rather
+        /// than beside it. <see cref="Blocked"/> is this in a footer row of its own.
+        /// </summary>
+        /// <param name="caption">What the press would do.</param>
+        /// <param name="why">Why it cannot be pressed. Stated by the footer, not by the caller.</param>
+        public static System.Windows.Controls.Button Cannot(string caption, string why)
+        {
+            var go = new System.Windows.Controls.Button
+            {
+                Content = caption ?? string.Empty,
+                IsEnabled = false,
+                ToolTip = why,
+            };
+
+            return go.Wearing("PrimaryBtn");
+        }
+
+        /// <summary>
         /// The screen's main action as it is drawn when it cannot be pressed: the caption greyed,
         /// and the reason on the same line.
         ///
@@ -1735,16 +1756,7 @@ namespace CamelWorks.UI.Views
         /// <param name="why">Why it cannot be pressed, in the user's terms.</param>
         public static Panel Blocked(string caption, string why)
         {
-            var go = new System.Windows.Controls.Button
-            {
-                Content = caption ?? string.Empty,
-                IsEnabled = false,
-                ToolTip = why,
-            };
-
-            go.Wearing("PrimaryBtn");
-
-            var row = Foot(go);
+            var row = Foot(Cannot(caption, why));
 
             // Inline on a stage rather than in a footer band, so the gap above it is this
             // caller's to set. A footer band has its own padding.
