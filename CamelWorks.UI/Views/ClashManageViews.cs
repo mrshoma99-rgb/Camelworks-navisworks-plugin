@@ -1186,7 +1186,7 @@ namespace CamelWorks.UI.Views
                     RedrawRail();
                 });
 
-                _boardBox = Ui.Find("anything on the board", text =>
+                _boardBox = Ui.Find("the board", text =>
                 {
                     State.BoardFind = text;
 

@@ -4313,8 +4313,7 @@ namespace CamelWorks.UI.Views
 
                     var item = new MenuItem
                     {
-                        Header = here.Caption.Replace("{n}", picked.Count.ToString(
-                            System.Globalization.CultureInfo.InvariantCulture)),
+                        Header = Worded(here.Caption, picked.Count),
                         IsEnabled = picked.Count > 0,
                     };
 
@@ -4565,9 +4564,9 @@ namespace CamelWorks.UI.Views
                 // shape nobody can read.
                 var button = glyph == null
                     ? (here.Primary
-                        ? Primary(here.Caption.Replace("{n}", "0"), () => Verb(here, table, said))
-                        : Quiet(here.Caption.Replace("{n}", "0"), () => Verb(here, table, said)))
-                    : Icon(glyph, here.Caption.Replace("{n}", "0"), () => Verb(here, table, said),
+                        ? Primary(Worded(here.Caption, 0), () => Verb(here, table, said))
+                        : Quiet(Worded(here.Caption, 0), () => Verb(here, table, said)))
+                    : Icon(glyph, Worded(here.Caption, 0), () => Verb(here, table, said),
                            here.Danger ? "RedTx" : "Muted");
 
                 // A destructive verb reads as destructive whether or not it can be drawn. This
@@ -4609,7 +4608,7 @@ namespace CamelWorks.UI.Views
 
                     if (!(button.Tag is string caption)) continue;
 
-                    var worded = caption.Replace("{n}", picked.ToString(CultureInfo.InvariantCulture));
+                    var worded = Worded(caption, picked);
 
                     // An icon keeps its shape and moves the count into the tooltip; a worded
                     // button carries it where it is read, immediately before the press.
@@ -4630,6 +4629,39 @@ namespace CamelWorks.UI.Views
             // Bench.Listed. Handing this whole stack to a docked slot reparents the table into
             // it, which draws the rows at the foot of an empty pane.
             return Stack(table, bar, said);
+        }
+
+        /// <summary>
+        /// A verb's caption for a given selection.
+        ///
+        /// With rows selected the count goes where it is read, immediately before the press. With
+        /// none it comes out altogether: "Include 0 tests" and "Leave out 0 clashes" read as
+        /// statements about the list rather than as things to do, and four of them on one screen
+        /// was the state Exchange opened in.
+        ///
+        /// A demonstrative left dangling by the removal goes with it, so "Delete these {n}"
+        /// becomes "Delete" rather than "Delete these".
+        /// </summary>
+        /// <param name="caption">The verb's caption, with <c>{n}</c> where the count goes.</param>
+        /// <param name="picked">How many rows are selected.</param>
+        public static string Worded(string caption, int picked)
+        {
+            if (caption == null) return string.Empty;
+
+            if (picked > 0)
+                return caption.Replace("{n}", picked.ToString(CultureInfo.InvariantCulture));
+
+            var said = caption.Replace("{n}", string.Empty);
+
+            // The demonstrative and the double space the count left behind.
+            said = said.Replace(" these ", " ").Replace(" those ", " ");
+            said = said.TrimEnd();
+            if (said.EndsWith(" these", StringComparison.Ordinal)) said = said.Substring(0, said.Length - 6);
+            if (said.EndsWith(" those", StringComparison.Ordinal)) said = said.Substring(0, said.Length - 6);
+
+            while (said.Contains("  ")) said = said.Replace("  ", " ");
+
+            return said.Trim();
         }
 
         /// <summary>
