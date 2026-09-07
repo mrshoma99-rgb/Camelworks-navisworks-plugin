@@ -440,16 +440,16 @@ namespace CamelWorks.Studio
         }
 
         /// <summary>
-        /// The Filter tab with a project's cards on it.
+        /// The Filter tab with a project's rules on it.
         ///
         /// The cards are written into the scratch project on the way in, as
         /// <see cref="Creating"/> writes its tests: the store is shared by every page, so a page
         /// that needs data puts it there itself rather than relying on the order the harness draws
         /// in. Nothing is saved, so the empty Filter page still opens on an empty project.
         ///
-        /// What is written is what the two lists have to draw: all six actions, a name long enough
-        /// to be trimmed, a card turned off, and a band that carries a number beside one that
-        /// carries a property name.
+        /// What is written is what the list has to draw: all six actions, a name long enough to be
+        /// trimmed, and a rule turned off. The bands go in too, for the Settings tab that owns
+        /// them.
         /// </summary>
         private static UIElement Ruled()
         {
@@ -487,6 +487,8 @@ namespace CamelWorks.Studio
                 "Duplicated by the coordination model",
                 new PredicateSpec("sameModel"), ClashActionKind.Remove) { IsEnabled = false });
 
+            // The bands live on the Settings tab now, and are written here so that tab has a
+            // stack to draw.
             rules.Grouping.Add(new GroupingSpec("level"));
             rules.Grouping.Add(new GroupingSpec("proximity") { A = 2.5 });
             rules.Grouping.Add(new GroupingSpec("property") { Name = "System Name" });

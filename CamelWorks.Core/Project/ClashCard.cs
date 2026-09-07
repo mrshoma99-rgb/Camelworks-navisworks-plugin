@@ -48,22 +48,37 @@ namespace CamelWorks.Core.Project
         /// <param name="action">What it does to what it finds.</param>
         public ClashCard(string name, PredicateSpec when, ClashActionKind action)
         {
-            Name = string.IsNullOrWhiteSpace(name)
+            _name = string.IsNullOrWhiteSpace(name)
                 ? throw new ArgumentException("name is required", nameof(name))
                 : name.Trim();
 
-            When = when ?? throw new ArgumentNullException(nameof(when));
+            _when = when ?? throw new ArgumentNullException(nameof(when));
             Action = action;
         }
 
+        private string _name;
+        private PredicateSpec _when;
+
         /// <summary>What it is called.</summary>
-        public string Name { get; }
+        /// <remarks>
+        /// Settable, with the three below: a rule is opened and edited in place on the screen that
+        /// lists it, so the object the list holds is the one the editor writes to.
+        /// </remarks>
+        public string Name
+        {
+            get => _name;
+            set => _name = string.IsNullOrWhiteSpace(value) ? _name : value.Trim();
+        }
 
         /// <summary>What it finds.</summary>
-        public PredicateSpec When { get; }
+        public PredicateSpec When
+        {
+            get => _when;
+            set => _when = value ?? _when;
+        }
 
         /// <summary>What it does to what it finds.</summary>
-        public ClashActionKind Action { get; }
+        public ClashActionKind Action { get; set; }
 
         /// <summary>
         /// The group name, the party or the status word, by action.

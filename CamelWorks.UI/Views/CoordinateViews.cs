@@ -870,6 +870,9 @@ namespace CamelWorks.UI.Views
             /// <summary>How wide a paragraph is allowed to be, in device pixels — about 80 characters.</summary>
             private const double TextWidth = 620;
 
+            /// <summary>What a dragged rule is carried as.</summary>
+            private const string CarryFormat = "CamelWorks.ClashRule";
+
             /// <summary>The actions, in the order the picker offers them.</summary>
             private static readonly ClashActionKind[] Acts =
             {
@@ -883,103 +886,57 @@ namespace CamelWorks.UI.Views
 
             private readonly ISeat _seat;
 
-            /// <summary>The live session, or null on a seat with no document. The preview and the run need it.</summary>
+            /// <summary>The live session, or null on a seat with no document. Review and Run need it.</summary>
             private readonly Session? _live;
 
             private ClashRuleSet _rules = new ClashRuleSet();
 
-            /// <summary>What the last preview or run reported, by card, for the Found column.</summary>
+            /// <summary>What the last review or run reported, by rule, for the list's counts.</summary>
             private readonly Dictionary<ClashCard, ClashCardOutcome> _said =
                 new Dictionary<ClashCard, ClashCardOutcome>();
 
-            /// <summary>
-            /// Whether the criteria dropdown has been used, or a card that matches everything has
-            /// been added.
-            ///
-            /// The composer opens on the first kind in the list, which is "Every result". Warning
-            /// about that before the user has picked anything is a warning about a card that does
-            /// not exist, so the note waits until the criteria are the user's own.
-            /// </summary>
-            private bool _chose;
+            /// <summary>The rule the set-up area is editing, or null when the list is empty.</summary>
+            private ClashCard? _open;
 
-            private readonly StackPanel _cards = Ui.Stack();
-            private readonly StackPanel _marks = Ui.Stack();
-            private readonly StackPanel _grouping = Ui.Stack();
+            /// <summary>The rule being dragged, or null.</summary>
+            private ClashCard? _carrying;
+
+            /// <summary>Where the press that might become a drag started.</summary>
+            private Point _pressAt;
+
+            private readonly StackPanel _list = Ui.Stack();
+            private readonly StackPanel _pane = Ui.Stack();
             private readonly StackPanel _preview = Ui.Stack();
             private readonly StackPanel _saved = Ui.Stack();
-            private readonly StackPanel _composerSaid = Ui.Stack();
-
-            private readonly ComboBox _act;
-            private readonly TextBox _name;
-            private readonly TextBox _group;
-            private readonly ComboBox _party;
-            private readonly ComboBox _status;
-            private readonly SpecEditor _when;
-            private readonly SpecEditor _by;
-            private readonly Panel _groupField;
-            private readonly Panel _partyField;
-            private readonly Panel _statusField;
+            private readonly StackPanel _marks = Ui.Stack();
 
             internal RulesScreen(ISeat seat)
             {
                 _seat = seat ?? throw new ArgumentNullException(nameof(seat));
                 _live = seat as Session;
-
-                // Each list is its own shared-size scope, so the columns line up down a list of
-                // fifteen cards without the two lists having to agree with each other.
-                Grid.SetIsSharedSizeScope(_cards, true);
-                Grid.SetIsSharedSizeScope(_grouping, true);
-
-                _act = Ui.Choice(Acts.Select(Verb), Verb(Acts[0]), _ => Retune(), 240);
-
-                _name = Ui.Text(string.Empty, "Named after its criteria", null, 220);
-                _group = Ui.Text(string.Empty, null, 200);
-
-                var parties = seat.Profile.Parties.ToList();
-                if (parties.Count == 0) parties.Add("Unassigned");
-
-                _party = Ui.Choice(parties, parties[0], null, 200);
-
-                _status = Ui.Choice(FindingStatusWords.Words, FindingStatusWords.Words[0], null, 200);
-
-                // The three combining kinds are left out. They take nested criteria, this editor
-                // has nowhere to put one, and a "Not" with nothing inside it finds nothing. A
-                // saved file that holds one still lists and runs it.
-                _when = new SpecEditor("Find results where",
-                                       PredicateSpec.Kinds.Where(k => k.Input != SpecInput.Nested).ToList(),
-                                       () => { _chose = true; Retune(); });
-
-                _by = new SpecEditor("Band by", GroupingSpec.Kinds, null);
-
-                _groupField = Ui.Field("Group name", _group);
-                _partyField = Ui.Field("Assign to", _party);
-                _statusField = Ui.Field("Status", _status);
             }
 
             internal UIElement Build()
             {
                 _rules = ClashRuleSet.FromJson(_seat.Store.Section(ProjectStore.ClashSection)[ClashKeys.Rules]);
+                _open = _rules.Cards.FirstOrDefault();
 
-                Retune();
                 Redraw();
 
-                var save = Ui.Button("Save cards", Save);
+                var save = Ui.Button("Save rules", Save);
+                var help = Ui.Icon(Glyphs.Info, "How rules are run", Guide);
 
-                var help = Ui.Icon(Glyphs.Info, "How cards are run", Guide);
-
-                // Three acts and they are three different promises. Save writes the project file
-                // and nothing else; the preview runs the cards over the results and writes
-                // nothing; Run is the only one that changes anything, so it is the filled button.
-                var see = _live == null
-                    ? (UIElement)Stopped("See what it would do", primary: false)
-                    : Ui.Runner("See what it would do", _preview, job => Preview(_live, job),
-                                primary: false);
+                // Review walks the list and writes nothing; Run all rules writes. Saving is
+                // neither, and runs nothing.
+                var review = _live == null
+                    ? (UIElement)Stopped("Review", primary: false)
+                    : Ui.Runner("Review", _preview, job => Preview(_live, job), primary: false);
 
                 var run = _live == null
-                    ? (UIElement)Stopped("Run the cards", primary: true)
-                    : Ui.Runner("Run the cards", _preview, job => Play(_live, job));
+                    ? (UIElement)Stopped("Run all rules", primary: true)
+                    : Ui.Runner("Run all rules", _preview, job => Play(_live, job, null));
 
-                return Bench.Surface(Setup(), Ui.Foot(run, Ui.Actions(save, see), help), Stage());
+                return Bench.Surface(_pane, Ui.Foot(run, Ui.Actions(save, review), help), Stage());
             }
 
             /// <summary>
@@ -998,7 +955,7 @@ namespace CamelWorks.UI.Views
                 {
                     Content = caption,
                     IsEnabled = false,
-                    ToolTip = "Cards read and write the clash results, so this needs an open model.",
+                    ToolTip = "Rules read and write the clash results, so this needs an open model.",
                 };
 
                 go.Wearing(primary ? "PrimaryBtn" : "Btn");
@@ -1006,65 +963,647 @@ namespace CamelWorks.UI.Views
                 return go;
             }
 
-            /// <summary>The composer: criteria, then what to do to what they find.</summary>
-            private UIElement Setup()
-            {
-                _when.View.Margin = new Thickness(0, 0, 0, 10);
-                _by.View.Margin = new Thickness(0, 0, 0, 10);
-
-                return Ui.Stack(
-                    Bench.Group("Add a card",
-                        _when.View,
-                        Ui.Field("Then", _act),
-                        _groupField,
-                        _partyField,
-                        _statusField,
-                        Ui.Field("Card name", _name),
-                        Ui.Actions(Ui.Button("Add card", Add)),
-                        _composerSaid),
-                    Bench.Group("Band the board",
-                        _by.View,
-                        Ui.Actions(Ui.Button("Add band", Band))));
-            }
-
-            /// <summary>The list, what it runs over, and the bands the board is drawn in.</summary>
+            /// <summary>The ordered list of rules, and what they last found.</summary>
             private UIElement Stage() =>
                 Ui.Stack(
                     Bench.Scope(Scope()),
                     _live == null
-                        ? Say("No model is open. Cards can be written and saved from here; "
-                              + "previewing and running them reads the clash results, which needs "
+                        ? Say("No model is open. Rules can be written and saved from here; "
+                              + "reviewing and running them reads the clash results, which needs "
                               + "the model open.")
                         : null,
                     _saved,
-                    _preview,
-                    Head("Cards"),
-                    Say("They run top to bottom on a press, and never on their own. A card that "
-                        + "takes results off the board or deletes them hides those results from "
-                        + "the cards under it, so the order is part of what they do."),
                     _marks,
-                    _cards,
-                    Head("Bands"),
-                    Say("How the board divides the results it is given. Bands change nothing about "
-                        + "a result; they decide which heading it is drawn under."),
-                    _grouping);
+                    _preview,
+                    Head("Rules"),
+                    Say("They run top to bottom. A rule that takes results off the board or "
+                        + "deletes them hides those results from the rules under it, so the order "
+                        + "is part of what they do. Drag a rule to move it; press one to open it."),
+                    _list,
+                    Ui.Actions(Ui.Button("New rule", Fresh)));
+
+            // ---- The list -----------------------------------------------------------------
+
+            /// <summary>Draw the list and the set-up area from the rule set.</summary>
+            private void Redraw()
+            {
+                _list.Children.Clear();
+                _marks.Children.Clear();
+
+                if (_rules.Cards.Count == 0)
+                {
+                    _list.Children.Add(Nothing());
+                }
+                else
+                {
+                    for (var at = 0; at < _rules.Cards.Count; at++)
+                        _list.Children.Add(Row(_rules.Cards[at], at));
+                }
+
+                // What past runs wrote stands until somebody takes it off, so the screen says how
+                // much is standing and offers the one way out. Suppressing used to be re-derived
+                // on every board build, where switching a rule off was the way back.
+                var marked = _seat.Findings.Findings.Present.Count(ClashCardRun.Marked);
+
+                if (marked > 0)
+                {
+                    var line = Ui.Across(
+                        Ui.Line(Ui.Count(marked, "result") + " carry a mark from a past run.", 0.75),
+                        Ui.Link("Clear the marks", Unmark));
+
+                    line.Margin = new Thickness(0, 4, 0, 0);
+                    _marks.Children.Add(line);
+                }
+
+                Opened();
+            }
+
+            /// <summary>The list with nothing in it, drawn where a rule would be.</summary>
+            private UIElement Nothing()
+            {
+                var card = Ui.Empty("No rules.",
+                                    "Every clash result the tests report reaches the board as it is.",
+                                    "New rule", Fresh);
+
+                if (card is FrameworkElement frame)
+                {
+                    frame.HorizontalAlignment = HorizontalAlignment.Left;
+                    frame.MaxWidth = double.PositiveInfinity;
+                    frame.Width = 520;
+                }
+
+                return card;
+            }
 
             /// <summary>
-            /// What the cards act on, and what the project holds that they cannot reach.
+            /// One rule in the list: its place, its name, what it finds and does, and its tick.
+            ///
+            /// A card rather than a table row. The list is the thing being arranged, and a row
+            /// that can be picked up wants an edge somebody can see and take hold of.
+            /// </summary>
+            /// <param name="card">The rule.</param>
+            /// <param name="at">Its place, counted from nought.</param>
+            private UIElement Row(ClashCard card, int at)
+            {
+                var line = new Border
+                {
+                    Padding = new Thickness(10, 8, 10, 8),
+                    Margin = new Thickness(0, 0, 0, 6),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(4),
+                    MaxWidth = 560,
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    Cursor = System.Windows.Input.Cursors.Hand,
+                    AllowDrop = true,
+                };
+
+                var chosen = ReferenceEquals(card, _open);
+
+                line.Tint(Border.BackgroundProperty, chosen ? "AccentWash" : "Card");
+                line.Tint(Border.BorderBrushProperty, chosen ? "Accent" : "Bd");
+
+                var title = Ui.Line(Place(at) + ".  " + card.Name, 1, bold: chosen);
+
+                var under = Ui.Small(Criteria(card.When) + "   →   " + card.Does
+                                     + (card.IsEnabled ? string.Empty : "   (off)")
+                                     + Found(card));
+
+                under.TextWrapping = TextWrapping.Wrap;
+
+                var tick = Ui.Check(string.Empty, card.IsEnabled, on =>
+                {
+                    card.IsEnabled = on;
+                    Touched();
+                    Redraw();
+                });
+
+                tick.VerticalAlignment = VerticalAlignment.Center;
+                tick.Margin = new Thickness(0, 0, 10, 0);
+                tick.ToolTip = "Run this rule when the list runs";
+
+                var body = new DockPanel();
+
+                DockPanel.SetDock(tick, Dock.Left);
+                body.Children.Add(tick);
+                body.Children.Add(Ui.Loose(Ui.Stack(title, under)));
+
+                line.Child = body;
+
+                line.MouseLeftButtonDown += (s, e) => _pressAt = e.GetPosition(line);
+
+                line.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
+                {
+                    if (_carrying != null) return;
+
+                    _open = card;
+                    Redraw();
+                });
+
+                Dragging(line, card);
+
+                return line;
+            }
+
+            /// <summary>
+            /// Pick a rule up and drop it somewhere else in the list.
+            ///
+            /// The order is what the list means, so moving a rule is the edit this screen is most
+            /// often used for. A threshold stops a press that wobbles a pixel from becoming a
+            /// drag, since the same press also opens the rule.
+            /// </summary>
+            /// <param name="line">The row.</param>
+            /// <param name="card">The rule it draws.</param>
+            private void Dragging(Border line, ClashCard card)
+            {
+                line.MouseMove += (s, e) => Ui.Safely(() =>
+                {
+                    if (e.LeftButton != System.Windows.Input.MouseButtonState.Pressed) return;
+                    if (_carrying != null) return;
+
+                    var at = e.GetPosition(line);
+
+                    if (Math.Abs(at.Y - _pressAt.Y) < SystemParameters.MinimumVerticalDragDistance
+                        && Math.Abs(at.X - _pressAt.X) < SystemParameters.MinimumHorizontalDragDistance)
+                        return;
+
+                    _carrying = card;
+
+                    try
+                    {
+                        DragDrop.DoDragDrop(line, new DataObject(CarryFormat, card.Name),
+                                            DragDropEffects.Move);
+                    }
+                    finally
+                    {
+                        _carrying = null;
+                    }
+                });
+
+                line.DragOver += (s, e) => Ui.Safely(() =>
+                {
+                    var take = _carrying != null && !ReferenceEquals(_carrying, card);
+
+                    e.Effects = take ? DragDropEffects.Move : DragDropEffects.None;
+                    e.Handled = true;
+
+                    if (take) line.Tint(Border.BorderBrushProperty, "Accent");
+                });
+
+                line.DragLeave += (s, e) => Ui.Safely(() =>
+                    line.Tint(Border.BorderBrushProperty,
+                              ReferenceEquals(card, _open) ? "Accent" : "Bd"));
+
+                line.Drop += (s, e) => Ui.Safely(() =>
+                {
+                    e.Handled = true;
+
+                    var carried = _carrying;
+
+                    if (carried == null || ReferenceEquals(carried, card)) return;
+
+                    var from = _rules.Cards.IndexOf(carried);
+                    var onto = _rules.Cards.IndexOf(card);
+
+                    if (from < 0 || onto < 0) return;
+
+                    _rules.Cards.RemoveAt(from);
+                    _rules.Cards.Insert(onto, carried);
+
+                    _open = carried;
+
+                    Touched();
+                    Redraw();
+                });
+            }
+
+            /// <summary>A rule's place in the list, counted from one.</summary>
+            /// <param name="at">Its index.</param>
+            private static string Place(int at) => (at + 1).ToString(CultureInfo.InvariantCulture);
+
+            /// <summary>What the last review or run said about a rule, or nothing at all.</summary>
+            /// <param name="card">The rule.</param>
+            private string Found(ClashCard card)
+            {
+                if (!_said.TryGetValue(card, out var outcome)) return string.Empty;
+
+                if (outcome.Problem != null) return "   — " + outcome.Problem;
+
+                return "   — " + Tallied(outcome.Matched) + " found, "
+                       + Tallied(outcome.Changed) + " changed";
+            }
+
+            // ---- The set-up area ----------------------------------------------------------
+
+            /// <summary>
+            /// The open rule: its name, what it finds, and what it does to what it finds.
+            ///
+            /// Built fresh whenever the open rule changes, and edited in place: every control
+            /// writes straight to the rule the list is holding, so there is no Apply and nothing
+            /// to lose by opening another one. The project file is a separate press.
+            /// </summary>
+            private void Opened()
+            {
+                _pane.Children.Clear();
+
+                if (_open == null)
+                {
+                    _pane.Children.Add(Bench.Group("Rule",
+                        Ui.Small("Press a rule to open it, or add one.")));
+
+                    return;
+                }
+
+                var card = _open;
+
+                var name = Ui.Text(card.Name, typed => { card.Name = typed; Touched(); }, 240);
+
+                name.LostFocus += (s, e) => Ui.Safely(Redraw);
+
+                var when = new SpecEditor("Find results where",
+                                          PredicateSpec.Kinds.Where(k => k.Input != SpecInput.Nested).ToList(),
+                                          null);
+
+                when.Show(card.When);
+
+                // Read back on every keystroke rather than on a press: the rule is the thing on
+                // screen, and a criteria edit that only landed on Save would be a second state to
+                // keep in step with the list beside it.
+                when.Changed = () =>
+                {
+                    var spec = when.Spec();
+
+                    if (spec != null) card.When = spec;
+
+                    Touched();
+                    Redraw();
+                };
+
+                var act = Ui.Choice(Acts.Select(Verb), Verb(card.Action), picked =>
+                {
+                    card.Action = Read(picked);
+
+                    Touched();
+                    Redraw();
+                }, 240);
+
+                var value = Value(card);
+
+                var said = Ui.Stack();
+
+                if (card.Action == ClashActionKind.Remove)
+                    said.Children.Add(Ui.Note(
+                        "Remove deletes the results it finds from the Navisworks document. They "
+                        + "go from the native clash window too, and running the clash test again "
+                        + "is the only way to get them back."));
+
+                if (card.When.Descriptor?.Id == "always"
+                    && (card.Action == ClashActionKind.Suppress
+                        || card.Action == ClashActionKind.Remove))
+                    said.Children.Add(Ui.Note("These criteria find every result, so this rule "
+                        + "would take the whole board off. Narrow it first."));
+
+                var one = _live == null
+                    ? (UIElement)Stopped("Run this rule", primary: false)
+                    : Ui.Runner("Run this rule", _preview, job => Play(_live, job, card),
+                                primary: false);
+
+                _pane.Children.Add(Bench.Group("Criteria",
+                    Ui.Field("Rule name", name),
+                    when.View));
+
+                _pane.Children.Add(Bench.Group("Action",
+                    Ui.Field("Do this", act),
+                    value,
+                    said,
+                    Ui.Actions(one, Ui.Danger("Delete rule", () => Forget(card)))));
+            }
+
+            /// <summary>The one value field this action takes, or an empty panel where it takes none.</summary>
+            /// <param name="card">The open rule.</param>
+            private UIElement Value(ClashCard card)
+            {
+                switch (card.Action)
+                {
+                    case ClashActionKind.Group:
+                        return Ui.Field("Group name",
+                            Ui.Text(card.Value, typed => { card.Value = typed; Touched(); }, 240));
+
+                    case ClashActionKind.Assign:
+                        return Ui.Field("Assign to", Picker(card, Parties()));
+
+                    case ClashActionKind.Status:
+                        return Ui.Field("Status", Picker(card, FindingStatusWords.Words));
+
+                    default:
+                        return Ui.Stack();
+                }
+            }
+
+            /// <summary>A dropdown that writes the open rule's one value.</summary>
+            /// <param name="card">The open rule.</param>
+            /// <param name="options">What it offers.</param>
+            private ComboBox Picker(ClashCard card, IReadOnlyList<string> options)
+            {
+                var held = options.FirstOrDefault(one =>
+                    string.Equals(one, card.Value, StringComparison.Ordinal)) ?? options[0];
+
+                // Written straight away rather than on the first change: a rule created with no
+                // value would otherwise show the first option and hold none, and refuse to run
+                // saying it has no party set.
+                card.Value = held;
+
+                return Ui.Choice(options, held, picked =>
+                {
+                    card.Value = picked;
+
+                    Touched();
+                    Redraw();
+                }, 240);
+            }
+
+            /// <summary>The project's parties, never empty.</summary>
+            private IReadOnlyList<string> Parties()
+            {
+                var parties = _seat.Profile.Parties.ToList();
+
+                if (parties.Count == 0) parties.Add("Unassigned");
+
+                return parties;
+            }
+
+            /// <summary>What one action is called on screen.</summary>
+            /// <param name="action">The action.</param>
+            private static string Verb(ClashActionKind action) =>
+                action switch
+                {
+                    ClashActionKind.Suppress => "Suppress",
+                    ClashActionKind.Flag => "Flag",
+                    ClashActionKind.Group => "Group",
+                    ClashActionKind.Assign => "Assign",
+                    ClashActionKind.Status => "Change status",
+                    ClashActionKind.Remove => "Remove",
+                    _ => action.ToString(),
+                };
+
+            /// <summary>The action behind one of those words.</summary>
+            /// <param name="said">What the picker holds.</param>
+            private static ClashActionKind Read(string? said)
+            {
+                foreach (var one in Acts)
+                    if (Verb(one) == said)
+                        return one;
+
+                return ClashActionKind.Suppress;
+            }
+
+            // ---- Editing the list ---------------------------------------------------------
+
+            /// <summary>Add a rule and open it.</summary>
+            private void Fresh()
+            {
+                var card = new ClashCard(Untaken(), new PredicateSpec("always"),
+                                         ClashActionKind.Suppress);
+
+                _rules.Cards.Add(card);
+                _open = card;
+
+                Touched();
+                Redraw();
+            }
+
+            /// <summary>A name no rule in the list is using.</summary>
+            private string Untaken()
+            {
+                for (var n = _rules.Cards.Count + 1; ; n++)
+                {
+                    var tried = "Rule " + n.ToString(CultureInfo.InvariantCulture);
+
+                    if (!_rules.Cards.Any(one => string.Equals(one.Name, tried, StringComparison.Ordinal)))
+                        return tried;
+                }
+            }
+
+            /// <summary>Take one rule out of the list.</summary>
+            /// <param name="card">The rule.</param>
+            private void Forget(ClashCard card) =>
+                Parts.Sure(_list, "Delete the rule “" + card.Name + "”? What past runs of "
+                                  + "it wrote to the results is not undone.",
+                    "Delete rule",
+                    () =>
+                    {
+                        var at = _rules.Cards.IndexOf(card);
+
+                        _rules.Cards.Remove(card);
+                        _said.Remove(card);
+
+                        _open = _rules.Cards.Count == 0
+                            ? null
+                            : _rules.Cards[Math.Min(at, _rules.Cards.Count - 1)];
+
+                        Touched();
+                        Redraw();
+                    });
+
+            /// <summary>
+            /// Take every suppress and flag mark off, so the board carries what the tests report.
+            ///
+            /// Confirmed, because it undoes every run of every rule at once and the counts on the
+            /// list are the only record of what those runs did.
+            /// </summary>
+            private void Unmark() =>
+                Parts.Sure(_marks,
+                    "This takes the suppress and flag marks off every result in the project, "
+                    + "whichever rule wrote them. The results themselves are not touched.",
+                    "Clear the marks",
+                    () =>
+                    {
+                        var cleared = ClashCardRun.Clear(_seat.Findings.Findings.Present.ToList());
+
+                        _preview.Children.Clear();
+
+                        if (!_seat.Findings.Save())
+                        {
+                            _preview.Children.Add(Ui.Problem(
+                                "The marks were cleared, but the findings file could not be written."));
+                            return;
+                        }
+
+                        _said.Clear();
+                        Redraw();
+
+                        _preview.Children.Add(Ui.Done(
+                            Ui.Count(cleared, "result") + " no longer carry a mark."));
+                    });
+
+            /// <summary>Say that what is on screen is no longer what the project file holds.</summary>
+            private void Touched()
+            {
+                _saved.Children.Clear();
+                _saved.Children.Add(Say("Edited. Nothing is written to the project file until "
+                                        + "Save rules is pressed."));
+            }
+
+            /// <summary>Write the rules to the project file.</summary>
+            private void Save()
+            {
+                _saved.Children.Clear();
+
+                _seat.Store.Section(ProjectStore.ClashSection).Set(ClashKeys.Rules, _rules.ToJson());
+
+                if (!_seat.Store.Save())
+                {
+                    _saved.Children.Add(Ui.Problem(_seat.Store.LastSaveProblem
+                                                   ?? "Could not write the project file."));
+                    return;
+                }
+
+                _seat.Record(ActivityKind.Setup,
+                             "Saved " + Ui.Count(_rules.Cards.Count, "clash rule") + ".");
+
+                _saved.Children.Add(Ui.Done("Saved. Saving does not run anything: press Run all "
+                                            + "rules, or open a rule and run it on its own."));
+            }
+
+            // ---- Running ------------------------------------------------------------------
+
+            /// <summary>
+            /// Run the list, or one rule of it, and report what each did.
+            ///
+            /// The results are read with no rule applied, so what they find is what the tests
+            /// reported rather than what a previous run of the same list left behind.
+            /// </summary>
+            /// <param name="session">The live session.</param>
+            /// <param name="job">The job, for progress and Stop.</param>
+            /// <param name="only">The one rule to run, or null for the whole list.</param>
+            private void Play(Session session, Job job, ClashCard? only)
+            {
+                var live = only != null
+                    ? new List<ClashCard> { only }
+                    : _rules.Cards.Where(one => one.IsEnabled).ToList();
+
+                if (live.Count == 0)
+                {
+                    _preview.Children.Add(Ui.Note("No rules are turned on, so there is nothing to run."));
+                    return;
+                }
+
+                // A rule that deletes is the one act on this screen that running the test again
+                // will not undo, so it is confirmed before anything is read.
+                var final = live.Count(one => ClashCard.IsFinal(one.Action));
+
+                if (final > 0)
+                {
+                    var went = false;
+
+                    Parts.Sure(_preview,
+                        Ui.Count(final, "rule") + " about to run deletes the results it finds from "
+                        + "the Navisworks document. They go from the native clash window too, and "
+                        + "running the clash test again is the only way to get them back.",
+                        only == null ? "Run all rules" : "Run this rule", () => went = true);
+
+                    if (!went)
+                    {
+                        _preview.Children.Add(Ui.Note("Nothing was run."));
+                        return;
+                    }
+                }
+
+                var items = Reading(session, job);
+                if (items == null) return;
+
+                var register = session.Findings.Findings;
+                var writer = new CardWriter(session);
+
+                job.Say("Running " + Ui.Count(live.Count, "rule") + "...");
+
+                var outcomes = ClashCardRun.Apply(live, items, register.Find, writer);
+
+                if (!session.Findings.Save())
+                    _preview.Children.Add(Ui.Problem(
+                        "The rules ran, but the findings file could not be written."));
+
+                Report(outcomes, ran: true);
+            }
+
+            /// <summary>Say what the rules would do, changing nothing.</summary>
+            /// <param name="session">The live session.</param>
+            /// <param name="job">The job, for progress and Stop.</param>
+            private void Preview(Session session, Job job)
+            {
+                var items = Reading(session, job);
+                if (items == null) return;
+
+                Report(ClashCardRun.Plan(_rules.Cards, items, session.Findings.Findings.Find),
+                       ran: false);
+            }
+
+            /// <summary>
+            /// Every clash result in the project, with no rule applied.
+            ///
+            /// The board is built with an empty rule set on purpose. Reading it with the rules
+            /// applied would hand the run a set they had already shaped.
+            /// </summary>
+            /// <param name="session">The live session.</param>
+            /// <param name="job">The job.</param>
+            private IReadOnlyList<ClashItem>? Reading(Session session, Job job)
+            {
+                var notes = new List<string>();
+                var board = CoordinateViews.Build(session, job, notes, new ClashRuleSet(), preview: true);
+
+                foreach (var note in notes) _preview.Children.Add(Ui.Note(note));
+
+                if (board == null) return null;
+
+                return board.Groups.SelectMany(one => one.Items).ToList();
+            }
+
+            /// <summary>
+            /// What the rules found, written onto the list itself.
+            ///
+            /// The counts go on the rules rather than into a table beside them: the rule is where
+            /// the reader is looking, and a rule that found nothing is only meaningful next to
+            /// the criteria that found nothing.
+            /// </summary>
+            /// <param name="outcomes">What the walk reported.</param>
+            /// <param name="ran">True when the writes happened, false for a review.</param>
+            private void Report(IReadOnlyList<ClashCardOutcome> outcomes, bool ran)
+            {
+                foreach (var one in outcomes) _said[one.Card] = one;
+
+                Redraw();
+
+                if (outcomes.Count == 0)
+                {
+                    _preview.Children.Add(Ui.Note("No rules are turned on, so nothing was tried."));
+                    return;
+                }
+
+                foreach (var one in outcomes.Where(one => one.Problem != null))
+                    _preview.Children.Add(Ui.Problem(one.Card.Name + ": " + one.Problem));
+
+                var changed = outcomes.Sum(one => one.Changed);
+
+                _preview.Children.Add(Say(ran
+                    ? Ui.Count(changed, "result") + " changed. The Manage tab shows the register "
+                      + "these rules wrote to."
+                    : "Nothing was written. " + Ui.Count(changed, "result") + " would change. "
+                      + "Press Run all rules to write it."));
+            }
+
+            // ---- Wording ------------------------------------------------------------------
+
+            /// <summary>
+            /// What the rules act on, and what the project holds that they cannot reach.
             ///
             /// The engine is typed on <see cref="ClashItem"/> — two sides, a model pair and an
-            /// overlap — so no card here can find a clearance shortfall or a fall-hazard opening.
-            /// Those are counted rather than left to be discovered, the way the Report tab states
-            /// what its documents leave out.
+            /// overlap — so no rule here can find a clearance shortfall or a fall-hazard opening.
+            /// Those are counted rather than left to be discovered.
             /// </summary>
             private string Scope()
             {
-                var covers = "Cards run over clash results only — every result from every clash "
+                var covers = "Rules run over clash results only — every result from every clash "
                              + "test in the project.";
 
-                // The two other kinds the board carries. Health, IDS and compare findings sit in
-                // the same register and belong to other apps, so naming them here would read as a
-                // list of everything this screen is not.
                 var beside = new[] { FindingSource.Headroom, FindingSource.FallHazard };
 
                 var others = _seat.Findings.Findings.Present
@@ -1103,193 +1642,6 @@ namespace CamelWorks.UI.Views
                 return line;
             }
 
-            /// <summary>What one action is called in the picker and in the list.</summary>
-            /// <param name="action">The action.</param>
-            private static string Verb(ClashActionKind action) =>
-                action switch
-                {
-                    ClashActionKind.Suppress => "Suppress",
-                    ClashActionKind.Flag => "Flag",
-                    ClashActionKind.Group => "Group",
-                    ClashActionKind.Assign => "Assign",
-                    ClashActionKind.Status => "Change status",
-                    ClashActionKind.Remove => "Remove",
-                    _ => action.ToString(),
-                };
-
-            /// <summary>The action the picker is on.</summary>
-            private ClashActionKind Picked()
-            {
-                var said = _act.SelectedItem as string;
-
-                foreach (var one in Acts)
-                    if (Verb(one) == said)
-                        return one;
-
-                return ClashActionKind.Suppress;
-            }
-
-            /// <summary>Redraw the card list and the band stack from the rule set.</summary>
-            private void Redraw()
-            {
-                _cards.Children.Clear();
-                _grouping.Children.Clear();
-                _marks.Children.Clear();
-
-                // What past runs wrote stands until somebody takes it off, so the screen says how
-                // much is standing and offers the one way out. Suppressing used to be re-derived
-                // on every board build, where switching a rule off was the way back.
-                var marked = _seat.Findings.Findings.Present.Count(ClashCardRun.Marked);
-
-                if (marked > 0)
-                {
-                    var line = Ui.Across(
-                        Ui.Line(Ui.Count(marked, "result") + " carry a mark from a past run.", 0.75),
-                        Ui.Link("Clear the marks", Unmark));
-
-                    line.Margin = new Thickness(0, 4, 0, 0);
-                    _marks.Children.Add(line);
-                }
-
-                _cards.Children.Add(_rules.Cards.Count == 0
-                    ? Nothing("No cards.",
-                              "Every clash result the tests report reaches the board as it is.",
-                              "Add a card", () => _when.Focus())
-                    : Cards());
-
-                _grouping.Children.Add(_rules.Grouping.Count == 0
-                    ? Nothing("No bands.",
-                              "The board bands by model pair, then level, then results within "
-                              + Metres(_seat.Profile.ClashProximity) + " of each other.",
-                              "Add a band", () => _by.Focus())
-                    : Groups());
-            }
-
-            /// <summary>
-            /// A list with nothing in it, drawn to the same edge and width as the table that
-            /// replaces it.
-            ///
-            /// The shared empty state centres itself and takes the width of its own sentence,
-            /// which is right for a whole pane with nothing in it and wrong for one section of a
-            /// column.
-            /// </summary>
-            /// <param name="what">What the list has none of.</param>
-            /// <param name="why">What happens in its absence.</param>
-            /// <param name="caption">What the way out says.</param>
-            /// <param name="onClick">The way out.</param>
-            private static UIElement Nothing(string what, string why, string caption, Action onClick)
-            {
-                var card = Ui.Empty(what, why, caption, onClick);
-
-                if (card is FrameworkElement frame)
-                {
-                    frame.HorizontalAlignment = HorizontalAlignment.Left;
-                    frame.MaxWidth = double.PositiveInfinity;
-                    frame.Width = 520;
-                }
-
-                return card;
-            }
-
-            /// <summary>
-            /// The cards as a table: what each one finds, what it does, and what it last found.
-            ///
-            /// "Runs on" is decided by order — the first card sees every result, each one after it
-            /// sees what the cards above it left — which is why the bar can move a card as well as
-            /// remove it.
-            /// </summary>
-            private UIElement Cards()
-            {
-                var rows = new List<TableRow>();
-
-                for (var at = 0; at < _rules.Cards.Count; at++)
-                {
-                    var card = _rules.Cards[at];
-
-                    // The second cell is the tick column's placeholder: Ticking replaces the cell
-                    // template, and the row still has to carry a value in that slot.
-                    rows.Add(new TableRow(card,
-                            Place(at),
-                            string.Empty,
-                            card.Name,
-                            Criteria(card.When),
-                            card.Does,
-                            Found(card, one => one.Matched),
-                            Found(card, one => one.Changed))
-                        .Ticking(card.IsEnabled, on => { card.IsEnabled = on; Touched(); }));
-                }
-
-                var table = Ui.Table(rows,
-                    ("#", 28), ("On", 38), ("Card", 200), ("Finds", 0), ("Does", 175),
-                    ("Found", 58), ("Changed", 68)).Ticking(1);
-
-                return Ui.Picking(table,
-                    new Ui.OnPicked("Earlier", (picked, said) => Shift(_rules.Cards, picked, -1)),
-                    new Ui.OnPicked("Later", (picked, said) => Shift(_rules.Cards, picked, 1)),
-                    new Ui.OnPicked("Turn on {n}", (picked, said) => Switch(picked, true)),
-                    new Ui.OnPicked("Turn off {n}", (picked, said) => Switch(picked, false)),
-                    new Ui.OnPicked("Remove {n}", (picked, said) => Forget(_rules.Cards, picked),
-                                    danger: true));
-            }
-
-            /// <summary>
-            /// One count from what the last preview or run said about a card, or a dash.
-            ///
-            /// A dash rather than nought, because nothing has been tried since the list was last
-            /// edited and a nought would read as a card that found nothing.
-            /// </summary>
-            /// <param name="card">The card.</param>
-            /// <param name="which">Which of the two counts.</param>
-            private string Found(ClashCard card, Func<ClashCardOutcome, int> which) =>
-                _said.TryGetValue(card, out var outcome) && outcome.Problem == null
-                    ? Tallied(which(outcome))
-                    : "—";
-
-            /// <summary>
-            /// The band stack as a table.
-            ///
-            /// <see cref="GroupingSpec"/> has no enabled flag and the board applies every band in
-            /// the stack, so the column says Always and the bar removes rather than switches off.
-            /// </summary>
-            private UIElement Groups()
-            {
-                var rows = new List<TableRow>();
-
-                for (var at = 0; at < _rules.Grouping.Count; at++)
-                {
-                    var step = _rules.Grouping[at];
-
-                    rows.Add(new TableRow(step,
-                        Place(at),
-                        "Always",
-                        step.Descriptor?.Title ?? step.Kind,
-                        at == 0 ? "The whole board" : "Each band from " + Above(at),
-                        Criteria(step)));
-                }
-
-                var table = Ui.Table(rows,
-                    ("#", 28), ("On", 52), ("Band by", 180), ("Divides", 175), ("Detail", 0));
-
-                return Ui.Picking(table,
-                    new Ui.OnPicked("Earlier", (picked, said) => Shift(_rules.Grouping, picked, -1)),
-                    new Ui.OnPicked("Later", (picked, said) => Shift(_rules.Grouping, picked, 1)),
-                    new Ui.OnPicked("Remove {n}", (picked, said) => Forget(_rules.Grouping, picked),
-                                    danger: true));
-            }
-
-            /// <summary>A row's place in its list, counted from one.</summary>
-            /// <param name="at">Its index.</param>
-            private static string Place(int at) => (at + 1).ToString(CultureInfo.InvariantCulture);
-
-            /// <summary>The rows above this one, as a row refers to them.</summary>
-            /// <param name="at">The index of the row doing the referring, which is never nought.</param>
-            private static string Above(int at) =>
-                at == 1 ? "band 1" : "bands 1–" + at.ToString(CultureInfo.InvariantCulture);
-
-            /// <summary>The proximity radius, with the default the board uses when it is unset.</summary>
-            /// <param name="metres">The distance, or zero for the default.</param>
-            private static string Metres(double metres) => Length(metres > 0 ? metres : 5.0);
-
             /// <summary>Whether a length reads better in millimetres: non-zero and under a metre.</summary>
             /// <param name="metres">The length.</param>
             private static bool Fine(double metres) => metres != 0 && Math.Abs(metres) < 1;
@@ -1301,10 +1653,6 @@ namespace CamelWorks.UI.Views
                 fine
                     ? (metres * 1000).ToString("0.###", CultureInfo.InvariantCulture) + " mm"
                     : metres.ToString("0.###", CultureInfo.InvariantCulture) + " m";
-
-            /// <summary>A length with its unit, in whichever scale reads.</summary>
-            /// <param name="metres">The length.</param>
-            private static string Length(double metres) => Length(metres, Fine(metres));
 
             /// <summary>
             /// The two ends of a distance range, in one scale.
@@ -1321,7 +1669,7 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// What a card finds, with the unit on every measured value.
+            /// What a rule finds, with the unit on every measured value.
             ///
             /// <see cref="PredicateSpec.Describe"/> writes bare numbers, because Core has no
             /// opinion about how a screen shows a length. The three measured kinds are formatted
@@ -1343,394 +1691,12 @@ namespace CamelWorks.UI.Views
                 };
             }
 
-            /// <summary>What a band divides by, without repeating its title.</summary>
-            /// <param name="step">The band.</param>
-            private static string Criteria(GroupingSpec step)
-            {
-                var kind = step.Descriptor;
-                if (kind == null) return step.Describe();
-
-                return kind.Input switch
-                {
-                    SpecInput.Number => Metres(step.A),
-                    SpecInput.Text => "'" + (step.Name ?? string.Empty) + "'",
-                    _ => string.Empty,
-                };
-            }
-
             /// <summary>An angle with its unit.</summary>
             /// <param name="degrees">The angle.</param>
             private static string Degrees(double degrees) =>
                 degrees.ToString("0.###", CultureInfo.InvariantCulture) + "°";
 
-            /// <summary>
-            /// Move the picked rows one place through their list.
-            ///
-            /// A row at the end of its list cannot move, and a wall stops the ones behind it
-            /// stepping over it: without that, picking the first two cards and pressing Earlier
-            /// would swap them rather than leave the pair where it is.
-            /// </summary>
-            /// <typeparam name="T">The row type.</typeparam>
-            /// <param name="list">The list.</param>
-            /// <param name="picked">The rows the bar was pressed with.</param>
-            /// <param name="by">Minus one for earlier, plus one for later.</param>
-            private void Shift<T>(IList<T> list, IReadOnlyList<object> picked, int by)
-            {
-                // Earlier moves the topmost row first, later moves the bottom one first, so a row
-                // never steps over another row in the same press.
-                var order = picked.OfType<T>()
-                    .Select(one => list.IndexOf(one))
-                    .Where(at => at >= 0)
-                    .OrderBy(at => by < 0 ? at : -at)
-                    .ToList();
-
-                if (order.Count == 0) return;
-
-                var wall = by < 0 ? 0 : list.Count - 1;
-
-                foreach (var at in order)
-                {
-                    if (by < 0 ? at <= wall : at >= wall)
-                    {
-                        wall += by < 0 ? 1 : -1;
-                        continue;
-                    }
-
-                    var moved = list[at];
-                    list.RemoveAt(at);
-                    list.Insert(at + by, moved);
-                }
-
-                Touched();
-                Redraw();
-            }
-
-            /// <summary>Turn the picked cards on or off.</summary>
-            /// <param name="picked">The rows the bar was pressed with.</param>
-            /// <param name="on">True to run them, false to leave them in the list doing nothing.</param>
-            private void Switch(IReadOnlyList<object> picked, bool on)
-            {
-                foreach (var one in picked.OfType<ClashCard>()) one.IsEnabled = on;
-
-                Touched();
-                Redraw();
-            }
-
-            /// <summary>Take the picked rows out of their list.</summary>
-            /// <typeparam name="T">The row type.</typeparam>
-            /// <param name="list">The list.</param>
-            /// <param name="picked">The rows the bar was pressed with.</param>
-            private void Forget<T>(IList<T> list, IReadOnlyList<object> picked)
-            {
-                foreach (var one in picked.OfType<T>())
-                {
-                    list.Remove(one);
-                    if (one is ClashCard card) _said.Remove(card);
-                }
-
-                Touched();
-                Redraw();
-            }
-
-            /// <summary>Show the one value field this action needs, and warn about a card that empties the board.</summary>
-            private void Retune()
-            {
-                var act = Picked();
-
-                _groupField.Visibility = act == ClashActionKind.Group
-                    ? Visibility.Visible : Visibility.Collapsed;
-                _partyField.Visibility = act == ClashActionKind.Assign
-                    ? Visibility.Visible : Visibility.Collapsed;
-                _statusField.Visibility = act == ClashActionKind.Status
-                    ? Visibility.Visible : Visibility.Collapsed;
-
-                _composerSaid.Children.Clear();
-
-                if (act == ClashActionKind.Remove)
-                    _composerSaid.Children.Add(Ui.Note(
-                        "Remove deletes the results it finds from the Navisworks document. They "
-                        + "go from the native clash window too, and running the test again is the "
-                        + "only way to get them back."));
-
-                if (_chose && _when.Kind()?.Id == "always"
-                    && (act == ClashActionKind.Suppress || act == ClashActionKind.Remove))
-                    _composerSaid.Children.Add(Ui.Note("These criteria find every result, so this "
-                        + "card would take the whole board off. Narrow it first."));
-            }
-
-            /// <summary>Add the composed card to the list.</summary>
-            private void Add()
-            {
-                _composerSaid.Children.Clear();
-
-                var kind = _when.Kind();
-                var spec = _when.Spec();
-
-                if (kind == null || spec == null) return;
-
-                if ((kind.Input == SpecInput.Text || kind.Input == SpecInput.NameAndValue)
-                    && spec.Name == null)
-                {
-                    _composerSaid.Children.Add(Ui.Problem("These criteria need a " + _when.Wants() + "."));
-                    return;
-                }
-
-                var act = Picked();
-                var value = Value(act);
-
-                if (ClashCard.Needs(act) && string.IsNullOrWhiteSpace(value))
-                {
-                    _composerSaid.Children.Add(Ui.Problem("A card that "
-                        + Verb(act).ToLowerInvariant() + " needs a "
-                        + (act == ClashActionKind.Group ? "group name"
-                           : act == ClashActionKind.Assign ? "party" : "status") + "."));
-                    return;
-                }
-
-                var typed = _name.Text.Trim();
-
-                _rules.Cards.Add(new ClashCard(typed.Length == 0 ? Criteria(spec) : typed, spec, act)
-                {
-                    Value = value,
-                });
-
-                _name.Text = string.Empty;
-                _group.Text = string.Empty;
-
-                // The card exists now, so the note about a card that takes the whole board off has
-                // something to point at even if the criteria were left as the composer offered them.
-                if (kind.Id == "always") _chose = true;
-
-                Touched();
-                Redraw();
-                Retune();
-            }
-
-            /// <summary>What the composer holds for this action, or null where it takes none.</summary>
-            /// <param name="act">The action.</param>
-            private string? Value(ClashActionKind act) =>
-                act switch
-                {
-                    ClashActionKind.Group => _group.Text.Trim(),
-                    ClashActionKind.Assign => _party.SelectedItem as string,
-                    ClashActionKind.Status => _status.SelectedItem as string,
-                    _ => null,
-                };
-
-            /// <summary>Add the composed band to the stack.</summary>
-            private void Band()
-            {
-                _composerSaid.Children.Clear();
-
-                var kind = _by.Kind();
-                if (kind == null) return;
-
-                if (kind.Input == SpecInput.Text && _by.Name() == null)
-                {
-                    _composerSaid.Children.Add(Ui.Problem("This band needs a " + _by.Wants() + "."));
-                    return;
-                }
-
-                _rules.Grouping.Add(new GroupingSpec(kind.Id) { A = _by.Number(), Name = _by.Name() });
-
-                Touched();
-                Redraw();
-            }
-
-            /// <summary>
-            /// Take every suppress and flag mark off, so the board carries what the tests report.
-            ///
-            /// Confirmed, because it undoes every run of every card at once and the counts on the
-            /// list are the only record of what those runs did.
-            /// </summary>
-            private void Unmark() =>
-                Parts.Sure(_marks,
-                    "This takes the suppress and flag marks off every result in the project, "
-                    + "whichever card wrote them. The results themselves are not touched.",
-                    "Clear the marks",
-                    () =>
-                    {
-                        var cleared = ClashCardRun.Clear(_seat.Findings.Findings.Present.ToList());
-
-                        _preview.Children.Clear();
-
-                        if (!_seat.Findings.Save())
-                        {
-                            _preview.Children.Add(Ui.Problem(
-                                "The marks were cleared, but the findings file could not be written."));
-                            return;
-                        }
-
-                        _said.Clear();
-                        Redraw();
-
-                        _preview.Children.Add(Ui.Done(
-                            Ui.Count(cleared, "result") + " no longer carry a mark."));
-                    });
-
-            /// <summary>Say that what is on screen is no longer what the project file holds.</summary>
-            private void Touched()
-            {
-                _saved.Children.Clear();
-                _saved.Children.Add(Say("Edited. Nothing is written to the project file until "
-                                        + "Save cards is pressed."));
-            }
-
-            /// <summary>Write the cards and the bands to the project file.</summary>
-            private void Save()
-            {
-                _saved.Children.Clear();
-
-                _seat.Store.Section(ProjectStore.ClashSection).Set(ClashKeys.Rules, _rules.ToJson());
-
-                if (!_seat.Store.Save())
-                {
-                    _saved.Children.Add(Ui.Problem(_seat.Store.LastSaveProblem
-                                                   ?? "Could not write the project file."));
-                    return;
-                }
-
-                _seat.Record(ActivityKind.Setup,
-                             "Saved " + Ui.Count(_rules.Cards.Count, "clash card") + ".");
-
-                _saved.Children.Add(Ui.Done("Saved. Saving does not run anything: press Run the "
-                                            + "cards to apply them."));
-            }
-
-            /// <summary>
-            /// Run the cards over the clash results and report what each one did.
-            ///
-            /// The results are read with no cards applied, so what the cards find is what the
-            /// tests reported rather than what a previous run of the same list left behind.
-            /// </summary>
-            /// <param name="session">The live session.</param>
-            /// <param name="job">The job, for progress and Stop.</param>
-            private void Play(Session session, Job job)
-            {
-                var live = _rules.Cards.Where(one => one.IsEnabled).ToList();
-
-                if (live.Count == 0)
-                {
-                    _preview.Children.Add(Ui.Note("No cards are turned on, so there is nothing to run."));
-                    return;
-                }
-
-                // A card that deletes is the one act on this screen that running the test again
-                // will not undo, so it is confirmed before anything is read.
-                var final = live.Count(one => ClashCard.IsFinal(one.Action));
-
-                if (final > 0)
-                {
-                    var went = false;
-
-                    Parts.Sure(_preview,
-                        Ui.Count(final, "card") + " on this list deletes the results it finds from "
-                        + "the Navisworks document. They go from the native clash window too, and "
-                        + "running the clash test again is the only way to get them back.",
-                        "Run the cards", () => went = true);
-
-                    if (!went)
-                    {
-                        _preview.Children.Add(Ui.Note("Nothing was run."));
-                        return;
-                    }
-                }
-
-                var items = Reading(session, job);
-                if (items == null) return;
-
-                var register = session.Findings.Findings;
-                var writer = new CardWriter(session);
-
-                job.Say("Running " + Ui.Count(live.Count, "card") + "...");
-
-                var outcomes = ClashCardRun.Apply(_rules.Cards, items, register.Find, writer);
-
-                if (!session.Findings.Save())
-                    _preview.Children.Add(Ui.Problem(
-                        "The cards ran, but the findings file could not be written."));
-
-                Report(outcomes, ran: true);
-            }
-
-            /// <summary>
-            /// Say what the cards would do, changing nothing.
-            /// </summary>
-            /// <param name="session">The live session.</param>
-            /// <param name="job">The job, for progress and Stop.</param>
-            private void Preview(Session session, Job job)
-            {
-                var items = Reading(session, job);
-                if (items == null) return;
-
-                var register = session.Findings.Findings;
-
-                Report(ClashCardRun.Plan(_rules.Cards, items, register.Find), ran: false);
-            }
-
-            /// <summary>
-            /// Every clash result in the project, with no card applied.
-            ///
-            /// The board is built with an empty rule set on purpose. Reading it with the cards
-            /// applied would hand the run a set the cards had already shaped, so the second run of
-            /// a list would find nothing.
-            /// </summary>
-            /// <param name="session">The live session.</param>
-            /// <param name="job">The job.</param>
-            private IReadOnlyList<ClashItem>? Reading(Session session, Job job)
-            {
-                var notes = new List<string>();
-                var board = CoordinateViews.Build(session, job, notes, new ClashRuleSet(), preview: true);
-
-                foreach (var note in notes) _preview.Children.Add(Ui.Note(note));
-
-                if (board == null) return null;
-
-                return board.Groups.SelectMany(one => one.Items).ToList();
-            }
-
-            /// <summary>
-            /// What the cards found, one row each.
-            /// </summary>
-            /// <param name="outcomes">What the walk reported.</param>
-            /// <param name="ran">True when the writes happened, false for a preview.</param>
-            private void Report(IReadOnlyList<ClashCardOutcome> outcomes, bool ran)
-            {
-                _said.Clear();
-                foreach (var one in outcomes) _said[one.Card] = one;
-
-                Redraw();
-
-                if (outcomes.Count == 0)
-                {
-                    _preview.Children.Add(Ui.Note("No cards are turned on, so nothing was tried."));
-                    return;
-                }
-
-                // The counts go into the list itself rather than into a second table beside it:
-                // the card is where the reader is looking, and a card that found nothing is only
-                // meaningful next to the criteria that found nothing.
-                foreach (var one in outcomes.Where(one => one.Problem != null))
-                    _preview.Children.Add(Ui.Problem(one.Card.Name + ": " + one.Problem));
-
-                var idle = outcomes.Where(one => one.Problem == null && one.Matched == 0)
-                                   .Select(one => one.Card.Name)
-                                   .ToList();
-
-                if (idle.Count > 0)
-                    _preview.Children.Add(Say(Ui.Count(idle.Count, "card") + " found nothing: "
-                                              + string.Join(", ", idle) + "."));
-
-                var changed = outcomes.Sum(one => one.Changed);
-
-                _preview.Children.Add(Say(ran
-                    ? Ui.Count(changed, "result") + " changed. The Manage tab shows the register "
-                      + "these cards wrote to."
-                    : "Nothing was written. " + Ui.Count(changed, "result") + " would change. "
-                      + "Press Run the cards to write it."));
-            }
-
-            /// <summary>A count as it reads in a table.</summary>
+            /// <summary>A count as it reads on a rule.</summary>
             /// <param name="count">The count.</param>
             private static string Tallied(int count) => count.ToString("N0", CultureInfo.InvariantCulture);
 
@@ -1738,34 +1704,35 @@ namespace CamelWorks.UI.Views
             /// The reference matter, behind one symbol rather than standing under the list.
             ///
             /// What each action does, what order means, and the long form of the scope the surface
-            /// states in one line. Each is read once and then known.
+            /// states in one line.
             /// </summary>
             private void Guide()
             {
-                Ui.Configure("How cards are run", null,
+                Ui.Configure("How rules are run", null,
                     new Ui.Page("The order", () => Ui.Stack(
                         Part("Top to bottom",
-                             "A card finds results with its criteria and does one thing to them. "
-                             + "The first card sees every clash result in the project; each card "
-                             + "after it sees what the cards above left. A card that suppresses or "
-                             + "removes takes its results off the list the cards under it see, so "
-                             + "moving a card up or down changes what the ones below it find."),
+                             "A rule finds results with its criteria and does one thing to them. "
+                             + "The first rule sees every clash result in the project; each rule "
+                             + "after it sees what the rules above left. A rule that suppresses or "
+                             + "removes takes its results off the list the rules under it see, so "
+                             + "dragging a rule up or down changes what the ones below it find."),
                         Part("On a press",
-                             "Nothing runs on save, and nothing runs when the tab opens. See what "
-                             + "it would do walks the same list and writes nothing; Run the cards "
-                             + "walks it and writes. Both read the results with no card applied, "
-                             + "so running the same list twice reports what it found and nothing "
-                             + "changed the second time."))),
+                             "Nothing runs on save, and nothing runs when the tab opens. Review "
+                             + "walks the list and writes nothing; Run all rules walks it and "
+                             + "writes; a rule opened on the right can be run on its own. All "
+                             + "three read the results with no rule applied, so running the same "
+                             + "list twice reports what it found and nothing changed the second "
+                             + "time."))),
                     new Ui.Page("The actions", () => Ui.Stack(
                         Part("Suppress and flag",
-                             "Both are marks on the finding and both name the card that set them. "
-                             + "A suppressed result is off the board and hidden from the cards "
+                             "Both are marks on the finding and both name the rule that set them. "
+                             + "A suppressed result is off the board and hidden from the rules "
                              + "below; a flagged one stays where it is."),
                         Part("Group, assign and change status",
                              "Written to the project's finding register and echoed into the "
                              + "Navisworks document, so the native clash window shows the same "
                              + "group, the same assignee and the same status. A document that "
-                             + "will not take the write says so on the card's row."),
+                             + "will not take the write says so on the rule."),
                         Part("Remove",
                              "Deletes the results from the Navisworks document. They are gone from "
                              + "the native clash window as well, and running the clash test again "
@@ -1774,18 +1741,20 @@ namespace CamelWorks.UI.Views
                              + "what it was about."))),
                     new Ui.Page("What they cover", () => Ui.Stack(
                         Part("Clash results only",
-                             "A card's criteria work on a clash result: two items, the models they "
+                             "A rule's criteria work on a clash result: two items, the models they "
                              + "came from, and the overlap between them. A clearance shortfall and "
-                             + "a fall-hazard opening are not that shape, so no card on this screen "
+                             + "a fall-hazard opening are not that shape, so no rule on this screen "
                              + "can find one."),
                         Part("Which tests",
-                             "Every clash test in the project. There is no card that narrows the "
-                             + "list to one test; add criteria on the test name to keep a card to "
+                             "Every clash test in the project. There is no rule that narrows the "
+                             + "list to one test; add criteria on the test name to keep a rule to "
                              + "one."),
-                        Part("Bands",
-                             "The band stack is not a card and does nothing to a result. It "
-                             + "decides how the board divides what it is given, and it applies to "
-                             + "the board the Report, Exchange and Freeze tabs read."))));
+                        Part("Undoing a run",
+                             "A suppress or flag mark stands until it is taken off, because it is "
+                             + "written by a run rather than derived by the board on every load. "
+                             + "Clear the marks, above the list, takes every one of them "
+                             + "off. A group, an assignee or a status is changed by running a rule "
+                             + "that sets a different one, or by hand on the Manage tab."))));
             }
 
             /// <summary>One passage of the help window: a sentence-case heading and its paragraph.</summary>
@@ -1801,6 +1770,187 @@ namespace CamelWorks.UI.Views
                 body.Margin = new Thickness(0, 0, 0, 16);
 
                 return Ui.Stack(head, body);
+            }
+        }
+
+        /// <summary>
+        /// The band stack: how the board divides the results it is given.
+        ///
+        /// Not a rule and not on the Filter tab. A band changes nothing about a result — it
+        /// decides which heading the result is drawn under — so it belongs with the project's
+        /// other board settings rather than in a list of things that act on results.
+        /// </summary>
+        /// <param name="stack">The stack, edited in place.</param>
+        /// <param name="proximityMetres">The project's grouping distance, for the empty state.</param>
+        /// <param name="onChanged">Called after every edit, so the host can mark itself unsaved.</param>
+        internal static UIElement Bands(IList<GroupingSpec> stack, double proximityMetres,
+                                        Action onChanged) =>
+            new BandStack(stack, proximityMetres, onChanged).View;
+
+        /// <summary>The band stack as a table with an editor under it.</summary>
+        private sealed class BandStack
+        {
+            private readonly IList<GroupingSpec> _stack;
+            private readonly double _proximity;
+            private readonly Action _onChanged;
+            private readonly StackPanel _list = Ui.Stack();
+            private readonly StackPanel _said = Ui.Stack();
+            private readonly SpecEditor _by;
+
+            /// <summary>Build one over a stack.</summary>
+            /// <param name="stack">The stack, edited in place.</param>
+            /// <param name="proximityMetres">The project's grouping distance.</param>
+            /// <param name="onChanged">Called after every edit.</param>
+            internal BandStack(IList<GroupingSpec> stack, double proximityMetres, Action onChanged)
+            {
+                _stack = stack ?? throw new ArgumentNullException(nameof(stack));
+                _proximity = proximityMetres;
+                _onChanged = onChanged ?? throw new ArgumentNullException(nameof(onChanged));
+
+                Grid.SetIsSharedSizeScope(_list, true);
+
+                _by = new SpecEditor("Band by", GroupingSpec.Kinds, null);
+                _by.View.Margin = new Thickness(0, 6, 0, 6);
+
+                View = Ui.Stack(_list, _by.View, Ui.Actions(Ui.Button("Add band", Add)), _said);
+
+                Redraw();
+            }
+
+            /// <summary>The table, the editor and its action.</summary>
+            internal StackPanel View { get; }
+
+            /// <summary>Draw the stack.</summary>
+            private void Redraw()
+            {
+                _list.Children.Clear();
+
+                if (_stack.Count == 0)
+                {
+                    _list.Children.Add(Ui.Small(
+                        "No bands. The board divides by model pair, then level, then results "
+                        + "within " + Metres(_proximity) + " of each other."));
+
+                    return;
+                }
+
+                var rows = new List<TableRow>();
+
+                for (var at = 0; at < _stack.Count; at++)
+                {
+                    var step = _stack[at];
+
+                    rows.Add(new TableRow(step,
+                        (at + 1).ToString(CultureInfo.InvariantCulture),
+                        step.Descriptor?.Title ?? step.Kind,
+                        at == 0 ? "The whole board" : "Each band from " + Above(at),
+                        Detail(step)));
+                }
+
+                var table = Ui.Table(rows,
+                    ("#", 28), ("Band by", 180), ("Divides", 175), ("Detail", 0));
+
+                _list.Children.Add(Ui.Picking(table,
+                    new Ui.OnPicked("Earlier", (picked, said) => Shift(picked, -1)),
+                    new Ui.OnPicked("Later", (picked, said) => Shift(picked, 1)),
+                    new Ui.OnPicked("Remove {n}", (picked, said) => Forget(picked), danger: true)));
+            }
+
+            /// <summary>Add the composed band to the stack.</summary>
+            private void Add()
+            {
+                _said.Children.Clear();
+
+                var kind = _by.Kind();
+                if (kind == null) return;
+
+                if (kind.Input == SpecInput.Text && _by.Name() == null)
+                {
+                    _said.Children.Add(Ui.Problem("This band needs a " + _by.Wants() + "."));
+                    return;
+                }
+
+                _stack.Add(new GroupingSpec(kind.Id) { A = _by.Number(), Name = _by.Name() });
+
+                Redraw();
+                _onChanged();
+            }
+
+            /// <summary>
+            /// Move the picked bands one place.
+            ///
+            /// A band at the end cannot move, and a wall stops the ones behind it stepping over
+            /// it: without that, picking the first two and pressing Earlier would swap them
+            /// rather than leave the pair where it is.
+            /// </summary>
+            /// <param name="picked">The rows the bar was pressed with.</param>
+            /// <param name="by">Minus one for earlier, plus one for later.</param>
+            private void Shift(IReadOnlyList<object> picked, int by)
+            {
+                var order = picked.OfType<GroupingSpec>()
+                    .Select(one => _stack.IndexOf(one))
+                    .Where(at => at >= 0)
+                    .OrderBy(at => by < 0 ? at : -at)
+                    .ToList();
+
+                if (order.Count == 0) return;
+
+                var wall = by < 0 ? 0 : _stack.Count - 1;
+
+                foreach (var at in order)
+                {
+                    if (by < 0 ? at <= wall : at >= wall)
+                    {
+                        wall += by < 0 ? 1 : -1;
+                        continue;
+                    }
+
+                    var moved = _stack[at];
+                    _stack.RemoveAt(at);
+                    _stack.Insert(at + by, moved);
+                }
+
+                Redraw();
+                _onChanged();
+            }
+
+            /// <summary>Take the picked bands out of the stack.</summary>
+            /// <param name="picked">The rows the bar was pressed with.</param>
+            private void Forget(IReadOnlyList<object> picked)
+            {
+                foreach (var one in picked.OfType<GroupingSpec>()) _stack.Remove(one);
+
+                Redraw();
+                _onChanged();
+            }
+
+            /// <summary>The bands above this one, as a row refers to them.</summary>
+            /// <param name="at">The index of the row doing the referring, which is never nought.</param>
+            private static string Above(int at) =>
+                at == 1 ? "band 1" : "bands 1\u2013" + at.ToString(CultureInfo.InvariantCulture);
+
+            /// <summary>What a band divides by, without repeating its title.</summary>
+            /// <param name="step">The band.</param>
+            private static string Detail(GroupingSpec step)
+            {
+                var kind = step.Descriptor;
+                if (kind == null) return step.Describe();
+
+                return kind.Input switch
+                {
+                    SpecInput.Number => Metres(step.A),
+                    SpecInput.Text => "'" + (step.Name ?? string.Empty) + "'",
+                    _ => string.Empty,
+                };
+            }
+
+            /// <summary>A distance, with the default the board uses when it is unset.</summary>
+            /// <param name="metres">The distance, or zero for the default.</param>
+            private static string Metres(double metres)
+            {
+                var said = metres > 0 ? metres : 5.0;
+
+                return said.ToString("0.###", CultureInfo.InvariantCulture) + " m";
             }
         }
 
@@ -1934,8 +2084,11 @@ namespace CamelWorks.UI.Views
                 _kind = Ui.Choice(kinds.Select(k => k.Title), kinds[0].Title, _ =>
                 {
                     Relabel();
-                    _onChanged?.Invoke();
+                    Fired();
                 }, 240);
+
+                _first.TextChanged += (s, e) => Ui.Safely(Fired);
+                _second.TextChanged += (s, e) => Ui.Safely(Fired);
 
                 _first.MaxWidth = 130;
                 _second.MaxWidth = 130;
@@ -1950,6 +2103,89 @@ namespace CamelWorks.UI.Views
 
             /// <summary>The dropdown and its operand fields.</summary>
             internal StackPanel View { get; }
+
+            /// <summary>
+            /// Called when anything in the editor changes, on top of the one given at build time.
+            ///
+            /// Settable because the editor outlives the thing it is editing on a master-detail
+            /// screen: the same editor is pointed at one rule, then another, and what to do with
+            /// a change is different each time.
+            /// </summary>
+            internal Action? Changed { get; set; }
+
+            /// <summary>Whether a change is the caller's own, so loading one in does not echo back.</summary>
+            private bool _loading;
+
+            /// <summary>Tell whoever is listening, unless this is a load.</summary>
+            private void Fired()
+            {
+                if (_loading) return;
+
+                _onChanged?.Invoke();
+                Changed?.Invoke();
+            }
+
+            /// <summary>
+            /// Point the editor at an existing rule.
+            ///
+            /// Silent: the controls are set from the rule, and setting a control raises the same
+            /// event a person typing raises, which would report the load as an edit.
+            /// </summary>
+            /// <param name="spec">What to show.</param>
+            internal void Show(PredicateSpec? spec)
+            {
+                _loading = true;
+
+                try
+                {
+                    var kind = spec == null
+                        ? null
+                        : _kinds.FirstOrDefault(k => string.Equals(k.Id, spec.Kind, StringComparison.Ordinal));
+
+                    _kind.SelectedItem = (kind ?? _kinds[0]).Title;
+
+                    Relabel();
+
+                    if (spec == null || kind == null)
+                    {
+                        _first.Text = string.Empty;
+                        _second.Text = string.Empty;
+                        return;
+                    }
+
+                    switch (kind.Input)
+                    {
+                        case SpecInput.Number:
+                            _first.Text = spec.A.ToString("0.####", CultureInfo.InvariantCulture);
+                            _second.Text = string.Empty;
+                            break;
+
+                        case SpecInput.Range:
+                            _first.Text = spec.A.ToString("0.####", CultureInfo.InvariantCulture);
+                            _second.Text = spec.B.ToString("0.####", CultureInfo.InvariantCulture);
+                            break;
+
+                        case SpecInput.Text:
+                            _first.Text = spec.Name ?? string.Empty;
+                            _second.Text = string.Empty;
+                            break;
+
+                        case SpecInput.NameAndValue:
+                            _first.Text = spec.Name ?? string.Empty;
+                            _second.Text = spec.Value ?? string.Empty;
+                            break;
+
+                        default:
+                            _first.Text = string.Empty;
+                            _second.Text = string.Empty;
+                            break;
+                    }
+                }
+                finally
+                {
+                    _loading = false;
+                }
+            }
 
             /// <summary>The kind now picked, or null when the dropdown holds something unknown.</summary>
             /// <summary>Put the caret in it, from an empty list's way in.</summary>

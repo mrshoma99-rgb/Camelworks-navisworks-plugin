@@ -176,6 +176,7 @@ namespace CamelWorks.UI.Views
             // tab's one action.
             private LevelPlan? _plan;
             private NamingBook? _book;
+            private IList<GroupingSpec>? _bands;
             private TeamRoster? _roster;
 
             // Profile overrides typed here but not yet written. Held apart from the profile itself
@@ -366,6 +367,21 @@ namespace CamelWorks.UI.Views
                     _seat.Store.Section(ProjectStore.ClashSection)
                          .Set(NamingBook.Key, _book.ToJson() ?? JsonValue.Object());
 
+                if (_bands != null)
+                {
+                    // Read again rather than written from what this tab loaded: the rules under
+                    // the same key are the Filter tab's, and a whole-object write of a stale read
+                    // would take out a rule somebody added since.
+                    var section = _seat.Store.Section(ProjectStore.ClashSection);
+                    var rules = ClashRuleSet.FromJson(section[ClashKeys.Rules]);
+
+                    rules.Grouping.Clear();
+
+                    foreach (var band in _bands) rules.Grouping.Add(band);
+
+                    section.Set(ClashKeys.Rules, rules.ToJson());
+                }
+
                 _state.Children.Clear();
 
                 if (_seat.Store.Save())
@@ -445,6 +461,19 @@ namespace CamelWorks.UI.Views
                              Ui.Text(duplicate, typed => Set(ProfileKeys.DuplicateBand, typed),
                                      120))));
 
+                held.Children.Add(Head(
+                    "Bands",
+                    "How the board divides the results it is given into headings.",
+                    "A band decides which heading a result is drawn under and changes nothing "
+                    + "about the result itself, which is why it is a setting here rather than a "
+                    + "rule on the Filter tab. The stack applies in order: the first band is the "
+                    + "outermost division of the board, and each one after it divides what the "
+                    + "one above produced. With no bands the board divides by model pair, then "
+                    + "level, then results within the grouping distance of each other."));
+
+                held.Children.Add(CoordinateViews.Bands(Stack, _seat.Profile.ClashProximity,
+                                                        Touched));
+
                 return held;
             }
 
@@ -455,6 +484,16 @@ namespace CamelWorks.UI.Views
             /// <summary>The storeys, drawn by the editor that owns them.</summary>
             private UIElement LevelsPart() =>
                 ClashLevels.Panel(Plan, _pane, () => { Touched(); return true; });
+
+            /// <summary>
+            /// The band stack, read once and edited in place.
+            ///
+            /// Held apart from the rest of the rule set: the Filter tab owns the rules and this
+            /// tab owns the bands, and both live under one key, so this writes back only the part
+            /// it owns rather than the whole object it read.
+            /// </summary>
+            private IList<GroupingSpec> Stack => _bands ??= ClashRuleSet.FromJson(
+                _seat.Store.Section(ProjectStore.ClashSection)[ClashKeys.Rules]).Grouping;
 
             /// <summary>The storeys this project declares, read once and edited in place.</summary>
             private LevelPlan Plan => _plan ??= _given ?? LevelPlan.FromJson(
