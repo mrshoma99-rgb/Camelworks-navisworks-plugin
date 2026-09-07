@@ -167,6 +167,17 @@ namespace CamelWorks.Core.Abstractions
         /// <param name="name">The new name.</param>
         bool RenameTest(string testId, string name);
 
+        /// <summary>
+        /// Delete results from one test, in the document.
+        ///
+        /// The one write here that cannot be taken back: the results are gone from the Navisworks
+        /// document and from the native clash window, and re-running the test is what brings back
+        /// whatever it finds again. Every caller confirms before it asks.
+        /// </summary>
+        /// <param name="testId">Which test they are in.</param>
+        /// <param name="resultIds">Which results.</param>
+        bool DeleteResults(string testId, IReadOnlyList<string> resultIds);
+
         /// <summary>Delete the given tests, results and all.</summary>
         /// <param name="testIds">Which tests.</param>
         bool DeleteTests(IReadOnlyList<string> testIds);

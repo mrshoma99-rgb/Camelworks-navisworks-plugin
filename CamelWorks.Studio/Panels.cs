@@ -12,6 +12,7 @@ using CamelWorks.Core.Data;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Project;
+using CamelWorks.Core.Search;
 using CamelWorks.Core.Store;
 using CamelWorks.Core.Testing;
 using CamelWorks.UI.Shell;
@@ -247,7 +248,30 @@ namespace CamelWorks.Studio
             // Not in the render's default list; named on dispatch.
             Page("app-clash-create-empty", "Clash Manager · Create, no tests yet", 620,
                  () => Creating(null)),
+
+            // The form that makes one clash test. It is a modal in the product, so what is drawn
+            // is its body: the two sides, the kind and the tolerance, with both sides unset, which
+            // is the state it opens in and the one that has to say what to do next.
+            // Not in the render's default list; named on dispatch.
+            Page("app-clash-new", "Clash Manager · A new clash test", 620, NewClash),
         };
+
+        /// <summary>The new-clash-test form, as it opens.</summary>
+        private static UIElement NewClash()
+        {
+            var seat = Seated();
+            var clash = seat.Checks.All.OfType<ClashCheck>().First();
+
+            var body = new Border
+            {
+                Padding = new Thickness(18, 16, 18, 16),
+                Child = ClashTestViews.Drawn(seat, clash, "Clash 1"),
+            };
+
+            body.Tint(Border.BackgroundProperty, "Bg");
+
+            return body;
+        }
 
         /// <summary>
         /// The Create tab, with a test of one kind picked.
@@ -416,53 +440,134 @@ namespace CamelWorks.Studio
             seat.Findings.Save();
         }
 
+        /// <summary>A search of one condition.</summary>
+        /// <param name="term">The condition.</param>
+        private static ResultQuery Search(QueryTerm term) =>
+            new ResultQuery().With(new ResultQuery(term));
+
+        /// <summary>A search of two conditions, both of which have to hold.</summary>
+        /// <param name="first">One condition.</param>
+        /// <param name="second">The other.</param>
+        private static ResultQuery Group(QueryTerm first, QueryTerm second) =>
+            Search(first).With(new ResultQuery(second));
+
         /// <summary>
         /// The Filter tab with a project's rules on it.
         ///
-        /// The rules are written into the scratch project on the way in, as
+        /// The cards are written into the scratch project on the way in, as
         /// <see cref="Creating"/> writes its tests: the store is shared by every page, so a page
         /// that needs data puts it there itself rather than relying on the order the harness draws
         /// in. Nothing is saved, so the empty Filter page still opens on an empty project.
         ///
-        /// What is written is what the three lists have to draw: both filter actions, a name long
-        /// enough to be trimmed, a grouping step that carries a number and one that carries a
-        /// property name, and assignments with and without a priority.
+        /// What is written is what the list has to draw: all six actions, a name long enough to be
+        /// trimmed, and a rule turned off. The bands go in too, for the Settings tab that owns
+        /// them.
         /// </summary>
         private static UIElement Ruled()
         {
             var seat = Seated();
             var rules = new ClashRuleSet();
 
-            rules.Filters.Add(new FilterSpec(
-                "Insulation grazing insulation",
-                new PredicateSpec("maxVolume") { A = 0.001 }, suppress: true));
+            var ducts = new ResultQuery();
 
-            rules.Filters.Add(new FilterSpec(
+            ducts.Inside.Add(new ResultQuery(
+                new QueryTerm(ResultFields.Category, QueryOp.Is)
+                {
+                    Where = QueryWhere.FirstElement,
+                    Text = "Ducts",
+                }));
+
+            // A bracket whose two conditions are joined by "or", so the harness draws the chip
+            // and the bar the sketch calls for.
+            var framing = new ResultQuery();
+
+            framing.With(new ResultQuery(
+                new QueryTerm(ResultFields.Category, QueryOp.Is)
+                {
+                    Where = QueryWhere.SecondElement,
+                    Text = "Structural Framing",
+                }));
+
+            framing.With(new ResultQuery(
+                new QueryTerm(ResultFields.Category, QueryOp.Is)
+                {
+                    Where = QueryWhere.SecondElement,
+                    Text = "Structural Columns",
+                }), QueryJoin.Any);
+
+            ducts.With(framing);
+
+            rules.Cards.Add(new ClashCard("Ducts through structural framing", ducts,
+                                          ClashActionKind.Assign) { Value = "Mechanical" });
+
+            // Searches of every shape the editor draws: one condition, a stack of two, a bracket,
+            // an element property read from an ancestor, and a number range.
+            rules.Cards.Add(new ClashCard("Insulation grazing insulation",
+                Search(new QueryTerm(ResultFields.Column(ClashFindings.Distance), QueryOp.AtMost)
+                {
+                    Number = 0.001,
+                }),
+                ClashActionKind.Suppress));
+
+            var sleeves = new ResultQuery();
+
+            sleeves.Inside.Add(new ResultQuery(
+                new QueryTerm(ResultFields.Category, QueryOp.Is)
+                {
+                    Where = QueryWhere.AnyElement,
+                    Text = "Sleeves",
+                }));
+
+            sleeves.Inside.Add(new ResultQuery(
+                new QueryTerm(ResultFields.Property("Element", "Mark"), QueryOp.StartsWith)
+                {
+                    Where = QueryWhere.AnyElement,
+                    Text = "REV21",
+                    Ancestors = 1,
+                }));
+
+            rules.Cards.Add(new ClashCard(
                 "Sleeves already coordinated against the structural openings schedule REV21",
-                new PredicateSpec("bothInSet") { Name = "Sleeves REV21" }, suppress: true));
+                sleeves, ClashActionKind.Suppress));
 
-            rules.Filters.Add(new FilterSpec(
-                "Touching, not passing through",
-                new PredicateSpec("distance") { A = 0, B = 0.005 }, suppress: false));
+            rules.Cards.Add(new ClashCard("Touching, not passing through",
+                Search(new QueryTerm(ResultFields.Column(ClashFindings.Distance), QueryOp.Between)
+                {
+                    Number = 0,
+                    Number2 = 0.005,
+                }),
+                ClashActionKind.Flag));
 
-            rules.Filters.Add(new FilterSpec(
-                "Services through structural framing",
-                new PredicateSpec("category") { Name = "Structural Framing" }, suppress: false));
+            rules.Cards.Add(new ClashCard("Cable tray not yet grouped",
+                Group(new QueryTerm(ResultFields.Category, QueryOp.Is)
+                      {
+                          Where = QueryWhere.AnyElement,
+                          Text = "Cable Tray",
+                      },
+                      new QueryTerm(ResultFields.Group, QueryOp.IsEmpty)),
+                ClashActionKind.Group) { Value = "Electrical containment" });
 
+            rules.Cards.Add(new ClashCard("Sprinkler branches already agreed",
+                Group(new QueryTerm(ResultFields.Property("Element", "System Name"), QueryOp.Contains)
+                      {
+                          Where = QueryWhere.AnyElement,
+                          Text = "SPR",
+                      },
+                      new QueryTerm(ResultFields.Status, QueryOp.Is) { Text = "Active" }),
+                ClashActionKind.Status) { Value = "Approved" });
+
+            rules.Cards.Add(new ClashCard("Duplicated by the coordination model",
+                Search(new QueryTerm(ResultFields.Model, QueryOp.Same)
+                {
+                    Where = QueryWhere.BetweenElements,
+                }),
+                ClashActionKind.Remove) { IsEnabled = false });
+
+            // The bands live on the Settings tab now, and are written here so that tab has a
+            // stack to draw.
             rules.Grouping.Add(new GroupingSpec("level"));
             rules.Grouping.Add(new GroupingSpec("proximity") { A = 2.5 });
             rules.Grouping.Add(new GroupingSpec("property") { Name = "System Name" });
-
-            rules.Assigns.Add(new AssignSpec(
-                new PredicateSpec("eitherInSet") { Name = "WSC_DUCTS_REV21_ISSUED" },
-                "Mechanical", "High"));
-
-            rules.Assigns.Add(new AssignSpec(
-                new PredicateSpec("category") { Name = "Cable Tray" }, "Electrical"));
-
-            rules.Assigns.Add(new AssignSpec(
-                new PredicateSpec("propertyContains") { Name = "System Name", Value = "SPR" },
-                "Fire", "Normal"));
 
             seat.Store.Section(ProjectStore.ClashSection).Set(ClashKeys.Rules, rules.ToJson());
 

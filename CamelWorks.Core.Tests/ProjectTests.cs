@@ -6,6 +6,7 @@ using CamelWorks.Core.Appearance;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Project;
+using CamelWorks.Core.Search;
 using CamelWorks.Core.Sets;
 using CamelWorks.Core.Store;
 using CamelWorks.Core.Testing;
@@ -358,35 +359,73 @@ namespace CamelWorks.Core.Tests
         {
             var rules = new ClashRuleSet();
 
-            var when = new PredicateSpec("all");
-            when.Parts.Add(new PredicateSpec("maxVolume") { A = 0.0005 });
-            when.Parts.Add(new PredicateSpec("not"));
-            when.Parts[1].Parts.Add(new PredicateSpec("category") { Name = "Insulation" });
+            // A stacked search with a bracket in it: the overlap is tiny AND the elements are not
+            // insulation.
+            var when = new ResultQuery();
 
-            rules.Filters.Add(new FilterSpec("Tolerance noise", when, suppress: true));
+            when.Inside.Add(new ResultQuery(
+                new QueryTerm(ResultFields.Column("Overlap"), QueryOp.AtMost) { Number = 0.0005 }));
+
+            var except = new ResultQuery() { Negate = true };
+
+            except.Inside.Add(new ResultQuery(
+                new QueryTerm(ResultFields.Category, QueryOp.Is)
+                {
+                    Where = QueryWhere.AnyElement,
+                    Text = "Insulation",
+                }));
+
+            when.Inside.Add(except);
+
+            rules.Cards.Add(new ClashCard("Tolerance noise", when, ClashActionKind.Suppress));
             rules.Grouping.Add(new GroupingSpec("proximity") { A = 2.5 });
-            rules.Assigns.Add(new AssignSpec(new PredicateSpec("bothInSet") { Name = "Level 3" }, "Mechanical", "High"));
+            rules.Cards.Add(new ClashCard("Level 3 to Mechanical",
+                                          new ResultQuery(
+                                              new QueryTerm(ResultFields.Group, QueryOp.Is)
+                                              {
+                                                  Text = "Level 3",
+                                              }),
+                                          ClashActionKind.Assign) { Value = "Mechanical" });
             rules.Pinned["Level 3 riser"] = new[] { "c1", "c2" };
 
             var back = ClashRuleSet.FromJson(rules.ToJson());
 
-            Assert.Equal("Tolerance noise", back.Filters[0].Name);
-            Assert.True(back.Filters[0].Suppress);
-            Assert.Equal("Insulation", back.Filters[0].When.Parts[1].Parts[0].Name);
+            Assert.Equal("Tolerance noise", back.Cards[0].Name);
+            Assert.Equal(ClashActionKind.Suppress, back.Cards[0].Action);
+            var bracket = back.Cards[0].When.Inside[1];
+
+            Assert.True(bracket.Negate);
+            Assert.Equal("Insulation", bracket.Inside[0].Term!.Text);
+            Assert.Equal(QueryWhere.AnyElement, bracket.Inside[0].Term!.Where);
             Assert.Equal(2.5, back.Grouping[0].A);
-            Assert.Equal("High", back.Assigns[0].Priority);
+            Assert.Equal(ClashActionKind.Assign, back.Cards[1].Action);
+            Assert.Equal("Mechanical", back.Cards[1].Value);
             Assert.Equal(new[] { "c1", "c2" }, back.Pinned["Level 3 riser"].ToArray());
         }
 
         [Fact]
-        public void A_disabled_rule_stays_in_the_list_and_out_of_the_run()
+        public void A_disabled_card_stays_in_the_list_and_out_of_the_run()
         {
             var rules = new ClashRuleSet();
-            rules.Filters.Add(new FilterSpec("Off", new PredicateSpec("always"), suppress: true) { IsEnabled = false });
 
-            Assert.Single(rules.Filters);
+            rules.Cards.Add(new ClashCard("Off", new ResultQuery(),
+                                          ClashActionKind.Suppress) { IsEnabled = false });
+
+            Assert.Single(rules.Cards);
             Assert.Empty(rules.ToOptions().Filters);
-            Assert.False(ClashRuleSet.FromJson(rules.ToJson()).Filters[0].IsEnabled);
+            Assert.False(ClashRuleSet.FromJson(rules.ToJson()).Cards[0].IsEnabled);
+        }
+
+        [Fact]
+        public void A_card_naming_an_action_this_build_does_not_know_is_dropped()
+        {
+            // Not read as the first entry of the enum. A card saved as something newer must not
+            // come back as Suppress and then be run: the list is acted on, not only displayed.
+            var json = new ClashCard("Odd", new ResultQuery(), ClashActionKind.Suppress)
+                .ToJson()
+                .Set("action", JsonValue.String("Incinerate"));
+
+            Assert.Null(ClashCard.FromJson(json));
         }
     }
 

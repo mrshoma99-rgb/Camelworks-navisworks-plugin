@@ -34,20 +34,42 @@ namespace CamelWorks.UI.Views
         /// False for the one stage that manages its own scrolling — the graph canvas, which needs
         /// a horizontal bar this wrapper deliberately refuses everything else.
         /// </param>
+        /// <param name="setupShare">
+        /// The share of the width the options panel takes, between nought and one, for a screen
+        /// where the panel holds the thing being edited rather than settings beside a table. Zero
+        /// keeps the fixed width, which is what every other surface wants.
+        /// </param>
         public static UIElement Surface(UIElement? setup, UIElement? foot, UIElement stage,
-                                        double setupWidth = 0, bool scrollStage = true)
+                                        double setupWidth = 0, bool scrollStage = true,
+                                        double setupShare = 0)
         {
             if (stage == null) throw new ArgumentNullException(nameof(stage));
 
             var width = setupWidth > 0 ? setupWidth : SetupWidth;
+
+            // A share rather than a width, for a screen where the panel is the work rather than
+            // the settings the work is spent on. A fixed panel is right when it holds a handful of
+            // fields beside a table; it is wrong when what is in it is the thing being edited, and
+            // it does not grow with the window.
+            var shared = setupShare > 0 && setupShare < 1;
 
             var root = new Grid();
             root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             var body = new Grid();
-            body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            body.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(shared ? 1 - setupShare : 1, GridUnitType.Star),
+            });
+
+            body.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = shared
+                    ? new GridLength(setupShare, GridUnitType.Star)
+                    : GridLength.Auto,
+            });
 
             var data = scrollStage
                 ? (UIElement)new ScrollViewer
@@ -67,7 +89,7 @@ namespace CamelWorks.UI.Views
             {
                 var options = new Border
                 {
-                    Width = width,
+                    Width = shared ? double.NaN : width,
                     BorderThickness = new Thickness(1, 0, 0, 0),
                     Child = new ScrollViewer
                     {

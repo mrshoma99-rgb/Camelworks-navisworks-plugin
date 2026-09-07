@@ -212,6 +212,92 @@ namespace CamelWorks.Core.Checks
         }
 
         /// <summary>
+        /// What one test is between, as the host holds it. Null when it will not say.
+        ///
+        /// The set-up screen reads this to draw the two sides. They are read-only there because
+        /// the host offers no way to re-point a test that already exists — <see cref="Retune"/> is
+        /// the whole of what it will change — so the screen says so rather than offering a control
+        /// that cannot work.
+        /// </summary>
+        /// <param name="runId">The host's id for the test.</param>
+        public ClashTestSides? Sides(string? runId) => Shape(runId, reread: true);
+
+        /// <summary>
+        /// Make a clash test in the host, and say why not when it refuses.
+        ///
+        /// The capability has been here since the matrix was written and the matrix was the only
+        /// caller, so the one way to get a single clash test was to draw a grid or to leave for the
+        /// native clash window. It is a check's own kind of test like any other and it belongs on
+        /// the tab that makes them.
+        /// </summary>
+        /// <param name="spec">What the test should be.</param>
+        /// <param name="problem">Why the host refused, or null when it did not.</param>
+        /// <returns>The test as the host now holds it, or null.</returns>
+        public ClashTestInfo? Make(ClashTestSpec spec, out string? problem)
+        {
+            if (spec == null) throw new ArgumentNullException(nameof(spec));
+
+            if (!_source.IsAvailable)
+            {
+                problem = Unavailable ?? "This seat has no clash engine.";
+                return null;
+            }
+
+            if (!_source.CanEdit)
+            {
+                problem = "This document will not take a new clash test. "
+                          + (_source.LastProblem ?? "It is open read-only.");
+                return null;
+            }
+
+            ClashTestInfo? made = _source.Create(spec);
+
+            if (made == null)
+            {
+                problem = _source.LastProblem ?? "The host would not make that test.";
+
+                return null;
+            }
+
+            // The shape is cached per test and the new one has none held, but a host that reuses
+            // an id it has just freed would otherwise be read through the old entry.
+            _shapes.Remove(made.Value.Id);
+
+            problem = null;
+
+            return made;
+        }
+
+        /// <summary>
+        /// Change what an existing test is judged at, keeping the results it holds.
+        ///
+        /// The two things the host will change about a test that has already run. Re-pointing its
+        /// sides is not among them: that is a new test, and this returns false rather than
+        /// pretending otherwise.
+        /// </summary>
+        /// <param name="runId">The host's id for the test.</param>
+        /// <param name="toleranceMetres">The tolerance, in metres.</param>
+        /// <param name="kind">Which kind of test it is.</param>
+        /// <param name="problem">Why the host refused, or null when it did not.</param>
+        public bool Retune(string runId, double toleranceMetres, MatrixTest kind, out string? problem)
+        {
+            if (string.IsNullOrWhiteSpace(runId))
+            {
+                problem = "That test is no longer in this document.";
+                return false;
+            }
+
+            var went = _source.Retune(runId, toleranceMetres, kind);
+
+            problem = went ? null : _source.LastProblem ?? "The host would not change that test.";
+
+            // Read again next time: the held shape is what it was judged at before this.
+            _shapes.Remove(runId);
+
+            return went;
+        }
+
+        /// <summary>
         /// Every clash test in the document, without reading a result.
         ///
         /// Two host calls per test — the test list, then its two sides — which is what the rail

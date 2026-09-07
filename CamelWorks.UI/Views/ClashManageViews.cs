@@ -925,23 +925,14 @@ namespace CamelWorks.UI.Views
             /// The project's storeys, read once per screen and held.
             ///
             /// Held because banding asks which storey every row is on, six hundred times on one
-            /// redraw. Written back by <see cref="KeepPlan"/> whenever the list changes.
+            /// redraw. Read only: the storeys are edited on the Settings tab, which is the one
+            /// place the project's own data is written.
             /// </summary>
             private LevelPlan? _plan;
 
             /// <summary>The storeys this project says the building has.</summary>
             private LevelPlan Plan => _plan ??= LevelPlan.FromJson(
                 _seat.Store.Section(ProjectStore.ProfileSection)[LevelPlan.Key]);
-
-            /// <summary>Write the storeys back to the project file.</summary>
-            /// <returns>True when the project file took them.</returns>
-            private bool KeepPlan()
-            {
-                _seat.Store.Section(ProjectStore.ProfileSection)
-                        .Set(LevelPlan.Key, Plan.ToJson() ?? JsonValue.Array());
-
-                return _seat.Store.Save();
-            }
 
             /// <summary>
             /// Which storey a row is on.
@@ -3326,7 +3317,7 @@ namespace CamelWorks.UI.Views
                 // one menu, and it says the whole answer in its tooltip.
                 verbs.Children.Add(Ui.Loose(_view));
 
-                verbs.Children.Add(Ui.Icon(Glyphs.Tune, "Settings",
+                verbs.Children.Add(Ui.Icon(Glyphs.Tune, "This board",
                     () => Configure("source")));
 
                 DockPanel.SetDock(verbs, Dock.Right);
@@ -7159,7 +7150,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private IReadOnlyList<Section> Pages() => new[]
             {
-                new Section("source", new Ui.Page("Settings", SettingsPage)),
+                new Section("source", new Ui.Page("Results source", SettingsPage)),
                 new Section("columns", new Ui.Page("Columns", ColumnsPage)),
                 new Section("round", new Ui.Page("The review round", RoundPage)),
             };
@@ -7177,18 +7168,6 @@ namespace CamelWorks.UI.Views
 
                 internal Ui.Page Page { get; }
             }
-
-            /// <summary>
-            /// The building's storeys, so the board can group clashes by floor.
-            ///
-            /// Drawn by <see cref="ClashLevels"/>, which is where the editor lives so the render
-            /// harness can look at it: this page is inside a tab that needs a licensed seat and a
-            /// federation to exist at all.
-            /// </summary>
-            private UIElement Storeys() =>
-                Options("Levels",
-                    ClashLevels.Panel(Plan, _board, KeepPlan,
-                                      () => Ui.Safely(RedrawBoard)));
 
             /// <summary>
             /// All settings for this screen, in one window with one section per subject.
@@ -7226,7 +7205,9 @@ namespace CamelWorks.UI.Views
                                  + "and it does not touch anyone else's markup."))
                     : null,
 
-                Storeys(),
+                Ui.Small("The project's levels, disciplines, team and units are on the Settings "
+                         + "tab. This page holds what this board is reading, which belongs to the "
+                         + "board rather than to the project."),
 
                 Options("Focus",
                     Ui.Field("Zoom out", Ui.Text(

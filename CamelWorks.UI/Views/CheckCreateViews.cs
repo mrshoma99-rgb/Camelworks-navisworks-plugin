@@ -430,13 +430,12 @@ namespace CamelWorks.UI.Views
             // ---- Making one ----------------------------------------------------------------
 
             /// <summary>
-            /// The kinds of test that can be made, and where the ones that cannot are made instead.
+            /// The kinds of test that can be made.
             ///
-            /// A switch on the check's own type, which is where the asymmetry between the kinds
-            /// actually lives: <see cref="ICheck"/> lists and runs tests and has no member that
-            /// makes one, because only the two project-file checks can be handed a new
-            /// <see cref="CheckRunSpec"/>. A clash test needs two sides resolved against the
-            /// document, which is the Clash matrix.
+            /// A switch on the check's own type, which is where the difference between the kinds
+            /// lives: <see cref="ICheck"/> lists and runs tests and has no member that makes one,
+            /// because the two project-file checks are handed a <see cref="CheckRunSpec"/> and a
+            /// clash test is made in the Navisworks document. Every kind is made from here.
             /// </summary>
             private IReadOnlyList<Parts.Entry> Kinds()
             {
@@ -460,11 +459,16 @@ namespace CamelWorks.UI.Views
                                 () => NewFall(fall)));
                             break;
 
-                        default:
+                        case ClashCheck clash:
                             made.Add(Parts.Entry.Saying(check.Name, Ui.CheckSymbol(check.Symbol),
-                                "Built on the Clash matrix, which resolves the two sides against "
-                                + "the model.",
-                                () => Ui.Told(Shell.AppWindow.Show("clash", "matrix"))));
+                                "Two things against each other, in the Navisworks document. A "
+                                + "round of them at once is the Clash matrix.",
+                                () => NewClash(clash)));
+                            break;
+
+                        default:
+                            made.Add(Parts.Entry.Barred(check.Name, Ui.CheckSymbol(check.Symbol),
+                                check.Name + " tests are made where they are defined."));
                             break;
                     }
                 }
@@ -483,6 +487,28 @@ namespace CamelWorks.UI.Views
 
                 Made(check, made, check.Put(made));
             }
+
+            /// <summary>
+            /// Make a new clash test in the document and pick it.
+            ///
+            /// A form rather than a saved default the panel then edits, because the host will not
+            /// re-point a test that already exists: its two sides are decided once. Everything
+            /// else about it — the name, the folder, the kind, the tolerance — is changed on the
+            /// settings panel afterwards.
+            /// </summary>
+            /// <param name="check">The clash check.</param>
+            private void NewClash(ClashCheck check) =>
+                ClashTestViews.New(_seat, check, Next(check, "Clash"), id =>
+                {
+                    Reload();
+
+                    PickedCheck = check.Key;
+                    PickedRun = id;
+
+                    RedrawList();
+                    RedrawPanel();
+                    RedrawFoot();
+                });
 
             /// <summary>Save a new fall-hazard test and pick it.</summary>
             /// <param name="check">The fall-hazard check.</param>
@@ -652,8 +678,24 @@ namespace CamelWorks.UI.Views
                     tolerance.ToolTip = blocked;
                 }
 
-                var open = Ui.Button("Open the Clash matrix",
-                                     () => Ui.Told(Shell.AppWindow.Show("clash", "matrix")));
+                var shape = check.Sides(run.Id);
+                var here = MatrixDiff.Kinded(shape?.Kind);
+
+                var kind = Ui.Choice(ClashTestViews.Kinds.Select(MatrixNaming.Worded).ToList(),
+                    MatrixNaming.Worded(here), pick =>
+                    {
+                        var wanted = ClashTestViews.Kinds.FirstOrDefault(
+                            one => string.Equals(MatrixNaming.Worded(one), pick,
+                                                 StringComparison.Ordinal));
+
+                        if (wanted == here) return;
+
+                        Retune(run.Id, check.ThresholdMetres(run.Id) ?? 0, wanted);
+                    }, 230);
+
+                kind.IsEnabled = blocked == null;
+
+                if (blocked != null) kind.ToolTip = blocked;
 
                 return Ui.Stack(
                     // No heading over the name and the folder. The tab is called Create, the list
@@ -661,24 +703,47 @@ namespace CamelWorks.UI.Views
                     // nothing the reader did not already have.
                     Bench.Group(string.Empty,
                         Ui.Across(Sized(Ui.Field("Name", name), 210),
-                                  Sized(Ui.Field("Folder", folder), 170)),
-                        Sized(Ui.Field("Tolerance (" + Units.LengthUnit + ")", tolerance), 170)),
-                    Bench.Group("Sides",
+                                  Sized(Ui.Field("Folder", folder), 170))),
+                    // The sides first: they are what the test is, and they are the one thing on
+                    // this panel that cannot be changed.
+                    Bench.Group("What is tested against what",
                         Ui.Line(run.Between, 0.85),
-                        Ui.Info("A clash test is held in the Navisworks document, so its two sides "
-                                + "are set on the Clash matrix and not here."),
-                        open),
+                        Ui.Info("A test's two sides are decided when it is made. Navisworks does "
+                                + "not re-point one that already has results, so changing them "
+                                + "means a new test.")),
+                    Bench.Group("How it is judged",
+                        Sized(Ui.Field("Kind of test", kind,
+                                       ClashTestViews.Explains(here)), 380),
+                        here == MatrixTest.Duplicate
+                            ? null
+                            : Sized(Ui.Field("Tolerance (" + Units.LengthUnit + ")", tolerance),
+                                    190),
+                        Ui.Small("Both are changed on the test itself, and the results it already "
+                                 + "holds are kept until it is run again.")),
                     blocked == null ? null : Ui.Note(blocked));
             }
 
             /// <summary>Write a clash test's tolerance back to the host, keeping the kind it has.</summary>
             /// <param name="testId">The host's id for the test.</param>
             /// <param name="metres">The tolerance it should now have.</param>
-            private void Retune(string testId, double metres)
-            {
-                var kind = MatrixDiff.Kinded(_seat.Clash.Sides(testId)?.Kind);
+            private void Retune(string testId, double metres) =>
+                Retune(testId, metres, MatrixDiff.Kinded(_seat.Clash.Sides(testId)?.Kind));
 
-                if (_seat.Clash.Retune(testId, metres, kind)) return;
+            /// <summary>Change what a test is judged at, and say so when the document refuses.</summary>
+            /// <param name="testId">Which test.</param>
+            /// <param name="metres">The tolerance, in metres.</param>
+            /// <param name="kind">Which kind of test it is.</param>
+            private void Retune(string testId, double metres, MatrixTest kind)
+            {
+                if (_seat.Clash.Retune(testId, metres, kind))
+                {
+                    // The rail prints the kind and the threshold, and the panel's own tolerance
+                    // field appears or goes with the kind.
+                    Changed();
+                    RedrawPanel();
+
+                    return;
+                }
 
                 _log.Children.Add(Ui.Problem(_seat.Clash.LastProblem
                                              ?? "The document refused the tolerance."));

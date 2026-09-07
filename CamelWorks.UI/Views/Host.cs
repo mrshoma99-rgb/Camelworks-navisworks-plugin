@@ -525,6 +525,9 @@ namespace CamelWorks.UI.Views
 
             public bool RenameTest(string testId, string name) => false;
 
+            public bool DeleteResults(string testId,
+                System.Collections.Generic.IReadOnlyList<string> resultIds) => false;
+
             public bool DeleteTests(System.Collections.Generic.IReadOnlyList<string> testIds) => false;
 
             public bool MoveTests(System.Collections.Generic.IReadOnlyList<string> testIds, string? folder) => false;

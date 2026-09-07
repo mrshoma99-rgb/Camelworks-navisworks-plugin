@@ -294,6 +294,8 @@ namespace CamelWorks.Core.Tests
 
             public IReadOnlyList<string> TreePath => throw new InvalidOperationException("gone");
 
+            public IModelItem? Parent => throw new InvalidOperationException("gone");
+
             public bool HasGeometry => throw new InvalidOperationException("gone");
 
             public BoundingBox Bounds => throw new InvalidOperationException("gone");

@@ -205,6 +205,9 @@ namespace CamelWorks.Core.Clash
         /// <summary>Where the rule that took a result off the board is kept.</summary>
         public const string SuppressedBy = "Suppressed by";
 
+        /// <summary>Which card flagged this result, or absent when none did.</summary>
+        public const string FlaggedBy = "Flagged by";
+
         /// <summary>What a yes-or-no fact says when it is yes.</summary>
         private const string Yes = "yes";
 

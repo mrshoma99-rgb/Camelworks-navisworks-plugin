@@ -55,6 +55,15 @@ namespace CamelWorks.Core.Abstractions
         /// <summary>Ordered display names from the model root down to this element.</summary>
         IReadOnlyList<string> TreePath { get; }
 
+        /// <summary>
+        /// The element one step up the tree, or null at the model root.
+        ///
+        /// <see cref="TreePath"/> gives the names above this element and nothing else. A search
+        /// asking for the level a duct sits on, or the system a run belongs to, needs the
+        /// ancestor's properties, and only a handle to the ancestor itself answers that.
+        /// </summary>
+        IModelItem? Parent { get; }
+
         /// <summary>True when this element carries geometry, as opposed to being a grouping node.</summary>
         bool HasGeometry { get; }
 
