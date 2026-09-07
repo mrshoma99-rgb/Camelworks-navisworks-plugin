@@ -32,7 +32,13 @@ namespace CamelWorks.UI.Views
         /// </summary>
         /// <param name="plan">The storeys, edited in place.</param>
         /// <param name="near">What a prompt belongs to, or null in the harness.</param>
-        /// <param name="onKeep">Writes the plan to the project file, and says whether it landed.</param>
+        /// <param name="onKeep">
+        /// Records that the plan changed. Its caller decides when the plan reaches the project
+        /// file: the Settings tab holds it until the tab's own action is pressed, and says so in
+        /// its footer. This used to be documented as writing the plan and reporting whether it
+        /// landed, and the only caller always answered yes, so "5 levels added" was printed from
+        /// a write that had not happened and the failure branch was unreachable.
+        /// </param>
         /// <param name="onChanged">Called after a change was kept, so the board can redraw.</param>
         public static UIElement Panel(LevelPlan plan, FrameworkElement? near,
                                       Func<bool>? onKeep = null, Action? onChanged = null)
@@ -249,12 +255,7 @@ namespace CamelWorks.UI.Views
                 return;
             }
 
-            if (!keep())
-            {
-                said.Children.Add(Ui.Problem("The project file would not take them."));
-                return;
-            }
-
+            keep();
             redraw();
 
             said.Children.Add(Ui.Done(Ui.Count(added, "level") + " added, from "
@@ -263,7 +264,8 @@ namespace CamelWorks.UI.Views
                     ? Ui.Count(found.DiscardedClusters, "other height")
                       + " had too little standing on them to be a storey. "
                     : string.Empty)
-                + "Rename them to whatever the client calls them."));
+                + "Rename them to whatever the client calls them. They reach the project when "
+                + "the settings are saved."));
         }
 
         /// <summary>The editor over a plan nobody can save, so the harness can draw it.</summary>
@@ -310,7 +312,7 @@ namespace CamelWorks.UI.Views
         /// <param name="near">What the prompt belongs to, or null in the harness.</param>
         /// <param name="picked">The picked rows.</param>
         /// <param name="said">Where the bar says what happened.</param>
-        /// <param name="onKeep">Writes the plan, and says whether it landed.</param>
+        /// <param name="onKeep">Records that the plan changed.</param>
         /// <param name="onChange">Called after the plan changed.</param>
         private static void Rename(LevelPlan plan, FrameworkElement? near,
                                    IReadOnlyList<object> picked, Panel said,
@@ -354,7 +356,7 @@ namespace CamelWorks.UI.Views
         /// <param name="picked">The picked rows.</param>
         /// <param name="said">Where the bar says what happened.</param>
         /// <param name="millimetres">Whether heights are typed in millimetres.</param>
-        /// <param name="onKeep">Writes the plan, and says whether it landed.</param>
+        /// <param name="onKeep">Records that the plan changed.</param>
         /// <param name="onChange">Called after the plan changed.</param>
         private static void Raise(LevelPlan plan, FrameworkElement? near,
                                   IReadOnlyList<object> picked, Panel said, bool millimetres,
@@ -413,7 +415,7 @@ namespace CamelWorks.UI.Views
         /// <param name="picked">The picked rows.</param>
         /// <param name="said">Where the bar says what happened.</param>
         /// <param name="millimetres">Whether heights are shown in millimetres.</param>
-        /// <param name="onKeep">Writes the plan, and says whether it landed.</param>
+        /// <param name="onKeep">Records that the plan changed.</param>
         /// <param name="onChange">Called after the plan changed.</param>
         /// <param name="onDropped">Called with what was taken out, so it can be put back.</param>
         private static void Drop(LevelPlan plan, FrameworkElement? near,
@@ -469,7 +471,7 @@ namespace CamelWorks.UI.Views
         /// <param name="plan">The plan to add to.</param>
         /// <param name="near">What the prompt belongs to.</param>
         /// <param name="millimetres">Whether heights are typed and read in millimetres.</param>
-        /// <param name="onKeep">Writes the plan, and says whether it landed.</param>
+        /// <param name="onKeep">Records that the plan changed.</param>
         /// <param name="onAdded">Called once one is added.</param>
         private static void Adding(LevelPlan plan, FrameworkElement? near, bool millimetres,
                                    Func<bool> onKeep, Action onAdded)

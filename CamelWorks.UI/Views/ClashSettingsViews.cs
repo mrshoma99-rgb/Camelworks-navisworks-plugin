@@ -353,9 +353,13 @@ namespace CamelWorks.UI.Views
             {
                 _state.Children.Clear();
 
-                if (!_dirty) return;
+                // Both states, not only the unsaved one. A tab that says nothing until its first
+                // edit leaves the reader to guess whether a section writes as it is typed or waits
+                // for the action at the foot, and five sections here wait while a sixth - the
+                // renumber - writes to the document at once and says so itself.
+                var line = Ui.Kept(_dirty ? Keeping.OnPress : Keeping.Settled);
 
-                var line = Ui.Small("Not saved yet");
+                if (line == null) return;
 
                 line.VerticalAlignment = VerticalAlignment.Center;
                 line.Margin = new Thickness(0, 0, 12, 0);
