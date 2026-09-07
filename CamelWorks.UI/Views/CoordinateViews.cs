@@ -496,9 +496,7 @@ namespace CamelWorks.UI.Views
         {
             var section = session.Store.Section(ProjectStore.ClashSection);
 
-            var read = ClashSnapshotJson.FromJson(ClashSnapshotJson.Migrated(
-                section[ClashKeys.Previous], section[ClashKeys.Retired.PreviousParties],
-                section[ClashKeys.Retired.PreviousTaken]));
+            var read = ClashSnapshotJson.FromJson(section[ClashKeys.Previous]);
 
             return read != null && read.OpenByParty.Count > 0 ? read : null;
         }
@@ -709,24 +707,8 @@ namespace CamelWorks.UI.Views
             var section = session.Store.Section(ProjectStore.ClashSection);
             var previous = section[ClashKeys.Snapshot];
 
-            if (ClashSnapshotJson.IsSnapshot(previous))
-            {
-                // A snapshot written before ClashSnapshotJson existed is a bare array with its
-                // counts in two sibling keys. Folded in as it moves, so the per-party comparison
-                // does not disappear on the first save after an upgrade.
-                var carried = ClashSnapshotJson.Migrated(previous,
-                                                        section[ClashKeys.Retired.Parties],
-                                                        section[ClashKeys.Retired.Taken]);
-
-                if (carried != null) section.Set(ClashKeys.Previous, carried);
-            }
-
-            // The four keys the two shapes were spread across. Removed once the value that
-            // replaced them is written, so a stale count cannot be read back later.
-            section.Remove(ClashKeys.Retired.Parties);
-            section.Remove(ClashKeys.Retired.Taken);
-            section.Remove(ClashKeys.Retired.PreviousParties);
-            section.Remove(ClashKeys.Retired.PreviousTaken);
+            // The board being replaced becomes the one Undo puts back.
+            if (ClashSnapshotJson.IsSnapshot(previous)) section.Set(ClashKeys.Previous, previous);
 
             var snapshot = ClashSnapshot.Of(board, takenUtc: DateTimeOffset.UtcNow);
 

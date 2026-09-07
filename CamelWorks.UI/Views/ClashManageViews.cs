@@ -5278,10 +5278,9 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// Which results the issue register covers, keyed the way the board keys a row.
             ///
-            /// Both ways an issue can name a clash are read: the findings it has attached, which
-            /// is how one raised from this board is held, and the clash keys an older issue kept
-            /// before findings existed. Guarded whole - a register that will not open is a board
-            /// without two small marks on it, not a board that will not draw.
+            /// An issue names its findings, and a row's finding is what the board keys against.
+            /// Guarded whole - a register that will not open is a board without two small marks on
+            /// it, not a board that will not draw.
             /// </summary>
             private HashSet<string> Register()
             {
@@ -6658,10 +6657,6 @@ namespace CamelWorks.UI.Views
 
                 Index(register);
 
-                var carried = Carried(register);
-
-                if (carried > 0) Index(register);
-
                 foreach (var entry in entries)
                     foreach (var row in entry.Rows)
                     {
@@ -6683,10 +6678,6 @@ namespace CamelWorks.UI.Views
                            + (_seat.Findings.LastSaveProblem ?? "there was nowhere to write.");
 
                 return intake.Explain()
-                       + (carried > 0
-                           ? " " + Ui.Count(carried, "clash") + " took back what an earlier "
-                             + "version of this tool was keeping in the project file."
-                           : string.Empty)
                        + (claimed > 0
                            ? " " + Ui.Count(claimed, "clash") + " marked up from a file is now "
                              + "held against this document's own result."
@@ -6901,26 +6892,6 @@ namespace CamelWorks.UI.Views
                 }
 
                 _byHost = index;
-            }
-
-            /// <summary>
-            /// Take back what the two old side registers were holding, once each run.
-            ///
-            /// Somebody who marked up a published NWD before findings existed has that work in
-            /// the project file under keys nothing reads any more. Folding is idempotent, so this
-            /// runs on every read and neither doubles anything nor deletes the old keys.
-            /// </summary>
-            private int Carried(FindingRegister register)
-            {
-                var section = _seat.Store.Section(ProjectStore.ClashSection);
-
-                var held = section[ClashLegacy.HeldKey];
-                var asides = section[ClashLegacy.AsideKey];
-
-                if (held.Kind != JsonKind.Object && asides.Kind != JsonKind.Object) return 0;
-
-                return ClashLegacy.Fold(held, asides,
-                                        register.From(FindingSource.Clash).Where(f => f.IsPresent));
             }
 
             /// <summary>

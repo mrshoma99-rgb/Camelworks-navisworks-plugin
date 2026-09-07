@@ -63,8 +63,14 @@ namespace CamelWorks.Core.Checks
         /// <summary>What a side is set to for everything loaded.</summary>
         public const string Loaded = "Everything loaded";
 
-        /// <summary>What a side is set to when there is nothing to read for it.</summary>
-        public const string Nothing = "Nothing";
+        /// <summary>
+        /// What a side is set to when there is nothing to read for it.
+        ///
+        /// The word the screen shows, so nothing has to translate between what is stored and what
+        /// is printed. A saved set of this document actually called "None" is the empty side; there
+        /// is no third name to give it.
+        /// </summary>
+        public const string Nothing = "None";
 
         /// <summary>
         /// What the run treats as floor. A saved set, the selection, or everything.

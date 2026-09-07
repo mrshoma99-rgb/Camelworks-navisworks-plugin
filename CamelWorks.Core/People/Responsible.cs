@@ -38,7 +38,7 @@ namespace CamelWorks.Core.People
     /// Held as a string, because that is what the host has. Navisworks' assignee field is one string
     /// per result, and this has to survive a round trip through it and through every export, so the
     /// kind rides in front of the name as a prefix. A name with no prefix is a person, which is what
-    /// every assignment written before this existed was, so old boards read back unchanged.
+    /// a name typed into the host's own field is.
     /// </summary>
     public readonly struct Responsible : IEquatable<Responsible>
     {
@@ -161,8 +161,8 @@ namespace CamelWorks.Core.People
         /// A clash is commonly two parties' problem — the architect who drew the wall and the
         /// engineer who ran the duct through it — and a field that held one forced a choice between
         /// them. The host gives one string per result, so the list rides in it, separated
-        /// conventionally. One name with no separator is one person, which is what every assignment
-        /// written before this was.
+        /// conventionally. One name with no separator is one person, which is what a name typed
+        /// into the host's own field is.
         /// </summary>
         /// <param name="all">Who it is assigned to.</param>
         public static string Write(IEnumerable<Responsible>? all) =>

@@ -75,11 +75,12 @@ namespace CamelWorks.UI.Views
                 var blocked = Blocked;
                 var storeys = Storeys();
 
-                var sides = new List<string> { None, FallSettings.Loaded, FallSettings.Selected };
+                var sides = new List<string> { FallSettings.Nothing, FallSettings.Loaded,
+                                              FallSettings.Selected };
 
                 sides.AddRange(sets);
 
-                var optional = new List<string> { None };
+                var optional = new List<string> { FallSettings.Nothing };
 
                 optional.AddRange(sides);
 
@@ -121,9 +122,9 @@ namespace CamelWorks.UI.Views
                                       + "type the elevation the plan is cut at.")),
                     Bench.Group("What to read",
                         Sized(Ui.Field("Floor from",
-                                 Reading(Ui.Choice(Offered(sides, Said(settings.Floors)),
-                                                   Said(settings.Floors),
-                                                   pick => Keep(one => one.Floors = Meant(pick)),
+                                 Reading(Ui.Choice(Offered(sides, settings.Floors),
+                                                   settings.Floors,
+                                                   pick => Keep(one => one.Floors = pick),
                                                    380)),
                                  "A set of floors or slabs. Everything loaded reads the whole "
                                  + "federation at this elevation, and a wall or a duct through the "
@@ -135,14 +136,14 @@ namespace CamelWorks.UI.Views
                                       + "cannot run."),
                         Ui.Across(
                             Sized(Ui.Field("Handrails from",
-                                Reading(Ui.Choice(Offered(optional, Said(settings.Handrails)),
-                                                  Said(settings.Handrails),
-                                                  pick => Keep(one => one.Handrails = Meant(pick)),
+                                Reading(Ui.Choice(Offered(optional, settings.Handrails),
+                                                  settings.Handrails,
+                                                  pick => Keep(one => one.Handrails = pick),
                                                   180))), 190),
                             Sized(Ui.Field("Obstructions from",
-                                Reading(Ui.Choice(Offered(optional, Said(settings.Obstructions)),
-                                                  Said(settings.Obstructions),
-                                                  pick => Keep(one => one.Obstructions = Meant(pick)),
+                                Reading(Ui.Choice(Offered(optional, settings.Obstructions),
+                                                  settings.Obstructions,
+                                                  pick => Keep(one => one.Obstructions = pick),
                                                   180))), 190)),
                         settings.HasHandrails
                             ? null
@@ -167,28 +168,6 @@ namespace CamelWorks.UI.Views
                         Ui.Link("Handrail coverage distance and how the plan is drawn", Explain)),
                     Notices(blocked, sets.Count, storeys.Count));
             }
-
-            /// <summary>What a side with nothing named is called on screen.</summary>
-            private const string None = "None";
-
-            /// <summary>
-            /// A side, as the picker prints it.
-            ///
-            /// The stored value for a side with nothing named is <see cref="FallSettings.Nothing"/>
-            /// and stays that way — it is in every saved project — but "Obstructions from: Nothing"
-            /// reads as a sentence that has gone wrong. A set of this document's actually called
-            /// "None" is shown and stored as the empty side; there is no third name to give it.
-            /// </summary>
-            /// <param name="stored">What the settings hold.</param>
-            private static string Said(string stored) =>
-                string.Equals(stored, FallSettings.Nothing, StringComparison.OrdinalIgnoreCase)
-                    ? None : stored;
-
-            /// <summary>The stored value for what the picker shows.</summary>
-            /// <param name="shown">What was picked.</param>
-            private static string Meant(string shown) =>
-                string.Equals(shown, None, StringComparison.OrdinalIgnoreCase)
-                    ? FallSettings.Nothing : shown;
 
             /// <summary>
             /// One notice region for what this panel's surroundings are missing.

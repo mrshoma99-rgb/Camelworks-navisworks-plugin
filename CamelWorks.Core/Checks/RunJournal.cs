@@ -40,15 +40,6 @@ namespace CamelWorks.Core.Checks
         /// <summary>What the current journal is called inside a slot.</summary>
         public const string CurrentKey = "current";
 
-        /// <summary>
-        /// What a slot written by an earlier build called the journal before the current one.
-        ///
-        /// Nothing writes or reads it any more — one slot is kept — and <see cref="Write"/> drops
-        /// it, so a project file written by an earlier build sheds half its journals on the next
-        /// run.
-        /// </summary>
-        public const string PreviousKey = "previous";
-
         // Which run reported each finding, on a journal that is several runs merged. Null on a
         // per-run journal, where the answer is always RunId.
         private readonly IReadOnlyDictionary<string, string>? _runOf;
@@ -325,8 +316,7 @@ namespace CamelWorks.Core.Checks
 
         /// <summary>
         /// Write this journal into the project file as the run's current one, replacing what was
-        /// there and dropping the previous slot an earlier build wrote. Every other key in the
-        /// section — the saved runs among them — is left as it was.
+        /// there. Every other key in the section — the saved runs among them — is left as it was.
         ///
         /// A caller comparing against the outgoing journal reads <see cref="Current"/> first: after
         /// this, the run's current journal is this one.
@@ -354,7 +344,6 @@ namespace CamelWorks.Core.Checks
             }
 
             slot.Set(CurrentKey, ToJson());
-            slot.Remove(PreviousKey);
         }
 
         private static RunJournal? Read(ProjectStore store, string checkKey, string runId,

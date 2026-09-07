@@ -66,8 +66,8 @@ namespace CamelWorks.Core.Clash
         public string Name { get; }
 
         /// <summary>
-        /// The folders the set sits in, innermost last, joined with slashes. Empty when the set
-        /// is at the top or when a matrix written before this was recorded is being read.
+        /// The folders the set sits in, innermost last, joined with slashes. Empty when the set is
+        /// at the top of the tree.
         /// </summary>
         public string Folder { get; }
 

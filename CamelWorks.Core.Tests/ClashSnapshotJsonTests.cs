@@ -94,22 +94,6 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void The_shape_written_before_this_file_existed_still_reads()
-        {
-            // Project files on disk hold a bare array of records. Failing to read one would lose
-            // every carried-over decision the first time somebody opened the board after upgrading.
-            var array = JsonValue.Array(Full().Records.Select(ClashSnapshotJson.RecordToJson));
-            var read = ClashSnapshotJson.FromJson(array);
-
-            Assert.NotNull(read);
-            Assert.Equal(2, read!.Records.Count);
-            Assert.Empty(read.OpenByParty);
-            Assert.Null(read.TakenUtc);
-
-            Assert.True(ClashSnapshotJson.IsSnapshot(array));
-        }
-
-        [Fact]
         public void Decisions_kept_elsewhere_win_over_the_ones_in_the_file()
         {
             // The board keeps decisions in their own key, because a decision is about the work
@@ -125,39 +109,12 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void The_counts_a_project_file_kept_beside_the_array_are_carried_across()
-        {
-            // The bare-array shape kept its per-party counts and its time in two sibling keys.
-            // Reading the array alone lost them, and with them the per-party comparison, on the
-            // first save after an upgrade.
-            var array = JsonValue.Array(Full().Records.Select(ClashSnapshotJson.RecordToJson));
-
-            var parties = JsonValue.Object().Set("Mechanical", 14L).Set("Structure", 3L);
-            var taken = JsonValue.Number(Taken.ToUnixTimeSeconds());
-
-            var read = ClashSnapshotJson.FromJson(
-                ClashSnapshotJson.Migrated(array, parties, taken));
-
-            Assert.NotNull(read);
-            Assert.Equal(2, read!.Records.Count);
-            Assert.Equal(14, read.OpenByParty["Mechanical"]);
-            Assert.Equal(Taken, read.TakenUtc);
-        }
-
-        [Fact]
-        public void Migrating_a_snapshot_that_is_already_current_leaves_it_alone()
-        {
-            var json = ClashSnapshotJson.ToJson(Full());
-
-            Assert.Same(json, ClashSnapshotJson.Migrated(json, null, null));
-            Assert.Null(ClashSnapshotJson.Migrated(null, null, null));
-        }
-
-        [Fact]
         public void Anything_else_is_not_a_snapshot()
         {
             Assert.Null(ClashSnapshotJson.FromJson(JsonValue.String("no")));
             Assert.False(ClashSnapshotJson.IsSnapshot(JsonValue.Object()));
+            Assert.False(ClashSnapshotJson.IsSnapshot(
+                JsonValue.Array(Full().Records.Select(ClashSnapshotJson.RecordToJson))));
             Assert.False(ClashSnapshotJson.IsSnapshot(null));
         }
 
