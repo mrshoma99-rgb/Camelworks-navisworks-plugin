@@ -180,6 +180,29 @@ namespace CamelWorks.UI.Views
         Automatic = 3,
     }
 
+    /// <summary>
+    /// Where a screen's edits go, and when.
+    ///
+    /// Stated by the footer rather than by each screen in its own words, because the screens that
+    /// most needed to say it were the ones that said nothing: the panels that write every settled
+    /// keystroke straight into the project file carry no Save button and no mark, so the one
+    /// contract a coordinator cannot guess is the one with no evidence on screen.
+    /// </summary>
+    public enum Keeping
+    {
+        /// <summary>The screen makes no claim. The default, so nothing changes where nobody has said.</summary>
+        Unsaid = 0,
+
+        /// <summary>Written to the project as each change is made.</summary>
+        AsYouGo = 1,
+
+        /// <summary>Held until the footer's action is pressed, and something is waiting.</summary>
+        OnPress = 2,
+
+        /// <summary>Held until the footer's action is pressed, and nothing is waiting.</summary>
+        Settled = 3,
+    }
+
     /// <summary>What a path field is asking for, and therefore which dialog it opens.</summary>
     public enum PathKind
     {
@@ -1645,11 +1668,39 @@ namespace CamelWorks.UI.Views
         /// Drawn hard left, away from the actions, or null on a footer with none.
         /// </param>
         public static Panel Foot(UIElement primary, UIElement? secondary = null,
-                                 UIElement? aside = null)
+                                 UIElement? aside = null) =>
+            Foot(primary, secondary, aside, Keeping.Unsaid);
+
+        /// <summary>
+        /// The same footer, saying where this screen's edits go.
+        ///
+        /// Five surfaces in the clash manager had four save contracts between them and two of
+        /// them said so. A coordinator could edit a clearance height on Create (written as they
+        /// typed, with nothing saying so), a rule on Filter (held until a press) and a status on
+        /// Manage (written, under a Save button that implied otherwise) inside two minutes. The
+        /// line is part of the footer rather than each screen's own sentence, so a screen that
+        /// says nothing is visibly a screen that has not answered.
+        /// </summary>
+        /// <param name="primary">The one action this surface is for.</param>
+        /// <param name="secondary">A second action, or null.</param>
+        /// <param name="aside">Something to sit at the far left, or null.</param>
+        /// <param name="keeping">Where this screen's edits go, and when.</param>
+        public static Panel Foot(UIElement primary, UIElement? secondary, UIElement? aside,
+                                 Keeping keeping)
         {
             if (primary == null) throw new ArgumentNullException(nameof(primary));
 
             var row = new DockPanel { LastChildFill = false };
+
+            var kept = Kept(keeping);
+
+            if (kept != null)
+            {
+                kept.Margin = new Thickness(Gap, 0, 0, 0);
+
+                DockPanel.SetDock(kept, Dock.Left);
+                row.Children.Add(kept);
+            }
 
             if (primary is FrameworkElement main)
             {
@@ -2281,6 +2332,37 @@ namespace CamelWorks.UI.Views
             if (!string.IsNullOrEmpty(hint)) panel.Children.Add(Small(hint!));
 
             return panel;
+        }
+
+        /// <summary>
+        /// The line that says where a screen's edits go, or null when the screen makes no claim.
+        ///
+        /// Separate from <see cref="Foot"/> because several screens build their own footer row and
+        /// would otherwise each write the sentence themselves, which is how four contracts came to
+        /// be worded three ways.
+        /// </summary>
+        /// <param name="keeping">Where this screen's edits go, and when.</param>
+        public static TextBlock? Kept(Keeping keeping)
+        {
+            if (keeping == Keeping.Unsaid) return null;
+
+            var said = Small(keeping == Keeping.AsYouGo
+                ? "Saved as you go"
+                : keeping == Keeping.OnPress
+                    ? "Not saved yet"
+                    : "Saved");
+
+            said.VerticalAlignment = VerticalAlignment.Center;
+
+            said.ToolTip = keeping == Keeping.AsYouGo
+                ? "Every change on this screen is written to the project as it is made."
+                : keeping == Keeping.OnPress
+                    ? "Changes on this screen are held until the action on the right is pressed."
+                    : "Nothing is waiting to be written.";
+
+            if (keeping == Keeping.OnPress) said.Tint(TextBlock.ForegroundProperty, "AmberTx");
+
+            return said;
         }
 
         /// <summary>

@@ -863,6 +863,13 @@ namespace CamelWorks.UI.Views
                     : _shown.Count.ToString(CultureInfo.InvariantCulture) + " of "
                       + Ui.Count(_all.Count, "test") + " shown"));
 
+                // The settings panel beside this list writes every settled edit straight into the
+                // project file. Nothing said so, on the one tab where a coordinator does most of
+                // their typing.
+                var kept = Ui.Kept(Keeping.AsYouGo);
+
+                if (kept != null && _all.Count > 0) said.Children.Add(kept);
+
                 if (_outcome != null) said.Children.Add(Ui.Line(_outcome, 0.9));
 
                 if (_went != null)
