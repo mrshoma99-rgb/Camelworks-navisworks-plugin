@@ -114,6 +114,13 @@ namespace CamelWorks.Core.Project
                 foreach (var item in standing)
                 {
                     if (item.FindingId != null && gone.Contains(item.FindingId)) continue;
+
+                    // Already off the board, because a previous run took it off or the result is
+                    // no longer in the document. A re-run of the same list has to see what the
+                    // list left, or the second card would act on results the first one removed
+                    // the first time and not the second.
+                    if (Off(findingOf(item.FindingId))) continue;
+
                     if (!when.Matches(item)) continue;
 
                     matched++;
@@ -128,6 +135,45 @@ namespace CamelWorks.Core.Project
 
             return outcomes;
         }
+
+        /// <summary>
+        /// Take the marks a past run left off these findings.
+        ///
+        /// Suppressing and flagging used to be derived on every board build, so switching a rule
+        /// off un-suppressed what it had suppressed. A card is run on a press and what it writes
+        /// stands until something takes it off, so this is that something.
+        /// </summary>
+        /// <param name="findings">The findings to unmark.</param>
+        /// <returns>How many carried a mark.</returns>
+        public static int Clear(IEnumerable<Finding>? findings)
+        {
+            var cleared = 0;
+
+            foreach (var finding in findings ?? Array.Empty<Finding>())
+            {
+                if (finding == null || !Marked(finding)) continue;
+
+                finding.Facts.Remove(ClashFindings.SuppressedBy);
+                finding.Facts.Remove(ClashFindings.FlaggedBy);
+
+                cleared++;
+            }
+
+            return cleared;
+        }
+
+        /// <summary>Whether a past run marked this finding.</summary>
+        /// <param name="finding">The finding.</param>
+        public static bool Marked(Finding? finding) =>
+            finding != null
+            && (finding.Facts.ContainsKey(ClashFindings.SuppressedBy)
+                || finding.Facts.ContainsKey(ClashFindings.FlaggedBy));
+
+        /// <summary>Whether a result is already off the board, whatever this run does.</summary>
+        /// <param name="finding">The finding behind it, or null when it has none.</param>
+        private static bool Off(Finding? finding) =>
+            finding != null
+            && (!finding.IsPresent || finding.Facts.ContainsKey(ClashFindings.SuppressedBy));
 
         /// <summary>Apply one card to what it found, or count what it would change.</summary>
         /// <param name="card">The card.</param>

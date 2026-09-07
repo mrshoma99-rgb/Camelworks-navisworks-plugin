@@ -322,11 +322,10 @@ namespace CamelWorks.Core.Clash
 
             foreach (var item in all)
             {
-                // Cleared before the rules run. The item carries the last run's answer, read back
-                // off its finding, and a result the rules no longer suppress would otherwise keep
-                // naming the rule that used to.
-                item.SuppressedBy = null;
-
+                // Not cleared. What the item carries was read back off its finding, and on this
+                // product that is a decision somebody pressed Run on rather than something the
+                // board derives: clearing it here would un-suppress, on the next board load,
+                // every result a card run took off.
                 foreach (var rule in options.Filters)
                 {
                     if (!rule.When.Matches(item)) continue;

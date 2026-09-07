@@ -337,18 +337,12 @@ namespace CamelWorks.Core.Project
         {
             var grouping = Grouping.Select(g => g.Build()).Where(g => g != null).Select(g => g!).ToList();
 
+            // No filter or assign rules are derived from the cards. A card is run on a press and
+            // writes what it decided onto the finding; deriving the same rules here would run the
+            // list again on every board load, which is what the screen promises it does not do.
+            // The board honours what a run wrote, and adds nothing of its own.
             return new ClashPipelineOptions
             {
-                // The preview reads the same cards the run writes, so the two cannot disagree
-                // about what a rule finds. Only the four that shape a board are built here: a
-                // status, and a result deleted from the document, are not view states.
-                Filters = Cards.Where(one => one.IsEnabled)
-                               .Where(one => one.Action == ClashActionKind.Suppress
-                                             || one.Action == ClashActionKind.Flag)
-                               .Select(one => new FilterRule(
-                                   one.Name, one.When.Build(),
-                                   one.Action == ClashActionKind.Suppress))
-                               .ToList(),
                 Grouping = grouping.Count > 0
                     ? (IReadOnlyList<IGroupingRule>)grouping
                     : new IGroupingRule[]
@@ -357,10 +351,6 @@ namespace CamelWorks.Core.Project
                         GroupingRules.ByLevel(),
                         GroupingRules.ByProximity(proximityMetres > 0 ? proximityMetres : 5.0),
                     },
-                Assigns = Cards.Where(one => one.IsEnabled && !one.NeedsValue)
-                               .Where(one => one.Action == ClashActionKind.Assign)
-                               .Select(one => new AssignRule(one.When.Build(), one.Value!))
-                               .ToList(),
                 PinnedGroups = new Dictionary<string, IReadOnlyList<string>>(Pinned, StringComparer.Ordinal),
             };
         }

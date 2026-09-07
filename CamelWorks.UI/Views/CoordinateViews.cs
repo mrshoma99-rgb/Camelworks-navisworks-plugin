@@ -903,6 +903,7 @@ namespace CamelWorks.UI.Views
             private bool _chose;
 
             private readonly StackPanel _cards = Ui.Stack();
+            private readonly StackPanel _marks = Ui.Stack();
             private readonly StackPanel _grouping = Ui.Stack();
             private readonly StackPanel _preview = Ui.Stack();
             private readonly StackPanel _saved = Ui.Stack();
@@ -970,18 +971,39 @@ namespace CamelWorks.UI.Views
                 // and nothing else; the preview runs the cards over the results and writes
                 // nothing; Run is the only one that changes anything, so it is the filled button.
                 var see = _live == null
-                    ? Ui.Blocked("See what it would do",
-                                 "A preview reads the clash results, so it needs an open model.")
+                    ? (UIElement)Stopped("See what it would do", primary: false)
                     : Ui.Runner("See what it would do", _preview, job => Preview(_live, job),
                                 primary: false);
 
                 var run = _live == null
-                    ? Ui.Blocked("Run the cards",
-                                 "Running the cards reads and writes the clash results, so it "
-                                 + "needs an open model.")
+                    ? (UIElement)Stopped("Run the cards", primary: true)
                     : Ui.Runner("Run the cards", _preview, job => Play(_live, job));
 
                 return Bench.Surface(Setup(), Ui.Foot(run, Ui.Actions(save, see), help), Stage());
+            }
+
+            /// <summary>
+            /// A footer act on a seat with no document.
+            ///
+            /// Not <see cref="Ui.Blocked"/>: that returns a whole footer of its own, and a footer
+            /// inside a footer draws its reason in a slot with no width, a character to a line.
+            /// A plain disabled button is what <see cref="Ui.Foot"/> wants — it reads the reason
+            /// off the primary's tooltip and states it once, where the anatomy puts it.
+            /// </summary>
+            /// <param name="caption">What the button would say.</param>
+            /// <param name="primary">Whether it is the screen's main press.</param>
+            private static System.Windows.Controls.Button Stopped(string caption, bool primary)
+            {
+                var go = new System.Windows.Controls.Button
+                {
+                    Content = caption,
+                    IsEnabled = false,
+                    ToolTip = "Cards read and write the clash results, so this needs an open model.",
+                };
+
+                go.Wearing(primary ? "PrimaryBtn" : "Btn");
+
+                return go;
             }
 
             /// <summary>The composer: criteria, then what to do to what they find.</summary>
@@ -1020,6 +1042,7 @@ namespace CamelWorks.UI.Views
                     Say("They run top to bottom on a press, and never on their own. A card that "
                         + "takes results off the board or deletes them hides those results from "
                         + "the cards under it, so the order is part of what they do."),
+                    _marks,
                     _cards,
                     Head("Bands"),
                     Say("How the board divides the results it is given. Bands change nothing about "
@@ -1111,6 +1134,22 @@ namespace CamelWorks.UI.Views
             {
                 _cards.Children.Clear();
                 _grouping.Children.Clear();
+                _marks.Children.Clear();
+
+                // What past runs wrote stands until somebody takes it off, so the screen says how
+                // much is standing and offers the one way out. Suppressing used to be re-derived
+                // on every board build, where switching a rule off was the way back.
+                var marked = _seat.Findings.Findings.Present.Count(ClashCardRun.Marked);
+
+                if (marked > 0)
+                {
+                    var line = Ui.Across(
+                        Ui.Line(Ui.Count(marked, "result") + " carry a mark from a past run.", 0.75),
+                        Ui.Link("Clear the marks", Unmark));
+
+                    line.Margin = new Thickness(0, 4, 0, 0);
+                    _marks.Children.Add(line);
+                }
 
                 _cards.Children.Add(_rules.Cards.Count == 0
                     ? Nothing("No cards.",
@@ -1497,6 +1536,37 @@ namespace CamelWorks.UI.Views
                 Touched();
                 Redraw();
             }
+
+            /// <summary>
+            /// Take every suppress and flag mark off, so the board carries what the tests report.
+            ///
+            /// Confirmed, because it undoes every run of every card at once and the counts on the
+            /// list are the only record of what those runs did.
+            /// </summary>
+            private void Unmark() =>
+                Parts.Sure(_marks,
+                    "This takes the suppress and flag marks off every result in the project, "
+                    + "whichever card wrote them. The results themselves are not touched.",
+                    "Clear the marks",
+                    () =>
+                    {
+                        var cleared = ClashCardRun.Clear(_seat.Findings.Findings.Present.ToList());
+
+                        _preview.Children.Clear();
+
+                        if (!_seat.Findings.Save())
+                        {
+                            _preview.Children.Add(Ui.Problem(
+                                "The marks were cleared, but the findings file could not be written."));
+                            return;
+                        }
+
+                        _said.Clear();
+                        Redraw();
+
+                        _preview.Children.Add(Ui.Done(
+                            Ui.Count(cleared, "result") + " no longer carry a mark."));
+                    });
 
             /// <summary>Say that what is on screen is no longer what the project file holds.</summary>
             private void Touched()

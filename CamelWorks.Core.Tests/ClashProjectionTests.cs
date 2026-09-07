@@ -405,11 +405,11 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void A_result_the_rules_stop_suppressing_stops_naming_the_rule_that_did()
+        public void A_board_does_not_un_suppress_what_a_card_run_wrote()
         {
-            // The fact is written or removed on every board, never left alone: the register merges
-            // facts additively and removes none, so a rule somebody switched off would go on
-            // taking the result off every future board.
+            // Suppressing is a decision somebody pressed Run on, not something the board derives,
+            // so a board built afterwards leaves the mark alone. ClashCardRun.Clear is the way
+            // back, and it is a press of its own.
             var register = new FindingRegister();
             var read = new ClashCheck(new FakeClashSource()
                 .With("L03 MEP v STR", "Weekly", "t1")
@@ -428,12 +428,21 @@ namespace CamelWorks.Core.Tests
             Assert.All(register.Present,
                        finding => Assert.True(finding.Facts.ContainsKey(ClashFindings.SuppressedBy)));
 
+            // A board with no rules at all. The mark survives it.
             ClashFindings.Recorded(ClashPipeline.Run(Projection().Items(register.Present.ToList()),
                                                      new ClashPipelineOptions()),
                                    register);
 
             Assert.All(register.Present,
+                       finding => Assert.True(finding.Facts.ContainsKey(ClashFindings.SuppressedBy)));
+
+            Assert.Equal(1, ClashCardRun.Clear(register.Present.ToList()));
+
+            Assert.All(register.Present,
                        finding => Assert.False(finding.Facts.ContainsKey(ClashFindings.SuppressedBy)));
+
+            // Nothing left to clear, so a second press reports nothing.
+            Assert.Equal(0, ClashCardRun.Clear(register.Present.ToList()));
         }
 
         [Fact]
