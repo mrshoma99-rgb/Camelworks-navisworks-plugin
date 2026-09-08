@@ -196,9 +196,15 @@ namespace CamelWorks.Studio
             // the empty state, which is all this tab had ever been drawn as, so what a report
             // actually offers — the statuses and priorities it keeps, the issues ticked by hand,
             // the order they go in and the preview of the document — had never been looked at.
-            Page("app-clash-report-board", "Clash Manager · Report, over a board", 900,
-                 () => Deck("clash", "clashreport",
-                            CoordinateViews.Report(Seated(), Reported()))),
+            Page("app-clash-report-board", "Clash Manager · Report, over a board", 620,
+                 () => Deck("clash", "clashreport", new Border
+                 {
+                     // Bounded, because the tab is. The surface is a two-pane bench whose body row
+                     // is a star, and a star row measured against an unbounded height draws the
+                     // whole screen again below itself.
+                     Height = 500,
+                     Child = CoordinateViews.Report(Seated(), Reported()),
+                 })),
 
             // The Settings tab, on each of the three sections that has data behind it. The whole
             // tab each time: the rail says which section is open and the foot says whether
