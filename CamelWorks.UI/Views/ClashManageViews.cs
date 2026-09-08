@@ -5283,17 +5283,35 @@ namespace CamelWorks.UI.Views
                 //
                 // Now a click anywhere on the strip toggles the group, a double-click on the name
                 // renames only, and the scroll position is preserved.
-                var words = new StackPanel
+                // A dock panel, not a stack. A horizontal StackPanel measures its children with
+                // infinite width, so the name's ellipsis could never fire: the panel's desired
+                // width was the whole name however long it was, Arrange takes the larger of the
+                // rect it is given and DesiredSize, and a group called anything substantial was
+                // drawn straight over the member count docked to its right. The layout reader
+                // caught it as "3 clashes and StackPanel share 5 x 16 of DockPanel".
+                //
+                // A dock panel measures its fill child with the room that is left, which is what
+                // the trimming needs. The glyphs dock left and the note - which follows the name
+                // in reading order - docks right, so on a short name it sits away from the name
+                // rather than beside it. That is the cost of the name being the thing that gives
+                // ground, and the alternative was text drawn on top of text.
+                var words = new DockPanel
                 {
-                    Orientation = Orientation.Horizontal,
+                    LastChildFill = true,
                     Cursor = System.Windows.Input.Cursors.Hand,
                     Background = System.Windows.Media.Brushes.Transparent,
                 };
 
-                words.Children.Add(Ui.Glyph(open ? Glyphs.Down : Glyphs.Right, 13, "Muted",
-                                            new Thickness(0, 0, 7, 0)));
+                var chevron = Ui.Glyph(open ? Glyphs.Down : Glyphs.Right, 13, "Muted",
+                                       new Thickness(0, 0, 7, 0));
 
-                words.Children.Add(Ui.Glyph(Glyphs.Group, 15, "Accent", new Thickness(0, 0, 7, 0)));
+                DockPanel.SetDock(chevron, Dock.Left);
+                words.Children.Add(chevron);
+
+                var kind = Ui.Glyph(Glyphs.Group, 15, "Accent", new Thickness(0, 0, 7, 0));
+
+                DockPanel.SetDock(kind, Dock.Left);
+                words.Children.Add(kind);
 
                 var name = new TextBlock
                 {
@@ -5331,9 +5349,17 @@ namespace CamelWorks.UI.Views
                     e.Handled = true;
                 };
 
-                words.Children.Add(name.Wearing("Body"));
+                // The note first, because a dock panel's fill child has to be added last: the
+                // children docked after it are laid out in the space it has already taken.
+                if (_made.Contains(row.Id))
+                {
+                    var note = Parts.Note("grouped by you");
 
-                if (_made.Contains(row.Id)) words.Children.Add(Parts.Note("grouped by you"));
+                    DockPanel.SetDock(note, Dock.Right);
+                    words.Children.Add(note);
+                }
+
+                words.Children.Add(name.Wearing("Body"));
 
                 words.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
                 {
