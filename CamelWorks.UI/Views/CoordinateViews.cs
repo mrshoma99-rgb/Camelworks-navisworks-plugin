@@ -2859,6 +2859,32 @@ namespace CamelWorks.UI.Views
         /// <param name="seat">The seat. Its project file holds the settings and the revisions.</param>
         public static UIElement Report(ISeat seat) => new ReportScreen(seat).Build();
 
+        /// <summary>
+        /// The report screen over a supplied board, for the render harness.
+        ///
+        /// A report is written from the board and the board is built from an open model, so this
+        /// screen on a seat with no document draws its empty page and nothing else. Every picture
+        /// of the tab was therefore of that empty page: the document picker, the audience, the
+        /// selection table, the marker settings and the revision line had never been drawn, which
+        /// is where the faults on this tab have been.
+        ///
+        /// The board is a parameter for the same reason the Manage tab's engine is: the seat's
+        /// own reports itself unavailable. Everything else comes off the seat as it does on a
+        /// licensed one.
+        /// </summary>
+        /// <param name="seat">The seat. Its project file holds the settings and the revisions.</param>
+        /// <param name="board">The board the report is written from.</param>
+        public static UIElement Report(ISeat seat, ClashPipelineResult board)
+        {
+            if (seat == null) throw new ArgumentNullException(nameof(seat));
+            if (board == null) throw new ArgumentNullException(nameof(board));
+
+            LastBoard = board;
+            LastBoardLabel = seat.Profile.ProjectName;
+
+            return new ReportScreen(seat).Build();
+        }
+
         /// <summary>The penetration schedule, as its own tool rather than a document choice.</summary>
         internal static UIElement PenetrationsReport()
         {

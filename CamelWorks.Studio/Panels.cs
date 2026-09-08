@@ -192,6 +192,14 @@ namespace CamelWorks.Studio
             Page("app-clash-report", "Clash Manager · Report", 620,
                  () => Deck("clash", "clashreport", CoordinateViews.Report(Seated()))),
 
+            // The same tab over the board the Exchange pages are written from. The page above is
+            // the empty state, which is all this tab had ever been drawn as, so what a report
+            // actually offers — the statuses and priorities it keeps, the issues ticked by hand,
+            // the order they go in and the preview of the document — had never been looked at.
+            Page("app-clash-report-board", "Clash Manager · Report, over a board", 900,
+                 () => Deck("clash", "clashreport",
+                            CoordinateViews.Report(Seated(), Reported()))),
+
             // The Settings tab, on each of the three sections that has data behind it. The whole
             // tab each time: the rail says which section is open and the foot says whether
             // anything is unsaved, and neither is visible in a picture of the pane alone.
@@ -727,6 +735,16 @@ namespace CamelWorks.Studio
             for (var at = 0; at < BoardSize; at++) made.Add(Boarded(at));
 
             return ClashPipeline.Run(made).Groups;
+        }
+
+        /// <summary>The board a report is written from: the one the Exchange pages send.</summary>
+        private static ClashPipelineResult Reported()
+        {
+            var made = new List<ClashItem>();
+
+            for (var at = 0; at < BoardSize; at++) made.Add(Boarded(at));
+
+            return ClashPipeline.Run(made);
         }
 
         /// <summary>How many clashes the board holds. Enough that the tests have sixteen each.</summary>
