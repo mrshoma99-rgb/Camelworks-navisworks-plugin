@@ -383,8 +383,8 @@ namespace CamelWorks.Studio
 
             var heights = new ClearanceSettings
             {
-                Surfaces = "Level 03 Floors",
-                Targets = ClearanceSettings.NotTheSurfaces,
+                Surfaces = CheckSource.Sets("Level 03 Floors"),
+                Targets = CheckSource.Rest(),
                 MinimumMetres = 2.1,
                 ToleranceMetres = 0.05,
                 DetectSurfaces = true,
@@ -407,9 +407,9 @@ namespace CamelWorks.Studio
 
             new FallSettings
             {
-                Floors = "Level 03 Floors",
-                Handrails = "Level 03 Handrails",
-                Obstructions = FallSettings.Nothing,
+                Floors = CheckSource.Sets("Level 03 Floors"),
+                Handrails = CheckSource.Sets("Level 03 Handrails"),
+                Obstructions = CheckSource.None(),
                 LevelName = "Level 03",
                 LevelMetres = 10.5,
                 BandMetres = 1.0,

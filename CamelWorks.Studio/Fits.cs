@@ -18,10 +18,25 @@ namespace CamelWorks.Studio
     /// The layout system already knows: it measured what every element asked for and then told it
     /// what it got. This reads the difference back.
     ///
-    /// One fault is reported: **overlapping** — two children of one stack, dock or wrap panel
-    /// whose arranged rectangles intersect. Grids and canvases are excluded: layering children is
-    /// what they are for, and every focus ring, badge and overlay in this product is a Grid cell
-    /// drawn over another.
+    /// Two faults are reported.
+    ///
+    /// **overlapping** — two children of one stack, dock or wrap panel whose arranged rectangles
+    /// intersect. Grids and canvases are excluded: layering children is what they are for, and
+    /// every focus ring, badge and overlay in this product is a Grid cell drawn over another.
+    ///
+    /// **scrolled sideways** — a scroller whose content declares a MinWidth larger than the room
+    /// the scroller has, at the width the page is drawn. This one is here because a run of this
+    /// reader reported twenty-six surfaces clean while the Manage board carried a horizontal
+    /// scrollbar under every row: the board's columns declared floors summing to 788 against a
+    /// 772 pane, and sixteen pixels of overflow is invisible in a picture of forty controls and
+    /// obvious once the numbers are printed.
+    ///
+    /// The MinWidth is the whole of the test, and the first version of this did without it: any
+    /// content wider than its viewport was reported, and the matrix page drawn deliberately in
+    /// its scrolled state came back as a fault, 798 in 623. That page is right and the reader was
+    /// wrong. A scroller holding more content than fits is doing its job; one whose content says
+    /// "I need 788 pixels" inside 772 has been given less room than it was designed for, and that
+    /// is a fault whatever the content happens to be.
     ///
     /// Clipping is not reported, and not for want of trying. The obvious test — an element
     /// arranged smaller than the size it asked for — cannot fire: WPF's Arrange takes the larger
@@ -53,6 +68,19 @@ namespace CamelWorks.Studio
         internal static FrameworkElement Canary()
         {
             var page = new StackPanel { Width = 200 };
+
+            // A scroller whose content asks for more room than it has: the second fault, so a
+            // clean run proves both readers work rather than only the first. MinWidth rather than
+            // Width, because that is what the reader tests.
+            var narrow = new ScrollViewer
+            {
+                Width = 100,
+                Height = 20,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content = new Border { MinWidth = 260, Height = 12, Background = Brushes.Gainsboro },
+            };
+
+            page.Children.Add(narrow);
 
             var overlapping = new StackPanel { Orientation = Orientation.Horizontal };
 
@@ -93,10 +121,16 @@ namespace CamelWorks.Studio
 
             var found = Of(page);
 
-            if (found.Any(one => one.Kind == "overlapping")) return null;
+            var missed = new List<string>();
 
-            return "the layout reader is broken: it found no overlap in a page built to hold "
-                 + "one, so a clean run over the product proves nothing. It reported: "
+            if (!found.Any(one => one.Kind == "overlapping")) missed.Add("the overlap");
+            if (!found.Any(one => one.Kind == "scrolled sideways")) missed.Add("the overflow");
+
+            if (missed.Count == 0) return null;
+
+            return "the layout reader is broken: it found neither " + string.Join(" nor ", missed)
+                 + " in a page built to hold both, so a clean run over the product proves "
+                 + "nothing. It reported: "
                  + (found.Count == 0
                         ? "nothing at all"
                         : string.Join(" | ", found.Select(one => one.ToString())));
@@ -153,6 +187,7 @@ namespace CamelWorks.Studio
             var children = Under(element);
 
             Overlapping(element, children, path, found);
+            Overflowing(element, path, found);
 
             foreach (var child in children)
                 Walk(child, path + " > " + Named(child), found);
@@ -211,6 +246,62 @@ namespace CamelWorks.Studio
                         + parent.GetType().Name,
                         path));
                 }
+        }
+
+        /// <summary>
+        /// Whether a scroller has been given less room than its content says it needs.
+        ///
+        /// The viewport is read from the scroller itself, which is what the scrollbar is drawn
+        /// from, so what this reports is what the picture shows. A scroller that cannot scroll
+        /// sideways at all is skipped: its content is clipped rather than scrolled, and that is a
+        /// different fault this reader cannot see.
+        /// </summary>
+        /// <param name="element">The element, which may or may not be a scroller.</param>
+        /// <param name="path">How it was reached.</param>
+        /// <param name="found">Where faults are collected.</param>
+        private static void Overflowing(DependencyObject element, string path, List<Fault> found)
+        {
+            if (!(element is ScrollViewer scroll)) return;
+            if (scroll.HorizontalScrollBarVisibility == ScrollBarVisibility.Disabled) return;
+            if (scroll.ViewportWidth <= Slack) return;
+
+            var asked = Asked(scroll.Content as DependencyObject);
+
+            if (asked <= scroll.ViewportWidth + Slack) return;
+
+            found.Add(new Fault(
+                "scrolled sideways",
+                "the content asks for " + Size(asked) + " and has " + Size(scroll.ViewportWidth)
+                + ", so it is over by " + Size(asked - scroll.ViewportWidth),
+                path));
+        }
+
+        /// <summary>
+        /// The widest MinWidth declared at or just inside a scroller's content.
+        ///
+        /// Walked through single-child wrappers, because the element carrying the floor is often
+        /// a border or a presenter or two below the Content property, and stopping at the first
+        /// element would read zero off a wrapper and call a board that does not fit its own
+        /// columns clean.
+        /// </summary>
+        /// <param name="from">The scroller's content.</param>
+        private static double Asked(DependencyObject? from)
+        {
+            var most = 0.0;
+
+            for (var at = from; at != null; )
+            {
+                if (at is FrameworkElement one && !double.IsInfinity(one.MinWidth))
+                    most = Math.Max(most, one.MinWidth);
+
+                var children = Under(at);
+
+                if (children.Count != 1) break;
+
+                at = children[0];
+            }
+
+            return most;
         }
 
         /// <summary>

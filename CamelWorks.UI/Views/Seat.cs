@@ -12,6 +12,55 @@ using CamelWorks.Core.Testing;
 namespace CamelWorks.UI.Views
 {
     /// <summary>One saved set, as a screen needs to read it: what it is called and what it holds.</summary>
+    /// <summary>One loaded model: what it is called, and what it is keyed by.</summary>
+    public sealed class SeatModel
+    {
+        /// <summary>Describe one.</summary>
+        /// <param name="name">What it shows as.</param>
+        /// <param name="scope">The scope it is keyed by, as IModelSource.Scope gives it.</param>
+        public SeatModel(string name, string scope)
+        {
+            Name = name ?? string.Empty;
+            Scope = scope ?? string.Empty;
+        }
+
+        /// <summary>What it shows as.</summary>
+        public string Name { get; }
+
+        /// <summary>The scope it is keyed by. Not the name, and never shown.</summary>
+        public string Scope { get; }
+    }
+
+    /// <summary>
+    /// One node of the host's selection tree, as a picker needs it.
+    ///
+    /// Read a level at a time. A published federation is one model node with the disciplines
+    /// underneath it, so a picker offering the list of models offers one line; this is the way in
+    /// to what is actually in the file.
+    /// </summary>
+    public sealed class SeatNode
+    {
+        /// <summary>Describe one.</summary>
+        /// <param name="name">What the host's tree shows for it.</param>
+        /// <param name="key">Its key, which is what a source stores.</param>
+        /// <param name="branches">True when it has anything under it.</param>
+        public SeatNode(string name, ElementKey key, bool branches)
+        {
+            Name = name ?? string.Empty;
+            Key = key;
+            Branches = branches;
+        }
+
+        /// <summary>What the host's tree shows for it.</summary>
+        public string Name { get; }
+
+        /// <summary>Its key, which is what a source stores.</summary>
+        public ElementKey Key { get; }
+
+        /// <summary>True when it has anything under it.</summary>
+        public bool Branches { get; }
+    }
+
     public sealed class SeatSet
     {
         /// <summary>Describe one.</summary>
@@ -113,8 +162,27 @@ namespace CamelWorks.UI.Views
         /// <summary>The names of the models loaded, in the order they were appended.</summary>
         IReadOnlyList<string> Models();
 
+        /// <summary>
+        /// The models loaded, with the scope each is known by as well as the name it shows.
+        ///
+        /// Both, because they are not the same string and the difference is load-bearing: a
+        /// model's scope is a hash of the file it came from, and a clash test's whole-models side
+        /// is written in scopes. A screen that offers names and hands them on as scopes builds a
+        /// test the host then cannot resolve, which is what the Create tab did.
+        /// </summary>
+        IReadOnlyList<SeatModel> LoadedModels();
+
         /// <summary>The keys of whatever is selected in the host right now.</summary>
         IReadOnlyList<ElementKey> Selected();
+
+        /// <summary>
+        /// One level of the host's selection tree.
+        ///
+        /// A level at a time rather than the whole tree: reading a federation's tree to draw its
+        /// first six lines is a traversal of millions of items for a list nobody has opened yet.
+        /// </summary>
+        /// <param name="under">The node to look under, or the empty key for the models.</param>
+        IReadOnlyList<SeatNode> Tree(ElementKey under);
 
         /// <summary>
         /// The keys of everything drawn in the document: not hidden, and carrying geometry.
@@ -195,7 +263,13 @@ namespace CamelWorks.UI.Views
         public IReadOnlyList<string> Models() => Array.Empty<string>();
 
         /// <inheritdoc />
+        public IReadOnlyList<SeatModel> LoadedModels() => Array.Empty<SeatModel>();
+
+        /// <inheritdoc />
         public IReadOnlyList<ElementKey> Selected() => Array.Empty<ElementKey>();
+
+        /// <inheritdoc />
+        public IReadOnlyList<SeatNode> Tree(ElementKey under) => Seated.Tree(_document, under);
 
         /// <inheritdoc />
         public IEnumerable<ElementKey> Visible() => Array.Empty<ElementKey>();
@@ -235,6 +309,46 @@ namespace CamelWorks.UI.Views
         public static IReadOnlyList<SeatSet> Sets(this ISeat seat) =>
             Offer(() => seat.Sets());
 
+        /// <summary>
+        /// One level of a document's selection tree, as nodes a picker can draw.
+        ///
+        /// Written once here because both seats answer it the same way: the models at the top,
+        /// and a node's own children under it.
+        /// </summary>
+        /// <param name="document">The document.</param>
+        /// <param name="under">The node to look under, or the empty key for the models.</param>
+        public static IReadOnlyList<SeatNode> Tree(IModelDocument document, ElementKey under)
+        {
+            if (document == null) return Array.Empty<SeatNode>();
+
+            return Offer(() =>
+            {
+                var nodes = under.IsEmpty
+                    ? document.Roots
+                    : document.Resolve(under)?.Children ?? (IReadOnlyList<IModelItem>)Array.Empty<IModelItem>();
+
+                var found = new List<SeatNode>();
+
+                foreach (var node in nodes)
+                {
+                    // A node with no key cannot be stored on a source, so it is not offered. The
+                    // host gives one for everything in the tree; this is the guard, not a case.
+                    if (node.Key.IsEmpty) continue;
+
+                    found.Add(new SeatNode(Named(node), node.Key, node.Children.Count > 0));
+                }
+
+                return (IReadOnlyList<SeatNode>)found;
+            });
+        }
+
+        /// <summary>What the tree shows for a node, falling back to its category.</summary>
+        /// <param name="node">The node.</param>
+        private static string Named(IModelItem node) =>
+            !string.IsNullOrWhiteSpace(node.DisplayName) ? node.DisplayName
+            : !string.IsNullOrWhiteSpace(node.Category) ? node.Category!
+            : "(unnamed)";
+
         /// <summary>Every saved set's name, once each, in order.</summary>
         /// <param name="seat">The seat.</param>
         public static IReadOnlyList<string> SetNames(this ISeat seat) =>
@@ -245,6 +359,11 @@ namespace CamelWorks.UI.Views
         public static IReadOnlyList<string> ModelNames(this ISeat seat) =>
             Ui.Listed(Offer(() => seat.Models()));
 
+        /// <summary>Every loaded model, with the scope each is keyed by.</summary>
+        /// <param name="seat">The seat.</param>
+        public static IReadOnlyList<SeatModel> Loaded(this ISeat seat) =>
+            Offer(() => seat.LoadedModels());
+
         /// <summary>
         /// The folders a check's tests are filed in, once each, in order.
         ///
@@ -252,9 +371,23 @@ namespace CamelWorks.UI.Views
         /// a test is in it, and one nothing is in is one the document has forgotten.
         /// </summary>
         /// <param name="check">The check.</param>
-        public static IReadOnlyList<string> Folders(ICheck? check) =>
-            check == null
-                ? Array.Empty<string>()
-                : Ui.Listed(Offer(() => check.Runs()).Select(one => one.Folder));
+        public static IReadOnlyList<string> Folders(ICheck? check)
+        {
+            if (check == null) return Array.Empty<string>();
+
+            // Off the tests, which is all a project-file check has to go on.
+            var used = Offer(() => check.Runs()).Select(one => one.Folder);
+
+            // And, where the check is the document's own clash data, the folders the document
+            // holds with nothing in them. The comment that used to stand here said a folder
+            // nothing is in is one the document has forgotten. It is not: it is the folder
+            // somebody made in Navisworks a moment ago and is trying to file into, and leaving
+            // it off the list is why they could not.
+            var held = check is ClashCheck clash
+                ? Offer(() => clash.Folders())
+                : Array.Empty<string>();
+
+            return Ui.Listed(used.Concat(held));
+        }
     }
 }

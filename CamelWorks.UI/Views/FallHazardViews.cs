@@ -54,12 +54,30 @@ namespace CamelWorks.UI.Views
 
             private readonly StackPanel _log = Ui.Stack();
 
+            /// <summary>
+            /// What the three source pickers hold, built once per panel rather than per draw.
+            ///
+            /// The picker edits its value in place and redraws itself; rebuilding it from the saved
+            /// run on every keystroke would take the Find box away from whoever is typing in it.
+            /// </summary>
+            private readonly SourcePicker.Pick _floors;
+
+            private readonly SourcePicker.Pick _handrails;
+
+            private readonly SourcePicker.Pick _obstructions;
+
             internal Fields(ISeat seat, FallCheck check, CheckRunSpec run, Action onChanged)
             {
                 _seat = seat;
                 _check = check;
                 _run = run;
                 _onChanged = onChanged;
+
+                var settings = FallSettings.From(run);
+
+                _floors = SourcePicker.Read(settings.Floors);
+                _handrails = SourcePicker.Read(settings.Handrails);
+                _obstructions = SourcePicker.Read(settings.Obstructions);
             }
 
             private Measure Units => _seat.Profile.Units;
@@ -75,28 +93,19 @@ namespace CamelWorks.UI.Views
                 var blocked = Blocked;
                 var storeys = Storeys();
 
-                var sides = new List<string> { FallSettings.Nothing, FallSettings.Loaded,
-                                              FallSettings.Selected };
-
-                sides.AddRange(sets);
-
-                var optional = new List<string> { FallSettings.Nothing };
-
-                optional.AddRange(sides);
-
                 return Ui.Stack(
                     _log,
                     // No heading over the name and the folder: the tab is called Create and the
                     // list beside this has a Test column.
                     Bench.Group(string.Empty,
-                        Ui.Across(
-                            Sized(Ui.Field("Name", Ui.Settled(_run.Name, string.Empty,
-                                name => Keep(_ => _run.Name = name), Ui.Wide.Name)), 200),
-                            Sized(Ui.Field("Folder", Ui.Settled(_run.Folder ?? string.Empty,
-                                string.Empty,
+                        Ui.Evenly(
+                            Filled(Ui.Field("Name", Ui.Settled(_run.Name, string.Empty,
+                                name => Keep(_ => _run.Name = name), Ui.Wide.Name))),
+                            Filled(Ui.Field("Folder", Ui.Folder(_run.Folder,
+                                Seated.Folders(_check),
                                 folder => Keep(_ => _run.Folder =
                                     string.IsNullOrWhiteSpace(folder) ? null : folder),
-                                160)), 170))),
+                                160))))),
                     // Where the plan is cut comes first. Every other field on the panel is
                     // conditioned on it: the floor side is filtered by the band around it, the
                     // rails and obstructions are read at it, and there is no plan without it. It
@@ -104,60 +113,59 @@ namespace CamelWorks.UI.Views
                     // default that could be right.
                     Bench.Group("Where the plan is cut",
                         Storey(settings, storeys),
-                        Ui.Across(
-                            Sized(Number("Cut elevation", settings.HasLevel ? settings.LevelMetres
+                        Ui.Evenly(
+                            Filled(Number("Cut elevation", settings.HasLevel ? settings.LevelMetres
                                                                             : (double?)null,
                                          metres => true,
-                                         (one, metres) => one.LevelMetres = metres), 190),
-                            Sized(Ui.Field("Band above and below (" + Units.LengthUnit + ")",
+                                         (one, metres) => one.LevelMetres = metres)),
+                            Filled(Ui.Field("Band above and below (" + Units.LengthUnit + ")",
                                 Ui.Settled(Units.Bare(settings.BandMetres), string.Empty,
                                     text => Keep(one =>
                                     {
                                         if (Units.TryRead(text, out var metres) && metres > 0)
                                             one.BandMetres = metres;
-                                    }), 90)), 190)),
+                                    }), 90)))),
                         settings.HasLevel
                             ? null
                             : Ui.Note("This test does not say where to cut. Pick the storey, or "
                                       + "type the elevation the plan is cut at.")),
                     Bench.Group("What to read",
-                        Sized(Ui.Field("Floor from",
-                                 Source(Offered(sides, settings.Floors), settings.Floors,
-                                        "What the floor is read from",
-                                        pick => Keep(one => one.Floors = pick), 380),
-                                 "A set of floors or slabs. Everything loaded reads the whole "
-                                 + "federation at this elevation, and a wall or a duct through the "
-                                 + "band projects its outline as though it were floor."),
-                              380),
+                        Filled(SourcePicker.Drawn(_seat, "Floor from", _floors,
+                                  () => Keep(one => one.Floors = SourcePicker.Written(_floors)),
+                                  blocked,
+                                  new[] { SourcePicker.Everywhere })),
+                        Filled(Ui.Small("A set of floors or slabs. Everything loaded reads the "
+                                       + "whole federation at this elevation, and a wall or a duct "
+                                       + "through the band projects its outline as though it were "
+                                       + "floor.")),
                         settings.HasFloors
                             ? null
                             : Ui.Note("This test names nothing to read the floor from, so it "
                                       + "cannot run."),
-                        Ui.Across(
-                            Sized(Ui.Field("Handrails from",
-                                Source(Offered(optional, settings.Handrails), settings.Handrails,
-                                       "What the handrails are read from",
-                                       pick => Keep(one => one.Handrails = pick), 180)), 190),
-                            Sized(Ui.Field("Obstructions from",
-                                Source(Offered(optional, settings.Obstructions),
-                                       settings.Obstructions,
-                                       "What the obstructions are read from",
-                                       pick => Keep(one => one.Obstructions = pick), 180)), 190)),
+                        Filled(SourcePicker.Drawn(_seat, "Handrails from", _handrails,
+                                  () => Keep(one => one.Handrails = SourcePicker.Written(_handrails)),
+                                  blocked,
+                                  new[] { SourcePicker.Everywhere })),
+                        Filled(SourcePicker.Drawn(_seat, "Obstructions from", _obstructions,
+                                  () => Keep(one =>
+                                      one.Obstructions = SourcePicker.Written(_obstructions)),
+                                  blocked,
+                                  new[] { SourcePicker.Everywhere })),
                         settings.HasHandrails
                             ? null
                             : Ui.Note("With no handrails named, every edge over the gap is "
                                       + "reported as unprotected.")),
                     Bench.Group("How to judge it",
-                        Ui.Across(
-                            Sized(Number("Maximum unprotected gap", settings.LimitMetres,
+                        Ui.Evenly(
+                            Filled(Number("Maximum unprotected gap", settings.LimitMetres,
                                          metres => metres > 0,
-                                         (one, metres) => one.LimitMetres = metres), 190),
-                            Sized(Number("Ignore gaps under", settings.MinPassageMetres,
+                                         (one, metres) => one.LimitMetres = metres)),
+                            Filled(Number("Ignore gaps under", settings.MinPassageMetres,
                                          metres => metres >= 0,
-                                         (one, metres) => one.MinPassageMetres = metres), 190)),
-                        Sized(Number("Grid resolution", settings.CellMetres,
+                                         (one, metres) => one.MinPassageMetres = metres))),
+                        Filled(Number("Grid resolution", settings.CellMetres,
                                      metres => metres > 0,
-                                     (one, metres) => one.CellMetres = metres), 190),
+                                     (one, metres) => one.CellMetres = metres)),
                         Coarse(settings), Open(settings),
                         // Handrail coverage distance is behind the link with the sentence that
                         // says what it is worth: matching is proximity only, so a rail 300 mm
@@ -246,10 +254,10 @@ namespace CamelWorks.UI.Views
                     picker.ToolTip = "This project declares no storeys yet.";
                 }
 
-                return Sized(Ui.Field("Storey", picker,
+                return Filled(Ui.Field("Storey", picker,
                                       "Fills the elevation from the project's storeys. The "
                                       + "elevation stays the authority: editing a storey's height "
-                                      + "does not move a test that has already been run."), 380);
+                                      + "does not move a test that has already been run."));
             }
 
             /// <summary>The storeys this project declares, with their heights.</summary>
@@ -348,22 +356,24 @@ namespace CamelWorks.UI.Views
 
             /// <summary>Handrail coverage distance, on the page that says what it is worth.</summary>
             private UIElement Coverage() =>
-                Sized(Number("Handrail coverage distance",
+                Filled(Number("Handrail coverage distance",
                              FallSettings.From(_run).HandrailToleranceMetres,
                              metres => metres >= 0,
-                             (one, metres) => one.HandrailToleranceMetres = metres), 190);
+                             (one, metres) => one.HandrailToleranceMetres = metres));
 
-            /// <summary>A field capped to a readable width, so short fields sit two to a row.</summary>
+            /// <summary>
+            /// A field that takes the width of the panel it is in.
+            ///
+            /// It carried a ceiling before. A cap plus the default stretch centres an element in
+            /// what is left over, which is why the panel's fields started at three different left
+            /// edges; a cap alone leaves the panel's right half white at every window width. This
+            /// panel is already the narrower half of the tab, so its fields take all of it and a
+            /// pair of them splits it through <see cref="Ui.Evenly"/>.
+            /// </summary>
             /// <param name="field">The field.</param>
-            /// <param name="width">How wide it may be.</param>
-            private static UIElement Sized(Panel field, double width)
+            private static UIElement Filled(FrameworkElement field)
             {
-                field.Width = width;
-
-                // Left, not the default stretch. A stretched element given a fixed width is
-                // centred in what is left over, so a full-width field under a row of two started
-                // half a column in from the margin.
-                field.HorizontalAlignment = HorizontalAlignment.Left;
+                field.HorizontalAlignment = HorizontalAlignment.Stretch;
 
                 return field;
             }
@@ -382,29 +392,6 @@ namespace CamelWorks.UI.Views
                 if (problem != null) _log.Children.Add(Ui.Problem(problem));
 
                 _onChanged();
-            }
-
-            /// <summary>One source, picked from the shared list.</summary>
-            /// <param name="offered">Everything that could be read from.</param>
-            /// <param name="chosen">What it is read from now.</param>
-            /// <param name="prompt">What the list asks.</param>
-            /// <param name="onPicked">Records the choice.</param>
-            /// <param name="width">How wide the press is.</param>
-            private UIElement Source(IReadOnlyList<string> offered, string chosen, string prompt,
-                                     Action<string> onPicked, double width) =>
-                Parts.Source(_log, offered, chosen, prompt, onPicked, width, Blocked);
-
-
-            /// <summary>One side's list, with whatever it is set to kept in it.</summary>
-            /// <param name="offered">What this build offers.</param>
-            /// <param name="chosen">What the side is set to.</param>
-            private static List<string> Offered(IEnumerable<string> offered, string chosen)
-            {
-                var list = offered.ToList();
-
-                if (!list.Contains(chosen, StringComparer.OrdinalIgnoreCase)) list.Add(chosen);
-
-                return list;
             }
 
             /// <summary>

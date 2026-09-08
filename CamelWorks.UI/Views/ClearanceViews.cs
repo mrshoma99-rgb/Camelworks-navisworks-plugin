@@ -86,12 +86,27 @@ namespace CamelWorks.UI.Views
 
             private readonly StackPanel _log = Ui.Stack();
 
+            /// <summary>
+            /// What the two source pickers hold, built once per panel rather than per draw.
+            ///
+            /// The picker edits its value in place and redraws itself; rebuilding it from the saved
+            /// run on every keystroke would take the Find box away from whoever is typing in it.
+            /// </summary>
+            private readonly SourcePicker.Pick _surfaces;
+
+            private readonly SourcePicker.Pick _targets;
+
             internal Fields(ISeat seat, ClearanceCheck check, CheckRunSpec run, Action onChanged)
             {
                 _seat = seat;
                 _check = check;
                 _run = run;
                 _onChanged = onChanged;
+
+                var settings = ClearanceSettings.From(run);
+
+                _surfaces = SourcePicker.Read(settings.Surfaces);
+                _targets = SourcePicker.Read(settings.Targets);
             }
 
             private Measure Units => _seat.Profile.Units;
@@ -107,66 +122,47 @@ namespace CamelWorks.UI.Views
                 var blocked = Blocked;
                 var storeys = Storeys();
 
-                // A source, never a mode: detection refines what is named here. The three
-                // whole-model answers plus the document's own sets, and nothing that guesses.
-                var from = new List<string> { ClearanceSettings.Loaded, ClearanceSettings.Selected };
-
-                from.AddRange(sets);
-
-                var to = new List<string> { ClearanceSettings.NotTheSurfaces,
-                                            ClearanceSettings.Selected, ClearanceSettings.Loaded };
-
-                to.AddRange(sets);
-
-                if (!from.Contains(settings.Surfaces, StringComparer.OrdinalIgnoreCase))
-                    from.Add(settings.Surfaces);
-
-                if (!to.Contains(settings.Targets, StringComparer.OrdinalIgnoreCase))
-                    to.Add(settings.Targets);
-
                 return Ui.Stack(
                     _log,
                     // No heading over the name and the folder: the tab is called Create and the
                     // list beside this has a Test column.
                     Bench.Group(string.Empty,
-                        Ui.Across(
-                            Sized(Ui.Field("Name", Ui.Settled(_run.Name, string.Empty,
-                                name => Keep(_ => _run.Name = name), Ui.Wide.Name)), 200),
-                            Sized(Ui.Field("Folder", Ui.Settled(_run.Folder ?? string.Empty,
-                                string.Empty,
+                        Ui.Evenly(
+                            Filled(Ui.Field("Name", Ui.Settled(_run.Name, string.Empty,
+                                name => Keep(_ => _run.Name = name), Ui.Wide.Name))),
+                            Filled(Ui.Field("Folder", Ui.Folder(_run.Folder,
+                                Seated.Folders(_check),
                                 folder => Keep(_ => _run.Folder =
                                     string.IsNullOrWhiteSpace(folder) ? null : folder),
-                                160)), 170))),
+                                160))))),
 
                     // The two sides, then what narrows them, then the two numbers. Five fields,
                     // which is the whole of what a clearance test is.
                     Bench.Group("What is checked",
-                        Sized(Ui.Field("Search for walkable surfaces in",
-                                 Source(from, settings.Surfaces,
-                                     "Where to look for walkable surfaces",
-                                     pick => Keep(one => one.Surfaces = pick), 380),
-                                 null, Need.Required),
-                              380),
-                        Sized(Ui.Field("Search against",
-                                 Source(to, settings.Targets, "What the height is measured to",
-                                        pick => Keep(one => one.Targets = pick), 380),
-                                 null, Need.Required),
-                              380),
+                        Filled(SourcePicker.Drawn(_seat, "Search for walkable surfaces in",
+                                  _surfaces,
+                                  () => Keep(one => one.Surfaces = SourcePicker.Written(_surfaces)),
+                                  blocked,
+                                  new[] { SourcePicker.Everywhere })),
+                        Filled(SourcePicker.Drawn(_seat, "Search against", _targets,
+                                  () => Keep(one => one.Targets = SourcePicker.Written(_targets)),
+                                  blocked,
+                                  new[] { SourcePicker.Remainder, SourcePicker.Everywhere })),
                         Chosen("Levels", settings.Levels, storeys, EveryLevel,
                                "Reports only the surfaces on the storeys named.",
                                (one, add) => one.Levels.Add(add),
                                (one, drop) => one.Levels.Remove(drop))),
 
                     Bench.Group("How much room",
-                        Ui.Across(
-                            Sized(Number("Height", settings.MinimumMetres,
+                        Ui.Evenly(
+                            Filled(Number("Height", settings.MinimumMetres,
                                          metres => metres > 0,
                                          (one, metres) => one.MinimumMetres = metres,
-                                         Need.Required), 190),
-                            Sized(Number("Tolerance", settings.ToleranceMetres,
+                                         Need.Required)),
+                            Filled(Number("Tolerance", settings.ToleranceMetres,
                                          metres => metres >= 0,
                                          (one, metres) => one.ToleranceMetres = metres,
-                                         Need.Optional), 190)),
+                                         Need.Optional))),
                         settings.ToleranceMetres > 0
                             ? null
                             : Ui.Note("Every shortfall is reported, however small.")),
@@ -220,18 +216,8 @@ namespace CamelWorks.UI.Views
 
                 stack.Children.Add(Ui.Small(hint));
 
-                return Sized(stack, 380);
+                return Filled(stack);
             }
-
-            /// <summary>One source, picked from the shared list.</summary>
-            /// <param name="offered">Everything that could be read from.</param>
-            /// <param name="chosen">What it is read from now.</param>
-            /// <param name="prompt">What the list asks.</param>
-            /// <param name="onPicked">Records the choice.</param>
-            /// <param name="width">How wide the press is.</param>
-            private UIElement Source(IReadOnlyList<string> offered, string chosen, string prompt,
-                                     Action<string> onPicked, double width) =>
-                Parts.Source(_log, offered, chosen, prompt, onPicked, width, Blocked);
 
             /// <summary>What the level picker reads when no level narrows the run.</summary>
             private const string EveryLevel = "Every level";
@@ -278,17 +264,41 @@ namespace CamelWorks.UI.Views
             /// Every sentence here answers "why would I change this", which is a question asked
             /// once. Standing text answers it on every visit and pushes the fields off the panel.
             /// </summary>
-            private void More(ClearanceSettings settings) =>
+            private void More(ClearanceSettings settings)
+            {
+                // The ignore list, in a holder so a scan can draw it again. Building it inline
+                // meant the only way to offer the model's categories was to read them on the way
+                // in, which is what froze the host.
+                var ignoring = new ContentControl();
+
+                void Ignoring()
+                {
+                    var scan = _scanned != null || Blocked != null
+                        ? null
+                        : Ui.Link("Read the categories from this model",
+                                  () => Ui.Safely(() => Scan(Ignoring)));
+
+                    ignoring.Content = Ui.Stack(
+                        Chosen("Categories to leave out", settings.Ignore, Categories(settings),
+                               NoCategories,
+                               "Matched anywhere in the category name, so \u201cDuct\u201d also "
+                               + "leaves out \u201cDuct Fittings\u201d.",
+                               (one, add) => one.Ignore.Add(add),
+                               (one, drop) => one.Ignore.Remove(drop)),
+                        scan,
+                        scan == null ? null : Ui.Small(
+                            "The list offers the three left out by default and whatever this run "
+                            + "already leaves out. Reading the model adds the categories it "
+                            + "carries, and takes a moment on a large federation."));
+                }
+
+                Ignoring();
+
                 Ui.Configure("How this is measured", () => Ui.Safely(_onChanged), new Ui.Page(
                     "How this is measured",
                     () => Ui.Stack(
                         Bench.Group("What is left out",
-                            Chosen("Categories to leave out", settings.Ignore, Categories(),
-                                   NoCategories,
-                                   "Matched anywhere in the category name, so \u201cDuct\u201d also "
-                                   + "leaves out \u201cDuct Fittings\u201d.",
-                                   (one, add) => one.Ignore.Add(add),
-                                   (one, drop) => one.Ignore.Remove(drop)),
+                            ignoring,
                             Ui.Check("One row per surface, its worst obstruction only",
                                      settings.WorstPerPatch,
                                      on => Keep(one => one.WorstPerPatch = on))),
@@ -307,6 +317,7 @@ namespace CamelWorks.UI.Views
                                      + "how far below it a surface has to fall before it is "
                                      + "reported, so a slab 3 mm out of level is not a hundred "
                                      + "results.")))));
+            }
 
             /// <summary>A short number field, with its unit in the label.</summary>
             /// <param name="label">What the number is, without its unit.</param>
@@ -325,17 +336,19 @@ namespace CamelWorks.UI.Views
                          }), 90),
                          null, need);
 
-            /// <summary>A field capped to a readable width, so short fields sit two to a row.</summary>
+            /// <summary>
+            /// A field that takes the width of the panel it is in.
+            ///
+            /// It carried a ceiling before. A cap plus the default stretch centres an element in
+            /// what is left over, which is why the panel's fields started at three different left
+            /// edges; a cap alone leaves the panel's right half white at every window width. This
+            /// panel is already the narrower half of the tab, so its fields take all of it and a
+            /// pair of them splits it through <see cref="Ui.Evenly"/>.
+            /// </summary>
             /// <param name="field">The field.</param>
-            /// <param name="width">How wide it may be.</param>
-            private static UIElement Sized(FrameworkElement field, double width)
+            private static UIElement Filled(FrameworkElement field)
             {
-                field.Width = width;
-
-                // Left, not the default stretch. A stretched element given a fixed width is
-                // centred in what is left over, so a chip row started under the picker with an
-                // empty cell to its left.
-                field.HorizontalAlignment = HorizontalAlignment.Left;
+                field.HorizontalAlignment = HorizontalAlignment.Stretch;
 
                 return field;
             }
@@ -378,15 +391,56 @@ namespace CamelWorks.UI.Views
             private IReadOnlyList<string> Sets() => _seat.SetNames();
 
             /// <summary>
-            /// The categories this document's elements carry, for the ignore list.
+            /// What has been read off the model, or null until somebody asks for it.
             ///
-            /// The three the run leaves out by default are always offered, whether or not the
-            /// bounded scan reached one: a list that cannot show what a run is set to is a list
-            /// that cannot take it back off.
+            /// Held rather than re-read, so opening the window twice in a session costs one walk.
             /// </summary>
-            private IReadOnlyList<string> Categories() =>
-                Ui.Listed(Seated.Offer(() => Pickers.CategoryNames().ToList())
-                                .Concat(ClearanceSettings.Unreported));
+            private IReadOnlyList<string>? _scanned;
+
+            /// <summary>
+            /// The categories offered in the ignore list.
+            ///
+            /// The three the run leaves out by default are always offered, and so is whatever
+            /// this run already ignores, whether or not the model has been read: a list that
+            /// cannot show what a run is set to is a list that cannot take it back off.
+            ///
+            /// The model is not read to build this. It used to be, and that is the freeze: the
+            /// walk is bounded at 600 items but every one of them is a property read across the
+            /// host's boundary, it ran on the UI thread while the window was being built, and it
+            /// had no progress and no way out. On a federation of any size, pressing the button
+            /// stopped Navisworks. A window opening is not a thing anybody asked to wait for.
+            /// </summary>
+            /// <param name="settings">The run's settings, for what it already ignores.</param>
+            private IReadOnlyList<string> Categories(ClearanceSettings settings) =>
+                Ui.Listed((_scanned ?? Array.Empty<string>())
+                    .Concat(settings.Ignore)
+                    .Concat(ClearanceSettings.Unreported));
+
+            /// <summary>
+            /// Read the model's categories, on a press rather than on an open.
+            ///
+            /// Still synchronous and still bounded: what changed is that somebody asked for it
+            /// and is told it is happening, rather than a window taking a walk of the model on
+            /// its way to being drawn.
+            /// </summary>
+            /// <param name="onDone">Called once the list is in, to draw the picker again.</param>
+            private void Scan(Action onDone)
+            {
+                var was = System.Windows.Input.Mouse.OverrideCursor;
+
+                System.Windows.Input.Mouse.OverrideCursor = System.Windows.Input.Cursors.Wait;
+
+                try
+                {
+                    _scanned = Seated.Offer(() => Pickers.CategoryNames().ToList());
+                }
+                finally
+                {
+                    System.Windows.Input.Mouse.OverrideCursor = was;
+                }
+
+                onDone();
+            }
 
             /// <summary>The storeys this project declares, for the level scope.</summary>
             private IReadOnlyList<string> Storeys() =>

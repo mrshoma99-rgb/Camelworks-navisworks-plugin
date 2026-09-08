@@ -1112,11 +1112,30 @@
         <ControlTemplate TargetType="GridViewColumnHeader">
           <!-- Snapped. It is the only rule in the sheet that was not, so it landed on a fractional
                pixel and antialiased paler than the row rules directly under it. -->
-          <Border Background="{TemplateBinding Background}" BorderBrush="{DynamicResource Bd}"
-                  BorderThickness="0,0,0,1" Padding="{TemplateBinding Padding}"
-                  SnapsToDevicePixels="True" UseLayoutRounding="True">
-            <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"/>
-          </Border>
+          <Grid>
+            <Border Background="{TemplateBinding Background}" BorderBrush="{DynamicResource Bd}"
+                    BorderThickness="0,0,0,1" Padding="{TemplateBinding Padding}"
+                    SnapsToDevicePixels="True" UseLayoutRounding="True">
+              <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"/>
+            </Border>
+
+            <!-- The edge a column is dragged by. WPF puts it in the default header template and
+                 this sheet replaces that template, so every table in the product had columns
+                 that could not be resized - and the one place it was reported, the Create tab,
+                 is a list of test names that are all too long for the width they are given.
+                 Named PART_HeaderGripper, which is what GridViewColumnHeader looks for. -->
+            <Thumb x:Name="PART_HeaderGripper" HorizontalAlignment="Right" Width="8"
+                   Cursor="SizeWE">
+              <Thumb.Template>
+                <ControlTemplate TargetType="Thumb">
+                  <Border Background="Transparent" Padding="3,0,0,0">
+                    <Rectangle Fill="{DynamicResource Bd}" Width="1"
+                               HorizontalAlignment="Center"/>
+                  </Border>
+                </ControlTemplate>
+              </Thumb.Template>
+            </Thumb>
+          </Grid>
         </ControlTemplate>
       </Setter.Value>
     </Setter>

@@ -107,7 +107,7 @@ namespace CamelWorks.Core.Tests
 
             new FallSettings
             {
-                Floors = FallSettings.Loaded,
+                Floors = CheckSource.Everything(),
                 LevelMetres = 0,
                 BandMetres = 1.0,
                 CellMetres = cell,
@@ -328,7 +328,7 @@ namespace CamelWorks.Core.Tests
             // There is no safe cut elevation. On a site-coordinate model zero is below the
             // foundations, the band catches nothing, and the run comes back with no findings and
             // no reason on the screen the button is on.
-            var settings = new FallSettings { Floors = "Level 03 Floors" };
+            var settings = new FallSettings { Floors = CheckSource.Sets("Level 03 Floors") };
 
             Assert.False(settings.HasLevel);
             Assert.Contains("elevation", settings.Wrong());
@@ -393,7 +393,7 @@ namespace CamelWorks.Core.Tests
             var runs = new CheckRunStore();
             var spec = new CheckRunSpec(FindingSource.FallHazard, "empty", "Nothing named");
 
-            new FallSettings { Floors = FallSettings.Nothing }.Write(spec);
+            new FallSettings { Floors = CheckSource.None() }.Write(spec);
             runs.Put(spec);
 
             var check = Check(register, runs, Model());
@@ -598,7 +598,7 @@ namespace CamelWorks.Core.Tests
         [InlineData("limit", "gap that needs a handrail")]
         public void A_setting_of_nothing_or_less_refuses_the_run(string key, string said)
         {
-            var settings = new FallSettings { Floors = FallSettings.Loaded, LevelMetres = 10.5 };
+            var settings = new FallSettings { Floors = CheckSource.Everything(), LevelMetres = 10.5 };
 
             Assert.Null(settings.Wrong());
 

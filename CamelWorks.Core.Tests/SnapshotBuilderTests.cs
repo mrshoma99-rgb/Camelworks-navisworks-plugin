@@ -249,6 +249,8 @@ namespace CamelWorks.Core.Tests
         /// <summary>A federation with one element the host refuses to describe.</summary>
         private sealed class AwkwardDocument : IModelDocument
         {
+            public IReadOnlyList<IModelItem> Roots => Array.Empty<IModelItem>();
+
             private readonly FakeDocument _real;
 
             internal AwkwardDocument(FakeDocument real) => _real = real;
@@ -278,6 +280,8 @@ namespace CamelWorks.Core.Tests
         /// <summary>An element that throws the moment anything is read off it.</summary>
         private sealed class Awkward : IModelItem
         {
+            public IReadOnlyList<IModelItem> Children => Array.Empty<IModelItem>();
+
             private readonly IModelItem _real;
 
             internal Awkward(IModelItem real) => _real = real;

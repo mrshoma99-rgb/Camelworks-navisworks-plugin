@@ -5944,15 +5944,25 @@ namespace CamelWorks.UI.Views
                                     : MatrixSource.SelectionSet(found.Name, found.Folder));
                             })));
 
-                var models = Models();
+                var loaded = Loaded();
 
-                items.Add(models.Count == 0
+                // Names on the list, scopes in the source. A model's scope is a hash of the file
+                // it came from and its name is what it shows as; the two are never the same
+                // string, and the host matches a whole-models side on the scope. Picking by name
+                // and storing the name built a line the document could not resolve.
+                var ticked = line.Source.Kind == MatrixSourceKind.Models
+                    ? loaded.Where(one => line.Source.Scopes.Contains(one.Scope, StringComparer.Ordinal))
+                            .Select(one => one.Name)
+                            .ToList()
+                    : null;
+
+                items.Add(loaded.Count == 0
                     ? Parts.Entry.Barred("Whole models", Glyphs.Model, "Nothing is loaded.")
-                    : Parts.Entry.Act("Whole models  ·  " + Ui.Count(models.Count, "loaded"),
+                    : Parts.Entry.Act("Whole models  ·  " + Ui.Count(loaded.Count, "loaded"),
                         Glyphs.Model,
                         () => Parts.Search(_grid, "Which models are " + line.Name + "?",
-                            models.Select(m => new KeyValuePair<string, int>(m, 0)).ToList(),
-                            line.Source.Kind == MatrixSourceKind.Models ? line.Source.Scopes : null,
+                            loaded.Select(m => new KeyValuePair<string, int>(m.Name, 0)).ToList(),
+                            ticked,
                             null,
                             picked =>
                             {
@@ -5960,7 +5970,12 @@ namespace CamelWorks.UI.Views
 
                                 Remember(what: "pointing " + Quoted(line.Titled) + " at models");
 
-                                Pointed(line, MatrixSource.Models(picked.ToList()));
+                                Pointed(line, MatrixSource.Models(
+                                    loaded.Where(one => picked.Contains(one.Name,
+                                                                        StringComparer.Ordinal))
+                                          .Select(one => one.Scope)
+                                          .Where(one => one.Length > 0)
+                                          .ToList()));
                             })));
 
                 items.Add(Parts.Entry.Saying("What is selected now", Glyphs.Focus,
@@ -11321,19 +11336,32 @@ namespace CamelWorks.UI.Views
                       .Distinct(StringComparer.OrdinalIgnoreCase)
                       .ToList();
 
-            private List<string> Models()
+            private List<string> Models() =>
+                Loaded().Select(one => one.Name).ToList();
+
+            /// <summary>
+            /// The models loaded, with the scope each is keyed by.
+            ///
+            /// Both, because a matrix line pointed at whole models is stored in scopes - which is
+            /// what the host matches a clash test's side against - while the list somebody picks
+            /// from is names. Holding only the names meant a line pointed at models by hand
+            /// stored names where scopes were expected, and a line read back off the document
+            /// stored scopes that the picker then could not tick.
+            /// </summary>
+            private List<SeatModel> Loaded()
             {
                 try
                 {
-                    return _session.Models()
-                        .Where(n => !string.IsNullOrWhiteSpace(n))
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .OrderBy(n => n, StringComparer.CurrentCulture)
+                    return _session.LoadedModels()
+                        .Where(one => !string.IsNullOrWhiteSpace(one.Name))
+                        .GroupBy(one => one.Name, StringComparer.OrdinalIgnoreCase)
+                        .Select(group => group.First())
+                        .OrderBy(one => one.Name, StringComparer.CurrentCulture)
                         .ToList();
                 }
                 catch (Exception)
                 {
-                    return new List<string>();
+                    return new List<SeatModel>();
                 }
             }
 

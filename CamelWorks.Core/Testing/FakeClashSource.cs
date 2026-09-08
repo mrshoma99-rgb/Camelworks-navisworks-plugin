@@ -267,6 +267,27 @@ namespace CamelWorks.Core.Testing
 
         // ---- Reading ---------------------------------------------------------------------
 
+        /// <summary>
+        /// The folders the fake's tests are in, plus any it was told to hold empty.
+        /// </summary>
+        public IReadOnlyList<string> Folders()
+        {
+            _log.Add("Folders");
+
+            var found = new List<string>(Empty);
+
+            foreach (var test in _tests)
+                if (!string.IsNullOrWhiteSpace(test.Folder) && !found.Contains(test.Folder!))
+                    found.Add(test.Folder!);
+
+            return found;
+        }
+
+        /// <summary>
+        /// Folders the document holds with nothing in them, for the case this exists to cover.
+        /// </summary>
+        public List<string> Empty { get; } = new List<string>();
+
         /// <inheritdoc />
         public IReadOnlyList<ClashTestInfo> Tests()
         {

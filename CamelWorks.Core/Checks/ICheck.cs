@@ -115,7 +115,7 @@ namespace CamelWorks.Core.Checks
         /// <param name="onProgress">
         /// Called with how far it has got; returning false stops it. Null does not report. What the
         /// number counts is the check's own: <see cref="CamelWorks.Core.Testing.FakeCheck"/> passes
-        /// runs started and <see cref="CamelWorks.Core.Data.WalkableSurfaces.Read"/> passes
+        /// runs started and <see cref="CamelWorks.Core.Data.WalkableSurfaces"/> passes
         /// elements read. It is a liveness figure for a progress bar, not a total, and no caller
         /// may read a percentage out of it.
         /// </param>

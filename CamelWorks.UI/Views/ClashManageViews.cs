@@ -1286,9 +1286,7 @@ namespace CamelWorks.UI.Views
                     RedrawRowsAfresh();
                 });
 
-                _boardBox.MaxWidth = 128;
                 _boardBox.VerticalAlignment = VerticalAlignment.Center;
-                _boardBox.Margin = new Thickness(0, 0, 6, 0);
             }
 
             private readonly TextBox _railBox;
@@ -1453,7 +1451,7 @@ namespace CamelWorks.UI.Views
                 Redraw();
 
                 var tab = Bench.Split(null, Rail(), BoardPane(), Footer(read), RailWidth,
-                                      State.RailShut);
+                                      State.RailShut, fold => _fold = fold);
 
                 // Called after the footer is built, since it dresses the buttons created there.
                 //
@@ -1622,17 +1620,33 @@ namespace CamelWorks.UI.Views
 
                 grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-                var top = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 0) };
+                // One row: which check, what narrows it, and the two menus that shape the list.
+                // It was two rows, and the second held nothing the first had no room for.
+                var top = new DockPanel { LastChildFill = true };
+
+                var picked = Ui.Loose(Picker());
+
+                if (picked is FrameworkElement wide)
+                {
+                    wide.HorizontalAlignment = HorizontalAlignment.Left;
+                    wide.Margin = new Thickness(0, 0, 8, 0);
+                }
+
+                DockPanel.SetDock(picked, Dock.Left);
+                top.Children.Add(picked);
 
                 DockPanel.SetDock(_railTools, Dock.Right);
                 top.Children.Add(Ui.Loose(_railTools));
+
+                // Ui.Find asks for 200, which is more than the rail has left once the picker and
+                // the two menus have theirs: a DockPanel gives its fill child what remains and a
+                // child that will not shrink to it simply paints over what is beside it, which is
+                // the search box drawn under the sort menu.
+                _railBox.MinWidth = 90;
+
                 top.Children.Add(Ui.Loose(_railBox));
 
-                // The check picker sits over the search box rather than beside it: which check is
-                // being read is the wider question, and the box narrows whatever it answers.
                 _railHead.Children.Clear();
-                _railHead.Children.Add(Ui.Loose(Picker()));
-                _railHead.Children.Add(new Border { Height = 8 });
                 _railHead.Children.Add(top);
 
                 var head = new Border
@@ -1652,36 +1666,27 @@ namespace CamelWorks.UI.Views
                     Content = _rows,
                 };
 
-                // Above the rows, inside the row the rows live in.
+                // Over the rows, not above them.
                 //
-                // It was drawn over them, which hid the list whose count it was changing: you
-                // could not see what a filter did while setting it. The reason it was an overlay
-                // is recorded and is real — put inside the head it pushed the test list down, so
-                // the rail's column headings and the board's stopped lining up the moment it
-                // opened, which is two panes of one table with their heads at different heights.
+                // This was changed to dock above the list, on the reasoning that a panel drawn
+                // over the rows hides the list whose count it is changing. Worked on a real
+                // project the docked version was worse in four ways at once: it pushed the list
+                // down, it needed a height cap, the cap gave it a scrollbar of its own inside a
+                // pane that already had one, and the last chip was cut off at the bottom. The
+                // overlay had none of those.
                 //
-                // That assumed the only alternative was the head. This is the third place: the
-                // body row holds the panel docked above the list, so the head never moves and the
-                // headings stay level, while the list shortens instead of being covered.
-                var body = new DockPanel { LastChildFill = true };
-
-                _railPanel.Margin = new Thickness(10, 0, 10, 8);
-                _railPanel.HorizontalAlignment = HorizontalAlignment.Stretch;
-
-                // Capped, and it scrolls inside itself. A project with forty disciplines would
-                // otherwise hand the whole rail to chips and leave no list under them.
-                var narrowing = new ScrollViewer
-                {
-                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                    MaxHeight = 280,
-                    Content = Ui.Loose(_railPanel),
-                };
-
-                DockPanel.SetDock(narrowing, Dock.Top);
-                body.Children.Add(narrowing);
+                // So: back over the list, with the close button the docked version brought with
+                // it, and no cap - a panel of twenty-five chips is about three hundred pixels
+                // and fits the rail without scrolling anything.
+                var body = new Grid();
 
                 body.Children.Add(list);
+
+                _railPanel.Margin = new Thickness(10, 0, 10, 8);
+                _railPanel.VerticalAlignment = VerticalAlignment.Top;
+                _railPanel.HorizontalAlignment = HorizontalAlignment.Stretch;
+
+                body.Children.Add(Ui.Loose(_railPanel));
 
                 Grid.SetRow(body, 1);
                 grid.Children.Add(body);
@@ -1715,8 +1720,21 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private void RedrawRail()
             {
-                var read = Current();
+                RedrawRailTools();
+                RedrawRailList();
+                RedrawRailFoot();
+            }
 
+            /// <summary>
+            /// The rail's two symbols and the panel one of them opens, and nothing else.
+            ///
+            /// Apart from the list because opening the filter panel does not change the list.
+            /// It used to redraw the whole rail, so pressing the funnel on a project of a
+            /// hundred and sixty tests rebuilt all hundred and sixty rows before the panel
+            /// appeared - which is why it was slow to open and slow to close again.
+            /// </summary>
+            private void RedrawRailTools()
+            {
                 _railTools.Children.Clear();
 
                 _railTools.Children.Add(Parts.MoreMenu(Glyphs.Sort, "Sort: " + Ordered(State.Sort),
@@ -1725,7 +1743,7 @@ namespace CamelWorks.UI.Views
                 var narrow = Ui.Icon(Glyphs.Filter, WhatIsNarrowed(), () =>
                 {
                     _panel = !_panel;
-                    RedrawRail();
+                    RedrawRailTools();
                 });
 
                 // The funnel says whether it is doing anything. With the chips gone this is the
@@ -1735,10 +1753,7 @@ namespace CamelWorks.UI.Views
 
                 _railTools.Children.Add(narrow);
 
-                _railPanel.Child = _panel ? Narrowing(read) : null;
-
-                RedrawRailList();
-                RedrawRailFoot();
+                _railPanel.Child = _panel ? Narrowing(Current()) : null;
             }
 
             /// <summary>
@@ -2769,6 +2784,14 @@ namespace CamelWorks.UI.Views
                 };
             }
 
+            /// <summary>Put a tooltip on a control the parts library returns as a plain element.</summary>
+            /// <param name="element">The control.</param>
+            /// <param name="said">What the tooltip says.</param>
+            private static void Tip(UIElement element, string said)
+            {
+                if (element is FrameworkElement framed) framed.ToolTip = said;
+            }
+
             private void RedrawRailFoot()
             {
                 var read = Current() ?? new List<TestEntry>();
@@ -2780,18 +2803,35 @@ namespace CamelWorks.UI.Views
 
                 if (Check?.Runner != null)
                 {
-                    // Worded, not a play triangle. This runs every test on the rail, which is
-                    // the longest-running thing on the tab, and the picture said neither "run"
-                    // nor "all" - it was the one control on this screen whose whole meaning was
-                    // in a tooltip nobody hovers a corner for.
-                    var all = Ui.Button("Run all", () => RunTests(read.Cast<object>().ToList(), _log));
+                    // The three a coordinator uses, on the rail, worded and with their symbols.
+                    // Everything a test can have done to it was behind one "..." press: running
+                    // every test was the only visible control, and renaming or refiling the test
+                    // under the pointer took two presses and a read of a menu of twelve.
+                    var run = Parts.WordedButton("Run all", Glyphs.Play,
+                        () => RunTests(read.Cast<object>().ToList(), _log));
 
-                    all.MinWidth = 0;
-                    all.Padding = new Thickness(9, 3, 9, 4);
-                    all.Margin = new Thickness(0, 0, 4, 0);
-                    all.ToolTip = "Run every test on this rail";
+                    Tip(run, "Run every test on this rail");
 
-                    verbs.Children.Add(all);
+                    verbs.Children.Add(Ui.Loose(run));
+
+                    var rename = Parts.WordedButton("Rename", Glyphs.Pencil,
+                        () => Prompt("Rename", entry?.Run.Name ?? string.Empty, "Rename",
+                                     name => RenameTest(entry, name)));
+
+                    if (entry == null)
+                    {
+                        rename.IsEnabled = false;
+                        Tip(rename, "Pick one test to rename.");
+                    }
+
+                    verbs.Children.Add(Ui.Loose(rename));
+
+                    var move = Parts.WordedButton("Move", Glyphs.MoveIn,
+                        () => MoveInto(Reaching(entry), entry));
+
+                    Tip(move, "Move the picked tests into a folder");
+
+                    verbs.Children.Add(Ui.Loose(move));
 
                     verbs.Children.Add(Parts.MoreMenu(Glyphs.More,
                         "More actions", TestMenu(entry), up: true));
@@ -2801,7 +2841,7 @@ namespace CamelWorks.UI.Views
                     verbs.Children.Add(Ui.Icon(Glyphs.Copy, "Copy the list", () => CopyTests(read)));
                 }
 
-                DockPanel.SetDock(verbs, Dock.Right);
+                DockPanel.SetDock(verbs, Dock.Left);
                 row.Children.Add(verbs);
 
                 // No "14 waiting" here any more. It counted the edits the document had refused,
@@ -2812,11 +2852,14 @@ namespace CamelWorks.UI.Views
                 // is still on the save button, which is where it is acted on.
                 var shown = Shown().Count;
 
+                // Only when the rail is showing fewer tests than it read. The footer under both
+                // panes already says how many there are; what it cannot say is that a search is
+                // hiding some of them, and that is the one case worth a line here.
                 var tests = read.Count == 0
                     ? "Nothing read yet."
                     : shown < read.Count
                         ? shown + " of " + Ui.Count(read.Count, "test")
-                        : Ui.Count(read.Count, "test");
+                        : string.Empty;
 
                 // What the selected test holds, on the tooltip. On the line it was a second
                 // sentence in a strip narrow enough to cut the first one at "3 of 6 t...", and
@@ -2829,10 +2872,11 @@ namespace CamelWorks.UI.Views
                 var say = new TextBlock
                 {
                     Text = tests,
+                    HorizontalAlignment = HorizontalAlignment.Right,
                     VerticalAlignment = VerticalAlignment.Center,
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     TextWrapping = TextWrapping.NoWrap,
-                    ToolTip = entry == null ? null : entry.Run.Name + " — " + about,
+                    ToolTip = entry == null ? null : entry.Run.Name + " \u2014 " + about,
                 };
 
                 row.Children.Add(say.Wearing("Hint"));
@@ -3105,7 +3149,6 @@ namespace CamelWorks.UI.Views
                 }
 
                 _title.Children.Add(Title(entry));
-                _title.Children.Add(Standing(entry));
 
                 _strip.Content = Strip(entry);
 
@@ -3115,8 +3158,10 @@ namespace CamelWorks.UI.Views
                 // The funnel, which is what the rail's own filter uses. It was the tuning
                 // symbol, which is also what "this test's source and tolerance" a few pixels
                 // along uses - two different things behind one picture.
-                _view.Content = Parts.MoreMenu(Glyphs.Filter, WhatIsShown(entry),
-                                               TableMenu(entry), on: Filtering || InAnOrder);
+                _view.Content = Parts.MenuButton("Filter", Glyphs.Filter, TableMenu(entry),
+                                                 up: false, on: Filtering || InAnOrder);
+
+                _view.ToolTip = WhatIsShown(entry);
 
 
                 return true;
@@ -3433,7 +3478,18 @@ namespace CamelWorks.UI.Views
             /// <param name="entry">The test on the board.</param>
             private UIElement Title(TestEntry entry)
             {
-                var row = new DockPanel { LastChildFill = true };
+                // Two lines, not one row with three things fighting over it.
+                //
+                // It was a dock panel with the name docked left, the buttons docked right and
+                // the search and the status chips as the child that fills. A fill child is given
+                // the whole of the remaining rectangle, top to bottom, and its contents sit at
+                // the top of it - while the name is aligned to the bottom. So the search box and
+                // the chips drew above the title of the test they belong to, and on a narrow
+                // pane the chips wrapped as well, which made the row taller and the gap worse.
+                //
+                // The name and the buttons are what the row is; the search and the chips are
+                // what is being done to the table, and they go under it on a line of their own.
+                var row = new DockPanel { LastChildFill = false };
 
                 var verbs = new StackPanel
                 {
@@ -3441,14 +3497,13 @@ namespace CamelWorks.UI.Views
                     VerticalAlignment = VerticalAlignment.Center,
                 };
 
+                // Words, not pictures. This row was a play triangle, a funnel and a slider, and
+                // the only thing that said what any of them did was a tooltip - on the row a
+                // coordinator uses more than any other on the tab. A symbol and one word each.
                 if (Check?.Runner != null)
-                    verbs.Children.Add(Ui.Icon(Glyphs.Play, "Run this test",
-                        () => RunTests(One(entry), _log)));
+                    verbs.Children.Add(Ui.Loose(Parts.WordedButton("Run", Glyphs.Play,
+                        () => RunTests(One(entry), _log))));
 
-                // Up here with the rest of the controls that open something, rather than beside
-                // the search box where it read as a button that did something to the board.
-                // One control, not two.
-                //
                 // Sorting, narrowing and banding were a sort symbol and a filter symbol side by
                 // side, and which of the three a thing lived under was a rule nobody could learn:
                 // "band the rows by" was under sort, "what the columns say" was under filter, and
@@ -3457,12 +3512,10 @@ namespace CamelWorks.UI.Views
                 // one menu, and it says the whole answer in its tooltip.
                 verbs.Children.Add(Ui.Loose(_view));
 
-                // Two symbols became one menu with two words in it. They opened the two halves
-                // of the same window - which columns show, and where the results come from - and
-                // as pictures they said neither: a grid and a slider beside a play and a funnel
-                // is four drawings and no sentence. The controls used continuously keep their
-                // place on the row; setting the board up is not one of them.
-                verbs.Children.Add(Parts.MoreMenu(Glyphs.Tune, "Set this board up",
+                // Two symbols became one menu. They opened the two halves of the same window -
+                // which columns show, and where the results come from - and as pictures they
+                // said neither.
+                verbs.Children.Add(Ui.Loose(Parts.MenuButton("Settings", Glyphs.Tune,
                     new List<Parts.Entry>
                     {
                         Parts.Entry.Heading("Set this board up"),
@@ -3470,10 +3523,7 @@ namespace CamelWorks.UI.Views
                                         () => Configure("columns")),
                         Parts.Entry.Act("Where the results come from", Glyphs.Tune,
                                         () => Configure("source")),
-                    }));
-
-                DockPanel.SetDock(verbs, Dock.Right);
-                row.Children.Add(verbs);
+                    }, up: false)));
 
                 var total = entry.Rows.Count;
                 var count = Counted(entry);
@@ -3514,14 +3564,18 @@ namespace CamelWorks.UI.Views
                 // and what it took came off the title and, once, off the last symbol. Here they
                 // are handed a finite width and go onto a second line when there is not enough for
                 // one, which costs a few pixels of height and never a control.
-                var words = new WrapPanel { Orientation = Orientation.Horizontal };
+                // Row one is what this board is; row two is what is being done to it. The search
+                // box is the one control on row one that is not a name, and it goes hard right
+                // where a search box is looked for; the verbs come down beside the chips they
+                // act with.
+                var words = new DockPanel { LastChildFill = true };
 
-                _boardBox.VerticalAlignment = VerticalAlignment.Center;
-                _boardBox.Margin = new Thickness(0, 0, 10, 0);
-                words.Children.Add(Ui.Loose(_boardBox));
+                verbs.Margin = new Thickness(10, 0, 0, 0);
+
+                DockPanel.SetDock(verbs, Dock.Right);
+                words.Children.Add(verbs);
 
                 _strip.VerticalAlignment = VerticalAlignment.Center;
-                _strip.Margin = new Thickness(0, 0, 10, 0);
                 words.Children.Add(Ui.Loose(_strip));
 
                 if (Check?.Naming != null)
@@ -3550,6 +3604,7 @@ namespace CamelWorks.UI.Views
                         TextWrapping = TextWrapping.NoWrap,
                     };
 
+                    DockPanel.SetDock(said, Dock.Right);
                     words.Children.Add(said.Wearing("Hint"));
                 }
 
@@ -3576,7 +3631,14 @@ namespace CamelWorks.UI.Views
                                       () =>
                                       {
                                           State.RailShut = !State.RailShut;
-                                          Ui.Told(Shell.AppWindow.Show("clash", "manage"));
+
+                                          // The pane itself, and then this row again so the
+                                          // chevron turns round. It used to ask the shell to
+                                          // show the tab again, which does nothing when that tab
+                                          // is already the one on screen - so the button did
+                                          // nothing at all.
+                                          _fold?.Invoke(State.RailShut);
+                                          RedrawBoardHead();
                                       });
 
                 folding.VerticalAlignment = VerticalAlignment.Bottom;
@@ -3608,9 +3670,28 @@ namespace CamelWorks.UI.Views
                 DockPanel.SetDock(naming, Dock.Left);
                 row.Children.Add(naming);
 
-                row.Children.Add(words);
+                // Beside the name, not on a row of its own. When a test last ran is one short
+                // line, and it had a full line of the pane's height to itself over the results.
+                var standing = Standing(entry);
 
-                return row;
+                standing.VerticalAlignment = VerticalAlignment.Bottom;
+                standing.Margin = new Thickness(0, 0, 10, 2);
+
+                DockPanel.SetDock(standing, Dock.Left);
+                row.Children.Add(standing);
+
+                // Docked, so it takes the width it asks for rather than what the title leaves.
+                // At 128 it held four characters and sat between the chips.
+                _boardBox.VerticalAlignment = VerticalAlignment.Center;
+                _boardBox.MinWidth = 240;
+                _boardBox.Margin = new Thickness(10, 0, 0, 0);
+
+                DockPanel.SetDock(_boardBox, Dock.Right);
+                row.Children.Add(Ui.Loose(_boardBox));
+
+                words.Margin = new Thickness(0, 8, 0, 0);
+
+                return Ui.Stack(row, words);
             }
 
             /// <summary>
@@ -3628,7 +3709,7 @@ namespace CamelWorks.UI.Views
             /// every test, and this board's groups are the host's own.
             /// </summary>
             /// <param name="entry">The test on the board.</param>
-            private UIElement Standing(TestEntry entry)
+            private FrameworkElement Standing(TestEntry entry)
             {
                 var row = new WrapPanel { Margin = new Thickness(0, 2, 0, 0) };
 
@@ -4290,9 +4371,25 @@ namespace CamelWorks.UI.Views
                     // Two shares, not three. At three the two columns fitted their names and the
                     // table gained a horizontal scrollbar, which costs the row its last column —
                     // and a board scrolled off its own verbs is worse than one that trims a name.
+                    //
+                    // 104 whether or not there are property columns. The floor decides when the
+                    // table starts scrolling, not how wide it rests: these are star columns and
+                    // at any width that already fitted, nothing here moves.
+                    //
+                    // At 124 the board did not fit its own default. The floors summed to 788 —
+                    // 26 of row padding, a 26 tick, a 96 name, two 124 element columns, a 64
+                    // figure, a 104 status, a 104 assignee and 120 of row verbs — against the 772
+                    // the results pane gets beside a rail at the window's smaller sizes. Sixteen
+                    // pixels, which is a scrollbar under every row and a thumb filling 98% of its
+                    // track: the table read as scrollable while having nothing to scroll to.
+                    //
+                    // 124 was never reasoned about; the comment above it is about shares. 104 is
+                    // the figure this file already accepts for an element column, and it holds
+                    // "Round Duct: 30…" where 124 holds "Round Duct: 300m…" - neither tells two
+                    // rows apart, which is what the tooltip and the widened window are for.
                     Named2(name,
                            element ? 2 : 1,
-                           element ? (tight ? 104 : 124) : 76);
+                           element ? 104 : 76);
                 }
 
                 // Four row buttons, at the tighter margin the bar below sets on them. The
@@ -5267,17 +5364,35 @@ namespace CamelWorks.UI.Views
                 //
                 // Now a click anywhere on the strip toggles the group, a double-click on the name
                 // renames only, and the scroll position is preserved.
-                var words = new StackPanel
+                // A dock panel, not a stack. A horizontal StackPanel measures its children with
+                // infinite width, so the name's ellipsis could never fire: the panel's desired
+                // width was the whole name however long it was, Arrange takes the larger of the
+                // rect it is given and DesiredSize, and a group called anything substantial was
+                // drawn straight over the member count docked to its right. The layout reader
+                // caught it as "3 clashes and StackPanel share 5 x 16 of DockPanel".
+                //
+                // A dock panel measures its fill child with the room that is left, which is what
+                // the trimming needs. The glyphs dock left and the note - which follows the name
+                // in reading order - docks right, so on a short name it sits away from the name
+                // rather than beside it. That is the cost of the name being the thing that gives
+                // ground, and the alternative was text drawn on top of text.
+                var words = new DockPanel
                 {
-                    Orientation = Orientation.Horizontal,
+                    LastChildFill = true,
                     Cursor = System.Windows.Input.Cursors.Hand,
                     Background = System.Windows.Media.Brushes.Transparent,
                 };
 
-                words.Children.Add(Ui.Glyph(open ? Glyphs.Down : Glyphs.Right, 13, "Muted",
-                                            new Thickness(0, 0, 7, 0)));
+                var chevron = Ui.Glyph(open ? Glyphs.Down : Glyphs.Right, 13, "Muted",
+                                       new Thickness(0, 0, 7, 0));
 
-                words.Children.Add(Ui.Glyph(Glyphs.Group, 15, "Accent", new Thickness(0, 0, 7, 0)));
+                DockPanel.SetDock(chevron, Dock.Left);
+                words.Children.Add(chevron);
+
+                var kind = Ui.Glyph(Glyphs.Group, 15, "Accent", new Thickness(0, 0, 7, 0));
+
+                DockPanel.SetDock(kind, Dock.Left);
+                words.Children.Add(kind);
 
                 var name = new TextBlock
                 {
@@ -5315,9 +5430,17 @@ namespace CamelWorks.UI.Views
                     e.Handled = true;
                 };
 
-                words.Children.Add(name.Wearing("Body"));
+                // The note first, because a dock panel's fill child has to be added last: the
+                // children docked after it are laid out in the space it has already taken.
+                if (_made.Contains(row.Id))
+                {
+                    var note = Parts.Note("grouped by you");
 
-                if (_made.Contains(row.Id)) words.Children.Add(Parts.Note("grouped by you"));
+                    DockPanel.SetDock(note, Dock.Right);
+                    words.Children.Add(note);
+                }
+
+                words.Children.Add(name.Wearing("Body"));
 
                 words.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
                 {
@@ -6216,6 +6339,9 @@ namespace CamelWorks.UI.Views
             /// Ctrl and Shift still build a selection.
             /// </summary>
             private string? _reading;
+
+            /// <summary>Folds the test list away and brings it back, once the split is built.</summary>
+            private Action<bool>? _fold;
 
             /// <summary>The three verbs on a row, and the menu holding the rest.</summary>
             /// <param name="row">What the verbs act on.</param>
@@ -7590,11 +7716,17 @@ namespace CamelWorks.UI.Views
                 Engine.IsAvailable
                     ? Options("Results",
                         Ui.Field("Read from",
-                            Ui.Segmented(new[] { FromModel, FromFile }, _source, pick =>
-                            {
-                                _source = pick;
-                                Ui.Told(Shell.AppWindow.Show("clash", "manage"));
-                            }),
+                            // Nothing here rebuilds the app. This field lives inside a modal
+                            // window whose owner is the app window, and asking the shell to show
+                            // that window again from in here put it in front of a dialogue that
+                            // was still modal: the settings window went behind the app, the app
+                            // stayed disabled behind the modal it could not reach, and the tab
+                            // took no further input.
+                            //
+                            // The rail, the board and the footer are all drawn again when this
+                            // window closes, which is what Configure's own callback is for.
+                            Ui.Segmented(new[] { FromModel, FromFile }, _source,
+                                         pick => _source = pick),
                             "the model's own clash data, or an exported baseline"),
                         Ui.Small("Read from the model and every change is written into the "
                                  + "model's clash data. Read from a file and the same verbs mark "
@@ -8609,11 +8741,13 @@ namespace CamelWorks.UI.Views
                     Mark(row.Rows.Cast<object>().ToList(), status, _toast);
                 });
 
-                // Handled here, or the press that sets a status also selects the row and opens
-                // the detail beside it - which is what the group name cell had to do too.
-                if (cell is FrameworkElement pressable)
-                    pressable.PreviewMouseLeftButtonUp += (s, e) => e.Handled = true;
-
+                // Nothing is handled here. Parts.Opens already marks the chip's own
+                // MouseLeftButtonUp, for exactly the reason this cell wanted: a press meant for
+                // the status must not also move the row selection.
+                //
+                // The handler that used to sit here was on PreviewMouseLeftButtonUp, which
+                // tunnels - it ran before the popup's own bubbling handler and marked the event
+                // done, so the chip did nothing at all. A dropdown that never opened.
                 return cell;
             }
 
@@ -10646,12 +10780,64 @@ namespace CamelWorks.UI.Views
             /// <param name="row">The clash.</param>
             private void Kept(Row row)
             {
-                _ = row;
-
                 Moved();
                 KeepFindings();
                 ArmSync();
-                RedrawRows();
+
+                // The row, where the row is all that changed. Setting a status used to rebuild
+                // the table: a fresh pass of every result through every filter, a new list, and
+                // the scroll offset put back afterwards - which on five hundred results is the
+                // second of lag before the new status appears, and the visible jump to the top
+                // and back that the restore is.
+                //
+                // A write can only move a row when something is deciding where rows go by the
+                // field it wrote. With nothing narrowing and nothing banding, membership and
+                // order cannot have changed, so nothing but that row needs drawing again.
+                if (Settled()) Repainted(row);
+                else RedrawRows();
+            }
+
+            /// <summary>
+            /// Whether the board is showing its rows plainly: nothing narrowing, nothing banding.
+            ///
+            /// Deliberately conservative. Anything at all deciding which rows show or what order
+            /// they are in sends a write back through the full rebuild, because a status set to
+            /// Approved on a board showing only New rows has to leave the list.
+            /// </summary>
+            private bool Settled() =>
+                State.Status == null
+                && State.Party == null
+                && State.ByColumn.Count == 0
+                && _sameAs == null
+                && _by == null
+                && _bands.Count == 0
+                && _showing == BothKinds
+                && _boardBox.Text.Trim().Length == 0;
+
+            /// <summary>
+            /// Draw again every line one result appears on.
+            ///
+            /// By the object, not by an id: a result is a loose line under its own id and a
+            /// member of its group's line under another, and both show what it holds.
+            /// </summary>
+            /// <param name="row">The clash that changed.</param>
+            private void Repainted(Row row)
+            {
+                if (_lines != null && _list != null)
+                    foreach (var line in _lines)
+                        if (ReferenceEquals(line.Clash, row)
+                            || line.GroupRow?.Rows.Contains(row) == true)
+                            _list.Redraw(line);
+
+                var entry = Entry();
+
+                if (entry != null)
+                {
+                    var shape = Shape(entry);
+                    _head.Content = Header(shape.Groups, shape.Loose);
+                }
+
+                RedrawSelection();
             }
 
             /// <summary>Add one comment to everything picked.</summary>

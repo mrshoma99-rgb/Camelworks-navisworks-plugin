@@ -23,6 +23,20 @@ namespace CamelWorks.Core.Abstractions
         /// <summary>The tests in the document.</summary>
         IReadOnlyList<ClashTestInfo> Tests();
 
+        /// <summary>
+        /// Every clash folder the document holds, including the ones nothing is filed in.
+        ///
+        /// Asked of the document rather than worked out from where the tests are. A folder made
+        /// in Navisworks and not yet used is a folder somebody made on purpose and expects to
+        /// file into; deriving the list from the tests meant it did not exist until something
+        /// was in it, so the folder they had just made was not on the list that would have let
+        /// them use it.
+        ///
+        /// A reader that cannot enumerate folders answers with the folders its tests are in,
+        /// which is the same answer as before and never wrong, only incomplete.
+        /// </summary>
+        IReadOnlyList<string> Folders();
+
         /// <summary>The results of one test.</summary>
         IReadOnlyList<ClashResultInfo> Results(string testId);
 

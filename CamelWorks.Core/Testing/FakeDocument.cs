@@ -37,6 +37,20 @@ namespace CamelWorks.Core.Testing
         /// <inheritdoc />
         public IReadOnlyList<IModelSource> Models => _models;
 
+        /// <summary>
+        /// The elements with nothing above them, in the order they were added.
+        ///
+        /// A flat fake has every element here, which is the shape a test that never nests
+        /// anything wants: one model root per model is the host's arrangement, not this one's.
+        /// </summary>
+        public IReadOnlyList<IModelItem> Roots =>
+            _items.Where(one => one.Above == null).Cast<IModelItem>().ToList();
+
+        /// <summary>The elements one node is directly above.</summary>
+        /// <param name="above">The node.</param>
+        internal IReadOnlyList<IModelItem> Under(FakeItem above) =>
+            _items.Where(one => ReferenceEquals(one.Above, above)).Cast<IModelItem>().ToList();
+
         /// <summary>The ordered effect log. Cleared by <see cref="ClearLog"/>.</summary>
         public IReadOnlyList<string> Log => _log;
 
@@ -408,6 +422,21 @@ namespace CamelWorks.Core.Testing
             {
                 GuardStale();
                 return Above;
+            }
+        }
+
+        /// <summary>
+        /// The elements this one is <see cref="Above"/>, in the order they were added.
+        ///
+        /// Derived from the parent links rather than held, so a test that nests an element after
+        /// adding it does not also have to register the child on the other side.
+        /// </summary>
+        public IReadOnlyList<IModelItem> Children
+        {
+            get
+            {
+                GuardStale();
+                return _document.Under(this);
             }
         }
 

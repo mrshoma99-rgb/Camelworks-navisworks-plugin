@@ -117,6 +117,18 @@ namespace CamelWorks.UI.Views
         }
 
         /// <inheritdoc />
+        public IReadOnlyList<SeatModel> LoadedModels()
+        {
+            var found = new List<SeatModel>();
+
+            foreach (var one in Model.Models)
+                if (!string.IsNullOrWhiteSpace(one.DisplayName))
+                    found.Add(new SeatModel(one.DisplayName, one.Scope));
+
+            return found;
+        }
+
+        /// <inheritdoc />
         public IReadOnlyList<ElementKey> Selected()
         {
             var keys = new List<ElementKey>();
@@ -128,6 +140,9 @@ namespace CamelWorks.UI.Views
 
             return keys;
         }
+
+        /// <inheritdoc />
+        public IReadOnlyList<SeatNode> Tree(ElementKey under) => Seated.Tree(Model, under);
 
         /// <inheritdoc />
         public IEnumerable<ElementKey> Visible()
@@ -489,6 +504,9 @@ namespace CamelWorks.UI.Views
 
             public System.Collections.Generic.IReadOnlyList<ClashTestInfo> Tests() =>
                 Array.Empty<ClashTestInfo>();
+
+            public System.Collections.Generic.IReadOnlyList<string> Folders() =>
+                Array.Empty<string>();
 
             public System.Collections.Generic.IReadOnlyList<ClashResultInfo> Results(string testId) =>
                 Array.Empty<ClashResultInfo>();

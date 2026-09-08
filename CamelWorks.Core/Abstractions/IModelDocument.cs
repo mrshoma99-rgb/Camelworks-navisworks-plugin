@@ -89,6 +89,15 @@ namespace CamelWorks.Core.Abstractions
         IReadOnlyList<IModelSource> Models { get; }
 
         /// <summary>
+        /// The top of the selection tree: one node per loaded model, in host order.
+        ///
+        /// The way into <see cref="IModelItem.Children"/>. A source that is "this level and
+        /// everything under it" is picked from here rather than from the flat list of models,
+        /// which on a published federation is one line however many disciplines it holds.
+        /// </summary>
+        IReadOnlyList<IModelItem> Roots { get; }
+
+        /// <summary>
         /// Resolve a key back to a live item, or null when it cannot be found in the current
         /// generation. Null is an ordinary outcome, not an error: an element genuinely removed
         /// between revisions resolves to null and the caller reports it as unmatched.

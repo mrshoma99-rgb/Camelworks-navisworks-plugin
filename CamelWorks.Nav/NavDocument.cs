@@ -186,6 +186,38 @@ namespace CamelWorks.Nav
         }
 
         /// <inheritdoc />
+        public IReadOnlyList<IModelItem> Children
+        {
+            get
+            {
+                // Held open for the length of the read and no longer, like every other walk in
+                // this file: a caller that pumps the message loop with a host collection open
+                // is what NavDocument.Walking exists to catch.
+                NavDocument.Opened();
+
+                try
+                {
+                    var found = new List<IModelItem>();
+
+                    foreach (var child in Fresh().Children)
+                        found.Add(new NavModelItem(_document, child, (NavModelSource)Model));
+
+                    return found;
+                }
+                catch (Exception)
+                {
+                    // A node the host will not open reads as a leaf. One awkward branch must not
+                    // take a picker down with it.
+                    return Array.Empty<IModelItem>();
+                }
+                finally
+                {
+                    NavDocument.Closed();
+                }
+            }
+        }
+
+        /// <inheritdoc />
         public bool HasGeometry => Fresh().HasGeometry;
 
         /// <inheritdoc />
@@ -280,6 +312,29 @@ namespace CamelWorks.Nav
 
         /// <inheritdoc />
         public IReadOnlyList<IModelSource> Models => _models;
+
+        /// <inheritdoc />
+        public IReadOnlyList<IModelItem> Roots
+        {
+            get
+            {
+                Walking++;
+
+                try
+                {
+                    var found = new List<IModelItem>();
+
+                    for (var i = 0; i < Document.Models.Count && i < _models.Count; i++)
+                        found.Add(new NavModelItem(this, Document.Models[i].RootItem, _models[i]));
+
+                    return found;
+                }
+                finally
+                {
+                    Walking--;
+                }
+            }
+        }
 
         /// <summary>
         /// Note that the document has changed: a model appended, removed, or refreshed.
@@ -644,6 +699,17 @@ namespace CamelWorks.Nav
 
         /// <summary>True while any host enumeration is open - do not pump the message loop.</summary>
         public static bool IsWalking => Walking > 0;
+
+        /// <summary>
+        /// Mark a host enumeration open, for a walk written outside this class.
+        ///
+        /// The counter's setter stays private: a pair of calls in a try/finally is the only use
+        /// there is for it, and a settable counter is one somebody can leave at the wrong number.
+        /// </summary>
+        internal static void Opened() => Walking++;
+
+        /// <summary>Mark a host enumeration closed. Always from a finally.</summary>
+        internal static void Closed() => Walking--;
 
         /// <summary>
         /// Every item in a scope, read into a list before the caller does anything else.

@@ -108,6 +108,12 @@ namespace CamelWorks.UI.Views
 
             /// <summary>The verbs under the list, pinned to the bottom of the pane.</summary>
             private readonly ContentControl _picking = new ContentControl();
+
+            /// <summary>How many rows are picked, on the list pane's own header.</summary>
+            private readonly ContentControl _tally = new ContentControl();
+
+            /// <summary>The All and None links, hard right on that same header.</summary>
+            private readonly ContentControl _links = new ContentControl();
             private readonly ContentControl _panel = new ContentControl();
             private readonly ContentControl _foot = new ContentControl();
             private readonly TextBox _search;
@@ -159,7 +165,17 @@ namespace CamelWorks.UI.Views
                 // constructor call that makes it.
                 System.Windows.Controls.Button? made = null;
 
+                // With its symbol, like every other button that makes something. It was the one
+                // control on the strip drawn as bare words.
                 made = Ui.Button("New test", () => Parts.PopMenu(made!, Kinds()));
+
+                made.Content = Ui.Across(Ui.Glyph(Glyphs.Add, 13, "Muted",
+                                                  new Thickness(0, 0, 6, 0)),
+                                         new TextBlock
+                                         {
+                                             Text = "New test",
+                                             VerticalAlignment = VerticalAlignment.Center,
+                                         });
 
                 _make = made;
             }
@@ -204,7 +220,9 @@ namespace CamelWorks.UI.Views
                 if (_all.Count == 0)
                     return Bench.Surface(null, _foot, Ui.Stack(Empty()));
 
-                var left = Bench.Pane("Tests", null, Listing(), null, scrolls: false);
+                // The count and the two links sit on the pane's own header line rather than on a
+                // bar of their own: the header already names the list and had the room.
+                var left = Bench.Pane("Tests", _tally, Listing(), _links, scrolls: false);
                 var right = Bench.Pane("Settings", null, _panel, null);
 
                 // The list pane holds four columns of names; the settings pane holds fields
@@ -213,26 +231,38 @@ namespace CamelWorks.UI.Views
                 return Bench.Split(Strip(), left, right, _foot, 620);
             }
 
-            /// <summary>The list pane's body: the rows scroll, the verbs under them do not.</summary>
-            private UIElement Listing() => Bench.Listing(_list, _picking, _log);
+            /// <summary>
+            /// The list pane's body: the rows, and where a verb says what it did.
+            ///
+            /// The verbs are not here any more. They were a bar pinned under the table, drawn as
+            /// symbols with their names on tooltips, at the far end of the pane from the button
+            /// that makes a test - so the row of things you do to a test and the thing that makes
+            /// one were four hundred pixels apart. They are on the strip at the top, worded.
+            /// </summary>
+            private UIElement Listing() => Bench.Listing(_list, null, _log);
 
             /// <summary>
             /// The strip over both panes: what makes a test on the left, the search on the right.
+            ///
+            /// There was a second button here that opened the Clash matrix tab. The tab strip
+            /// already reaches it, and a second way in on this strip put a tab switch beside the
+            /// button that makes a test.
             /// </summary>
             private UIElement Strip()
             {
                 var row = new DockPanel { LastChildFill = false };
 
-                var matrix = Ui.Button("From the matrix", () =>
-                    Ui.Told(Shell.AppWindow.Show("clash", "matrix")));
-
-                matrix.Margin = new Thickness(8, 0, 0, 0);
-
                 DockPanel.SetDock(_make, Dock.Left);
                 row.Children.Add(Ui.Loose(_make));
 
-                DockPanel.SetDock(matrix, Dock.Left);
-                row.Children.Add(matrix);
+                // On the same line as New test, not under it. A second row for five verbs is a
+                // row of the pane's height spent on chrome, and the verbs are what New test is
+                // next to in the first place.
+                _picking.Margin = new Thickness(10, 0, 0, 0);
+                _picking.VerticalAlignment = VerticalAlignment.Center;
+
+                DockPanel.SetDock(_picking, Dock.Left);
+                row.Children.Add(Ui.Loose(_picking));
 
                 DockPanel.SetDock(_search, Dock.Right);
                 row.Children.Add(Ui.Loose(_search));
@@ -317,6 +347,11 @@ namespace CamelWorks.UI.Views
 
             private void RedrawList()
             {
+                // Where the old table was, before it is thrown away. Every edit on this screen
+                // rebuilds the list, and a rebuilt list starts at the top: deleting a test four
+                // hundred rows down returned the reader to the first one.
+                var at = Ui.Scrolled(_table);
+
                 var shown = Filtered();
 
                 _shown = shown;
@@ -325,7 +360,7 @@ namespace CamelWorks.UI.Views
                 {
                     _table = null;
                     _list.Content = Empty();
-                    _picking.Content = null;
+                    Unpicked();
                     RedrawFoot();
                     return;
                 }
@@ -333,7 +368,7 @@ namespace CamelWorks.UI.Views
                 if (shown.Count == 0)
                 {
                     _table = null;
-                    _picking.Content = null;
+                    Unpicked();
 
                     _list.Content = Ui.Empty("Nothing matches \"" + _query.Trim() + "\".",
                         Ui.Count(_all.Count, "test") + " in this project.", "Clear the search",
@@ -407,13 +442,18 @@ namespace CamelWorks.UI.Views
 
                 _table = table;
 
+                Ui.ScrollTo(table, at);
+
+                // One word each. The bar says how many rows are selected immediately to their
+                // left, so a verb repeating the count is the same fact twice - and five phrases
+                // of three words is the wall of text the symbols were meant to avoid.
                 var verbs = new List<Ui.OnPicked>
                 {
-                    new Ui.OnPicked("Run these {n}", (picked, said) => RunPicked(picked, said)),
-                    new Ui.OnPicked("Duplicate this one", (picked, said) => Duplicate(picked, said)),
-                    new Ui.OnPicked("Rename this one...", (picked, said) => Rename(picked, said)),
-                    new Ui.OnPicked("Move these {n}...", (picked, said) => Refile(picked, said)),
-                    new Ui.OnPicked("Delete these {n}", (picked, said) => Delete(picked, said)),
+                    new Ui.OnPicked("Run", (picked, said) => RunPicked(picked, said)),
+                    new Ui.OnPicked("Duplicate", (picked, said) => Duplicate(picked, said)),
+                    new Ui.OnPicked("Rename", (picked, said) => Rename(picked, said)),
+                    new Ui.OnPicked("Move", (picked, said) => Refile(picked, said)),
+                    new Ui.OnPicked("Delete", (picked, said) => Delete(picked, said)),
                 };
 
                 // The same verbs on right-click, writing into the screen's own log: OnMenu carries
@@ -425,8 +465,25 @@ namespace CamelWorks.UI.Views
                 // table stacked above its own bar, so assigning that stack to the pinned bar
                 // reparents the table into it — which is why the rows drew at the foot of the
                 // pane with the bar, and the list above them was empty.
-                _picking.Content = Ui.Picking(table, verbs.ToArray());
-                _list.Content = Ui.Loose(table);
+                // The bar's three parts, in three places: the verbs on the strip, the count and
+                // the links on the list pane's header.
+                var bar = Ui.PickingParts(table, null, verbs.ToArray());
+
+                bar.Tally.Margin = new Thickness(10, 0, 0, 0);
+
+                _picking.Content = bar.Verbs;
+                _tally.Content = bar.Tally;
+                _links.Content = bar.Links;
+
+                _list.Content = Ui.Stack(Ui.Loose(table), bar.Said);
+            }
+
+            /// <summary>Clear the three places the verb bar's parts sit.</summary>
+            private void Unpicked()
+            {
+                _picking.Content = null;
+                _tally.Content = null;
+                _links.Content = null;
             }
 
             /// <summary>What the last run of a test found: never run, clean, or a count.</summary>
@@ -718,7 +775,10 @@ namespace CamelWorks.UI.Views
                     Changed();
                 }, 190);
 
-                var folder = Ui.Settled(run.Folder ?? string.Empty, string.Empty, text =>
+                // The folders this check already has, offered rather than remembered. It was a
+                // bare box, so filing a test beside its neighbours meant recalling the folder's
+                // name and spelling it the same way - and one letter out is a second folder.
+                var folder = Ui.Folder(run.Folder, Seated.Folders(check), text =>
                 {
                     naming?.Refile(run.Id, string.IsNullOrWhiteSpace(text) ? null : text);
                     Changed();
@@ -817,12 +877,20 @@ namespace CamelWorks.UI.Views
             /// <param name="width">How wide it may be.</param>
             private static UIElement Sized(Panel field, double width)
             {
-                field.Width = width;
+                // A ceiling, not a width.
+                //
+                // It was a width, so every field on the panel was exactly as wide as it was
+                // written to be however wide the pane was: narrow the window and the fields
+                // stayed put and were clipped by the pane rather than shrinking with it. The
+                // cap is what the figure was for - a text field running the whole width of a
+                // wide pane is a line nobody can scan - and a cap does that without also being
+                // a floor.
+                field.MaxWidth = width;
 
-                // Left, not the default stretch. A stretched element given a fixed width is
-                // centred in what is left over, so a full-width field under a row of two started
-                // half a column in from the margin.
-                field.HorizontalAlignment = HorizontalAlignment.Left;
+                // Stretch, so the field takes what it is given up to the cap. With a fixed
+                // width this had to be Left, because a stretched element given a fixed width is
+                // centred in what is left over.
+                field.HorizontalAlignment = HorizontalAlignment.Stretch;
 
                 return field;
             }
@@ -873,29 +941,51 @@ namespace CamelWorks.UI.Views
                         ? "Run " + _shown.Count.ToString(CultureInfo.InvariantCulture) + " shown"
                         : "Run all";
 
-                var said = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                // One line, not four.
+                //
+                // The count, "Saved as you go", what the last run found and the way to it were a
+                // column of four short lines stacked in the footer, which made the footer four
+                // rows of the table tall on the tab where the table is the work. They are four
+                // facts of a sentence, so they are a sentence.
+                var said = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
 
-                said.Children.Add(Ui.Small(_shown.Count == _all.Count
-                    ? Ui.Count(_all.Count, "test") + " in this project"
-                    : _shown.Count.ToString(CultureInfo.InvariantCulture) + " of "
-                      + Ui.Count(_all.Count, "test") + " shown"));
+                var facts = new List<string>
+                {
+                    _shown.Count == _all.Count
+                        ? Ui.Count(_all.Count, "test") + " in this project"
+                        : _shown.Count.ToString(CultureInfo.InvariantCulture) + " of "
+                          + Ui.Count(_all.Count, "test") + " shown",
+                };
+
+                if (_outcome != null) facts.Add(_outcome);
 
                 // The settings panel beside this list writes every settled edit straight into the
                 // project file. Nothing said so, on the one tab where a coordinator does most of
                 // their typing.
-                var kept = Ui.Kept(Keeping.AsYouGo);
+                if (_all.Count > 0) facts.Add("saved as you go");
 
-                if (kept != null && _all.Count > 0) said.Children.Add(kept);
+                var line = Ui.Small(string.Join("  ·  ", facts));
 
-                if (_outcome != null) said.Children.Add(Ui.Line(_outcome, 0.9));
+                line.VerticalAlignment = VerticalAlignment.Center;
+                line.ToolTip = "Every change on this screen is written to the project as it "
+                             + "is made.";
+
+                said.Children.Add(line);
 
                 if (_went != null)
-                    said.Children.Add(Ui.Link("View in Manage", () =>
+                {
+                    var go = Ui.Link("View in Manage", () =>
                     {
                         ClashManageViews.Asked = _went;
 
                         Ui.Told(Shell.AppWindow.Show("clash", "manage"));
-                    }));
+                    });
+
+                    go.VerticalAlignment = VerticalAlignment.Center;
+                    go.Margin = new Thickness(10, 0, 0, 0);
+
+                    said.Children.Add(go);
+                }
 
                 // Ui.Foot, like every other tab. This built its own row — a two-column grid with
                 // Ui.Blocked, which is itself a footer row, nested in the right-hand column — so

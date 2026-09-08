@@ -7,6 +7,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
+using CamelWorks.Core.Identity;
 
 namespace CamelWorks.UI.Views
 {
@@ -962,7 +963,49 @@ namespace CamelWorks.UI.Views
         /// <param name="label">What the button says.</param>
         /// <param name="glyph">One of <see cref="Glyphs"/>, in front of the words.</param>
         /// <param name="items">The lines, in reading order.</param>
-        public static UIElement MenuButton(string label, string glyph, IReadOnlyList<Entry> items)
+        /// <param name="up">True to open above the button, for one standing in a footer.</param>
+        /// <param name="on">True when what it opens is doing something, so it says so.</param>
+        public static UIElement MenuButton(string label, string glyph, IReadOnlyList<Entry> items,
+                                           bool up = true, bool on = false)
+        {
+            var button = Worded(label, glyph, up ? Glyphs.Up : Glyphs.Down, on);
+
+            Opens(button, Floating(Menu(items, true), 260),
+                  up ? PlacementMode.Top : PlacementMode.Bottom);
+
+            return button;
+        }
+
+        /// <summary>
+        /// One worded button that does something, rather than opening a list of somethings.
+        ///
+        /// The same chrome as <see cref="MenuButton"/> and no chevron, so a row holding both
+        /// reads as one row of buttons: a symbol, a word, and whether it opens.
+        /// </summary>
+        /// <param name="label">What the button says.</param>
+        /// <param name="glyph">One of <see cref="Glyphs"/>, in front of the words.</param>
+        /// <param name="onClick">What pressing it does.</param>
+        public static UIElement WordedButton(string label, string glyph, Action onClick)
+        {
+            var button = Worded(label, glyph, null, false);
+
+            button.MouseLeftButtonUp += (s, e) =>
+            {
+                e.Handled = true;
+                Ui.Safely(onClick);
+            };
+
+            return button;
+        }
+
+        /// <summary>
+        /// The plate a worded button is drawn on: symbol, word, and a chevron where it opens.
+        /// </summary>
+        /// <param name="label">What it says.</param>
+        /// <param name="glyph">The symbol in front of the words.</param>
+        /// <param name="chevron">The chevron after them, or null for a button that acts.</param>
+        /// <param name="on">True to draw it as doing something.</param>
+        private static Border Worded(string label, string glyph, string? chevron, bool on)
         {
             var row = new StackPanel
             {
@@ -970,7 +1013,7 @@ namespace CamelWorks.UI.Views
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
-            row.Children.Add(Ui.Glyph(glyph, 13, "Muted", new Thickness(0, 0, 7, 0)));
+            row.Children.Add(Ui.Glyph(glyph, 13, on ? "Accent" : "Muted", new Thickness(0, 0, 7, 0)));
 
             var caption = new TextBlock
             {
@@ -979,27 +1022,33 @@ namespace CamelWorks.UI.Views
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
-            caption.Tint(TextBlock.ForegroundProperty, "Text");
+            caption.Tint(TextBlock.ForegroundProperty, on ? "Accent" : "Text");
             row.Children.Add(caption);
-            row.Children.Add(Ui.Glyph(Glyphs.Up, 11, "Muted", new Thickness(7, 0, 0, 0)));
+
+            if (chevron != null)
+                row.Children.Add(Ui.Glyph(chevron, 11, "Muted", new Thickness(7, 0, 0, 0)));
 
             var button = new Border
             {
                 CornerRadius = new CornerRadius(8),
                 BorderThickness = new Thickness(1),
                 Padding = new Thickness(11, 7, 11, 7),
+
+                // A gap on the left, so two of these side by side read as two buttons. The board's
+                // tool row put Run, Filter and Settings in a stack with no spacing and their
+                // borders met, which reads as one control with three labels in it.
+                Margin = new Thickness(6, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
                 Cursor = Cursors.Hand,
                 Child = row,
             };
 
             button.Tint(Border.BackgroundProperty, "Card2");
-            button.Tint(Border.BorderBrushProperty, "FieldBd");
+            button.Tint(Border.BorderBrushProperty, on ? "Accent" : "FieldBd");
 
             button.MouseEnter += (s, e) => button.Tint(Border.BorderBrushProperty, "Accent");
-            button.MouseLeave += (s, e) => button.Tint(Border.BorderBrushProperty, "FieldBd");
-
-            Opens(button, Floating(Menu(items, true), 260), PlacementMode.Top);
+            button.MouseLeave += (s, e) =>
+                button.Tint(Border.BorderBrushProperty, on ? "Accent" : "FieldBd");
 
             return button;
         }
@@ -1493,6 +1542,149 @@ namespace CamelWorks.UI.Views
         private const double TickedHeight = 190;
 
         /// <summary>
+        /// The host's selection tree, ticked, read one level at a time.
+        ///
+        /// The answer to a published federation: the list of loaded models is one line however
+        /// many disciplines the file holds, and everything a coordinator would scope a run to is
+        /// under that line. Ticking a node takes it and everything below it.
+        ///
+        /// Levels are asked for as branches are opened, never up front. Reading a federation's
+        /// whole tree to draw its first six lines is a traversal of millions of items for a list
+        /// nobody has looked at.
+        /// </summary>
+        /// <param name="level">What sits under a node; the empty key asks for the models.</param>
+        /// <param name="picked">Whether a node is ticked.</param>
+        /// <param name="onPicked">Tick or untick a node.</param>
+        /// <param name="empty">What to say when the document offers no tree.</param>
+        /// <param name="onCleared">Untick everything, or null for no Clear link.</param>
+        public static UIElement Branching(Func<ElementKey, IReadOnlyList<SeatNode>> level,
+                                          Func<ElementKey, bool> picked,
+                                          Action<SeatNode, bool> onPicked,
+                                          string empty,
+                                          Action? onCleared = null)
+        {
+            if (level == null) throw new ArgumentNullException(nameof(level));
+            if (picked == null) throw new ArgumentNullException(nameof(picked));
+            if (onPicked == null) throw new ArgumentNullException(nameof(onPicked));
+
+            var held = Ui.Stack();
+            var list = Ui.Stack();
+
+            var opened = new HashSet<ElementKey>();
+
+            // A ceiling on what one draw puts on screen. A model tree can hold a hundred thousand
+            // nodes under one branch, and a picker that draws them all stops being a picker.
+            const int Most = 500;
+
+            void Fill()
+            {
+                list.Children.Clear();
+
+                var drawn = 0;
+                var roots = level(default);
+
+                if (roots.Count == 0)
+                {
+                    list.Children.Add(Ui.Small(empty));
+                    return;
+                }
+
+                void Draw(IReadOnlyList<SeatNode> nodes, int depth)
+                {
+                    foreach (var node in nodes)
+                    {
+                        if (drawn >= Most) return;
+
+                        drawn++;
+
+                        var one = node;
+                        var row = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 1, 0, 1) };
+
+                        var indent = new Border { Width = depth * 14 };
+
+                        DockPanel.SetDock(indent, Dock.Left);
+                        row.Children.Add(indent);
+
+                        if (one.Branches)
+                        {
+                            var open = opened.Contains(one.Key);
+
+                            var chevron = Ui.Icon(open ? Glyphs.Down : Glyphs.Right,
+                                                  open ? "Close this branch" : "Open this branch",
+                                                  () =>
+                                                  {
+                                                      if (!opened.Add(one.Key)) opened.Remove(one.Key);
+
+                                                      Fill();
+                                                  });
+
+                            chevron.Margin = new Thickness(0, 0, 2, 0);
+
+                            DockPanel.SetDock(chevron, Dock.Left);
+                            row.Children.Add(chevron);
+                        }
+                        else
+                        {
+                            // A leaf keeps the chevron's width, so the ticks down one level line
+                            // up with each other rather than stepping in and out.
+                            var gap = new Border { Width = 22 };
+
+                            DockPanel.SetDock(gap, Dock.Left);
+                            row.Children.Add(gap);
+                        }
+
+                        var tick = Ui.Check(one.Name, picked(one.Key),
+                                            on => Ui.Safely(() => { onPicked(one, on); Fill(); }));
+
+                        tick.ToolTip = one.Branches
+                            ? one.Name + " and everything under it"
+                            : one.Name;
+
+                        row.Children.Add(tick);
+
+                        list.Children.Add(row);
+
+                        if (one.Branches && opened.Contains(one.Key)) Draw(level(one.Key), depth + 1);
+                    }
+                }
+
+                Draw(roots, 0);
+
+                if (drawn >= Most)
+                    list.Children.Add(Ui.Small("Only the first " + Most + " lines are drawn. Close "
+                                               + "a branch, or tick the level above."));
+            }
+
+            Fill();
+
+            if (onCleared != null)
+            {
+                var bar = new DockPanel { LastChildFill = false };
+
+                var clear = Ui.Link("Clear", () => Ui.Safely(() => { onCleared(); Fill(); }));
+
+                DockPanel.SetDock(clear, Dock.Right);
+                bar.Children.Add(clear);
+
+                held.Children.Add(bar);
+            }
+
+            var scroller = new ScrollViewer
+            {
+                MaxHeight = TickedHeight,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = Ui.Loose(list),
+            };
+
+            Ui.WheelThrough(scroller);
+
+            held.Children.Add(scroller);
+
+            return held;
+        }
+
+        /// <summary>
         /// Several things chosen out of a list, with a box that narrows it.
         ///
         /// Five screens built this: the sides of a clash test, which tests to read into a matrix,
@@ -1609,138 +1801,6 @@ namespace CamelWorks.UI.Views
             held.Children.Add(scroller);
 
             return held;
-        }
-
-        /// <summary>
-        /// What a run reads from, as a press naming it that opens the list.
-        ///
-        /// Four shapes did this: the clearance panel's three fields, the fall-hazard panel's
-        /// three, the two sides of a clash test, and an editable combo in Pickers that none of
-        /// them used. Each was reported unusable separately, on a federation carrying two hundred
-        /// saved sets with no way to narrow the list.
-        /// </summary>
-        /// <param name="near">The screen this belongs to, which owns the list window.</param>
-        /// <param name="offered">Everything that could be read from.</param>
-        /// <param name="chosen">What it is read from now.</param>
-        /// <param name="prompt">What the list asks.</param>
-        /// <param name="onPicked">Records the choice.</param>
-        /// <param name="width">How wide the press is.</param>
-        /// <param name="blocked">Why it cannot be changed, or null when it can.</param>
-        public static UIElement Source(FrameworkElement? near,
-                                       IReadOnlyList<string> offered,
-                                       string chosen, string prompt,
-                                       Action<string> onPicked,
-                                       double width = 380,
-                                       string? blocked = null)
-        {
-            if (offered == null) throw new ArgumentNullException(nameof(offered));
-            if (onPicked == null) throw new ArgumentNullException(nameof(onPicked));
-
-            // Drawn as the dropdown it stands in for, not as a button. A source field sits beside
-            // an ordinary Ui.Choice — the levels on the clearance panel — and a plain button next
-            // to a combo reads as a disabled box: same rectangle, no chevron, nothing saying it
-            // opens. Whether the list is short enough for a combo or long enough to need a search
-            // window is this file's business, not something the eye should have to tell apart.
-            var said = new TextBlock
-            {
-                Text = chosen,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-            };
-
-            said.Tint(TextBlock.ForegroundProperty, "Text");
-
-            said.Margin = new Thickness(10, 0, 6, 0);
-
-            // The dropdown's own geometry, taken from the skin's ComboBox template rather than
-            // approximated: the same height, the same radius, and the same capped gutter with its
-            // own edge. Drawn 3px shorter and 2px squarer, this sat beside a real Ui.Choice on the
-            // clearance panel and read as a third kind of control.
-            var row = new DockPanel { LastChildFill = true };
-
-            var well = new Border
-            {
-                Width = WellWidth,
-                BorderThickness = new Thickness(1, 0, 0, 0),
-                CornerRadius = new CornerRadius(0, 5, 5, 0),
-                Child = Ui.Glyph(Glyphs.Down, 12, "Muted"),
-            };
-
-            well.Tint(Border.BackgroundProperty, "Well");
-            well.Tint(Border.BorderBrushProperty, "FieldBd");
-
-            DockPanel.SetDock(well, Dock.Right);
-            row.Children.Add(well);
-            row.Children.Add(said);
-
-            var box = new Border
-            {
-                Width = width,
-                MinHeight = FieldHeight,
-                CornerRadius = new CornerRadius(6),
-                BorderThickness = new Thickness(1),
-                HorizontalAlignment = HorizontalAlignment.Left,
-                Cursor = Cursors.Hand,
-                Child = row,
-            };
-
-            box.Tint(Border.BackgroundProperty, "Field");
-            box.Tint(Border.BorderBrushProperty, "FieldBd");
-
-            if (blocked != null)
-            {
-                // Dimmed, not disabled. A disabled element does not raise the events a tooltip
-                // needs, so the field that most needs to say why it cannot be used was the one
-                // field that said nothing when pointed at.
-                box.Opacity = 0.55;
-                box.Cursor = Cursors.Arrow;
-                box.ToolTip = blocked;
-                well.Background = System.Windows.Media.Brushes.Transparent;
-
-                return box;
-            }
-
-            box.ToolTip = prompt;
-            box.Focusable = true;
-
-            void Open() => Ui.Safely(() =>
-                Choose(near!, prompt, offered, chosen, null, null, picked =>
-                {
-                    if (picked.Length == 0) return;
-
-                    onPicked(picked);
-                }));
-
-            box.MouseLeftButtonUp += (s, e) => Open();
-
-            // Reachable from the keyboard, which it was not: a Border with a mouse handler takes
-            // no tab stop, so the two fields that say what a clearance test measures could only be
-            // set with a pointer.
-            box.KeyDown += (s, e) =>
-            {
-                if (e.Key != Key.Enter && e.Key != Key.Space && e.Key != Key.Down) return;
-
-                e.Handled = true;
-                Open();
-            };
-
-            box.GotKeyboardFocus += (s, e) => box.Tint(Border.BorderBrushProperty, "Focus");
-            box.LostKeyboardFocus += (s, e) => box.Tint(Border.BorderBrushProperty, "FieldBd");
-
-            box.MouseEnter += (s, e) =>
-            {
-                box.Tint(Border.BorderBrushProperty, "Accent");
-                well.Tint(Border.BackgroundProperty, "AccentWash");
-            };
-
-            box.MouseLeave += (s, e) =>
-            {
-                if (!box.IsKeyboardFocused) box.Tint(Border.BorderBrushProperty, "FieldBd");
-
-                well.Tint(Border.BackgroundProperty, "Well");
-            };
-
-            return box;
         }
 
         /// <summary>

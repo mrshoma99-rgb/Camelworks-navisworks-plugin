@@ -54,9 +54,9 @@ namespace CamelWorks.Core.Tests
             var settings = new ClearanceSettings
             {
                 MinimumMetres = minimum,
-                Surfaces = "Floors",
+                Surfaces = CheckSource.Sets("Floors"),
                 DetectSurfaces = false,
-                Targets = ClearanceSettings.NotTheSurfaces,
+                Targets = CheckSource.Rest(),
                 WorstPerPatch = false,
             };
 
@@ -199,7 +199,7 @@ namespace CamelWorks.Core.Tests
             var broken = Spec("broken", "Corridors, 2.1 m");
             var settings = ClearanceSettings.From(broken);
 
-            settings.Surfaces = "Level 3 corridros";
+            settings.Surfaces = CheckSource.Sets("Level 3 corridros");
             settings.Write(broken);
 
             runs.Put(broken);
@@ -447,7 +447,7 @@ namespace CamelWorks.Core.Tests
             // One typo in the set the run searches in: it now resolves to nothing.
             var settings = ClearanceSettings.From(spec);
 
-            settings.Surfaces = "Level 3 corridros";
+            settings.Surfaces = CheckSource.Sets("Level 3 corridros");
             settings.Write(spec);
 
             Assert.False(check.Runner!.Run("corridor", null));
@@ -458,7 +458,7 @@ namespace CamelWorks.Core.Tests
 
             // And it is told apart from a run that measured and found nothing, which does mark its
             // findings absent.
-            settings.Surfaces = ClearanceSettings.Loaded;
+            settings.Surfaces = CheckSource.Everything();
             settings.MinimumMetres = 0.5;
             settings.Write(spec);
 
@@ -476,7 +476,7 @@ namespace CamelWorks.Core.Tests
             var document = Model();
             var settings = ClearanceSettings.From(spec);
 
-            settings.Targets = "Services";
+            settings.Targets = CheckSource.Sets("Services");
             settings.Write(spec);
             runs.Put(spec);
 
@@ -495,7 +495,7 @@ namespace CamelWorks.Core.Tests
             Assert.NotEmpty(found);
 
             // The set is renamed in Set Builder, or deleted. The run now measures up to nothing.
-            settings.Targets = "Services v2";
+            settings.Targets = CheckSource.Sets("Services v2");
             settings.Write(spec);
 
             Assert.False(check.Runner!.Run("corridor", null));
@@ -520,7 +520,7 @@ namespace CamelWorks.Core.Tests
 
             var settings = ClearanceSettings.From(spec);
 
-            settings.Surfaces = ClearanceSettings.Loaded;
+            settings.Surfaces = CheckSource.Everything();
             settings.Write(spec);
 
             Assert.True(check.Runner!.Run("corridor", null));
@@ -631,8 +631,8 @@ namespace CamelWorks.Core.Tests
             // Both sides, named. A run confined to one part of the building says so twice —
             // what it searches in, and what it searches against — rather than through a third
             // field that narrowed both and was consulted only when the first was left alone.
-            settings.Surfaces = "West corridor";
-            settings.Targets = "West corridor";
+            settings.Surfaces = CheckSource.Sets("West corridor");
+            settings.Targets = CheckSource.Sets("West corridor");
             settings.Write(spec);
             runs.Put(spec);
 
@@ -670,9 +670,9 @@ namespace CamelWorks.Core.Tests
             var settings = new ClearanceSettings
             {
                 MinimumMetres = 2.1,
-                Surfaces = "Floors",
+                Surfaces = CheckSource.Sets("Floors"),
                 DetectSurfaces = true,
-                Targets = ClearanceSettings.NotTheSurfaces,
+                Targets = CheckSource.Rest(),
             };
 
             var check = new ClearanceCheck(register, runs, document, document);
@@ -683,7 +683,7 @@ namespace CamelWorks.Core.Tests
 
             // The same run over everything loaded finds the desk as well, which is the state the
             // caveat on the set-up screen describes.
-            settings.Surfaces = ClearanceSettings.Loaded;
+            settings.Surfaces = CheckSource.Everything();
 
             Assert.Contains(check.Detect(settings), patch => patch.Source.Equals(desk.Key));
         }
@@ -708,7 +708,7 @@ namespace CamelWorks.Core.Tests
             var settings = new ClearanceSettings
             {
                 MinimumMetres = 2.1,
-                Surfaces = "West corridor",
+                Surfaces = CheckSource.Sets("West corridor"),
                 DetectSurfaces = true,
             };
 
@@ -768,9 +768,9 @@ namespace CamelWorks.Core.Tests
             var settings = new ClearanceSettings
             {
                 MinimumMetres = 2.1,
-                Surfaces = ClearanceSettings.Loaded,
+                Surfaces = CheckSource.Everything(),
                 DetectSurfaces = true,
-                Targets = ClearanceSettings.NotTheSurfaces,
+                Targets = CheckSource.Rest(),
                 WorstPerPatch = false,
             };
 
@@ -978,8 +978,8 @@ namespace CamelWorks.Core.Tests
             {
                 MinimumMetres = 2.4,
                 ToleranceMetres = 0.15,
-                Surfaces = ClearanceSettings.Loaded,
-                Targets = "Services",
+                Surfaces = CheckSource.Everything(),
+                Targets = CheckSource.Sets("Services"),
                 WorstPerPatch = false,
                 ExcludeStairs = true,
                 PreferFloorCategories = true,
@@ -1004,9 +1004,9 @@ namespace CamelWorks.Core.Tests
 
             Assert.Equal(2.4, again.MinimumMetres, 6);
             Assert.Equal(0.15, again.ToleranceMetres, 6);
-            Assert.Equal(ClearanceSettings.Loaded, again.Surfaces);
+            Assert.Equal(ClearanceSettings.Loaded, again.Surfaces.Written());
             Assert.True(again.DetectSurfaces);
-            Assert.Equal("Services", again.Targets);
+            Assert.Equal("Services", again.Targets.Written());
             Assert.Equal(new[] { "Level 03", "Level 04" }, again.Levels);
             Assert.Equal(new[] { "Sprinklers", "Lighting Fixtures" }, again.Ignore);
             Assert.False(again.WorstPerPatch);

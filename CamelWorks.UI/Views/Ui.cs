@@ -166,6 +166,29 @@ namespace CamelWorks.UI.Views
             DockPanel.SetDock(tally, Dock.Right);
             line.Children.Add(tally);
 
+            // The chevron says the band folds, and which way it is. Bound to the toggle the
+            // band sits inside, so it turns when the band does.
+            var chevron = Ui.Glyph(Glyphs.Down, 11, "Muted", new Thickness(0, 0, 6, 0));
+
+            chevron.SetBinding(UIElement.VisibilityProperty, new Binding("IsChecked")
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor,
+                                                    typeof(ToggleButton), 1),
+                Converter = new Folded(false),
+            });
+
+            var closed = Ui.Glyph(Glyphs.Right, 11, "Muted", new Thickness(0, 0, 6, 0));
+
+            closed.SetBinding(UIElement.VisibilityProperty, new Binding("IsChecked")
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor,
+                                                    typeof(ToggleButton), 1),
+                Converter = new Folded(true),
+            });
+
+            line.Children.Add(chevron);
+            line.Children.Add(closed);
+
             line.Children.Add(Ui.Glyph(Glyphs.Folder, 13, "Muted", new Thickness(0, 0, 7, 0)));
 
             var name = new TextBlock
@@ -190,6 +213,34 @@ namespace CamelWorks.UI.Views
             band.Tint(Border.BorderBrushProperty, "Bd");
 
             return band;
+        }
+
+        /// <inheritdoc />
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
+            Binding.DoNothing;
+    }
+
+    /// <summary>
+    /// Whether one of the band's two chevrons is the one to draw.
+    ///
+    /// Two glyphs, one shown at a time, rather than one glyph rotated: the chevrons in this
+    /// product are separate paths and a rotation would be the only place a symbol is made by
+    /// transforming another.
+    /// </summary>
+    internal sealed class Folded : IValueConverter
+    {
+        /// <summary>Say which of the two this is.</summary>
+        /// <param name="whenShut">True for the chevron shown while the band is closed.</param>
+        internal Folded(bool whenShut) => _whenShut = whenShut;
+
+        private readonly bool _whenShut;
+
+        /// <inheritdoc />
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            var open = value as bool? ?? true;
+
+            return open != _whenShut ? Visibility.Visible : Visibility.Collapsed;
         }
 
         /// <inheritdoc />
@@ -1031,6 +1082,46 @@ namespace CamelWorks.UI.Views
             }
 
             return panel;
+        }
+
+        /// <summary>
+        /// Two or more controls sharing a row in equal columns.
+        ///
+        /// Not <see cref="Across"/>, which wraps and gives each child its desired width: a pair of
+        /// fields laid out that way keeps the width it was written with however wide the pane is,
+        /// and a pane wider than the pair leaves the rest of the row white.
+        /// </summary>
+        /// <param name="children">The controls, one per column. Nulls are skipped.</param>
+        public static Panel Evenly(params UIElement?[] children)
+        {
+            var grid = new Grid { Margin = new Thickness(0, 0, 0, 5) };
+
+            var kept = children.Where(one => one != null).ToList();
+
+            for (var i = 0; i < kept.Count; i++)
+            {
+                grid.ColumnDefinitions.Add(new ColumnDefinition
+                {
+                    Width = new GridLength(1, GridUnitType.Star),
+                });
+
+                var child = Loose(kept[i]!);
+
+                if (child is FrameworkElement element)
+                {
+                    element.HorizontalAlignment = HorizontalAlignment.Stretch;
+
+                    // A gutter between the columns, and none outside them, so a pair lines up with
+                    // the full-width field above it at both edges.
+                    element.Margin = new Thickness(i == 0 ? 0 : Gap, 0,
+                                                   i == kept.Count - 1 ? 0 : 0, 0);
+                }
+
+                Grid.SetColumn(child, i);
+                grid.Children.Add(child);
+            }
+
+            return grid;
         }
 
         /// <summary>
@@ -2329,6 +2420,74 @@ namespace CamelWorks.UI.Views
             return box;
         }
 
+        /// <summary>
+        /// A folder: the ones that exist, and room to type one that does not.
+        ///
+        /// One control, because there were three. Filing a test as it is made was a bare text
+        /// box, changing the folder of one that exists was a different bare text box, and "Move
+        /// these..." was the only place that offered the folders already on the job - so the two
+        /// places somebody actually files a test were the two that made them remember its name
+        /// and spell it the same way twice. A folder that exists is a pick; a new one is typed
+        /// over the top, which is what an editable dropdown is for.
+        ///
+        /// Empty means the root. The placeholder says so rather than the list carrying a "none"
+        /// row that reads as a folder called None.
+        /// </summary>
+        /// <param name="value">The folder now, or null for the root.</param>
+        /// <param name="folders">The folders this check already has.</param>
+        /// <param name="onSettled">Called with the folder, or empty for the root.</param>
+        /// <param name="width">The narrowest it may be.</param>
+        public static ComboBox Folder(string? value, IEnumerable<string> folders,
+                                      Action<string>? onSettled, double width = Wide.Name)
+        {
+            var was = value ?? string.Empty;
+
+            var box = new ComboBox
+            {
+                IsEditable = true,
+                MinWidth = width,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Center,
+                Text = was,
+            };
+
+            foreach (var one in Listed(folders))
+                if (!string.IsNullOrWhiteSpace(one)) box.Items.Add(one);
+
+            void Report()
+            {
+                var now = (box.Text ?? string.Empty).Trim();
+
+                if (string.Equals(now, was, StringComparison.Ordinal)) return;
+
+                was = now;
+                onSettled?.Invoke(now);
+            }
+
+            // Both, because either can be the last thing that happens: picking off the list
+            // never loses focus if the field is the only control being used, and typing a new
+            // name never raises a selection.
+            box.LostFocus += (s, e) => Safely(Report);
+            box.SelectionChanged += (s, e) => Safely(Report);
+
+            box.KeyDown += (s, e) =>
+            {
+                if (e.Key == System.Windows.Input.Key.Enter)
+                {
+                    e.Handled = true;
+                    Safely(Report);
+                    return;
+                }
+
+                if (e.Key != System.Windows.Input.Key.Escape) return;
+
+                e.Handled = true;
+                box.Text = was;
+            };
+
+            return box;
+        }
+
         /// <summary>A dropdown of fixed options.</summary>
         /// <param name="options">What can be picked.</param>
         /// <param name="selected">What is picked now, or null.</param>
@@ -2370,9 +2529,15 @@ namespace CamelWorks.UI.Views
         public static UIElement Segmented(IReadOnlyList<string> options, string? selected, Action<string>? onChanged)
         {
             if (options == null || options.Count == 0) return Stack();
-            if (options.Count > 4) return Choice(options, selected, onChanged);
 
-            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            // Beyond six the row is a list wearing a row's clothes, whatever it wraps onto.
+            if (options.Count > 6) return Choice(options, selected, onChanged);
+
+            // Wraps rather than running off the edge. A horizontal StackPanel measures its
+            // children with infinite width, so a fourth segment inside a capped card was drawn
+            // past the card's own edge with nothing saying it was there - which is what a source
+            // picker offering "Everything loaded" looked like.
+            var row = new WrapPanel { Orientation = Orientation.Horizontal };
             var buttons = new List<ToggleButton>();
 
             foreach (var option in options)
@@ -2526,7 +2691,10 @@ namespace CamelWorks.UI.Views
 
             if (asked != null)
             {
-                DockPanel.SetDock(asked, Dock.Left);
+                // Hard right, not next to the label. Docked left it sat wherever the label ended,
+                // so a column of fields carried its badges down a ragged edge; against the field's
+                // own right edge they line up with each other.
+                DockPanel.SetDock(asked, Dock.Right);
                 head.Children.Add(asked);
             }
 
@@ -3612,6 +3780,70 @@ namespace CamelWorks.UI.Views
         public static bool GetFills(DependencyObject element) =>
             (bool)element.GetValue(FillsProperty);
 
+        /// <summary>
+        /// Where a table is scrolled to, so a rebuild can put it back.
+        ///
+        /// A screen that rebuilds its table to show a change hands the list a new set of rows,
+        /// and a new set starts at the top: delete a test four hundred rows down and the list
+        /// returns to the first one, with the row that was under the pointer nowhere near it.
+        /// The board solved this for its own list; every ListView on a bench has the same fault,
+        /// so the pair lives here.
+        ///
+        /// Returns zero for a list with no scroller yet, which restores as no scroll.
+        /// </summary>
+        /// <param name="list">The table, or null.</param>
+        public static double Scrolled(ItemsControl? list) => Scroller(list)?.VerticalOffset ?? 0;
+
+        /// <summary>Put a rebuilt table back where the old one was.</summary>
+        /// <param name="list">The table, or null.</param>
+        /// <param name="offset">What <see cref="Scrolled"/> read before the rebuild.</param>
+        public static void ScrollTo(ItemsControl? list, double offset)
+        {
+            if (list == null || offset <= 0) return;
+
+            // After the layout pass, not during it. A list handed a new set of rows has not been
+            // measured, so its ScrollableHeight is still zero and scrolling now clamps to the
+            // top - which is the fault this is meant to fix, arriving a frame later.
+            list.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                var scroll = Scroller(list);
+
+                if (scroll == null) return;
+
+                scroll.ScrollToVerticalOffset(
+                    Math.Min(offset, Math.Max(0, scroll.ScrollableHeight)));
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
+        }
+
+        /// <summary>The scroller inside a list's template, once the template has been applied.</summary>
+        /// <param name="list">The list.</param>
+        private static ScrollViewer? Scroller(ItemsControl? list)
+        {
+            if (list == null) return null;
+
+            list.ApplyTemplate();
+
+            return Found(list);
+
+            static ScrollViewer? Found(DependencyObject from)
+            {
+                var count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(from);
+
+                for (var i = 0; i < count; i++)
+                {
+                    var child = System.Windows.Media.VisualTreeHelper.GetChild(from, i);
+
+                    if (child is ScrollViewer scroll) return scroll;
+
+                    var deeper = Found(child);
+
+                    if (deeper != null) return deeper;
+                }
+
+                return null;
+            }
+        }
+
         /// <summary>A table.</summary>
         /// <param name="rows">The rows.</param>
         /// <param name="columns">Header and width per column. A width of 0 sizes to content.</param>
@@ -3651,13 +3883,17 @@ namespace CamelWorks.UI.Views
                 grid.Columns.Add(column);
             }
 
+            var built = rows.ToList();
+
             var table = new ListView
             {
                 View = grid,
-                ItemsSource = rows.ToList(),
+                ItemsSource = built,
                 Margin = new Thickness(0, Gap, 0, 2),
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
             };
+
+            table.SetValue(RowsProperty, built);
 
             // How tall a table may be is a question about the pane, not a number. It was 420,
             // which overflowed the dock pane at its 340 minimum and left most of a tall monitor
@@ -3684,6 +3920,12 @@ namespace CamelWorks.UI.Views
                 table.MaxHeight = double.PositiveInfinity;
                 table.VerticalAlignment = VerticalAlignment.Stretch;
             };
+
+            // Top, not the default stretch. A stretched element carrying a MaxHeight is centred
+            // in what is left over, so a table capped at 420 in a taller pane drew its header
+            // half way down with an empty band above it. The Loaded handler above puts Stretch
+            // back on a table that fills, which is the only case where stretching is meant.
+            table.VerticalAlignment = VerticalAlignment.Top;
 
             table.SetBinding(FrameworkElement.MaxHeightProperty, new Binding("ActualHeight")
             {
@@ -3776,7 +4018,15 @@ namespace CamelWorks.UI.Views
 
                     var index = grid.Columns.IndexOf(header.Column);
                     if (index < 0) return;
-                    if (!(table.ItemsSource is List<TableRow> current)) return;
+
+                    // The rows the table was built from, not whatever its ItemsSource happens to
+                    // be now. A table that groups its rows by folder has a CollectionView there
+                    // rather than a list, so this test used to fail on exactly the table that
+                    // most needs sorting - the Create tab's, where the headers did nothing at
+                    // all.
+                    var current = Held(table);
+
+                    if (current.Count == 0) return;
 
                     ascending = sortedBy == index ? !ascending : true;
                     sortedBy = index;
@@ -3808,7 +4058,7 @@ namespace CamelWorks.UI.Views
 
                     if (!ascending) sorted.Reverse();
 
-                    table.ItemsSource = sorted;
+                    Refill(table, sorted);
                 }));
 
             // A 3px bar down the left of the row, not the row's text.
@@ -3836,6 +4086,45 @@ namespace CamelWorks.UI.Views
             };
 
             return table;
+        }
+
+        /// <summary>Where a table keeps the rows it was built from, whatever it is showing.</summary>
+        private static readonly DependencyProperty RowsProperty =
+            DependencyProperty.RegisterAttached("Rows", typeof(List<TableRow>), typeof(Ui),
+                                                new PropertyMetadata(null));
+
+        /// <summary>The rows a table was built from.</summary>
+        /// <param name="table">The table.</param>
+        private static List<TableRow> Held(ListView table) =>
+            table.GetValue(RowsProperty) as List<TableRow> ?? new List<TableRow>();
+
+        /// <summary>
+        /// Show these rows, keeping whatever shape the table was given.
+        ///
+        /// A grouped table is showing a view over its rows rather than the rows, so putting a
+        /// list back in its place would take the folder bands off the first time somebody sorted
+        /// it. The grouping is rebuilt over the new order instead.
+        /// </summary>
+        /// <param name="table">The table.</param>
+        /// <param name="rows">The rows, in the order they are to show.</param>
+        private static void Refill(ListView table, List<TableRow> rows)
+        {
+            table.SetValue(RowsProperty, rows);
+
+            var groups = (table.ItemsSource as System.ComponentModel.ICollectionView)?
+                .GroupDescriptions;
+
+            if (groups == null || groups.Count == 0)
+            {
+                table.ItemsSource = rows;
+                return;
+            }
+
+            var grouped = new CollectionViewSource { Source = rows };
+
+            foreach (var one in groups) grouped.GroupDescriptions.Add(one);
+
+            table.ItemsSource = grouped.View;
         }
 
         /// <summary>
@@ -4024,14 +4313,61 @@ namespace CamelWorks.UI.Views
             // six hundred tests is a list that has to stay virtualised.
             VirtualizingPanel.SetIsVirtualizingWhenGrouping(table, true);
 
-            var head = new FrameworkElementFactory(typeof(ContentPresenter));
+            // The band, as a toggle carrying the header, with the rows under it.
+            //
+            // A GroupStyle header alone is a strip that cannot be pressed: a project with a
+            // hundred and sixty tests in a dozen folders had no way to put a folder away, so
+            // finding the one being worked meant scrolling past every other. The band is a
+            // ToggleButton with no chrome of its own - it draws exactly the header it drew
+            // before, plus the chevron - and the rows fold when it is off.
+            var band = new FrameworkElementFactory(typeof(System.Windows.Controls.Primitives.ToggleButton));
 
-            head.SetBinding(ContentPresenter.ContentProperty,
+            band.Name = "band";
+            band.SetValue(System.Windows.Controls.Primitives.ToggleButton.IsCheckedProperty, true);
+            band.SetValue(Control.CursorProperty, Cursors.Hand);
+            band.SetValue(FrameworkElement.FocusVisualStyleProperty, null);
+            band.SetValue(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch);
+
+            band.SetBinding(ContentControl.ContentProperty,
                             new Binding(".") { Converter = new BandHead() });
+
+            // Its own template, or the platform draws a push button round the band.
+            var bare = new FrameworkElementFactory(typeof(ContentPresenter));
+
+            band.SetValue(Control.TemplateProperty,
+                          new ControlTemplate(typeof(System.Windows.Controls.Primitives.ToggleButton))
+                          {
+                              VisualTree = bare,
+                          });
+
+            var rows = new FrameworkElementFactory(typeof(ItemsPresenter));
+
+            rows.Name = "rows";
+
+            var whole = new FrameworkElementFactory(typeof(StackPanel));
+
+            whole.AppendChild(band);
+            whole.AppendChild(rows);
+
+            var shape = new ControlTemplate(typeof(GroupItem)) { VisualTree = whole };
+
+            shape.Triggers.Add(new Trigger
+            {
+                SourceName = "band",
+                Property = System.Windows.Controls.Primitives.ToggleButton.IsCheckedProperty,
+                Value = false,
+                Setters =
+                {
+                    new Setter(UIElement.VisibilityProperty, Visibility.Collapsed, "rows"),
+                },
+            });
 
             table.GroupStyle.Add(new GroupStyle
             {
-                HeaderTemplate = new DataTemplate { VisualTree = head },
+                ContainerStyle = new Style(typeof(GroupItem))
+                {
+                    Setters = { new Setter(Control.TemplateProperty, shape) },
+                },
             });
 
             return table;
@@ -4575,6 +4911,48 @@ namespace CamelWorks.UI.Views
         /// <param name="actions">The verbs.</param>
         public static UIElement Picking(ListView table, UIElement? aside, params OnPicked[] actions)
         {
+            var parts = PickingParts(table, aside, actions);
+
+            // The table is in what comes back, above its bar. A pane that pins the bar and lets
+            // the rows scroll wants the bar alone, and takes the table back out with Loose - see
+            // Bench.Listed. Handing this whole stack to a docked slot reparents the table into
+            // it, which draws the rows at the foot of an empty pane.
+            parts.Verbs.Children.Insert(0, parts.Tally);
+            parts.Verbs.Children.Add(parts.Links);
+
+            return Stack(table, parts.Verbs, parts.Said);
+        }
+
+        /// <summary>
+        /// The verb bar's three parts, for a screen that puts them in three places.
+        ///
+        /// The Create tab does: the verbs go on the strip beside the button that makes a test,
+        /// and the count and the All/None links go on the list pane's own header. As one bar they
+        /// were a second row of chrome under the strip saying what the header had room for.
+        /// </summary>
+        public sealed class PickBar
+        {
+            /// <summary>The verbs, in a panel that wraps.</summary>
+            public WrapPanel Verbs { get; internal set; } = new WrapPanel();
+
+            /// <summary>How many rows are picked, of how many.</summary>
+            public TextBlock Tally { get; internal set; } = new TextBlock();
+
+            /// <summary>The All and None links, as one child so they cannot be wrapped apart.</summary>
+            public UIElement Links { get; internal set; } = new StackPanel();
+
+            /// <summary>Where a verb says what it did.</summary>
+            public Panel Said { get; internal set; } = new StackPanel();
+        }
+
+        /// <summary>
+        /// Build the verb bar's parts without placing them.
+        /// </summary>
+        /// <param name="table">The table being picked from.</param>
+        /// <param name="aside">A control a verb reads, shown before the verbs, or null.</param>
+        /// <param name="actions">The verbs.</param>
+        public static PickBar PickingParts(ListView table, UIElement? aside, params OnPicked[] actions)
+        {
             if (table == null) throw new ArgumentNullException(nameof(table));
 
             table.Multi();
@@ -4623,8 +5001,6 @@ namespace CamelWorks.UI.Views
 
             var buttons = new List<System.Windows.Controls.Button>();
 
-            bar.Children.Add(tally);
-
             if (aside != null)
             {
                 bar.Children.Add(aside);
@@ -4636,36 +5012,57 @@ namespace CamelWorks.UI.Views
                 var here = action;
                 var glyph = Symbol(here.Caption);
 
-                // A symbol where the verb has one, with the caption as its tooltip; the words
-                // where it does not. Twelve one-word buttons under a table is a wall of text
-                // where the eye wants a row of shapes - but a verb nobody can draw is worse as a
-                // shape nobody can read.
-                var button = glyph == null
-                    ? (here.Primary
-                        ? Primary(Worded(here.Caption, 0), () => Verb(here, table, said))
-                        : Quiet(Worded(here.Caption, 0), () => Verb(here, table, said)))
-                    : Icon(glyph, Worded(here.Caption, 0), () => Verb(here, table, said),
-                           here.Danger ? "RedTx" : "Muted");
+                // The symbol and the word, not the symbol alone.
+                //
+                // A verb drawn as a shape with its name on a tooltip is a verb nobody reads
+                // before pressing it, and this bar carries a delete. It was symbols on the
+                // reasoning that twelve one-word buttons is a wall of text; the answer to twelve
+                // verbs is fewer verbs, not unreadable ones.
+                var words = Worded(here.Caption, 0);
 
-                // A destructive verb reads as destructive whether or not it can be drawn. This
-                // applied the danger style only to the worded ones, which left every delete that
-                // has a symbol - which is all of them - in the same grey as the verb beside it.
+                var button = here.Primary
+                    ? Primary(words, () => Verb(here, table, said))
+                    : Quiet(words, () => Verb(here, table, said));
+
+                if (glyph != null)
+                {
+                    var face = new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        VerticalAlignment = VerticalAlignment.Center,
+                    };
+
+                    face.Children.Add(Glyph(glyph, 13, here.Danger ? "RedTx" : "Muted",
+                                            new Thickness(0, 0, 6, 0)));
+
+                    var caption = new TextBlock
+                    {
+                        Text = words,
+                        VerticalAlignment = VerticalAlignment.Center,
+                    };
+
+                    // The word in ordinary ink, not the quiet button's accent. Five accented
+                    // phrases in a row beside the All and None links read as seven links, and
+                    // two of them are.
+                    caption.Tint(TextBlock.ForegroundProperty, here.Danger ? "RedTx" : "Text");
+
+                    face.Children.Add(caption);
+
+                    button.Content = face;
+                }
+
+                // A destructive verb reads as destructive whether or not it carries a symbol.
                 if (here.Danger && glyph == null) button.Wearing("DangerBtn");
 
-                // A worded button carries its own padding; a symbol needs the room put around it,
-                // for the same reason Icon does. A danger verb gets a wider left gap either way,
-                // so the press before it is not adjacent to the one that deletes.
-                var before = here.Danger ? Gap * 2 : glyph == null ? Gap : 3;
-
-                button.Margin = new Thickness(before, 2, glyph == null ? 0 : 3, 2);
+                // A wider left gap before a danger verb, so the press before it is not adjacent
+                // to the one that deletes.
+                button.Margin = new Thickness(here.Danger ? Gap * 2 : Gap, 2, 0, 2);
                 button.VerticalAlignment = VerticalAlignment.Center;
                 button.Tag = here.Caption;
 
                 buttons.Add(button);
                 bar.Children.Add(button);
             }
-
-            bar.Children.Add(picking);
 
             void Say()
             {
@@ -4702,11 +5099,7 @@ namespace CamelWorks.UI.Views
             // already is, and offering both costs nothing.
             table.Menu(verbs.Select(v => new OnMenu(v.Caption, picked => v.Act(picked, said))).ToArray());
 
-            // The table is in what comes back, above its bar. A pane that pins the bar and lets
-            // the rows scroll wants the bar alone, and takes the table back out with Loose — see
-            // Bench.Listed. Handing this whole stack to a docked slot reparents the table into
-            // it, which draws the rows at the foot of an empty pane.
-            return Stack(table, bar, said);
+            return new PickBar { Verbs = bar, Tally = tally, Links = picking, Said = said };
         }
 
         /// <summary>
