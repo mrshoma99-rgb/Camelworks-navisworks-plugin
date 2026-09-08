@@ -117,7 +117,28 @@ namespace CamelWorks.UI.Views
             // work. The fold button had the same fault and the same cause.
             var holder = new ContentControl();
 
-            void Draw() => holder.Content = new Screen(session, Draw).Build();
+            var opened = false;
+
+            void Draw()
+            {
+                var screen = new Screen(session, Draw);
+
+                // Opening the tab does not read. The board's own action is "Read the results",
+                // and reading eighteen thousand of them before anything reaches the screen is the
+                // wrong thing to do to somebody who came here to look at a test list.
+                //
+                // A later draw is the check picker switching check, and a check switched to for
+                // the first time has nothing on its board. Built without reading, the tab came
+                // back with the new check's name over an empty board and a rail with nothing in
+                // it, which is what "the results type switcher does not work" looked like from
+                // the seat. A check whose board has already been read is drawn as it was left,
+                // so coming back to clash does not re-read the document.
+                holder.Content = opened && !screen.HasRead
+                    ? screen.Drawn(panel: false)
+                    : screen.Build();
+
+                opened = true;
+            }
 
             Draw();
 
@@ -2912,6 +2933,9 @@ namespace CamelWorks.UI.Views
             }
 
             private List<TestEntry>? Current() => OnFile ? _file?.Entries : Board();
+
+            /// <summary>Whether the check being drawn has anything on its board already.</summary>
+            internal bool HasRead => Current() != null;
 
             /// <summary>What the current check's last read left on the board, or null.</summary>
             private static List<TestEntry>? Board() =>
