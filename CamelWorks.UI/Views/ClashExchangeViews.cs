@@ -525,7 +525,9 @@ namespace CamelWorks.UI.Views
 
                     CheckKey = key;
 
-                    Ui.Told(Shell.AppWindow.Show("clash", "exchange"));
+                    // Afresh: this tab reads the kind when it builds, so the cached surface would
+                    // come back showing the kind that was picked before.
+                    Ui.Told(Shell.AppWindow.Show("clash", "exchange", afresh: true));
                 }, Ui.Wide.Word);
             }
 
@@ -1321,6 +1323,15 @@ namespace CamelWorks.UI.Views
                             : "the split fell back to " + fell.SplitBy + ".")));
 
                 into.Children.Add(Ui.Small(Framing(going.Count)));
+
+                // The rehearsal is a table and three paragraphs under the footer, and it stayed
+                // until something else was run. It closes from where it ends.
+                var close = Ui.Quiet("Close the preview", () => into.Children.Clear());
+
+                close.HorizontalAlignment = HorizontalAlignment.Left;
+                close.Margin = new Thickness(0, 8, 0, 0);
+
+                into.Children.Add(close);
 
                 _ = job;
             }

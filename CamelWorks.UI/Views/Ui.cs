@@ -5035,6 +5035,15 @@ namespace CamelWorks.UI.Views
 
             var buttons = new List<System.Windows.Controls.Button>();
 
+            // The word inside a verb drawn as a symbol and a caption. It carries its own ink, so
+            // it does not follow the button's foreground the way a worded verb does, and it is
+            // kept here so an off verb dims whole rather than half.
+            var captions = new Dictionary<System.Windows.Controls.Button, TextBlock>();
+
+            // The verbs that carry their own ink in both states: a destructive verb keeps its
+            // red, a primary keeps white on the accent fill.
+            var dangers = new HashSet<System.Windows.Controls.Button>();
+
             if (aside != null)
             {
                 bar.Children.Add(aside);
@@ -5082,6 +5091,8 @@ namespace CamelWorks.UI.Views
 
                     face.Children.Add(caption);
 
+                    if (!here.Danger) captions[button] = caption;
+
                     button.Content = face;
                 }
 
@@ -5093,6 +5104,8 @@ namespace CamelWorks.UI.Views
                 button.Margin = new Thickness(here.Danger ? Gap * 2 : Gap, 2, 0, 2);
                 button.VerticalAlignment = VerticalAlignment.Center;
                 button.Tag = here.Caption;
+
+                if (here.Danger || here.Primary) dangers.Add(button);
 
                 buttons.Add(button);
                 bar.Children.Add(button);
@@ -5114,6 +5127,18 @@ namespace CamelWorks.UI.Views
                 foreach (var button in buttons)
                 {
                     button.IsEnabled = picked > 0;
+
+                    // An off verb reads as off in one tier, not two. The quiet button's own
+                    // disabled trigger paints Faint, which is reasoned about against the
+                    // large-text floor and these captions are eleven pixels; a verb drawn with a
+                    // symbol did not follow it at all, because its caption holds its own ink. Both
+                    // go to Muted, which is a tier below Text and still readable. "Include tests"
+                    // with nothing selected was the case that showed it.
+                    if (captions.TryGetValue(button, out var word))
+                        word.Tint(TextBlock.ForegroundProperty, picked > 0 ? "Text" : "Muted");
+                    else if (!dangers.Contains(button) && !(button.Tag is null))
+                        button.Tint(Control.ForegroundProperty,
+                                    picked > 0 ? "Accent" : "Muted");
 
                     if (!(button.Tag is string caption)) continue;
 

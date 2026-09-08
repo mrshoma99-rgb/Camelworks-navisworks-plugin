@@ -9333,6 +9333,10 @@ namespace CamelWorks.UI.Views
             /// is inserted where the caret is rather than appended, and the example under the box
             /// is the first cell this board would actually build, so a pattern can be judged
             /// before two hundred tests are named with it.
+            ///
+            /// The patterns the project already holds are listed above the box. They are the same
+            /// list the Clash Manager reads names with, so a board is named with a pattern the
+            /// rest of the product can read back rather than a second one written from memory.
             /// </summary>
             private void Patterning()
             {
@@ -9340,6 +9344,7 @@ namespace CamelWorks.UI.Views
                 {
                     var held = Ui.Stack();
                     var says = Ui.Stack();
+                    var saved = Ui.Stack();
 
                     var box = Ui.Text(_pattern, MatrixNaming.Default, null, Ui.Wide.Path);
 
@@ -9397,19 +9402,124 @@ namespace CamelWorks.UI.Views
                     });
 
                     reset.HorizontalAlignment = HorizontalAlignment.Left;
-                    reset.Margin = new Thickness(0, 8, 0, 0);
+                    reset.Margin = new Thickness(8, 8, 0, 0);
 
+                    void Listed()
+                    {
+                        saved.Children.Clear();
+
+                        var patterns = Book().Patterns;
+
+                        if (patterns.Count == 0)
+                        {
+                            saved.Children.Add(Ui.Small(
+                                "This project holds no patterns yet. The one written below is "
+                                + "added to the list when the tests are built."));
+
+                            return;
+                        }
+
+                        var offered = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
+
+                        foreach (var pattern in patterns)
+                        {
+                            var one = pattern;
+
+                            var chip = Ui.Quiet(one, () =>
+                            {
+                                box.Text = one;
+                                box.CaretIndex = box.Text.Length;
+                                box.Focus();
+                            });
+
+                            chip.Margin = new Thickness(0, 0, 6, 6);
+
+                            offered.Children.Add(chip);
+                        }
+
+                        saved.Children.Add(offered);
+                    }
+
+                    var keep = Ui.Quiet("Keep this pattern", () =>
+                    {
+                        if (!Keeping(box.Text))
+                        {
+                            Said(Ui.Problem("This project would not record the pattern."),
+                                 hold: true);
+
+                            return;
+                        }
+
+                        Listed();
+                    });
+
+                    keep.HorizontalAlignment = HorizontalAlignment.Left;
+                    keep.Margin = new Thickness(0, 8, 0, 0);
+
+                    held.Children.Add(Ui.Field("Patterns this project holds", saved,
+                        "Press one to name this board with it."));
                     held.Children.Add(Ui.Field("Pattern", box,
                         "Every test this board builds is named with it."));
                     held.Children.Add(Ui.Small("Press a token to put it where the caret is."));
                     held.Children.Add(chips);
                     held.Children.Add(says);
-                    held.Children.Add(reset);
+                    var acts = new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        HorizontalAlignment = HorizontalAlignment.Left,
+                    };
 
+                    acts.Children.Add(keep);
+                    acts.Children.Add(reset);
+
+                    held.Children.Add(acts);
+
+                    Listed();
                     Shown();
 
                     return held;
                 }));
+            }
+
+            /// <summary>The project's naming book, or an empty one when it cannot be read.</summary>
+            private NamingBook Book()
+            {
+                try
+                {
+                    return NamingBook.FromJson(
+                        _session.Store.Section(ProjectStore.ClashSection)[NamingBook.Key]);
+                }
+                catch (Exception)
+                {
+                    return new NamingBook();
+                }
+            }
+
+            /// <summary>
+            /// Put a pattern in the project's naming book.
+            ///
+            /// The book is the one list of patterns. A pattern written on this board and kept
+            /// here is offered on the Clash Manager's naming window as well, which is what stops
+            /// the same pattern being written twice - once to build the tests and once to read
+            /// them back.
+            /// </summary>
+            /// <param name="pattern">The pattern to keep.</param>
+            /// <returns>Whether the project recorded it.</returns>
+            private bool Keeping(string? pattern)
+            {
+                var said = (pattern ?? string.Empty).Trim();
+
+                if (said.Length == 0) said = MatrixNaming.Default;
+
+                var section = _session.Store.Section(ProjectStore.ClashSection);
+                var book = NamingBook.FromJson(section[NamingBook.Key]);
+
+                book.Scheme.Absorb(_board.Scheme);
+                book.Add(said);
+
+                section.Set(NamingBook.Key, book.ToJson() ?? JsonValue.Object());
+
+                return _session.Store.Save();
             }
 
             /// <summary>The name the first cell on the grid would be built with, or null.</summary>
@@ -9879,14 +9989,20 @@ namespace CamelWorks.UI.Views
                         : "Storey: " + _board.Level,
                     Glyphs.Model,
                     "Fills {level} in the pattern. Leave it empty for a board that is not per-storey",
-                    () => Parts.Ask(_grid,
-                        "Which storey are these tests about? \u201CL03\u201D, \u201CLevel 3\u201D. "
-                        + "Leave it empty for a board covering the whole building.",
-                        _board.Level, "Use it", typed =>
+                    // Picked from the storeys the project already lists, not typed. Settings holds
+                    // the level plan and the board asked for the name again in a bare box, where
+                    // one letter out is a storey the rest of the product does not know about.
+                    () => Parts.Choose(_grid,
+                        "Which storey are these tests about?",
+                        Storeys(),
+                        _board.Level.Length == 0 ? null : _board.Level,
+                        "Or a storey not on the list",
+                        "The whole building",
+                        picked =>
                         {
                             Remember(what: "naming the storey the board is about");
 
-                            _board.Level = (typed ?? string.Empty).Trim();
+                            _board.Level = (picked ?? string.Empty).Trim();
 
                             Touched();
                             Recount();
@@ -9897,15 +10013,31 @@ namespace CamelWorks.UI.Views
 
                 Parts.Entry.Act("Which clash folder they go in: "
                     + (_folder.Length == 0 ? "the root" : _folder), Glyphs.Folder,
-                    () => Parts.Ask(_grid, "A clash folder, or nothing for the root", _folder,
-                                    "Use it", typed =>
+                    // The folders this document already holds, for the same reason: a typo here
+                    // makes a second folder that looks like the first.
+                    () => Parts.Choose(_grid, "Which clash folder they go in",
+                                    Folders(),
+                                    _folder.Length == 0 ? null : _folder,
+                                    "Or a new folder",
+                                    "The root",
+                                    picked =>
                                     {
-                                        _folder = (typed ?? string.Empty).Trim();
+                                        _folder = (picked ?? string.Empty).Trim();
 
                                         Touched();
                                         Recount();
                                     })),
             };
+
+            /// <summary>The storeys this project lists, or none when it lists none.</summary>
+            private IReadOnlyList<string> Storeys() =>
+                Seated.Offer(() => LevelPlan
+                    .FromJson(_session.Store.Section(ProjectStore.ProfileSection)[LevelPlan.Key])
+                    .Storeys.Select(one => one.Name).ToList());
+
+            /// <summary>The clash folders this document already holds.</summary>
+            private IReadOnlyList<string> Folders() =>
+                Seated.Offer(() => _session.Clash.Folders());
 
             /// <summary>
             /// Points every unpointed row at the saved set of the same name, in one action.

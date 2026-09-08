@@ -92,8 +92,12 @@ namespace CamelWorks.UI.Shell
         /// </summary>
         /// <param name="appId">Which app.</param>
         /// <param name="toolId">Which tab's tool, or null for wherever the app's work stopped.</param>
+        /// <param name="afresh">
+        /// True to draw the tab again rather than serve the surface it was left as. For a tab
+        /// asking to be rebuilt because a setting it reads at build time has changed.
+        /// </param>
         /// <returns>Something to tell the user, or null when it opened.</returns>
-        public static string? Show(string? appId, string? toolId = null)
+        public static string? Show(string? appId, string? toolId = null, bool afresh = false)
         {
             var app = Apps.Find(appId);
 
@@ -126,7 +130,8 @@ namespace CamelWorks.UI.Shell
 
             window.Tab(toolId
                        ?? (LastTab.TryGetValue(app.Id, out var last) ? last : null)
-                       ?? app.Tabs[0].ToolId);
+                       ?? app.Tabs[0].ToolId,
+                       afresh);
 
             return null;
         }
@@ -210,7 +215,8 @@ namespace CamelWorks.UI.Shell
 
         /// <summary>Show a tab and mark it on the strip.</summary>
         /// <param name="toolId">The tab's tool.</param>
-        private void Tab(string toolId)
+        /// <param name="afresh">True to discard the surface this tab was left as and build it again.</param>
+        private void Tab(string toolId, bool afresh = false)
         {
             var tool = Tools.Find(toolId);
             if (tool == null) return;
@@ -219,6 +225,14 @@ namespace CamelWorks.UI.Shell
             LastTab[_app.Id] = tool.Id;
 
             BuildStrip();
+
+            // A built tab is kept, so coming back to one finds it as it was left. That is right
+            // for navigation and wrong for a tab asking to be drawn again because a setting it
+            // reads at build time has changed: the cached surface came back unchanged and the
+            // setting looked like it did nothing. Three controls had that fault - the Manage
+            // check picker, the Exchange kind picker and the board's fold - and each was read
+            // as a control that does not work.
+            if (afresh) _built.Remove(tool.Id);
 
             if (!_built.TryGetValue(tool.Id, out var surface))
             {
