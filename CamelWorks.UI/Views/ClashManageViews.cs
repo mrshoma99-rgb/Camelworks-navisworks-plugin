@@ -1638,6 +1638,12 @@ namespace CamelWorks.UI.Views
                 DockPanel.SetDock(_railTools, Dock.Right);
                 top.Children.Add(Ui.Loose(_railTools));
 
+                // Ui.Find asks for 200, which is more than the rail has left once the picker and
+                // the two menus have theirs: a DockPanel gives its fill child what remains and a
+                // child that will not shrink to it simply paints over what is beside it, which is
+                // the search box drawn under the sort menu.
+                _railBox.MinWidth = 90;
+
                 top.Children.Add(Ui.Loose(_railBox));
 
                 _railHead.Children.Clear();
