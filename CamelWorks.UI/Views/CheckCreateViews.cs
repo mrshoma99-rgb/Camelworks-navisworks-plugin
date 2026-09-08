@@ -159,7 +159,17 @@ namespace CamelWorks.UI.Views
                 // constructor call that makes it.
                 System.Windows.Controls.Button? made = null;
 
+                // With its symbol, like every other button that makes something. It was the one
+                // control on the strip drawn as bare words.
                 made = Ui.Button("New test", () => Parts.PopMenu(made!, Kinds()));
+
+                made.Content = Ui.Across(Ui.Glyph(Glyphs.Add, 13, "Muted",
+                                                  new Thickness(0, 0, 6, 0)),
+                                         new TextBlock
+                                         {
+                                             Text = "New test",
+                                             VerticalAlignment = VerticalAlignment.Center,
+                                         });
 
                 _make = made;
             }
@@ -213,8 +223,15 @@ namespace CamelWorks.UI.Views
                 return Bench.Split(Strip(), left, right, _foot, 620);
             }
 
-            /// <summary>The list pane's body: the rows scroll, the verbs under them do not.</summary>
-            private UIElement Listing() => Bench.Listing(_list, _picking, _log);
+            /// <summary>
+            /// The list pane's body: the rows, and where a verb says what it did.
+            ///
+            /// The verbs are not here any more. They were a bar pinned under the table, drawn as
+            /// symbols with their names on tooltips, at the far end of the pane from the button
+            /// that makes a test - so the row of things you do to a test and the thing that makes
+            /// one were four hundred pixels apart. They are on the strip at the top, worded.
+            /// </summary>
+            private UIElement Listing() => Bench.Listing(_list, null, _log);
 
             /// <summary>
             /// The strip over both panes: what makes a test on the left, the search on the right.
@@ -237,7 +254,11 @@ namespace CamelWorks.UI.Views
                 DockPanel.SetDock(_search, Dock.Right);
                 row.Children.Add(Ui.Loose(_search));
 
-                return row;
+                // The verbs under the strip rather than under the table: what you do to a test
+                // belongs beside what makes one, and the bar says how many rows it is about.
+                var held = Ui.Stack(row, Ui.Loose(_picking));
+
+                return held;
             }
 
             // ---- The list ------------------------------------------------------------------
@@ -883,29 +904,51 @@ namespace CamelWorks.UI.Views
                         ? "Run " + _shown.Count.ToString(CultureInfo.InvariantCulture) + " shown"
                         : "Run all";
 
-                var said = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                // One line, not four.
+                //
+                // The count, "Saved as you go", what the last run found and the way to it were a
+                // column of four short lines stacked in the footer, which made the footer four
+                // rows of the table tall on the tab where the table is the work. They are four
+                // facts of a sentence, so they are a sentence.
+                var said = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
 
-                said.Children.Add(Ui.Small(_shown.Count == _all.Count
-                    ? Ui.Count(_all.Count, "test") + " in this project"
-                    : _shown.Count.ToString(CultureInfo.InvariantCulture) + " of "
-                      + Ui.Count(_all.Count, "test") + " shown"));
+                var facts = new List<string>
+                {
+                    _shown.Count == _all.Count
+                        ? Ui.Count(_all.Count, "test") + " in this project"
+                        : _shown.Count.ToString(CultureInfo.InvariantCulture) + " of "
+                          + Ui.Count(_all.Count, "test") + " shown",
+                };
+
+                if (_outcome != null) facts.Add(_outcome);
 
                 // The settings panel beside this list writes every settled edit straight into the
                 // project file. Nothing said so, on the one tab where a coordinator does most of
                 // their typing.
-                var kept = Ui.Kept(Keeping.AsYouGo);
+                if (_all.Count > 0) facts.Add("saved as you go");
 
-                if (kept != null && _all.Count > 0) said.Children.Add(kept);
+                var line = Ui.Small(string.Join("  ·  ", facts));
 
-                if (_outcome != null) said.Children.Add(Ui.Line(_outcome, 0.9));
+                line.VerticalAlignment = VerticalAlignment.Center;
+                line.ToolTip = "Every change on this screen is written to the project as it "
+                             + "is made.";
+
+                said.Children.Add(line);
 
                 if (_went != null)
-                    said.Children.Add(Ui.Link("View in Manage", () =>
+                {
+                    var go = Ui.Link("View in Manage", () =>
                     {
                         ClashManageViews.Asked = _went;
 
                         Ui.Told(Shell.AppWindow.Show("clash", "manage"));
-                    }));
+                    });
+
+                    go.VerticalAlignment = VerticalAlignment.Center;
+                    go.Margin = new Thickness(10, 0, 0, 0);
+
+                    said.Children.Add(go);
+                }
 
                 // Ui.Foot, like every other tab. This built its own row — a two-column grid with
                 // Ui.Blocked, which is itself a footer row, nested in the right-hand column — so

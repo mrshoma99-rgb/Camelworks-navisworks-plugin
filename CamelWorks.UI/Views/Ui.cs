@@ -4819,28 +4819,48 @@ namespace CamelWorks.UI.Views
                 var here = action;
                 var glyph = Symbol(here.Caption);
 
-                // A symbol where the verb has one, with the caption as its tooltip; the words
-                // where it does not. Twelve one-word buttons under a table is a wall of text
-                // where the eye wants a row of shapes - but a verb nobody can draw is worse as a
-                // shape nobody can read.
-                var button = glyph == null
-                    ? (here.Primary
-                        ? Primary(Worded(here.Caption, 0), () => Verb(here, table, said))
-                        : Quiet(Worded(here.Caption, 0), () => Verb(here, table, said)))
-                    : Icon(glyph, Worded(here.Caption, 0), () => Verb(here, table, said),
-                           here.Danger ? "RedTx" : "Muted");
+                // The symbol and the word, not the symbol alone.
+                //
+                // A verb drawn as a shape with its name on a tooltip is a verb nobody reads
+                // before pressing it, and this bar carries a delete. It was symbols on the
+                // reasoning that twelve one-word buttons is a wall of text; the answer to twelve
+                // verbs is fewer verbs, not unreadable ones.
+                var words = Worded(here.Caption, 0);
 
-                // A destructive verb reads as destructive whether or not it can be drawn. This
-                // applied the danger style only to the worded ones, which left every delete that
-                // has a symbol - which is all of them - in the same grey as the verb beside it.
+                var button = here.Primary
+                    ? Primary(words, () => Verb(here, table, said))
+                    : Quiet(words, () => Verb(here, table, said));
+
+                if (glyph != null)
+                {
+                    var face = new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        VerticalAlignment = VerticalAlignment.Center,
+                    };
+
+                    face.Children.Add(Glyph(glyph, 13, here.Danger ? "RedTx" : "Muted",
+                                            new Thickness(0, 0, 6, 0)));
+
+                    var caption = new TextBlock
+                    {
+                        Text = words,
+                        VerticalAlignment = VerticalAlignment.Center,
+                    };
+
+                    if (here.Danger) caption.Tint(TextBlock.ForegroundProperty, "RedTx");
+
+                    face.Children.Add(caption);
+
+                    button.Content = face;
+                }
+
+                // A destructive verb reads as destructive whether or not it carries a symbol.
                 if (here.Danger && glyph == null) button.Wearing("DangerBtn");
 
-                // A worded button carries its own padding; a symbol needs the room put around it,
-                // for the same reason Icon does. A danger verb gets a wider left gap either way,
-                // so the press before it is not adjacent to the one that deletes.
-                var before = here.Danger ? Gap * 2 : glyph == null ? Gap : 3;
-
-                button.Margin = new Thickness(before, 2, glyph == null ? 0 : 3, 2);
+                // A wider left gap before a danger verb, so the press before it is not adjacent
+                // to the one that deletes.
+                button.Margin = new Thickness(here.Danger ? Gap * 2 : Gap, 2, 0, 2);
                 button.VerticalAlignment = VerticalAlignment.Center;
                 button.Tag = here.Caption;
 
