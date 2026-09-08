@@ -166,6 +166,29 @@ namespace CamelWorks.UI.Views
             DockPanel.SetDock(tally, Dock.Right);
             line.Children.Add(tally);
 
+            // The chevron says the band folds, and which way it is. Bound to the toggle the
+            // band sits inside, so it turns when the band does.
+            var chevron = Ui.Glyph(Glyphs.Down, 11, "Muted", new Thickness(0, 0, 6, 0));
+
+            chevron.SetBinding(UIElement.VisibilityProperty, new Binding("IsChecked")
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor,
+                                                    typeof(ToggleButton), 1),
+                Converter = new Folded(false),
+            });
+
+            var closed = Ui.Glyph(Glyphs.Right, 11, "Muted", new Thickness(0, 0, 6, 0));
+
+            closed.SetBinding(UIElement.VisibilityProperty, new Binding("IsChecked")
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor,
+                                                    typeof(ToggleButton), 1),
+                Converter = new Folded(true),
+            });
+
+            line.Children.Add(chevron);
+            line.Children.Add(closed);
+
             line.Children.Add(Ui.Glyph(Glyphs.Folder, 13, "Muted", new Thickness(0, 0, 7, 0)));
 
             var name = new TextBlock
@@ -190,6 +213,34 @@ namespace CamelWorks.UI.Views
             band.Tint(Border.BorderBrushProperty, "Bd");
 
             return band;
+        }
+
+        /// <inheritdoc />
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
+            Binding.DoNothing;
+    }
+
+    /// <summary>
+    /// Whether one of the band's two chevrons is the one to draw.
+    ///
+    /// Two glyphs, one shown at a time, rather than one glyph rotated: the chevrons in this
+    /// product are separate paths and a rotation would be the only place a symbol is made by
+    /// transforming another.
+    /// </summary>
+    internal sealed class Folded : IValueConverter
+    {
+        /// <summary>Say which of the two this is.</summary>
+        /// <param name="whenShut">True for the chevron shown while the band is closed.</param>
+        internal Folded(bool whenShut) => _whenShut = whenShut;
+
+        private readonly bool _whenShut;
+
+        /// <inheritdoc />
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            var open = value as bool? ?? true;
+
+            return open != _whenShut ? Visibility.Visible : Visibility.Collapsed;
         }
 
         /// <inheritdoc />
@@ -4207,14 +4258,61 @@ namespace CamelWorks.UI.Views
             // six hundred tests is a list that has to stay virtualised.
             VirtualizingPanel.SetIsVirtualizingWhenGrouping(table, true);
 
-            var head = new FrameworkElementFactory(typeof(ContentPresenter));
+            // The band, as a toggle carrying the header, with the rows under it.
+            //
+            // A GroupStyle header alone is a strip that cannot be pressed: a project with a
+            // hundred and sixty tests in a dozen folders had no way to put a folder away, so
+            // finding the one being worked meant scrolling past every other. The band is a
+            // ToggleButton with no chrome of its own - it draws exactly the header it drew
+            // before, plus the chevron - and the rows fold when it is off.
+            var band = new FrameworkElementFactory(typeof(System.Windows.Controls.Primitives.ToggleButton));
 
-            head.SetBinding(ContentPresenter.ContentProperty,
+            band.Name = "band";
+            band.SetValue(System.Windows.Controls.Primitives.ToggleButton.IsCheckedProperty, true);
+            band.SetValue(Control.CursorProperty, Cursors.Hand);
+            band.SetValue(FrameworkElement.FocusVisualStyleProperty, null);
+            band.SetValue(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch);
+
+            band.SetBinding(ContentControl.ContentProperty,
                             new Binding(".") { Converter = new BandHead() });
+
+            // Its own template, or the platform draws a push button round the band.
+            var bare = new FrameworkElementFactory(typeof(ContentPresenter));
+
+            band.SetValue(Control.TemplateProperty,
+                          new ControlTemplate(typeof(System.Windows.Controls.Primitives.ToggleButton))
+                          {
+                              VisualTree = bare,
+                          });
+
+            var rows = new FrameworkElementFactory(typeof(ItemsPresenter));
+
+            rows.Name = "rows";
+
+            var whole = new FrameworkElementFactory(typeof(StackPanel));
+
+            whole.AppendChild(band);
+            whole.AppendChild(rows);
+
+            var shape = new ControlTemplate(typeof(GroupItem)) { VisualTree = whole };
+
+            shape.Triggers.Add(new Trigger
+            {
+                SourceName = "band",
+                Property = System.Windows.Controls.Primitives.ToggleButton.IsCheckedProperty,
+                Value = false,
+                Setters =
+                {
+                    new Setter(UIElement.VisibilityProperty, Visibility.Collapsed, "rows"),
+                },
+            });
 
             table.GroupStyle.Add(new GroupStyle
             {
-                HeaderTemplate = new DataTemplate { VisualTree = head },
+                ContainerStyle = new Style(typeof(GroupItem))
+                {
+                    Setters = { new Setter(Control.TemplateProperty, shape) },
+                },
             });
 
             return table;
