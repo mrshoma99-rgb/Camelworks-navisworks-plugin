@@ -239,9 +239,15 @@ namespace CamelWorks.UI.Views
         /// a board of results being read — gets the whole window for it, and the pane comes back
         /// when the reader wants to choose something else.
         /// </param>
+        /// <param name="onFolder">
+        /// Handed a way to fold the left pane away and bring it back, for a screen with a control
+        /// that does that. Without it the pane's state is settled when the split is built, and
+        /// the only way to change it is to build the screen again.
+        /// </param>
         public static UIElement Split(UIElement? strip, UIElement left, UIElement right,
                                       UIElement? foot, double leftWidth = 380,
-                                      bool leftShut = false)
+                                      bool leftShut = false,
+                                      Action<Action<bool>>? onFolder = null)
         {
             if (left == null) throw new ArgumentNullException(nameof(left));
             if (right == null) throw new ArgumentNullException(nameof(right));
@@ -308,6 +314,20 @@ namespace CamelWorks.UI.Views
 
             Grid.SetColumn(grip, 1);
             body.Children.Add(grip);
+
+            // The same three moves the build above makes, as something the screen can call. The
+            // fold used to be done by asking the shell to show the tab again, which does nothing
+            // when the tab is already the one on screen - so the button did nothing.
+            onFolder?.Invoke(shut =>
+            {
+                body.ColumnDefinitions[0].Width = new GridLength(shut ? 0 : leftWidth);
+                body.ColumnDefinitions[0].MinWidth = shut ? 0 : 220;
+
+                if (left is FrameworkElement one)
+                    one.Visibility = shut ? Visibility.Collapsed : Visibility.Visible;
+
+                grip.Visibility = shut ? Visibility.Collapsed : Visibility.Visible;
+            });
 
             Grid.SetColumn(right, 2);
             body.Children.Add(right);

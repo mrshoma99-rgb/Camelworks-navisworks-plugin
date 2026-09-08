@@ -1453,7 +1453,7 @@ namespace CamelWorks.UI.Views
                 Redraw();
 
                 var tab = Bench.Split(null, Rail(), BoardPane(), Footer(read), RailWidth,
-                                      State.RailShut);
+                                      State.RailShut, fold => _fold = fold);
 
                 // Called after the footer is built, since it dresses the buttons created there.
                 //
@@ -3116,8 +3116,10 @@ namespace CamelWorks.UI.Views
                 // The funnel, which is what the rail's own filter uses. It was the tuning
                 // symbol, which is also what "this test's source and tolerance" a few pixels
                 // along uses - two different things behind one picture.
-                _view.Content = Parts.MoreMenu(Glyphs.Filter, WhatIsShown(entry),
-                                               TableMenu(entry), on: Filtering || InAnOrder);
+                _view.Content = Parts.MenuButton("Filter", Glyphs.Filter, TableMenu(entry),
+                                                 up: false, on: Filtering || InAnOrder);
+
+                _view.ToolTip = WhatIsShown(entry);
 
 
                 return true;
@@ -3442,14 +3444,13 @@ namespace CamelWorks.UI.Views
                     VerticalAlignment = VerticalAlignment.Center,
                 };
 
+                // Words, not pictures. This row was a play triangle, a funnel and a slider, and
+                // the only thing that said what any of them did was a tooltip - on the row a
+                // coordinator uses more than any other on the tab. A symbol and one word each.
                 if (Check?.Runner != null)
-                    verbs.Children.Add(Ui.Icon(Glyphs.Play, "Run this test",
-                        () => RunTests(One(entry), _log)));
+                    verbs.Children.Add(Ui.Loose(Parts.WordedButton("Run", Glyphs.Play,
+                        () => RunTests(One(entry), _log))));
 
-                // Up here with the rest of the controls that open something, rather than beside
-                // the search box where it read as a button that did something to the board.
-                // One control, not two.
-                //
                 // Sorting, narrowing and banding were a sort symbol and a filter symbol side by
                 // side, and which of the three a thing lived under was a rule nobody could learn:
                 // "band the rows by" was under sort, "what the columns say" was under filter, and
@@ -3458,12 +3459,10 @@ namespace CamelWorks.UI.Views
                 // one menu, and it says the whole answer in its tooltip.
                 verbs.Children.Add(Ui.Loose(_view));
 
-                // Two symbols became one menu with two words in it. They opened the two halves
-                // of the same window - which columns show, and where the results come from - and
-                // as pictures they said neither: a grid and a slider beside a play and a funnel
-                // is four drawings and no sentence. The controls used continuously keep their
-                // place on the row; setting the board up is not one of them.
-                verbs.Children.Add(Parts.MoreMenu(Glyphs.Tune, "Set this board up",
+                // Two symbols became one menu. They opened the two halves of the same window -
+                // which columns show, and where the results come from - and as pictures they
+                // said neither.
+                verbs.Children.Add(Ui.Loose(Parts.MenuButton("Settings", Glyphs.Tune,
                     new List<Parts.Entry>
                     {
                         Parts.Entry.Heading("Set this board up"),
@@ -3471,7 +3470,7 @@ namespace CamelWorks.UI.Views
                                         () => Configure("columns")),
                         Parts.Entry.Act("Where the results come from", Glyphs.Tune,
                                         () => Configure("source")),
-                    }));
+                    }, up: false)));
 
                 DockPanel.SetDock(verbs, Dock.Right);
                 row.Children.Add(verbs);
@@ -3577,7 +3576,14 @@ namespace CamelWorks.UI.Views
                                       () =>
                                       {
                                           State.RailShut = !State.RailShut;
-                                          Ui.Told(Shell.AppWindow.Show("clash", "manage"));
+
+                                          // The pane itself, and then this row again so the
+                                          // chevron turns round. It used to ask the shell to
+                                          // show the tab again, which does nothing when that tab
+                                          // is already the one on screen - so the button did
+                                          // nothing at all.
+                                          _fold?.Invoke(State.RailShut);
+                                          RedrawBoardHead();
                                       });
 
                 folding.VerticalAlignment = VerticalAlignment.Bottom;
@@ -6260,6 +6266,9 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private string? _reading;
 
+            /// <summary>Folds the test list away and brings it back, once the split is built.</summary>
+            private Action<bool>? _fold;
+
             /// <summary>The three verbs on a row, and the menu holding the rest.</summary>
             /// <param name="row">What the verbs act on.</param>
             private FrameworkElement Verbs(BoardRow row)
@@ -7633,11 +7642,17 @@ namespace CamelWorks.UI.Views
                 Engine.IsAvailable
                     ? Options("Results",
                         Ui.Field("Read from",
-                            Ui.Segmented(new[] { FromModel, FromFile }, _source, pick =>
-                            {
-                                _source = pick;
-                                Ui.Told(Shell.AppWindow.Show("clash", "manage"));
-                            }),
+                            // Nothing here rebuilds the app. This field lives inside a modal
+                            // window whose owner is the app window, and asking the shell to show
+                            // that window again from in here put it in front of a dialogue that
+                            // was still modal: the settings window went behind the app, the app
+                            // stayed disabled behind the modal it could not reach, and the tab
+                            // took no further input.
+                            //
+                            // The rail, the board and the footer are all drawn again when this
+                            // window closes, which is what Configure's own callback is for.
+                            Ui.Segmented(new[] { FromModel, FromFile }, _source,
+                                         pick => _source = pick),
                             "the model's own clash data, or an exported baseline"),
                         Ui.Small("Read from the model and every change is written into the "
                                  + "model's clash data. Read from a file and the same verbs mark "

@@ -962,7 +962,49 @@ namespace CamelWorks.UI.Views
         /// <param name="label">What the button says.</param>
         /// <param name="glyph">One of <see cref="Glyphs"/>, in front of the words.</param>
         /// <param name="items">The lines, in reading order.</param>
-        public static UIElement MenuButton(string label, string glyph, IReadOnlyList<Entry> items)
+        /// <param name="up">True to open above the button, for one standing in a footer.</param>
+        /// <param name="on">True when what it opens is doing something, so it says so.</param>
+        public static UIElement MenuButton(string label, string glyph, IReadOnlyList<Entry> items,
+                                           bool up = true, bool on = false)
+        {
+            var button = Worded(label, glyph, up ? Glyphs.Up : Glyphs.Down, on);
+
+            Opens(button, Floating(Menu(items, true), 260),
+                  up ? PlacementMode.Top : PlacementMode.Bottom);
+
+            return button;
+        }
+
+        /// <summary>
+        /// One worded button that does something, rather than opening a list of somethings.
+        ///
+        /// The same chrome as <see cref="MenuButton"/> and no chevron, so a row holding both
+        /// reads as one row of buttons: a symbol, a word, and whether it opens.
+        /// </summary>
+        /// <param name="label">What the button says.</param>
+        /// <param name="glyph">One of <see cref="Glyphs"/>, in front of the words.</param>
+        /// <param name="onClick">What pressing it does.</param>
+        public static UIElement WordedButton(string label, string glyph, Action onClick)
+        {
+            var button = Worded(label, glyph, null, false);
+
+            button.MouseLeftButtonUp += (s, e) =>
+            {
+                e.Handled = true;
+                Ui.Safely(onClick);
+            };
+
+            return button;
+        }
+
+        /// <summary>
+        /// The plate a worded button is drawn on: symbol, word, and a chevron where it opens.
+        /// </summary>
+        /// <param name="label">What it says.</param>
+        /// <param name="glyph">The symbol in front of the words.</param>
+        /// <param name="chevron">The chevron after them, or null for a button that acts.</param>
+        /// <param name="on">True to draw it as doing something.</param>
+        private static Border Worded(string label, string glyph, string? chevron, bool on)
         {
             var row = new StackPanel
             {
@@ -970,7 +1012,7 @@ namespace CamelWorks.UI.Views
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
-            row.Children.Add(Ui.Glyph(glyph, 13, "Muted", new Thickness(0, 0, 7, 0)));
+            row.Children.Add(Ui.Glyph(glyph, 13, on ? "Accent" : "Muted", new Thickness(0, 0, 7, 0)));
 
             var caption = new TextBlock
             {
@@ -979,9 +1021,11 @@ namespace CamelWorks.UI.Views
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
-            caption.Tint(TextBlock.ForegroundProperty, "Text");
+            caption.Tint(TextBlock.ForegroundProperty, on ? "Accent" : "Text");
             row.Children.Add(caption);
-            row.Children.Add(Ui.Glyph(Glyphs.Up, 11, "Muted", new Thickness(7, 0, 0, 0)));
+
+            if (chevron != null)
+                row.Children.Add(Ui.Glyph(chevron, 11, "Muted", new Thickness(7, 0, 0, 0)));
 
             var button = new Border
             {
@@ -994,12 +1038,11 @@ namespace CamelWorks.UI.Views
             };
 
             button.Tint(Border.BackgroundProperty, "Card2");
-            button.Tint(Border.BorderBrushProperty, "FieldBd");
+            button.Tint(Border.BorderBrushProperty, on ? "Accent" : "FieldBd");
 
             button.MouseEnter += (s, e) => button.Tint(Border.BorderBrushProperty, "Accent");
-            button.MouseLeave += (s, e) => button.Tint(Border.BorderBrushProperty, "FieldBd");
-
-            Opens(button, Floating(Menu(items, true), 260), PlacementMode.Top);
+            button.MouseLeave += (s, e) =>
+                button.Tint(Border.BorderBrushProperty, on ? "Accent" : "FieldBd");
 
             return button;
         }
