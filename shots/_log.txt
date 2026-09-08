@@ -1,0 +1,8 @@
+skin loaded: 108 styles and resources
+drawing 2 of 51 pages, light
+  app-clash-report-1180.png: desired 1180x397 into 1180x398
+wrote app-clash-report-1180.png
+  app-clash-report-board-1180.png: desired 1180x580 into 1180x580
+wrote app-clash-report-board-1180.png
+2 images in D:\a\Camelworks-navisworks-plugin\Camelworks-navisworks-plugin\shots
+layout clean: nothing cut off, nothing overlapping
