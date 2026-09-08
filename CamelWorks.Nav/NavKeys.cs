@@ -30,7 +30,7 @@ namespace CamelWorks.Nav
         /// Main thread only, like everything else here.
         /// </summary>
         /// <param name="model">The model.</param>
-        public static string ScopeOf(Model model)
+        public static string ScopeOf(Model? model)
         {
             if (model == null) return ElementKey.ScopeOf(null);
 
@@ -61,7 +61,7 @@ namespace CamelWorks.Nav
         /// original CAD path in the former and the cache path in the latter, and a key scoped to a
         /// cache path changes the moment somebody re-caches.
         /// </summary>
-        public static string? SourcePathOf(Model model)
+        public static string? SourcePathOf(Model? model)
         {
             if (model == null) return null;
 
@@ -74,7 +74,7 @@ namespace CamelWorks.Nav
         {
             if (item == null) throw new ArgumentNullException(nameof(item));
 
-            var model = item.Model;
+            var model = ModelOf(item);
             var scope = ScopeOf(model);
             var path = SourcePathOf(model);
 
@@ -85,17 +85,63 @@ namespace CamelWorks.Nav
 
             // Rung 2. The tree path is stable across a re-export that did not restructure the
             // model, which is the common case.
-            var treePath = TreePathOf(item);
-            if (treePath.Count > 0) return ElementKey.FromTreePath(scope, path, ToArray(treePath));
+            //
+            // Only a path the walk finished. A walk the host cut short partway up gives a path
+            // that starts somewhere arbitrary, and two different elements whose walks were cut at
+            // the same depth would key the same - which is a wrong match, and a wrong match is
+            // worse than a weak one. A cut-short walk falls through to rung 3.
+            var treePath = TreePathOf(item, out var whole);
+
+            if (whole && treePath.Count > 0)
+                return ElementKey.FromTreePath(scope, path, ToArray(treePath));
 
             // Rung 3. Weak by construction and says so: this cannot separate two identical parts,
             // and a match on it is a proposal rather than a fact.
             var bounds = BoundsOf(item);
+
             return ElementKey.FromGeometry(
                 scope,
-                item.ClassDisplayName ?? item.ClassName,
-                item.DisplayName,
+                Said(() => item.ClassDisplayName) ?? Said(() => item.ClassName),
+                Said(() => item.DisplayName),
                 bounds.SizeX, bounds.SizeY, bounds.SizeZ);
+        }
+
+        /// <summary>
+        /// The model an item belongs to, or null when the host will not say.
+        ///
+        /// Guarded, like every other property read here. This one was not, and it is the property
+        /// a clash result's composite item is least likely to answer: the caller in the clash
+        /// adapter treats any throw as "this element cannot be keyed" and drops the whole result,
+        /// so one unguarded read here took eighteen thousand clashes off a board and left a note
+        /// saying they could not be identified.
+        /// </summary>
+        /// <param name="item">The item.</param>
+        public static Model? ModelOf(ModelItem item)
+        {
+            try
+            {
+                return item.Model;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>One string the host may refuse to give, or null when it does.</summary>
+        /// <param name="read">How to read it.</param>
+        private static string? Said(Func<string?> read)
+        {
+            try
+            {
+                var said = read();
+
+                return string.IsNullOrEmpty(said) ? null : said;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
 
         /// <summary>
@@ -117,17 +163,41 @@ namespace CamelWorks.Nav
         }
 
         /// <summary>Display names from the model root down to this item.</summary>
-        public static IReadOnlyList<string> TreePathOf(ModelItem item)
+        public static IReadOnlyList<string> TreePathOf(ModelItem item) =>
+            TreePathOf(item, out _);
+
+        /// <summary>
+        /// Display names from the model root down to this item, saying whether it reached the root.
+        /// </summary>
+        /// <param name="item">The item.</param>
+        /// <param name="whole">True when the walk reached the top rather than being cut short.</param>
+        public static IReadOnlyList<string> TreePathOf(ModelItem item, out bool whole)
         {
             var path = new List<string>();
 
-            for (var node = item; node != null; node = node.Parent)
+            whole = false;
+
+            try
             {
-                var name = node.DisplayName;
-                path.Add(string.IsNullOrEmpty(name) ? node.ClassDisplayName ?? string.Empty : name);
+                for (var node = item; node != null; node = node.Parent)
+                {
+                    var name = node.DisplayName;
+
+                    path.Add(string.IsNullOrEmpty(name)
+                        ? node.ClassDisplayName ?? string.Empty
+                        : name);
+                }
+
+                whole = true;
+            }
+            catch (Exception)
+            {
+                // Whatever the walk reached, with the flag left false. The host refuses on some
+                // node kinds, and a partial path is not an identity - see the caller.
             }
 
             path.Reverse();
+
             return path;
         }
 

@@ -3164,6 +3164,8 @@ namespace CamelWorks.UI.Views
 
                 foreach (var section in Sections()) _shape.Children.Add(Say("— " + section));
 
+                _shape.Children.Add(Listed(groups));
+
                 if (_perParty)
                 {
                     _shape.Children.Add(Say(Ui.Count(parties + (unowned > 0 ? 1 : 0), "file")
@@ -3186,6 +3188,48 @@ namespace CamelWorks.UI.Views
                 }
 
                 History(session);
+            }
+
+            /// <summary>
+            /// The issues this document will carry, one line each.
+            ///
+            /// The tab said how many issues and how many clashes and then nothing about which,
+            /// so the only way to find out what was going to a party was to write the file and
+            /// open it. Four counts and a revision line are a description of a document; this is
+            /// the document's contents.
+            ///
+            /// Capped, because a board can hold hundreds and this is a preview on a set-up panel
+            /// rather than the register. The board itself is the place to work them.
+            /// </summary>
+            /// <param name="groups">The issues the recipient and the filters leave.</param>
+            private static UIElement Listed(IReadOnlyList<ClashGroup> groups)
+            {
+                const int Most = 40;
+
+                var rows = new List<TableRow>();
+
+                foreach (var group in groups.Take(Most))
+                {
+                    rows.Add(new TableRow(group, group.Name,
+                                          group.AssignedTo ?? "Unassigned",
+                                          group.Priority ?? string.Empty,
+                                          Ui.Count(group.Items.Count, "clash"))
+                    {
+                        Tone = group.AssignedTo == null ? Tone.Warn : Tone.Plain,
+                    });
+                }
+
+                var table = Ui.Table(rows,
+                                     ("Issue", 0), ("Party", 130),
+                                     ("Priority", 90), ("Clashes", 80));
+
+                var held = Ui.Stack(Title("What goes in it"), table);
+
+                if (groups.Count > Most)
+                    held.Children.Add(Say("The first " + Most + " of "
+                        + Ui.Count(groups.Count, "issue") + ". All of them are written."));
+
+                return held;
             }
 
             /// <summary>
