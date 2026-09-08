@@ -247,10 +247,20 @@ namespace CamelWorks.UI.Views
                     side.Keys = keys.ToList();
 
                     held.Children.Add(Ui.Small(keys.Count == 0
-                        ? "Nothing is selected in Navisworks. Select the elements this side is "
-                          + "about, then come back to this line."
-                        : Ui.Count(keys.Count, "element") + ", as selected now. A saved set is "
-                          + "re-read every time the test runs; this list is not."));
+                        ? "Nothing was selected in Navisworks when this was read. Select the "
+                          + "elements this side is about, then press Read the selection."
+                        : Ui.Count(keys.Count, "element") + ", as selected when this was read. A "
+                          + "saved set is re-read every time the test runs; this list is not."));
+
+                    // The way to read it again.
+                    //
+                    // The selection is read once, while this line is being drawn. Going to
+                    // Navisworks and selecting something changes nothing here, because nothing
+                    // asks again - so a side set to "What is selected" said nothing was selected
+                    // however much was, and the only way to get a different answer was to switch
+                    // the line to something else and back. That is the whole of "it doesn't see
+                    // the Navisworks selection".
+                    held.Children.Add(Ui.Link("Read the selection", () => Ui.Safely(Redraw)));
 
                     return Framed(held, blocked);
                 }
@@ -403,7 +413,19 @@ namespace CamelWorks.UI.Views
 
                 if (string.Equals(side.From, FromModels, StringComparison.Ordinal))
                 {
-                    var scopes = _seat.ModelNames().Where(side.Has).ToList();
+                    // The scope of each model ticked, not its name.
+                    //
+                    // ClashSide.Models is written in scopes - the host matches them against the
+                    // scope of each loaded model, which is a hash of the file it came from - and
+                    // this handed it the names off the list instead. A name never equals a hash,
+                    // so a test with a whole-models side was refused with "None of the models
+                    // this test is about are loaded any more", on a document where all of them
+                    // were. Whole models could not be used at all.
+                    var scopes = _seat.Loaded()
+                        .Where(one => side.Has(one.Name))
+                        .Select(one => one.Scope)
+                        .Where(one => one.Length > 0)
+                        .ToList();
 
                     return scopes.Count == 0 ? null : ClashSide.Models(scopes);
                 }

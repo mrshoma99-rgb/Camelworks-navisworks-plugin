@@ -12,6 +12,25 @@ using CamelWorks.Core.Testing;
 namespace CamelWorks.UI.Views
 {
     /// <summary>One saved set, as a screen needs to read it: what it is called and what it holds.</summary>
+    /// <summary>One loaded model: what it is called, and what it is keyed by.</summary>
+    public sealed class SeatModel
+    {
+        /// <summary>Describe one.</summary>
+        /// <param name="name">What it shows as.</param>
+        /// <param name="scope">The scope it is keyed by, as IModelSource.Scope gives it.</param>
+        public SeatModel(string name, string scope)
+        {
+            Name = name ?? string.Empty;
+            Scope = scope ?? string.Empty;
+        }
+
+        /// <summary>What it shows as.</summary>
+        public string Name { get; }
+
+        /// <summary>The scope it is keyed by. Not the name, and never shown.</summary>
+        public string Scope { get; }
+    }
+
     public sealed class SeatSet
     {
         /// <summary>Describe one.</summary>
@@ -113,6 +132,16 @@ namespace CamelWorks.UI.Views
         /// <summary>The names of the models loaded, in the order they were appended.</summary>
         IReadOnlyList<string> Models();
 
+        /// <summary>
+        /// The models loaded, with the scope each is known by as well as the name it shows.
+        ///
+        /// Both, because they are not the same string and the difference is load-bearing: a
+        /// model's scope is a hash of the file it came from, and a clash test's whole-models side
+        /// is written in scopes. A screen that offers names and hands them on as scopes builds a
+        /// test the host then cannot resolve, which is what the Create tab did.
+        /// </summary>
+        IReadOnlyList<SeatModel> LoadedModels();
+
         /// <summary>The keys of whatever is selected in the host right now.</summary>
         IReadOnlyList<ElementKey> Selected();
 
@@ -195,6 +224,9 @@ namespace CamelWorks.UI.Views
         public IReadOnlyList<string> Models() => Array.Empty<string>();
 
         /// <inheritdoc />
+        public IReadOnlyList<SeatModel> LoadedModels() => Array.Empty<SeatModel>();
+
+        /// <inheritdoc />
         public IReadOnlyList<ElementKey> Selected() => Array.Empty<ElementKey>();
 
         /// <inheritdoc />
@@ -244,6 +276,11 @@ namespace CamelWorks.UI.Views
         /// <param name="seat">The seat.</param>
         public static IReadOnlyList<string> ModelNames(this ISeat seat) =>
             Ui.Listed(Offer(() => seat.Models()));
+
+        /// <summary>Every loaded model, with the scope each is keyed by.</summary>
+        /// <param name="seat">The seat.</param>
+        public static IReadOnlyList<SeatModel> Loaded(this ISeat seat) =>
+            Offer(() => seat.LoadedModels());
 
         /// <summary>
         /// The folders a check's tests are filed in, once each, in order.

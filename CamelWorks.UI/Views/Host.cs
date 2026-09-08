@@ -117,6 +117,18 @@ namespace CamelWorks.UI.Views
         }
 
         /// <inheritdoc />
+        public IReadOnlyList<SeatModel> LoadedModels()
+        {
+            var found = new List<SeatModel>();
+
+            foreach (var one in Model.Models)
+                if (!string.IsNullOrWhiteSpace(one.DisplayName))
+                    found.Add(new SeatModel(one.DisplayName, one.Scope));
+
+            return found;
+        }
+
+        /// <inheritdoc />
         public IReadOnlyList<ElementKey> Selected()
         {
             var keys = new List<ElementKey>();
