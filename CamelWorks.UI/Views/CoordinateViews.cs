@@ -3312,7 +3312,11 @@ namespace CamelWorks.UI.Views
                     Counted();
                 });
 
-                return Ui.Stack(Title("What goes in it"), Narrowing(board), table, _tally);
+                // The bar the rest of the product puts under a table that is picked from: the
+                // count and All/None. Without it the ticking was a multi-select nothing on the
+                // screen mentioned, on the one table whose whole purpose is choosing.
+                return Ui.Stack(Title("What goes in it"), Narrowing(board),
+                                Ui.Picking(table), _tally);
             }
 
             /// <summary>What the ticks and the filters have left, under the table.</summary>
