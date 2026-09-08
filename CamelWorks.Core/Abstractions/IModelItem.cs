@@ -64,6 +64,17 @@ namespace CamelWorks.Core.Abstractions
         /// </summary>
         IModelItem? Parent { get; }
 
+        /// <summary>
+        /// The elements one step down the tree, in the host's own order.
+        ///
+        /// One level, read when it is asked for. A picker that offers the selection tree walks it
+        /// a node at a time as branches are opened, which is what the host itself does; reading
+        /// the whole tree to draw its first level is a federation traversal for a list of six.
+        ///
+        /// Empty at a leaf, and empty rather than throwing for a node the host will not open.
+        /// </summary>
+        IReadOnlyList<IModelItem> Children { get; }
+
         /// <summary>True when this element carries geometry, as opposed to being a grouping node.</summary>
         bool HasGeometry { get; }
 

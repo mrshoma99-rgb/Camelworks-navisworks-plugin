@@ -7,6 +7,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
+using CamelWorks.Core.Identity;
 
 namespace CamelWorks.UI.Views
 {
@@ -1539,6 +1540,149 @@ namespace CamelWorks.UI.Views
 
         /// <summary>How tall a ticked list grows before it scrolls.</summary>
         private const double TickedHeight = 190;
+
+        /// <summary>
+        /// The host's selection tree, ticked, read one level at a time.
+        ///
+        /// The answer to a published federation: the list of loaded models is one line however
+        /// many disciplines the file holds, and everything a coordinator would scope a run to is
+        /// under that line. Ticking a node takes it and everything below it.
+        ///
+        /// Levels are asked for as branches are opened, never up front. Reading a federation's
+        /// whole tree to draw its first six lines is a traversal of millions of items for a list
+        /// nobody has looked at.
+        /// </summary>
+        /// <param name="level">What sits under a node; the empty key asks for the models.</param>
+        /// <param name="picked">Whether a node is ticked.</param>
+        /// <param name="onPicked">Tick or untick a node.</param>
+        /// <param name="empty">What to say when the document offers no tree.</param>
+        /// <param name="onCleared">Untick everything, or null for no Clear link.</param>
+        public static UIElement Branching(Func<ElementKey, IReadOnlyList<SeatNode>> level,
+                                          Func<ElementKey, bool> picked,
+                                          Action<SeatNode, bool> onPicked,
+                                          string empty,
+                                          Action? onCleared = null)
+        {
+            if (level == null) throw new ArgumentNullException(nameof(level));
+            if (picked == null) throw new ArgumentNullException(nameof(picked));
+            if (onPicked == null) throw new ArgumentNullException(nameof(onPicked));
+
+            var held = Ui.Stack();
+            var list = Ui.Stack();
+
+            var opened = new HashSet<ElementKey>();
+
+            // A ceiling on what one draw puts on screen. A model tree can hold a hundred thousand
+            // nodes under one branch, and a picker that draws them all stops being a picker.
+            const int Most = 500;
+
+            void Fill()
+            {
+                list.Children.Clear();
+
+                var drawn = 0;
+                var roots = level(default);
+
+                if (roots.Count == 0)
+                {
+                    list.Children.Add(Ui.Small(empty));
+                    return;
+                }
+
+                void Draw(IReadOnlyList<SeatNode> nodes, int depth)
+                {
+                    foreach (var node in nodes)
+                    {
+                        if (drawn >= Most) return;
+
+                        drawn++;
+
+                        var one = node;
+                        var row = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 1, 0, 1) };
+
+                        var indent = new Border { Width = depth * 14 };
+
+                        DockPanel.SetDock(indent, Dock.Left);
+                        row.Children.Add(indent);
+
+                        if (one.Branches)
+                        {
+                            var open = opened.Contains(one.Key);
+
+                            var chevron = Ui.Icon(open ? Glyphs.Down : Glyphs.Right,
+                                                  open ? "Close this branch" : "Open this branch",
+                                                  () =>
+                                                  {
+                                                      if (!opened.Add(one.Key)) opened.Remove(one.Key);
+
+                                                      Fill();
+                                                  });
+
+                            chevron.Margin = new Thickness(0, 0, 2, 0);
+
+                            DockPanel.SetDock(chevron, Dock.Left);
+                            row.Children.Add(chevron);
+                        }
+                        else
+                        {
+                            // A leaf keeps the chevron's width, so the ticks down one level line
+                            // up with each other rather than stepping in and out.
+                            var gap = new Border { Width = 22 };
+
+                            DockPanel.SetDock(gap, Dock.Left);
+                            row.Children.Add(gap);
+                        }
+
+                        var tick = Ui.Check(one.Name, picked(one.Key),
+                                            on => Ui.Safely(() => { onPicked(one, on); Fill(); }));
+
+                        tick.ToolTip = one.Branches
+                            ? one.Name + " and everything under it"
+                            : one.Name;
+
+                        row.Children.Add(tick);
+
+                        list.Children.Add(row);
+
+                        if (one.Branches && opened.Contains(one.Key)) Draw(level(one.Key), depth + 1);
+                    }
+                }
+
+                Draw(roots, 0);
+
+                if (drawn >= Most)
+                    list.Children.Add(Ui.Small("Only the first " + Most + " lines are drawn. Close "
+                                               + "a branch, or tick the level above."));
+            }
+
+            Fill();
+
+            if (onCleared != null)
+            {
+                var bar = new DockPanel { LastChildFill = false };
+
+                var clear = Ui.Link("Clear", () => Ui.Safely(() => { onCleared(); Fill(); }));
+
+                DockPanel.SetDock(clear, Dock.Right);
+                bar.Children.Add(clear);
+
+                held.Children.Add(bar);
+            }
+
+            var scroller = new ScrollViewer
+            {
+                MaxHeight = TickedHeight,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = Ui.Loose(list),
+            };
+
+            Ui.WheelThrough(scroller);
+
+            held.Children.Add(scroller);
+
+            return held;
+        }
 
         /// <summary>
         /// Several things chosen out of a list, with a box that narrows it.

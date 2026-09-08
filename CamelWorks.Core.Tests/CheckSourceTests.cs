@@ -212,5 +212,97 @@ namespace CamelWorks.Core.Tests
             Assert.Equal("A, B and 2 more",
                          CheckSource.Sets("A", "B", "C", "D").Said());
         }
+
+        [Fact]
+        public void A_tree_branch_reads_everything_under_it()
+        {
+            var document = new FakeDocument();
+            var model = document.AddModel("Federation.nwd", "C:/models/federation.nwd");
+
+            var structure = document.AddItem(model, "Structure", hasGeometry: false);
+            var services = document.AddItem(model, "Services", hasGeometry: false);
+
+            var slab = document.AddItem(model, "Slab");
+            var beam = document.AddItem(model, "Beam");
+            var duct = document.AddItem(model, "Duct");
+
+            slab.Above = structure;
+            beam.Above = structure;
+            duct.Above = services;
+
+            var read = CheckSource.Branches(new[] { structure.Key }).Items(document).ToList();
+
+            Assert.Equal(new[] { slab.Key, beam.Key }, read.Select(one => one.Key));
+        }
+
+        [Fact]
+        public void Two_branches_that_overlap_read_each_element_once()
+        {
+            var document = new FakeDocument();
+            var model = document.AddModel("Federation.nwd", "C:/models/federation.nwd");
+
+            var branch = document.AddItem(model, "Structure", hasGeometry: false);
+            var under = document.AddItem(model, "Level 03", hasGeometry: false);
+            var slab = document.AddItem(model, "Slab");
+
+            under.Above = branch;
+            slab.Above = under;
+
+            var read = CheckSource.Branches(new[] { branch.Key, under.Key })
+                                  .Items(document).ToList();
+
+            Assert.Equal(new[] { slab.Key }, read.Select(one => one.Key));
+        }
+
+        [Fact]
+        public void A_branch_the_document_no_longer_holds_is_skipped()
+        {
+            var document = new FakeDocument();
+            var model = document.AddModel("Federation.nwd", "C:/models/federation.nwd");
+
+            var branch = document.AddItem(model, "Structure", hasGeometry: false);
+            var slab = document.AddItem(model, "Slab");
+
+            slab.Above = branch;
+
+            var gone = ElementKey.FromTreePath(ElementKey.ScopeOf("C:/models/federation.nwd"),
+                                               "C:/models/federation.nwd", "Federation", "Gone");
+
+            var read = CheckSource.Branches(new[] { gone, branch.Key }).Items(document).ToList();
+
+            Assert.Equal(new[] { slab.Key }, read.Select(one => one.Key));
+        }
+
+        [Fact]
+        public void Tree_branches_survive_a_write_and_a_read()
+        {
+            var key = ElementKey.FromTreePath(ElementKey.ScopeOf("C:/a.nwc"), "C:/a.nwc",
+                                              "Model", "Structure");
+
+            var source = CheckSource.Branches(new[] { key });
+
+            var again = CheckSource.Read(source.Written());
+
+            Assert.Equal(CheckOrigin.Branches, again.Origin);
+            Assert.Equal(new[] { key }, again.Keys);
+            Assert.False(again.IsEmpty);
+            Assert.True(CheckSource.Branches(new ElementKey[0]).IsEmpty);
+        }
+
+        [Fact]
+        public void The_roots_are_the_elements_with_nothing_above_them()
+        {
+            var document = new FakeDocument();
+            var model = document.AddModel("Federation.nwd", "C:/models/federation.nwd");
+
+            var branch = document.AddItem(model, "Structure", hasGeometry: false);
+            var slab = document.AddItem(model, "Slab");
+
+            slab.Above = branch;
+
+            Assert.Equal(new[] { branch.Key }, document.Roots.Select(one => one.Key));
+            Assert.Equal(new[] { slab.Key }, branch.Children.Select(one => one.Key));
+            Assert.Empty(slab.Children);
+        }
     }
 }

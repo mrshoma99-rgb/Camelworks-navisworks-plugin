@@ -28,6 +28,9 @@ namespace CamelWorks.UI.Views
         /// <summary>What the models origin is called.</summary>
         public const string FromModels = "Whole models";
 
+        /// <summary>What the selection-tree origin is called.</summary>
+        public const string FromTree = "Model tree";
+
         /// <summary>What the selection origin is called.</summary>
         public const string FromSelection = "What is selected";
 
@@ -45,8 +48,15 @@ namespace CamelWorks.UI.Views
             /// <summary>The lines ticked, in the order they were ticked.</summary>
             public List<string> Picked { get; } = new List<string>();
 
-            /// <summary>The elements, when the source is what was selected.</summary>
+            /// <summary>
+            /// The elements, when the source is what was selected, or the nodes when it is
+            /// levels of the model tree.
+            /// </summary>
             public List<ElementKey> Keys { get; set; } = new List<ElementKey>();
+
+            /// <summary>What each key under <see cref="FromTree"/> is called, for the summary.</summary>
+            public Dictionary<string, string> Named { get; } =
+                new Dictionary<string, string>(StringComparer.Ordinal);
 
             /// <summary>Whether a line is ticked.</summary>
             /// <param name="said">The line.</param>
@@ -71,6 +81,7 @@ namespace CamelWorks.UI.Views
             /// <summary>Whether anything at all is on this source.</summary>
             public bool IsEmpty =>
                 string.Equals(From, FromSelection, StringComparison.Ordinal)
+                || string.Equals(From, FromTree, StringComparison.Ordinal)
                     ? Keys.Count == 0
                     : Picked.Count == 0;
         }
@@ -120,6 +131,9 @@ namespace CamelWorks.UI.Views
                 case CheckOrigin.Selection:
                     return new Pick { From = FromSelection, Keys = source.Keys.ToList() };
 
+                case CheckOrigin.Branches:
+                    return new Pick { From = FromTree, Keys = source.Keys.ToList() };
+
                 case CheckOrigin.Models:
                     return Ticked(FromModels, source);
 
@@ -151,6 +165,9 @@ namespace CamelWorks.UI.Views
 
             if (string.Equals(pick.From, FromSelection, StringComparison.Ordinal))
                 return CheckSource.Selection(pick.Keys);
+
+            if (string.Equals(pick.From, FromTree, StringComparison.Ordinal))
+                return CheckSource.Branches(pick.Keys);
 
             return string.Equals(pick.From, FromModels, StringComparison.Ordinal)
                 ? CheckSource.Models(pick.Picked.ToArray())
@@ -209,7 +226,7 @@ namespace CamelWorks.UI.Views
 
             if (!string.IsNullOrEmpty(label)) held.Children.Add(Ui.Eyebrow(label));
 
-            var origins = new List<string> { FromSets, FromModels, FromSelection };
+            var origins = new List<string> { FromSets, FromModels, FromTree, FromSelection };
 
             if (extras != null) origins.AddRange(extras.Select(one => one.Label));
 
@@ -229,6 +246,58 @@ namespace CamelWorks.UI.Views
             if (standing != null)
             {
                 held.Children.Add(Ui.Small(standing.Note));
+
+                return Framed(held, blocked);
+            }
+
+            if (string.Equals(side.From, FromTree, StringComparison.Ordinal))
+            {
+                var told = Ui.Small(string.Empty);
+
+                void Counted()
+                {
+                    told.Text = side.Keys.Count == 0
+                        ? "Nothing picked yet. Tick a level and the run reads everything under it."
+                        : Ui.Count(side.Keys.Count, "part") + " of the tree: "
+                          + string.Join(", ", side.Keys
+                              .Select(key => side.Named.TryGetValue(key.ToString(), out var name)
+                                  ? name
+                                  : "one level")
+                              .Take(4));
+                }
+
+                held.Children.Add(Parts.Branching(
+                    under => Seated.Offer(() => seat.Tree(under)),
+                    key => side.Keys.Contains(key),
+                    (node, on) =>
+                    {
+                        if (on)
+                        {
+                            if (!side.Keys.Contains(node.Key)) side.Keys.Add(node.Key);
+
+                            side.Named[node.Key.ToString()] = node.Name;
+                        }
+                        else
+                        {
+                            side.Keys.Remove(node.Key);
+                            side.Named.Remove(node.Key.ToString());
+                        }
+
+                        Counted();
+                        onChanged();
+                    },
+                    "This seat will not offer a model tree.",
+                    () =>
+                    {
+                        side.Keys.Clear();
+                        side.Named.Clear();
+                        Counted();
+                        onChanged();
+                    }));
+
+                Counted();
+
+                held.Children.Add(told);
 
                 return Framed(held, blocked);
             }

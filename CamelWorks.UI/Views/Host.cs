@@ -142,6 +142,9 @@ namespace CamelWorks.UI.Views
         }
 
         /// <inheritdoc />
+        public IReadOnlyList<SeatNode> Tree(ElementKey under) => Seated.Tree(Model, under);
+
+        /// <inheritdoc />
         public IEnumerable<ElementKey> Visible()
         {
             foreach (var item in Model.Traverse(TraversalScope.WholeDocument))

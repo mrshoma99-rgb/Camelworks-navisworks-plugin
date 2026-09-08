@@ -26,6 +26,9 @@ namespace CamelWorks.Core.Checks
 
         /// <summary>Everything the other side of the same run did not already take.</summary>
         TheRest = 5,
+
+        /// <summary>Nodes of the selection tree, and everything under each of them.</summary>
+        Branches = 6,
     }
 
     /// <summary>
@@ -83,7 +86,8 @@ namespace CamelWorks.Core.Checks
         /// <summary>True when this source would read nothing.</summary>
         public bool IsEmpty =>
             Origin == CheckOrigin.Nothing
-            || ((Origin == CheckOrigin.Sets || Origin == CheckOrigin.Models) && Names.Count == 0);
+            || ((Origin == CheckOrigin.Sets || Origin == CheckOrigin.Models) && Names.Count == 0)
+            || (Origin == CheckOrigin.Branches && Keys.Count == 0);
 
         /// <summary>True when reading this source means walking every loaded model.</summary>
         public bool NeedsEverything =>
@@ -109,6 +113,22 @@ namespace CamelWorks.Core.Checks
         /// <param name="names">The model names, as the host shows them.</param>
         public static CheckSource Models(params string[] names) =>
             Named(CheckOrigin.Models, names);
+
+        /// <summary>
+        /// A source over nodes of the selection tree, taking everything under each.
+        ///
+        /// The answer to a published federation, where "whole models" is one line however many
+        /// disciplines the file holds: the tree under that one line is where the disciplines are.
+        /// </summary>
+        /// <param name="keys">The nodes.</param>
+        public static CheckSource Branches(IEnumerable<ElementKey> keys)
+        {
+            var source = Selection(keys);
+
+            source.Origin = CheckOrigin.Branches;
+
+            return source;
+        }
 
         /// <summary>A source over an explicit list of elements.</summary>
         /// <param name="keys">The elements.</param>
@@ -168,6 +188,16 @@ namespace CamelWorks.Core.Checks
             if (Same(origin, "everything")) return Everything();
             if (Same(origin, "rest")) return Rest();
 
+            if (Same(origin, "branches"))
+            {
+                var branches = new CheckSource { Origin = CheckOrigin.Branches };
+
+                foreach (var one in rest)
+                    if (ElementKey.TryParse(one, out var key)) branches.Keys.Add(key);
+
+                return branches;
+            }
+
             if (Same(origin, "selection"))
             {
                 var source = new CheckSource { Origin = CheckOrigin.Selection };
@@ -198,6 +228,11 @@ namespace CamelWorks.Core.Checks
                     return Keys.Count == 0
                         ? TheSelection
                         : Joined("selection", Keys.Select(key => key.ToString()));
+
+                case CheckOrigin.Branches:
+                    return Keys.Count == 0
+                        ? Nowhere
+                        : Joined("branches", Keys.Select(key => key.ToString()));
 
                 case CheckOrigin.Sets:
                     if (Names.Count == 0) return Nowhere;
@@ -240,12 +275,69 @@ namespace CamelWorks.Core.Checks
                         ? TraversalScope.CurrentSelection
                         : TraversalScope.FromKeys(Keys.ToList()));
 
+                case CheckOrigin.Branches:
+                    return Keys.Count == 0
+                        ? Enumerable.Empty<IModelItem>()
+                        : Below(document);
+
                 case CheckOrigin.Sets:
                     return Names.Count == 0
                         ? Enumerable.Empty<IModelItem>()
                         : Once(document);
 
                 default: return Enumerable.Empty<IModelItem>();
+            }
+        }
+
+        /// <summary>
+        /// Everything under each picked node of the tree, each element read once.
+        ///
+        /// A node that no longer resolves is skipped rather than failing the run: the tree is the
+        /// host's and a revision can move a branch, which is the same case as a saved set the
+        /// document no longer holds.
+        /// </summary>
+        /// <param name="document">The document to walk.</param>
+        private IEnumerable<IModelItem> Below(IModelDocument document)
+        {
+            var seen = new HashSet<ElementKey>();
+
+            foreach (var key in Keys)
+            {
+                var node = document.Resolve(key);
+
+                if (node == null) continue;
+
+                foreach (var item in Under(node, seen)) yield return item;
+            }
+        }
+
+        /// <summary>One node and everything under it, deepest last, each key once.</summary>
+        /// <param name="node">The node.</param>
+        /// <param name="seen">The keys already yielded.</param>
+        private static IEnumerable<IModelItem> Under(IModelItem node, HashSet<ElementKey> seen)
+        {
+            // Iterative, not recursive: a selection tree is as deep as the authoring tool made it
+            // and a stack overflow inside a check is a lost run with nothing written down.
+            var stack = new Stack<IModelItem>();
+
+            stack.Push(node);
+
+            while (stack.Count > 0)
+            {
+                var one = stack.Pop();
+
+                if (!one.Key.IsEmpty && !seen.Add(one.Key)) continue;
+
+                var children = one.Children;
+
+                if (children.Count == 0)
+                {
+                    if (one.HasGeometry) yield return one;
+                    continue;
+                }
+
+                // Reversed, so the host's own order survives the stack.
+                for (var i = children.Count - 1; i >= 0; i--) stack.Push(children[i]);
             }
         }
 
@@ -287,6 +379,11 @@ namespace CamelWorks.Core.Checks
                     return Keys.Count == 0
                         ? "what is selected"
                         : Count(Keys.Count, "selected element");
+
+                case CheckOrigin.Branches:
+                    return Keys.Count == 0
+                        ? "nothing"
+                        : Count(Keys.Count, "part") + " of the model tree";
 
                 case CheckOrigin.Sets:
                 case CheckOrigin.Models:
