@@ -1286,9 +1286,7 @@ namespace CamelWorks.UI.Views
                     RedrawRowsAfresh();
                 });
 
-                _boardBox.MaxWidth = 128;
                 _boardBox.VerticalAlignment = VerticalAlignment.Center;
-                _boardBox.Margin = new Thickness(0, 0, 6, 0);
             }
 
             private readonly TextBox _railBox;
@@ -1622,17 +1620,27 @@ namespace CamelWorks.UI.Views
 
                 grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-                var top = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 0) };
+                // One row: which check, what narrows it, and the two menus that shape the list.
+                // It was two rows, and the second held nothing the first had no room for.
+                var top = new DockPanel { LastChildFill = true };
+
+                var picked = Ui.Loose(Picker());
+
+                if (picked is FrameworkElement wide)
+                {
+                    wide.HorizontalAlignment = HorizontalAlignment.Left;
+                    wide.Margin = new Thickness(0, 0, 8, 0);
+                }
+
+                DockPanel.SetDock(picked, Dock.Left);
+                top.Children.Add(picked);
 
                 DockPanel.SetDock(_railTools, Dock.Right);
                 top.Children.Add(Ui.Loose(_railTools));
+
                 top.Children.Add(Ui.Loose(_railBox));
 
-                // The check picker sits over the search box rather than beside it: which check is
-                // being read is the wider question, and the box narrows whatever it answers.
                 _railHead.Children.Clear();
-                _railHead.Children.Add(Ui.Loose(Picker()));
-                _railHead.Children.Add(new Border { Height = 8 });
                 _railHead.Children.Add(top);
 
                 var head = new Border
@@ -2827,7 +2835,7 @@ namespace CamelWorks.UI.Views
                     verbs.Children.Add(Ui.Icon(Glyphs.Copy, "Copy the list", () => CopyTests(read)));
                 }
 
-                DockPanel.SetDock(verbs, Dock.Right);
+                DockPanel.SetDock(verbs, Dock.Left);
                 row.Children.Add(verbs);
 
                 // No "14 waiting" here any more. It counted the edits the document had refused,
@@ -2838,11 +2846,14 @@ namespace CamelWorks.UI.Views
                 // is still on the save button, which is where it is acted on.
                 var shown = Shown().Count;
 
+                // Only when the rail is showing fewer tests than it read. The footer under both
+                // panes already says how many there are; what it cannot say is that a search is
+                // hiding some of them, and that is the one case worth a line here.
                 var tests = read.Count == 0
                     ? "Nothing read yet."
                     : shown < read.Count
                         ? shown + " of " + Ui.Count(read.Count, "test")
-                        : Ui.Count(read.Count, "test");
+                        : string.Empty;
 
                 // What the selected test holds, on the tooltip. On the line it was a second
                 // sentence in a strip narrow enough to cut the first one at "3 of 6 t...", and
@@ -2855,10 +2866,11 @@ namespace CamelWorks.UI.Views
                 var say = new TextBlock
                 {
                     Text = tests,
+                    HorizontalAlignment = HorizontalAlignment.Right,
                     VerticalAlignment = VerticalAlignment.Center,
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     TextWrapping = TextWrapping.NoWrap,
-                    ToolTip = entry == null ? null : entry.Run.Name + " — " + about,
+                    ToolTip = entry == null ? null : entry.Run.Name + " \u2014 " + about,
                 };
 
                 row.Children.Add(say.Wearing("Hint"));
@@ -3507,9 +3519,6 @@ namespace CamelWorks.UI.Views
                                         () => Configure("source")),
                     }, up: false)));
 
-                DockPanel.SetDock(verbs, Dock.Right);
-                row.Children.Add(verbs);
-
                 var total = entry.Rows.Count;
                 var count = Counted(entry);
 
@@ -3549,14 +3558,18 @@ namespace CamelWorks.UI.Views
                 // and what it took came off the title and, once, off the last symbol. Here they
                 // are handed a finite width and go onto a second line when there is not enough for
                 // one, which costs a few pixels of height and never a control.
-                var words = new WrapPanel { Orientation = Orientation.Horizontal };
+                // Row one is what this board is; row two is what is being done to it. The search
+                // box is the one control on row one that is not a name, and it goes hard right
+                // where a search box is looked for; the verbs come down beside the chips they
+                // act with.
+                var words = new DockPanel { LastChildFill = true };
 
-                _boardBox.VerticalAlignment = VerticalAlignment.Center;
-                _boardBox.Margin = new Thickness(0, 0, 10, 0);
-                words.Children.Add(Ui.Loose(_boardBox));
+                verbs.Margin = new Thickness(10, 0, 0, 0);
+
+                DockPanel.SetDock(verbs, Dock.Right);
+                words.Children.Add(verbs);
 
                 _strip.VerticalAlignment = VerticalAlignment.Center;
-                _strip.Margin = new Thickness(0, 0, 10, 0);
                 words.Children.Add(Ui.Loose(_strip));
 
                 if (Check?.Naming != null)
@@ -3585,6 +3598,7 @@ namespace CamelWorks.UI.Views
                         TextWrapping = TextWrapping.NoWrap,
                     };
 
+                    DockPanel.SetDock(said, Dock.Right);
                     words.Children.Add(said.Wearing("Hint"));
                 }
 
@@ -3659,6 +3673,15 @@ namespace CamelWorks.UI.Views
 
                 DockPanel.SetDock(standing, Dock.Left);
                 row.Children.Add(standing);
+
+                // Docked, so it takes the width it asks for rather than what the title leaves.
+                // At 128 it held four characters and sat between the chips.
+                _boardBox.VerticalAlignment = VerticalAlignment.Center;
+                _boardBox.MinWidth = 240;
+                _boardBox.Margin = new Thickness(10, 0, 0, 0);
+
+                DockPanel.SetDock(_boardBox, Dock.Right);
+                row.Children.Add(Ui.Loose(_boardBox));
 
                 words.Margin = new Thickness(0, 8, 0, 0);
 
