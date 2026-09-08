@@ -4290,9 +4290,25 @@ namespace CamelWorks.UI.Views
                     // Two shares, not three. At three the two columns fitted their names and the
                     // table gained a horizontal scrollbar, which costs the row its last column —
                     // and a board scrolled off its own verbs is worse than one that trims a name.
+                    //
+                    // 104 whether or not there are property columns. The floor decides when the
+                    // table starts scrolling, not how wide it rests: these are star columns and
+                    // at any width that already fitted, nothing here moves.
+                    //
+                    // At 124 the board did not fit its own default. The floors summed to 788 —
+                    // 26 of row padding, a 26 tick, a 96 name, two 124 element columns, a 64
+                    // figure, a 104 status, a 104 assignee and 120 of row verbs — against the 772
+                    // the results pane gets beside a rail at the window's smaller sizes. Sixteen
+                    // pixels, which is a scrollbar under every row and a thumb filling 98% of its
+                    // track: the table read as scrollable while having nothing to scroll to.
+                    //
+                    // 124 was never reasoned about; the comment above it is about shares. 104 is
+                    // the figure this file already accepts for an element column, and it holds
+                    // "Round Duct: 30…" where 124 holds "Round Duct: 300m…" - neither tells two
+                    // rows apart, which is what the tooltip and the widened window are for.
                     Named2(name,
                            element ? 2 : 1,
-                           element ? (tight ? 104 : 124) : 76);
+                           element ? 104 : 76);
                 }
 
                 // Four row buttons, at the tighter margin the bar below sets on them. The

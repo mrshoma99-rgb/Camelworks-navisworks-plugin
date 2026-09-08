@@ -18,10 +18,20 @@ namespace CamelWorks.Studio
     /// The layout system already knows: it measured what every element asked for and then told it
     /// what it got. This reads the difference back.
     ///
-    /// One fault is reported: **overlapping** — two children of one stack, dock or wrap panel
-    /// whose arranged rectangles intersect. Grids and canvases are excluded: layering children is
-    /// what they are for, and every focus ring, badge and overlay in this product is a Grid cell
-    /// drawn over another.
+    /// Two faults are reported.
+    ///
+    /// **overlapping** — two children of one stack, dock or wrap panel whose arranged rectangles
+    /// intersect. Grids and canvases are excluded: layering children is what they are for, and
+    /// every focus ring, badge and overlay in this product is a Grid cell drawn over another.
+    ///
+    /// **scrolled sideways** — a scroller whose content is wider than the room it has, at the
+    /// width the page is drawn. This one is here because a run of this reader reported
+    /// twenty-six surfaces clean while the Manage board carried a horizontal scrollbar under
+    /// every row: the board's columns declared floors summing to 788 against a 772 pane, and
+    /// sixteen pixels of overflow is invisible in a picture of forty controls and obvious once
+    /// the numbers are printed. A sideways scroller is not always wrong - a wide table has to
+    /// scroll somewhere - so what is reported is that it is *engaged at this width*, which for a
+    /// page drawn at its own design width is a table that does not fit its own screen.
     ///
     /// Clipping is not reported, and not for want of trying. The obvious test — an element
     /// arranged smaller than the size it asked for — cannot fire: WPF's Arrange takes the larger
@@ -53,6 +63,18 @@ namespace CamelWorks.Studio
         internal static FrameworkElement Canary()
         {
             var page = new StackPanel { Width = 200 };
+
+            // A scroller holding content wider than itself: the second fault, so a clean run
+            // proves both readers work rather than only the first.
+            var narrow = new ScrollViewer
+            {
+                Width = 100,
+                Height = 20,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content = new Border { Width = 260, Height = 12, Background = Brushes.Gainsboro },
+            };
+
+            page.Children.Add(narrow);
 
             var overlapping = new StackPanel { Orientation = Orientation.Horizontal };
 
@@ -93,10 +115,16 @@ namespace CamelWorks.Studio
 
             var found = Of(page);
 
-            if (found.Any(one => one.Kind == "overlapping")) return null;
+            var missed = new List<string>();
 
-            return "the layout reader is broken: it found no overlap in a page built to hold "
-                 + "one, so a clean run over the product proves nothing. It reported: "
+            if (!found.Any(one => one.Kind == "overlapping")) missed.Add("the overlap");
+            if (!found.Any(one => one.Kind == "scrolled sideways")) missed.Add("the overflow");
+
+            if (missed.Count == 0) return null;
+
+            return "the layout reader is broken: it found neither " + string.Join(" nor ", missed)
+                 + " in a page built to hold both, so a clean run over the product proves "
+                 + "nothing. It reported: "
                  + (found.Count == 0
                         ? "nothing at all"
                         : string.Join(" | ", found.Select(one => one.ToString())));
@@ -153,6 +181,7 @@ namespace CamelWorks.Studio
             var children = Under(element);
 
             Overlapping(element, children, path, found);
+            Overflowing(element, path, found);
 
             foreach (var child in children)
                 Walk(child, path + " > " + Named(child), found);
@@ -211,6 +240,34 @@ namespace CamelWorks.Studio
                         + parent.GetType().Name,
                         path));
                 }
+        }
+
+        /// <summary>
+        /// Whether a scroller is having to scroll sideways at the width the page is drawn.
+        ///
+        /// Its extent against its viewport, which is what the scrollbar itself is drawn from, so
+        /// what this reports is what the picture shows. A scroller that cannot scroll sideways at
+        /// all is skipped: its content is clipped rather than scrolled, and that is a different
+        /// fault this reader cannot see.
+        /// </summary>
+        /// <param name="element">The element, which may or may not be a scroller.</param>
+        /// <param name="path">How it was reached.</param>
+        /// <param name="found">Where faults are collected.</param>
+        private static void Overflowing(DependencyObject element, string path, List<Fault> found)
+        {
+            if (!(element is ScrollViewer scroll)) return;
+            if (scroll.HorizontalScrollBarVisibility == ScrollBarVisibility.Disabled) return;
+            if (scroll.ViewportWidth <= Slack) return;
+
+            var over = scroll.ExtentWidth - scroll.ViewportWidth;
+
+            if (over <= Slack) return;
+
+            found.Add(new Fault(
+                "scrolled sideways",
+                "content is " + Size(scroll.ExtentWidth) + " wide in " + Size(scroll.ViewportWidth)
+                + ", so it is over by " + Size(over),
+                path));
         }
 
         /// <summary>
