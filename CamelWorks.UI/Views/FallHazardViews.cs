@@ -99,9 +99,9 @@ namespace CamelWorks.UI.Views
                     // list beside this has a Test column.
                     Bench.Group(string.Empty,
                         Ui.Evenly(
-                            Filled(Ui.Field("Name", Ui.Settled(_run.Name, string.Empty,
+                            Ui.Filled(Ui.Field("Name", Ui.Settled(_run.Name, string.Empty,
                                 name => Keep(_ => _run.Name = name), Ui.Wide.Name))),
-                            Filled(Ui.Field("Folder", Ui.Folder(_run.Folder,
+                            Ui.Filled(Ui.Field("Folder", Ui.Folder(_run.Folder,
                                 Seated.Folders(_check),
                                 folder => Keep(_ => _run.Folder =
                                     string.IsNullOrWhiteSpace(folder) ? null : folder),
@@ -114,11 +114,11 @@ namespace CamelWorks.UI.Views
                     Bench.Group("Where the plan is cut",
                         Storey(settings, storeys),
                         Ui.Evenly(
-                            Filled(Number("Cut elevation", settings.HasLevel ? settings.LevelMetres
+                            Ui.Filled(Number("Cut elevation", settings.HasLevel ? settings.LevelMetres
                                                                             : (double?)null,
                                          metres => true,
                                          (one, metres) => one.LevelMetres = metres)),
-                            Filled(Ui.Field("Band above and below (" + Units.LengthUnit + ")",
+                            Ui.Filled(Ui.Field("Band above and below (" + Units.LengthUnit + ")",
                                 Ui.Settled(Units.Bare(settings.BandMetres), string.Empty,
                                     text => Keep(one =>
                                     {
@@ -130,11 +130,11 @@ namespace CamelWorks.UI.Views
                             : Ui.Note("This test does not say where to cut. Pick the storey, or "
                                       + "type the elevation the plan is cut at.")),
                     Bench.Group("What to read",
-                        Filled(SourcePicker.Drawn(_seat, "Floor from", _floors,
+                        Ui.Filled(SourcePicker.Drawn(_seat, "Floor from", _floors,
                                   () => Keep(one => one.Floors = SourcePicker.Written(_floors)),
                                   blocked,
                                   new[] { SourcePicker.Everywhere })),
-                        Filled(Ui.Small("A set of floors or slabs. Everything loaded reads the "
+                        Ui.Filled(Ui.Small("A set of floors or slabs. Everything loaded reads the "
                                        + "whole federation at this elevation, and a wall or a duct "
                                        + "through the band projects its outline as though it were "
                                        + "floor.")),
@@ -142,11 +142,11 @@ namespace CamelWorks.UI.Views
                             ? null
                             : Ui.Note("This test names nothing to read the floor from, so it "
                                       + "cannot run."),
-                        Filled(SourcePicker.Drawn(_seat, "Handrails from", _handrails,
+                        Ui.Filled(SourcePicker.Drawn(_seat, "Handrails from", _handrails,
                                   () => Keep(one => one.Handrails = SourcePicker.Written(_handrails)),
                                   blocked,
                                   new[] { SourcePicker.Everywhere })),
-                        Filled(SourcePicker.Drawn(_seat, "Obstructions from", _obstructions,
+                        Ui.Filled(SourcePicker.Drawn(_seat, "Obstructions from", _obstructions,
                                   () => Keep(one =>
                                       one.Obstructions = SourcePicker.Written(_obstructions)),
                                   blocked,
@@ -157,13 +157,13 @@ namespace CamelWorks.UI.Views
                                       + "reported as unprotected.")),
                     Bench.Group("How to judge it",
                         Ui.Evenly(
-                            Filled(Number("Maximum unprotected gap", settings.LimitMetres,
+                            Ui.Filled(Number("Maximum unprotected gap", settings.LimitMetres,
                                          metres => metres > 0,
                                          (one, metres) => one.LimitMetres = metres)),
-                            Filled(Number("Ignore gaps under", settings.MinPassageMetres,
+                            Ui.Filled(Number("Ignore gaps under", settings.MinPassageMetres,
                                          metres => metres >= 0,
                                          (one, metres) => one.MinPassageMetres = metres))),
-                        Filled(Number("Grid resolution", settings.CellMetres,
+                        Ui.Filled(Number("Grid resolution", settings.CellMetres,
                                      metres => metres > 0,
                                      (one, metres) => one.CellMetres = metres)),
                         Coarse(settings), Open(settings),
@@ -254,7 +254,7 @@ namespace CamelWorks.UI.Views
                     picker.ToolTip = "This project declares no storeys yet.";
                 }
 
-                return Filled(Ui.Field("Storey", picker,
+                return Ui.Filled(Ui.Field("Storey", picker,
                                       "Fills the elevation from the project's storeys. The "
                                       + "elevation stays the authority: editing a storey's height "
                                       + "does not move a test that has already been run."));
@@ -356,7 +356,7 @@ namespace CamelWorks.UI.Views
 
             /// <summary>Handrail coverage distance, on the page that says what it is worth.</summary>
             private UIElement Coverage() =>
-                Filled(Number("Handrail coverage distance",
+                Ui.Filled(Number("Handrail coverage distance",
                              FallSettings.From(_run).HandrailToleranceMetres,
                              metres => metres >= 0,
                              (one, metres) => one.HandrailToleranceMetres = metres));
@@ -371,13 +371,7 @@ namespace CamelWorks.UI.Views
             /// pair of them splits it through <see cref="Ui.Evenly"/>.
             /// </summary>
             /// <param name="field">The field.</param>
-            private static UIElement Filled(FrameworkElement field)
-            {
-                field.HorizontalAlignment = HorizontalAlignment.Stretch;
-
-                return field;
-            }
-
+            
             /// <summary>Write the settings back onto the test and into the project file.</summary>
             /// <param name="change">What to change.</param>
             private void Keep(Action<FallSettings> change)

@@ -143,15 +143,15 @@ namespace CamelWorks.UI.Views
 
                 return Ui.Stack(
                     Bench.Group(string.Empty,
-                        Ui.Across(
+                        Ui.Evenly(
                             // Settle on the name too: with both sides already picked, typing the
                             // name is the last thing left, and the test is made when it lands.
-                            Sized(Ui.Field("Name", Ui.Text(_name, text =>
+                            Ui.Filled(Ui.Field("Name", Ui.Text(_name, text =>
                                 {
                                     _name = text;
                                     Settle();
-                                }, Ui.Wide.Name)), 200),
-                            Sized(Ui.Field("Folder", Folder()), 190))),
+                                }, Ui.Wide.Name))),
+                            Ui.Filled(Ui.Field("Folder", Folder())))),
 
                     // The sides first and together. They are the test: the two numbers under them
                     // are what it is judged at, and they can be changed afterwards where the sides
@@ -165,7 +165,7 @@ namespace CamelWorks.UI.Views
                         Side("Second side", _b, blocked)),
 
                     Bench.Group("How it is judged",
-                        Sized(Ui.Field("Kind of test",
+                        Ui.Filled(Ui.Field("Kind of test",
                                  Ui.Choice(Kinds.Select(MatrixNaming.Worded).ToList(),
                                      MatrixNaming.Worded(_kind), pick =>
                                      {
@@ -175,11 +175,10 @@ namespace CamelWorks.UI.Views
 
                                          Redraw();
                                      }, 230),
-                                 Explains(_kind)),
-                              380),
+                                 Explains(_kind))),
                         _kind == MatrixTest.Duplicate
                             ? null
-                            : Sized(Ui.Field("Tolerance (" + Units.LengthUnit + ")",
+                            : Ui.Filled(Ui.Field("Tolerance (" + Units.LengthUnit + ")",
                                        Ui.Text(Units.Bare(_tolerance), text =>
                                        {
                                            if (Units.TryRead(text, out var metres) && metres >= 0)
@@ -188,8 +187,7 @@ namespace CamelWorks.UI.Views
                                        _kind == MatrixTest.Clearance
                                            ? "How close the two sides may come before it is "
                                              + "reported."
-                                           : "How far they may overlap before it is reported."),
-                                    190)),
+                                           : "How far they may overlap before it is reported."))),
 
                     blocked == null ? null : Ui.Note(blocked));
             }
@@ -357,14 +355,7 @@ namespace CamelWorks.UI.Views
             /// <summary>A field capped to a readable width, so short fields sit two to a row.</summary>
             /// <param name="field">The field.</param>
             /// <param name="width">How wide it may be.</param>
-            private static UIElement Sized(Panel field, double width)
-            {
-                field.Width = width;
-                field.HorizontalAlignment = HorizontalAlignment.Left;
-
-                return field;
-            }
-
+            
         }
     }
 }

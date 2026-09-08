@@ -1085,6 +1085,35 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
+        /// A field that takes the width of the panel it is in.
+        ///
+        /// One rule, in one place. Four set-up panels each had their own: two set a fixed Width
+        /// and aligned left, one capped the width and stretched, one capped a grid column. So the
+        /// same form drawn on four tabs had four different field widths, and a report about one of
+        /// them fixed one of them.
+        ///
+        /// A cap plus the default stretch is the trap worth naming: WPF centres a stretched
+        /// element that carries a MaxWidth, so a capped field starts wherever the leftover space
+        /// puts it rather than where the heading does. A field takes what the panel gives it, and
+        /// a pair of fields splits that through <see cref="Evenly"/>.
+        /// </summary>
+        /// <typeparam name="T">The field's type, so a caller keeps it.</typeparam>
+        /// <param name="field">The field.</param>
+        public static T Filled<T>(T field) where T : FrameworkElement
+        {
+            if (field == null) throw new ArgumentNullException(nameof(field));
+
+            field.HorizontalAlignment = HorizontalAlignment.Stretch;
+
+            // Any cap an earlier hand left on it comes off. A field that fills has no ceiling,
+            // and a leftover one puts it back in the middle of the panel.
+            field.MaxWidth = double.PositiveInfinity;
+            field.Width = double.NaN;
+
+            return field;
+        }
+
+        /// <summary>
         /// Two or more controls sharing a row in equal columns.
         ///
         /// Not <see cref="Across"/>, which wraps and gives each child its desired width: a pair of
@@ -3919,6 +3948,11 @@ namespace CamelWorks.UI.Views
                 BindingOperations.ClearBinding(table, FrameworkElement.MaxHeightProperty);
                 table.MaxHeight = double.PositiveInfinity;
                 table.VerticalAlignment = VerticalAlignment.Stretch;
+
+                // And no gap over it. The margin separates a table from whatever is stacked above
+                // it on a stage; on a bench the pane's header is directly above and the margin is
+                // an empty band under a heading with nothing in it.
+                table.Margin = new Thickness(0, 0, 0, 2);
             };
 
             // Top, not the default stretch. A stretched element carrying a MaxHeight is centred
