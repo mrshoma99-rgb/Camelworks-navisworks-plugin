@@ -6,8 +6,4 @@ CamelWorks.UI/Views/ClashExchangeViews.cs 1
 # The Board grouping section's empty state draws the board's default stack as the table the configured
 # state uses, so the two are read the same way. It is a picture of behaviour nobody owns yet:
 # there are no rows to pick and nothing to act on them with.
-#
-# And the Report tab's preview of what goes in the document. Read-only on purpose: it answers
-# "what am I about to send", and the issues themselves are worked on the Manage board. A picking
-# bar here would offer verbs that write to a board this tab does not own.
-CamelWorks.UI/Views/CoordinateViews.cs 2
+CamelWorks.UI/Views/CoordinateViews.cs 1

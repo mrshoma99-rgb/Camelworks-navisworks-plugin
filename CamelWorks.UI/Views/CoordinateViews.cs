@@ -2859,6 +2859,32 @@ namespace CamelWorks.UI.Views
         /// <param name="seat">The seat. Its project file holds the settings and the revisions.</param>
         public static UIElement Report(ISeat seat) => new ReportScreen(seat).Build();
 
+        /// <summary>
+        /// The report screen over a supplied board, for the render harness.
+        ///
+        /// A report is written from the board and the board is built from an open model, so this
+        /// screen on a seat with no document draws its empty page and nothing else. Every picture
+        /// of the tab was therefore of that empty page: the document picker, the audience, the
+        /// selection table, the marker settings and the revision line had never been drawn, which
+        /// is where the faults on this tab have been.
+        ///
+        /// The board is a parameter for the same reason the Manage tab's engine is: the seat's
+        /// own reports itself unavailable. Everything else comes off the seat as it does on a
+        /// licensed one.
+        /// </summary>
+        /// <param name="seat">The seat. Its project file holds the settings and the revisions.</param>
+        /// <param name="board">The board the report is written from.</param>
+        public static UIElement Report(ISeat seat, ClashPipelineResult board)
+        {
+            if (seat == null) throw new ArgumentNullException(nameof(seat));
+            if (board == null) throw new ArgumentNullException(nameof(board));
+
+            LastBoard = board;
+            LastBoardLabel = seat.Profile.ProjectName;
+
+            return new ReportScreen(seat).Build();
+        }
+
         /// <summary>The penetration schedule, as its own tool rather than a document choice.</summary>
         internal static UIElement PenetrationsReport()
         {
@@ -3168,7 +3194,11 @@ namespace CamelWorks.UI.Views
                 var session = _live;
                 var board = LastBoard;
 
-                if (session == null || board == null) return;
+                // Only the revision line and the history need the session; everything above them
+                // is a fact about the board. Gating the lot on one drew the whole left column
+                // empty whenever the model was closed, so the tab said nothing at all about a
+                // board it was holding.
+                if (board == null) return;
 
                 var regressed = Regressed();
 
@@ -3213,7 +3243,7 @@ namespace CamelWorks.UI.Views
                         + (unowned > 0 ? " and one for the unassigned issues" : string.Empty)
                         + ". Each takes the next letter in that party's own sequence."));
                 }
-                else
+                else if (session != null)
                 {
                     var was = LastIssue(session, audience);
                     var revision = Deliverable.NextRevision(was?.Revision);
@@ -3227,7 +3257,7 @@ namespace CamelWorks.UI.Views
                     _shape.Children.Add(Say(Lands(session, audience, revision, now)));
                 }
 
-                History(session);
+                if (session != null) History(session);
             }
 
             /// <summary>
@@ -3282,7 +3312,11 @@ namespace CamelWorks.UI.Views
                     Counted();
                 });
 
-                return Ui.Stack(Title("What goes in it"), Narrowing(board), table, _tally);
+                // The bar the rest of the product puts under a table that is picked from: the
+                // count and All/None. Without it the ticking was a multi-select nothing on the
+                // screen mentioned, on the one table whose whole purpose is choosing.
+                return Ui.Stack(Title("What goes in it"), Narrowing(board),
+                                Ui.Picking(table), _tally);
             }
 
             /// <summary>What the ticks and the filters have left, under the table.</summary>
