@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using CamelWorks.Core.Checks;
 using CamelWorks.Core.Identity;
 
 namespace CamelWorks.UI.Views
@@ -75,6 +76,88 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
+        /// One further origin a caller offers beside the three, for a side that can also say
+        /// something a list of names cannot.
+        ///
+        /// A clearance run's obstruction side is the reason this exists: "everything except the
+        /// surfaces" is not a set, a model or a selection, and it is the setting most of those runs
+        /// are left on.
+        /// </summary>
+        public sealed class Extra
+        {
+            /// <summary>What the segment is called. Also what <see cref="Pick.From"/> holds.</summary>
+            public string Label { get; set; } = string.Empty;
+
+            /// <summary>The sentence shown in place of a list when this origin is picked.</summary>
+            public string Note { get; set; } = string.Empty;
+        }
+
+        /// <summary>An origin that is everything loaded, for a caller that offers one.</summary>
+        public static Extra Everywhere { get; } = new Extra
+        {
+            Label = CheckSource.Everywhere,
+            Note = "Every element in every loaded model.",
+        };
+
+        /// <summary>An origin that is whatever the other side of the run did not take.</summary>
+        public static Extra Remainder { get; } = new Extra
+        {
+            Label = CheckSource.Remainder,
+            Note = "Everything loaded except the elements the surface side took.",
+        };
+
+        /// <summary>What a saved source looks like on the form.</summary>
+        /// <param name="source">The saved source.</param>
+        public static Pick Read(CheckSource source)
+        {
+            if (source == null) throw new ArgumentNullException(nameof(source));
+
+            switch (source.Origin)
+            {
+                case CheckOrigin.Everything: return new Pick { From = CheckSource.Everywhere };
+                case CheckOrigin.TheRest: return new Pick { From = CheckSource.Remainder };
+
+                case CheckOrigin.Selection:
+                    return new Pick { From = FromSelection, Keys = source.Keys.ToList() };
+
+                case CheckOrigin.Models:
+                    return Ticked(FromModels, source);
+
+                default:
+                    return Ticked(FromSets, source);
+            }
+        }
+
+        private static Pick Ticked(string from, CheckSource source)
+        {
+            var pick = new Pick { From = from };
+
+            foreach (var name in source.Names) pick.Picked.Add(name);
+
+            return pick;
+        }
+
+        /// <summary>What the form holds, as a source a check can save and read.</summary>
+        /// <param name="pick">What the form holds.</param>
+        public static CheckSource Written(Pick pick)
+        {
+            if (pick == null) throw new ArgumentNullException(nameof(pick));
+
+            if (string.Equals(pick.From, CheckSource.Everywhere, StringComparison.Ordinal))
+                return CheckSource.Everything();
+
+            if (string.Equals(pick.From, CheckSource.Remainder, StringComparison.Ordinal))
+                return CheckSource.Rest();
+
+            if (string.Equals(pick.From, FromSelection, StringComparison.Ordinal))
+                return CheckSource.Selection(pick.Keys);
+
+            return string.Equals(pick.From, FromModels, StringComparison.Ordinal)
+                ? CheckSource.Models(pick.Picked.ToArray())
+                : CheckSource.Sets(pick.Picked.ToArray());
+        }
+
+        /// <summary>
         /// Draw one source.
         ///
         /// It redraws itself when the origin changes or the selection is re-read, and tells the
@@ -87,8 +170,10 @@ namespace CamelWorks.UI.Views
         /// <param name="side">What it is set to, edited in place.</param>
         /// <param name="onChanged">Called after anything is picked or unpicked.</param>
         /// <param name="blocked">Why the document cannot be read, or null.</param>
-        public static UIElement Drawn(ISeat seat, string label, Pick side,
-                                      Action? onChanged = null, string? blocked = null)
+        /// <param name="extras">Further origins this side offers, or null for the three.</param>
+        public static FrameworkElement Drawn(ISeat seat, string label, Pick side,
+                                      Action? onChanged = null, string? blocked = null,
+                                      IReadOnlyList<Extra>? extras = null)
         {
             if (seat == null) throw new ArgumentNullException(nameof(seat));
             if (side == null) throw new ArgumentNullException(nameof(side));
@@ -100,7 +185,7 @@ namespace CamelWorks.UI.Views
                 holder.Content = Body(seat, label, side, () =>
                 {
                     onChanged?.Invoke();
-                }, Draw, blocked);
+                }, Draw, blocked, extras);
             }
 
             Draw();
@@ -115,20 +200,38 @@ namespace CamelWorks.UI.Views
         /// <param name="onChanged">Called after a pick.</param>
         /// <param name="onRedraw">Draws the whole source again.</param>
         /// <param name="blocked">Why the document cannot be read, or null.</param>
+        /// <param name="extras">Further origins this side offers, or null for the three.</param>
         private static UIElement Body(ISeat seat, string label, Pick side,
-                                      Action onChanged, Action onRedraw, string? blocked)
+                                      Action onChanged, Action onRedraw, string? blocked,
+                                      IReadOnlyList<Extra>? extras)
         {
             var held = Ui.Stack();
 
             if (!string.IsNullOrEmpty(label)) held.Children.Add(Ui.Eyebrow(label));
 
-            held.Children.Add(Ui.Segmented(new[] { FromSets, FromModels, FromSelection },
-                                           side.From, picked =>
+            var origins = new List<string> { FromSets, FromModels, FromSelection };
+
+            if (extras != null) origins.AddRange(extras.Select(one => one.Label));
+
+            held.Children.Add(Ui.Segmented(origins.ToArray(), side.From, picked =>
             {
                 side.From = picked;
                 onRedraw();
                 onChanged();
             }));
+
+            var standing = extras?.FirstOrDefault(one =>
+                string.Equals(one.Label, side.From, StringComparison.Ordinal));
+
+            // An extra origin names what it reads on its own, so there is nothing to tick. The
+            // sentence is still drawn, because a segment with an empty card under it reads as a
+            // list that failed to load.
+            if (standing != null)
+            {
+                held.Children.Add(Ui.Small(standing.Note));
+
+                return Framed(held, blocked);
+            }
 
             if (string.Equals(side.From, FromSelection, StringComparison.Ordinal))
             {

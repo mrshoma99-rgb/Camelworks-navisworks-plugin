@@ -341,7 +341,7 @@ namespace CamelWorks.Core.Checks
 
             if (floor.Triangles.Count == 0)
                 return Told(spec,
-                            "Nothing under \"" + settings.Floors + "\" gave triangles within "
+                            "Nothing under \"" + settings.Floors.Said() + "\" gave triangles within "
                             + Printed(settings.BandMetres) + " m of " + Printed(settings.LevelMetres)
                             + " m, so there is no plan to analyse. " + floor.Why());
 
@@ -398,7 +398,7 @@ namespace CamelWorks.Core.Checks
             // hazard is keyed by the run, the cell it sits in and the elements around it, so the
             // delta reports the whole run as gone and reported again. Said here, because nothing
             // downstream can tell that from a floor that was covered over.
-            var floors = settings.Floors + " at " + Printed(settings.LevelMetres) + " m";
+            var floors = settings.Floors.Written() + " at " + Printed(settings.LevelMetres) + " m";
 
             if (spec.Settings.TryGetValue(FallSettings.LastFloorsKey, out var last)
                 && !string.IsNullOrWhiteSpace(last)
@@ -510,21 +510,21 @@ namespace CamelWorks.Core.Checks
             /// <summary>
             /// Read one side. False when the walk was stopped.
             /// </summary>
-            /// <param name="side">What the side is set to: a saved set, the selection, everything.</param>
+            /// <param name="side">What the side reads: saved sets, whole models, or a selection.</param>
             /// <param name="inBand">
             /// True to keep only the elements whose box reaches the band. False reads everything
             /// under what was picked, which is what handrails need.
             /// </param>
             /// <param name="read">How many elements have been walked, across every side.</param>
             /// <param name="onProgress">Called with that count; returning false stops the walk.</param>
-            internal bool Take(string side, bool inBand, ref int read, Func<int, bool>? onProgress)
+            internal bool Take(CheckSource side, bool inBand, ref int read, Func<int, bool>? onProgress)
             {
                 var document = _check._document;
                 var triangles = _check._triangles;
 
                 if (document == null || triangles == null) return true;
 
-                foreach (var item in document.Traverse(Scope(side)))
+                foreach (var item in side.Items(document))
                 {
                     if (onProgress != null && !onProgress(++read)) return false;
 
@@ -574,15 +574,6 @@ namespace CamelWorks.Core.Checks
 
                 return box;
             }
-
-            /// <summary>What one side's words mean as a traversal.</summary>
-            /// <param name="side">What the side is set to.</param>
-            private static TraversalScope Scope(string side) =>
-                string.Equals(side, FallSettings.Loaded, StringComparison.OrdinalIgnoreCase)
-                    ? TraversalScope.WholeDocument
-                    : string.Equals(side, FallSettings.Selected, StringComparison.OrdinalIgnoreCase)
-                        ? TraversalScope.CurrentSelection
-                        : TraversalScope.Set(side);
 
             /// <summary>Whether an element's box reaches the band around the level.</summary>
             /// <param name="bounds">The element's box, in model units.</param>

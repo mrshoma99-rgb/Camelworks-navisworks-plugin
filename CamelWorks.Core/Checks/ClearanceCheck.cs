@@ -260,34 +260,9 @@ namespace CamelWorks.Core.Checks
             // then discarding the set somebody named was the defect docs/CHECKS_PLAN.md section 3.5
             // records: a run scoped to "Level 03 Floors" came back with 412 surfaces from the whole
             // building, desk tops included. Only a run that names nothing sweeps everything.
-            return WalkableSurfaces.Read(_document, _triangles, Sweeping(settings),
+            return WalkableSurfaces.Read(settings.Surfaces.Items(_document), _triangles,
                                          _metresPerUnit, options, diagnostics, onProgress);
         }
-
-        /// <summary>
-        /// What detection sweeps: what the run says to search in, else the whole document.
-        ///
-        /// There used to be a zone as well — a second saved set the run was confined to, which
-        /// only ever mattered when the first field was left at everything loaded. Two fields
-        /// naming a set, one of which was consulted only when the other was not.
-        /// </summary>
-        /// <param name="settings">The run's settings.</param>
-        private static TraversalScope Sweeping(ClearanceSettings settings) =>
-            Narrows(settings.Surfaces) ? Scope(settings.Surfaces) : TraversalScope.WholeDocument;
-
-        /// <summary>Whether a side's choice names something narrower than the whole document.</summary>
-        /// <param name="choice">What the side is set to.</param>
-        private static bool Narrows(string choice) =>
-            !string.IsNullOrWhiteSpace(choice)
-            && !string.Equals(choice, ClearanceSettings.Loaded, StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(choice, ClearanceSettings.NotTheSurfaces, StringComparison.OrdinalIgnoreCase);
-
-        /// <summary>The traversal one named source stands for.</summary>
-        /// <param name="choice">What the side is set to.</param>
-        private static TraversalScope Scope(string choice) =>
-            string.Equals(choice, ClearanceSettings.Selected, StringComparison.OrdinalIgnoreCase)
-                ? TraversalScope.CurrentSelection
-                : TraversalScope.Set(choice);
 
         /// <summary>What the last run or detection could not do. Cleared when either starts.</summary>
         public IReadOnlyList<string> Notes => _notes;
@@ -433,7 +408,7 @@ namespace CamelWorks.Core.Checks
             // up to nothing has not shown that anything is fixed either. The three whole-model
             // answers are not covered: over a model with nothing above the floors they honestly
             // measure nothing.
-            if (above.Count == 0 && !NeedsWhole(settings.Targets))
+            if (above.Count == 0 && !settings.Targets.NeedsEverything)
                 return Told(spec,
                             spec.Name + " resolved to nothing over the surfaces, so nothing was "
                             + "measured and nothing was marked as fixed. Check what the run "
@@ -478,15 +453,18 @@ namespace CamelWorks.Core.Checks
             // keyed by where it is and a named one by its element, so the delta reports the whole
             // run as gone and reported again. Said here, because nothing downstream can tell that
             // from a model that moved.
+            var written = settings.Surfaces.Written();
+
             if (spec.Settings.TryGetValue(ClearanceSettings.LastSurfacesKey, out var last)
                 && !string.IsNullOrWhiteSpace(last)
-                && !string.Equals(last, settings.Surfaces, StringComparison.OrdinalIgnoreCase))
-                _notes.Add("This run measured from \"" + last + "\" last time and from \""
-                           + settings.Surfaces + "\" now. A surface is identified differently "
+                && !string.Equals(last, written, StringComparison.OrdinalIgnoreCase))
+                _notes.Add("This run measured from \"" + CheckSource.Read(last).Said()
+                           + "\" last time and from \"" + settings.Surfaces.Said()
+                           + "\" now. A surface is identified differently "
                            + "either side of that change, so every breach under this run reads as "
                            + "gone and reported again rather than as the same breach.");
 
-            spec.Settings[ClearanceSettings.LastSurfacesKey] = settings.Surfaces;
+            spec.Settings[ClearanceSettings.LastSurfacesKey] = written;
 
             _register.Observe(Key, found, DateTime.UtcNow.Ticks,
                               scope: CheckFacts.ScopeOf(new[] { spec.Id }));
@@ -571,8 +549,8 @@ namespace CamelWorks.Core.Checks
             // The surface side is not read as elements when detection is on: the patches come out
             // of the triangles, so a source of "Everything loaded" there is not a reason to walk
             // the document.
-            var needed = (!settings.DetectSurfaces && NeedsWhole(settings.Surfaces))
-                         || NeedsWhole(settings.Targets);
+            var needed = (!settings.DetectSurfaces && settings.Surfaces.NeedsEverything)
+                         || settings.Targets.NeedsEverything;
 
             if (!needed) return new List<Piece>();
 
@@ -592,44 +570,32 @@ namespace CamelWorks.Core.Checks
         }
 
         /// <summary>One side's elements, or null when the walk was stopped.</summary>
-        /// <param name="choice">What the side is set to.</param>
-        /// <param name="whole">Everything loaded, where the choice needs it.</param>
+        /// <param name="source">What the side reads.</param>
+        /// <param name="whole">Everything loaded, where the source needs it.</param>
         /// <param name="exclude">The ids the other side has already taken.</param>
         /// <param name="onProgress">Called with how many elements have been read.</param>
-        private List<Piece>? Side(string choice, List<Piece> whole, HashSet<string>? exclude,
+        private List<Piece>? Side(CheckSource source, List<Piece> whole, HashSet<string>? exclude,
                                   Func<int, bool>? onProgress)
         {
-            List<Piece>? pieces;
+            if (source.Origin == CheckOrigin.Everything) return whole.ToList();
 
-            if (string.Equals(choice, ClearanceSettings.Loaded, StringComparison.OrdinalIgnoreCase))
-                pieces = whole.ToList();
-            else if (string.Equals(choice, ClearanceSettings.NotTheSurfaces, StringComparison.OrdinalIgnoreCase))
-                pieces = whole.Where(one => exclude == null || !exclude.Contains(one.Id)).ToList();
-            else
+            if (source.Origin == CheckOrigin.TheRest)
+                return whole.Where(one => exclude == null || !exclude.Contains(one.Id)).ToList();
+
+            var pieces = new List<Piece>();
+            var read = 0;
+
+            foreach (var item in source.Items(_document!))
             {
-                var scope = Scope(choice);
+                if (onProgress != null && !onProgress(++read)) return null;
 
-                pieces = new List<Piece>();
-                var read = 0;
+                var piece = Make(item);
 
-                foreach (var item in _document!.Traverse(scope))
-                {
-                    if (onProgress != null && !onProgress(++read)) return null;
-
-                    var piece = Make(item);
-
-                    if (piece != null) pieces.Add(piece);
-                }
+                if (piece != null) pieces.Add(piece);
             }
 
             return pieces;
         }
-
-        /// <summary>Whether a side's choice can only be answered by walking the whole document.</summary>
-        /// <param name="choice">What the side is set to.</param>
-        private static bool NeedsWhole(string choice) =>
-            string.Equals(choice, ClearanceSettings.Loaded, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(choice, ClearanceSettings.NotTheSurfaces, StringComparison.OrdinalIgnoreCase);
 
         /// <summary>An element as the check sees it, or null when it carries no geometry.</summary>
         /// <param name="item">The element.</param>

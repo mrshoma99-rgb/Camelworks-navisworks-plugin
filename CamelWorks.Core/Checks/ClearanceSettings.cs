@@ -70,13 +70,13 @@ namespace CamelWorks.Core.Checks
         public const string LastSurfacesKey = "lastSurfaces";
 
         /// <summary>What either side is set to for whatever the host has selected.</summary>
-        public const string Selected = "Current selection";
+        public const string Selected = CheckSource.TheSelection;
 
         /// <summary>What either side is set to for everything loaded.</summary>
-        public const string Loaded = "Everything loaded";
+        public const string Loaded = CheckSource.Everywhere;
 
         /// <summary>What the obstruction side is set to for everything but the surfaces.</summary>
-        public const string NotTheSurfaces = "Everything except the surfaces";
+        public const string NotTheSurfaces = CheckSource.Remainder;
 
         private static readonly char[] Separator = { ';' };
 
@@ -97,13 +97,14 @@ namespace CamelWorks.Core.Checks
         public double ToleranceMetres { get; set; } = 0.025;
 
         /// <summary>
-        /// What the run measures up from: a saved set, the selection, or everything loaded.
+        /// What the run measures up from: saved sets, whole models, the selection, or everything
+        /// loaded.
         ///
         /// A source, never a mode. Detection refines what is named here rather than replacing it,
         /// so naming "Level 03 Floors" and leaving <see cref="DetectSurfaces"/> on sweeps that set
         /// for walkable surfaces instead of sweeping the federation and discarding the set.
         /// </summary>
-        public string Surfaces { get; set; } = Loaded;
+        public CheckSource Surfaces { get; set; } = CheckSource.Everything();
 
         /// <summary>
         /// Whether the walkable surfaces are found in the triangles of the source.
@@ -115,7 +116,7 @@ namespace CamelWorks.Core.Checks
         public bool DetectSurfaces { get; set; } = true;
 
         /// <summary>What the run measures up to.</summary>
-        public string Targets { get; set; } = NotTheSurfaces;
+        public CheckSource Targets { get; set; } = CheckSource.Rest();
 
         /// <summary>The levels the run covers. Empty is every level.</summary>
         public IList<string> Levels { get; } = new List<string>();
@@ -192,8 +193,8 @@ namespace CamelWorks.Core.Checks
         /// the sentence and prints it.
         /// </summary>
         public string Between =>
-            (DetectSurfaces ? "walkable surfaces in " + Said(Surfaces) : Said(Surfaces))
-            + " under " + Said(Targets)
+            (DetectSurfaces ? "walkable surfaces in " + Surfaces.Said() : Surfaces.Said())
+            + " under " + Targets.Said()
             + (Levels.Count == 0 ? string.Empty : ", " + string.Join(", ", Levels));
 
         /// <summary>The threshold, worded, as the rail prints it.</summary>
@@ -216,9 +217,9 @@ namespace CamelWorks.Core.Checks
 
             settings.MinimumMetres = Number(spec, MinimumKey, settings.MinimumMetres);
             settings.ToleranceMetres = Number(spec, ToleranceKey, settings.ToleranceMetres);
-            settings.Surfaces = Word(spec, SurfacesKey) ?? settings.Surfaces;
+            settings.Surfaces = CheckSource.Read(Word(spec, SurfacesKey), settings.Surfaces);
             settings.DetectSurfaces = Yes(spec, DetectKey, settings.DetectSurfaces);
-            settings.Targets = Word(spec, TargetsKey) ?? settings.Targets;
+            settings.Targets = CheckSource.Read(Word(spec, TargetsKey), settings.Targets);
             settings.WorstPerPatch = Yes(spec, WorstKey, settings.WorstPerPatch);
             settings.ExcludeStairs = Yes(spec, StairsKey, settings.ExcludeStairs);
             settings.PreferFloorCategories = Yes(spec, PreferFloorsKey, settings.PreferFloorCategories);
@@ -248,9 +249,9 @@ namespace CamelWorks.Core.Checks
 
             spec.Settings[MinimumKey] = Written(MinimumMetres);
             spec.Settings[ToleranceKey] = Written(ToleranceMetres);
-            spec.Settings[SurfacesKey] = Surfaces;
+            spec.Settings[SurfacesKey] = Surfaces.Written();
             spec.Settings[DetectKey] = DetectSurfaces ? "true" : "false";
-            spec.Settings[TargetsKey] = Targets;
+            spec.Settings[TargetsKey] = Targets.Written();
             spec.Settings[LevelsKey] = string.Join(";", Levels);
             spec.Settings[IgnoreKey] = string.Join(";", Ignore);
             spec.Settings[WorstKey] = WorstPerPatch ? "true" : "false";
@@ -283,9 +284,6 @@ namespace CamelWorks.Core.Checks
             return Ignore.Any(one =>
                 category!.IndexOf(one, StringComparison.OrdinalIgnoreCase) >= 0);
         }
-
-        private static string Said(string? side) =>
-            string.IsNullOrWhiteSpace(side) ? "everything" : side!;
 
         private static string Metres(double value) =>
             value.ToString("0.###", CultureInfo.InvariantCulture);

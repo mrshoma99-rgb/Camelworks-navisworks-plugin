@@ -390,6 +390,31 @@ namespace CamelWorks.Core.Data
                                                         Func<int, bool>? onProgress = null)
         {
             if (document == null) throw new ArgumentNullException(nameof(document));
+
+            return Read(document.Traverse(scope), triangles, metresPerUnit, options,
+                        diagnostics, onProgress);
+        }
+
+        /// <summary>
+        /// Detect the walkable surfaces in elements a caller has already picked out.
+        ///
+        /// The overload a source that is several sets, or whole models, is read through: those
+        /// resolve to a stream of elements rather than to one <see cref="TraversalScope"/>.
+        /// </summary>
+        /// <param name="items">The elements to read triangles from.</param>
+        /// <param name="triangles">Where the triangles come from.</param>
+        /// <param name="metresPerUnit">How many metres one model unit is.</param>
+        /// <param name="options">What counts as walkable.</param>
+        /// <param name="diagnostics">Filled in with what the run managed, or null.</param>
+        /// <param name="onProgress">Called with how many elements have been read; false stops it.</param>
+        public static IReadOnlyList<WalkablePatch> Read(IEnumerable<IModelItem> items,
+                                                        ITriangleSource triangles,
+                                                        double metresPerUnit,
+                                                        WalkableOptions options,
+                                                        WalkableDiagnostics? diagnostics = null,
+                                                        Func<int, bool>? onProgress = null)
+        {
+            if (items == null) throw new ArgumentNullException(nameof(items));
             if (triangles == null) throw new ArgumentNullException(nameof(triangles));
             if (options == null) throw new ArgumentNullException(nameof(options));
 
@@ -406,7 +431,7 @@ namespace CamelWorks.Core.Data
             var refused = 0;
             var skipped = 0;
 
-            foreach (var item in document.Traverse(scope))
+            foreach (var item in items)
             {
                 if (!item.HasGeometry || item.Key.IsEmpty) continue;
 

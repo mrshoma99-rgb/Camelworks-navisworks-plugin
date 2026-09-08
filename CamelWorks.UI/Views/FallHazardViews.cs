@@ -54,12 +54,30 @@ namespace CamelWorks.UI.Views
 
             private readonly StackPanel _log = Ui.Stack();
 
+            /// <summary>
+            /// What the three source pickers hold, built once per panel rather than per draw.
+            ///
+            /// The picker edits its value in place and redraws itself; rebuilding it from the saved
+            /// run on every keystroke would take the Find box away from whoever is typing in it.
+            /// </summary>
+            private readonly SourcePicker.Pick _floors;
+
+            private readonly SourcePicker.Pick _handrails;
+
+            private readonly SourcePicker.Pick _obstructions;
+
             internal Fields(ISeat seat, FallCheck check, CheckRunSpec run, Action onChanged)
             {
                 _seat = seat;
                 _check = check;
                 _run = run;
                 _onChanged = onChanged;
+
+                var settings = FallSettings.From(run);
+
+                _floors = SourcePicker.Read(settings.Floors);
+                _handrails = SourcePicker.Read(settings.Handrails);
+                _obstructions = SourcePicker.Read(settings.Obstructions);
             }
 
             private Measure Units => _seat.Profile.Units;
@@ -74,15 +92,6 @@ namespace CamelWorks.UI.Views
                 var sets = Sets();
                 var blocked = Blocked;
                 var storeys = Storeys();
-
-                var sides = new List<string> { FallSettings.Nothing, FallSettings.Loaded,
-                                              FallSettings.Selected };
-
-                sides.AddRange(sets);
-
-                var optional = new List<string> { FallSettings.Nothing };
-
-                optional.AddRange(sides);
 
                 return Ui.Stack(
                     _log,
@@ -121,28 +130,29 @@ namespace CamelWorks.UI.Views
                             : Ui.Note("This test does not say where to cut. Pick the storey, or "
                                       + "type the elevation the plan is cut at.")),
                     Bench.Group("What to read",
-                        Sized(Ui.Field("Floor from",
-                                 Source(Offered(sides, settings.Floors), settings.Floors,
-                                        "What the floor is read from",
-                                        pick => Keep(one => one.Floors = pick), 380),
-                                 "A set of floors or slabs. Everything loaded reads the whole "
+                        Sized(SourcePicker.Drawn(_seat, "Floor from", _floors,
+                                  () => Keep(one => one.Floors = SourcePicker.Written(_floors)),
+                                  blocked,
+                                  new[] { SourcePicker.Everywhere }),
+                              380),
+                        Ui.Small("A set of floors or slabs. Everything loaded reads the whole "
                                  + "federation at this elevation, and a wall or a duct through the "
                                  + "band projects its outline as though it were floor."),
-                              380),
                         settings.HasFloors
                             ? null
                             : Ui.Note("This test names nothing to read the floor from, so it "
                                       + "cannot run."),
-                        Ui.Across(
-                            Sized(Ui.Field("Handrails from",
-                                Source(Offered(optional, settings.Handrails), settings.Handrails,
-                                       "What the handrails are read from",
-                                       pick => Keep(one => one.Handrails = pick), 180)), 190),
-                            Sized(Ui.Field("Obstructions from",
-                                Source(Offered(optional, settings.Obstructions),
-                                       settings.Obstructions,
-                                       "What the obstructions are read from",
-                                       pick => Keep(one => one.Obstructions = pick), 180)), 190)),
+                        Sized(SourcePicker.Drawn(_seat, "Handrails from", _handrails,
+                                  () => Keep(one => one.Handrails = SourcePicker.Written(_handrails)),
+                                  blocked,
+                                  new[] { SourcePicker.Everywhere }),
+                              380),
+                        Sized(SourcePicker.Drawn(_seat, "Obstructions from", _obstructions,
+                                  () => Keep(one =>
+                                      one.Obstructions = SourcePicker.Written(_obstructions)),
+                                  blocked,
+                                  new[] { SourcePicker.Everywhere }),
+                              380),
                         settings.HasHandrails
                             ? null
                             : Ui.Note("With no handrails named, every edge over the gap is "
@@ -356,14 +366,14 @@ namespace CamelWorks.UI.Views
             /// <summary>A field capped to a readable width, so short fields sit two to a row.</summary>
             /// <param name="field">The field.</param>
             /// <param name="width">How wide it may be.</param>
-            private static UIElement Sized(Panel field, double width)
+            private static UIElement Sized(FrameworkElement field, double width)
             {
-                field.Width = width;
+                // A ceiling, not a width, as on the other set-up panels: a width meant every field
+                // stayed exactly as wide as it was written however wide the pane was, so narrowing
+                // the window clipped them instead of shrinking them.
+                field.MaxWidth = width;
 
-                // Left, not the default stretch. A stretched element given a fixed width is
-                // centred in what is left over, so a full-width field under a row of two started
-                // half a column in from the margin.
-                field.HorizontalAlignment = HorizontalAlignment.Left;
+                field.HorizontalAlignment = HorizontalAlignment.Stretch;
 
                 return field;
             }
@@ -382,29 +392,6 @@ namespace CamelWorks.UI.Views
                 if (problem != null) _log.Children.Add(Ui.Problem(problem));
 
                 _onChanged();
-            }
-
-            /// <summary>One source, picked from the shared list.</summary>
-            /// <param name="offered">Everything that could be read from.</param>
-            /// <param name="chosen">What it is read from now.</param>
-            /// <param name="prompt">What the list asks.</param>
-            /// <param name="onPicked">Records the choice.</param>
-            /// <param name="width">How wide the press is.</param>
-            private UIElement Source(IReadOnlyList<string> offered, string chosen, string prompt,
-                                     Action<string> onPicked, double width) =>
-                Parts.Source(_log, offered, chosen, prompt, onPicked, width, Blocked);
-
-
-            /// <summary>One side's list, with whatever it is set to kept in it.</summary>
-            /// <param name="offered">What this build offers.</param>
-            /// <param name="chosen">What the side is set to.</param>
-            private static List<string> Offered(IEnumerable<string> offered, string chosen)
-            {
-                var list = offered.ToList();
-
-                if (!list.Contains(chosen, StringComparer.OrdinalIgnoreCase)) list.Add(chosen);
-
-                return list;
             }
 
             /// <summary>

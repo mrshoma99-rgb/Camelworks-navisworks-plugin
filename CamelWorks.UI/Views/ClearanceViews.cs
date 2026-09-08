@@ -86,12 +86,27 @@ namespace CamelWorks.UI.Views
 
             private readonly StackPanel _log = Ui.Stack();
 
+            /// <summary>
+            /// What the two source pickers hold, built once per panel rather than per draw.
+            ///
+            /// The picker edits its value in place and redraws itself; rebuilding it from the saved
+            /// run on every keystroke would take the Find box away from whoever is typing in it.
+            /// </summary>
+            private readonly SourcePicker.Pick _surfaces;
+
+            private readonly SourcePicker.Pick _targets;
+
             internal Fields(ISeat seat, ClearanceCheck check, CheckRunSpec run, Action onChanged)
             {
                 _seat = seat;
                 _check = check;
                 _run = run;
                 _onChanged = onChanged;
+
+                var settings = ClearanceSettings.From(run);
+
+                _surfaces = SourcePicker.Read(settings.Surfaces);
+                _targets = SourcePicker.Read(settings.Targets);
             }
 
             private Measure Units => _seat.Profile.Units;
@@ -106,23 +121,6 @@ namespace CamelWorks.UI.Views
                 var sets = Sets();
                 var blocked = Blocked;
                 var storeys = Storeys();
-
-                // A source, never a mode: detection refines what is named here. The three
-                // whole-model answers plus the document's own sets, and nothing that guesses.
-                var from = new List<string> { ClearanceSettings.Loaded, ClearanceSettings.Selected };
-
-                from.AddRange(sets);
-
-                var to = new List<string> { ClearanceSettings.NotTheSurfaces,
-                                            ClearanceSettings.Selected, ClearanceSettings.Loaded };
-
-                to.AddRange(sets);
-
-                if (!from.Contains(settings.Surfaces, StringComparer.OrdinalIgnoreCase))
-                    from.Add(settings.Surfaces);
-
-                if (!to.Contains(settings.Targets, StringComparer.OrdinalIgnoreCase))
-                    to.Add(settings.Targets);
 
                 return Ui.Stack(
                     _log,
@@ -141,16 +139,16 @@ namespace CamelWorks.UI.Views
                     // The two sides, then what narrows them, then the two numbers. Five fields,
                     // which is the whole of what a clearance test is.
                     Bench.Group("What is checked",
-                        Sized(Ui.Field("Search for walkable surfaces in",
-                                 Source(from, settings.Surfaces,
-                                     "Where to look for walkable surfaces",
-                                     pick => Keep(one => one.Surfaces = pick), 380),
-                                 null, Need.Required),
+                        Sized(SourcePicker.Drawn(_seat, "Search for walkable surfaces in",
+                                  _surfaces,
+                                  () => Keep(one => one.Surfaces = SourcePicker.Written(_surfaces)),
+                                  blocked,
+                                  new[] { SourcePicker.Everywhere }),
                               380),
-                        Sized(Ui.Field("Search against",
-                                 Source(to, settings.Targets, "What the height is measured to",
-                                        pick => Keep(one => one.Targets = pick), 380),
-                                 null, Need.Required),
+                        Sized(SourcePicker.Drawn(_seat, "Search against", _targets,
+                                  () => Keep(one => one.Targets = SourcePicker.Written(_targets)),
+                                  blocked,
+                                  new[] { SourcePicker.Remainder, SourcePicker.Everywhere }),
                               380),
                         Chosen("Levels", settings.Levels, storeys, EveryLevel,
                                "Reports only the surfaces on the storeys named.",
@@ -222,16 +220,6 @@ namespace CamelWorks.UI.Views
 
                 return Sized(stack, 380);
             }
-
-            /// <summary>One source, picked from the shared list.</summary>
-            /// <param name="offered">Everything that could be read from.</param>
-            /// <param name="chosen">What it is read from now.</param>
-            /// <param name="prompt">What the list asks.</param>
-            /// <param name="onPicked">Records the choice.</param>
-            /// <param name="width">How wide the press is.</param>
-            private UIElement Source(IReadOnlyList<string> offered, string chosen, string prompt,
-                                     Action<string> onPicked, double width) =>
-                Parts.Source(_log, offered, chosen, prompt, onPicked, width, Blocked);
 
             /// <summary>What the level picker reads when no level narrows the run.</summary>
             private const string EveryLevel = "Every level";

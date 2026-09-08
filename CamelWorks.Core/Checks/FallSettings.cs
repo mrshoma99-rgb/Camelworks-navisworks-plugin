@@ -58,10 +58,10 @@ namespace CamelWorks.Core.Checks
         public const string LastFloorsKey = "lastFloors";
 
         /// <summary>What a side is set to for whatever the host has selected.</summary>
-        public const string Selected = "Current selection";
+        public const string Selected = CheckSource.TheSelection;
 
         /// <summary>What a side is set to for everything loaded.</summary>
-        public const string Loaded = "Everything loaded";
+        public const string Loaded = CheckSource.Everywhere;
 
         /// <summary>
         /// What a side is set to when there is nothing to read for it.
@@ -70,7 +70,7 @@ namespace CamelWorks.Core.Checks
         /// is printed. A saved set of this document actually called "None" is the empty side; there
         /// is no third name to give it.
         /// </summary>
-        public const string Nothing = "None";
+        public const string Nothing = CheckSource.Nowhere;
 
         /// <summary>
         /// What the run treats as floor. A saved set, the selection, or everything.
@@ -80,7 +80,7 @@ namespace CamelWorks.Core.Checks
         /// though it were floor, and the plan that produces is not the floor. Naming the floors is
         /// the one thing this check cannot guess, which is why it is asked for rather than assumed.
         /// </summary>
-        public string Floors { get; set; } = Nothing;
+        public CheckSource Floors { get; set; } = CheckSource.None();
 
         /// <summary>
         /// What the run treats as handrail. Nothing by default.
@@ -89,10 +89,10 @@ namespace CamelWorks.Core.Checks
         /// is the state a model without modelled rails is actually in. Guessing at a rail set
         /// would report edges as protected on no evidence.
         /// </summary>
-        public string Handrails { get; set; } = Nothing;
+        public CheckSource Handrails { get; set; } = CheckSource.None();
 
         /// <summary>What plugs an opening: equipment, ducts, pipes. Nothing by default.</summary>
-        public string Obstructions { get; set; } = Nothing;
+        public CheckSource Obstructions { get; set; } = CheckSource.None();
 
         private double _levelMetres;
 
@@ -155,19 +155,19 @@ namespace CamelWorks.Core.Checks
         public double MinPassageMetres { get; set; } = 0.3;
 
         /// <summary>True when the run names something to read the floor from.</summary>
-        public bool HasFloors => Names(Floors);
+        public bool HasFloors => !Floors.IsEmpty;
 
         /// <summary>True when the run has handrails to read.</summary>
-        public bool HasHandrails => Names(Handrails);
+        public bool HasHandrails => !Handrails.IsEmpty;
 
         /// <summary>True when the run has obstructions to read.</summary>
-        public bool HasObstructions => Names(Obstructions);
+        public bool HasObstructions => !Obstructions.IsEmpty;
 
         /// <summary>What this run covers, as the rail's one sentence.</summary>
         public string Between =>
-            Floors + " at " + Cut + " (±" + Metres(BandMetres) + " m)"
-            + (HasHandrails ? ", handrails from " + Handrails : ", no handrails named")
-            + (HasObstructions ? ", plugged by " + Obstructions : string.Empty);
+            Floors.Said() + " at " + Cut + " (±" + Metres(BandMetres) + " m)"
+            + (HasHandrails ? ", handrails from " + Handrails.Said() : ", no handrails named")
+            + (HasObstructions ? ", plugged by " + Obstructions.Said() : string.Empty);
 
         /// <summary>Where the plan is cut, as a storey name when there is one and a height when not.</summary>
         public string Cut =>
@@ -187,9 +187,9 @@ namespace CamelWorks.Core.Checks
 
             if (spec == null) return settings;
 
-            settings.Floors = Word(spec, FloorsKey) ?? settings.Floors;
-            settings.Handrails = Word(spec, HandrailsKey) ?? settings.Handrails;
-            settings.Obstructions = Word(spec, ObstructionsKey) ?? settings.Obstructions;
+            settings.Floors = CheckSource.Read(Word(spec, FloorsKey), settings.Floors);
+            settings.Handrails = CheckSource.Read(Word(spec, HandrailsKey), settings.Handrails);
+            settings.Obstructions = CheckSource.Read(Word(spec, ObstructionsKey), settings.Obstructions);
             if (Word(spec, LevelKey) is string cut
                 && double.TryParse(cut, NumberStyles.Float, CultureInfo.InvariantCulture, out var metres))
                 settings.LevelMetres = metres;
@@ -210,9 +210,9 @@ namespace CamelWorks.Core.Checks
         {
             if (spec == null) throw new ArgumentNullException(nameof(spec));
 
-            spec.Settings[FloorsKey] = Floors;
-            spec.Settings[HandrailsKey] = Handrails;
-            spec.Settings[ObstructionsKey] = Obstructions;
+            spec.Settings[FloorsKey] = Floors.Written();
+            spec.Settings[HandrailsKey] = Handrails.Written();
+            spec.Settings[ObstructionsKey] = Obstructions.Written();
 
             // Left out entirely when nothing has set it, so "no elevation" survives a save and a
             // reload rather than reading back as a deliberate zero.
@@ -229,7 +229,7 @@ namespace CamelWorks.Core.Checks
         /// <summary>Why this run cannot be run as it stands, or null when it can.</summary>
         public string? Wrong()
         {
-            if (!Names(Floors))
+            if (!HasFloors)
                 return "This run names nothing to read the floor from. Name a set of floors or "
                        + "slabs: read from everything loaded, a wall or a duct through the band "
                        + "projects its outline as though it were floor.";
@@ -243,12 +243,6 @@ namespace CamelWorks.Core.Checks
 
             return null;
         }
-
-        /// <summary>Whether a side names something to read.</summary>
-        /// <param name="side">What the side is set to.</param>
-        private static bool Names(string? side) =>
-            !string.IsNullOrWhiteSpace(side)
-            && !string.Equals(side, Nothing, StringComparison.OrdinalIgnoreCase);
 
         private static string Metres(double value) =>
             value.ToString("0.###", CultureInfo.InvariantCulture);
