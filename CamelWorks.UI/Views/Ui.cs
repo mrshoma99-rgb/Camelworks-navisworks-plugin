@@ -1085,6 +1085,46 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
+        /// Two or more controls sharing a row in equal columns.
+        ///
+        /// Not <see cref="Across"/>, which wraps and gives each child its desired width: a pair of
+        /// fields laid out that way keeps the width it was written with however wide the pane is,
+        /// and a pane wider than the pair leaves the rest of the row white.
+        /// </summary>
+        /// <param name="children">The controls, one per column. Nulls are skipped.</param>
+        public static Panel Evenly(params UIElement?[] children)
+        {
+            var grid = new Grid { Margin = new Thickness(0, 0, 0, 5) };
+
+            var kept = children.Where(one => one != null).ToList();
+
+            for (var i = 0; i < kept.Count; i++)
+            {
+                grid.ColumnDefinitions.Add(new ColumnDefinition
+                {
+                    Width = new GridLength(1, GridUnitType.Star),
+                });
+
+                var child = Loose(kept[i]!);
+
+                if (child is FrameworkElement element)
+                {
+                    element.HorizontalAlignment = HorizontalAlignment.Stretch;
+
+                    // A gutter between the columns, and none outside them, so a pair lines up with
+                    // the full-width field above it at both edges.
+                    element.Margin = new Thickness(i == 0 ? 0 : Gap, 0,
+                                                   i == kept.Count - 1 ? 0 : 0, 0);
+                }
+
+                Grid.SetColumn(child, i);
+                grid.Children.Add(child);
+            }
+
+            return grid;
+        }
+
+        /// <summary>
         /// A row of actions, with the important one first and the rest quieter.
         ///
         /// Given as one call rather than three buttons in an <see cref="Across"/> because the point
@@ -2651,7 +2691,10 @@ namespace CamelWorks.UI.Views
 
             if (asked != null)
             {
-                DockPanel.SetDock(asked, Dock.Left);
+                // Hard right, not next to the label. Docked left it sat wherever the label ended,
+                // so a column of fields carried its badges down a ragged edge; against the field's
+                // own right edge they line up with each other.
+                DockPanel.SetDock(asked, Dock.Right);
                 head.Children.Add(asked);
             }
 
@@ -4868,6 +4911,48 @@ namespace CamelWorks.UI.Views
         /// <param name="actions">The verbs.</param>
         public static UIElement Picking(ListView table, UIElement? aside, params OnPicked[] actions)
         {
+            var parts = PickingParts(table, aside, actions);
+
+            // The table is in what comes back, above its bar. A pane that pins the bar and lets
+            // the rows scroll wants the bar alone, and takes the table back out with Loose - see
+            // Bench.Listed. Handing this whole stack to a docked slot reparents the table into
+            // it, which draws the rows at the foot of an empty pane.
+            parts.Verbs.Children.Insert(0, parts.Tally);
+            parts.Verbs.Children.Add(parts.Links);
+
+            return Stack(table, parts.Verbs, parts.Said);
+        }
+
+        /// <summary>
+        /// The verb bar's three parts, for a screen that puts them in three places.
+        ///
+        /// The Create tab does: the verbs go on the strip beside the button that makes a test,
+        /// and the count and the All/None links go on the list pane's own header. As one bar they
+        /// were a second row of chrome under the strip saying what the header had room for.
+        /// </summary>
+        public sealed class PickBar
+        {
+            /// <summary>The verbs, in a panel that wraps.</summary>
+            public WrapPanel Verbs { get; internal set; } = new WrapPanel();
+
+            /// <summary>How many rows are picked, of how many.</summary>
+            public TextBlock Tally { get; internal set; } = new TextBlock();
+
+            /// <summary>The All and None links, as one child so they cannot be wrapped apart.</summary>
+            public UIElement Links { get; internal set; } = new StackPanel();
+
+            /// <summary>Where a verb says what it did.</summary>
+            public Panel Said { get; internal set; } = new StackPanel();
+        }
+
+        /// <summary>
+        /// Build the verb bar's parts without placing them.
+        /// </summary>
+        /// <param name="table">The table being picked from.</param>
+        /// <param name="aside">A control a verb reads, shown before the verbs, or null.</param>
+        /// <param name="actions">The verbs.</param>
+        public static PickBar PickingParts(ListView table, UIElement? aside, params OnPicked[] actions)
+        {
             if (table == null) throw new ArgumentNullException(nameof(table));
 
             table.Multi();
@@ -4915,8 +5000,6 @@ namespace CamelWorks.UI.Views
             picking.Children.Add(none);
 
             var buttons = new List<System.Windows.Controls.Button>();
-
-            bar.Children.Add(tally);
 
             if (aside != null)
             {
@@ -4981,8 +5064,6 @@ namespace CamelWorks.UI.Views
                 bar.Children.Add(button);
             }
 
-            bar.Children.Add(picking);
-
             void Say()
             {
                 var picked = table.SelectedItems.Count;
@@ -5018,11 +5099,7 @@ namespace CamelWorks.UI.Views
             // already is, and offering both costs nothing.
             table.Menu(verbs.Select(v => new OnMenu(v.Caption, picked => v.Act(picked, said))).ToArray());
 
-            // The table is in what comes back, above its bar. A pane that pins the bar and lets
-            // the rows scroll wants the bar alone, and takes the table back out with Loose — see
-            // Bench.Listed. Handing this whole stack to a docked slot reparents the table into
-            // it, which draws the rows at the foot of an empty pane.
-            return Stack(table, bar, said);
+            return new PickBar { Verbs = bar, Tally = tally, Links = picking, Said = said };
         }
 
         /// <summary>

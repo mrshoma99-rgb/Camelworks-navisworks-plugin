@@ -305,7 +305,10 @@ namespace CamelWorks.UI.Views
                 Padding = new Thickness(10, 9, 10, 10),
                 CornerRadius = new CornerRadius(8),
                 BorderThickness = new Thickness(1),
-                MaxWidth = 380,
+
+                // No ceiling. The card sits in a panel that is already the narrower half of the
+                // tab, and a cap here left the origins wrapping onto a second line inside a card
+                // with white space beside it.
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 Child = held,
             };

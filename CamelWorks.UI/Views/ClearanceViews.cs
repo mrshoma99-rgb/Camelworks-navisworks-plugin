@@ -127,44 +127,42 @@ namespace CamelWorks.UI.Views
                     // No heading over the name and the folder: the tab is called Create and the
                     // list beside this has a Test column.
                     Bench.Group(string.Empty,
-                        Ui.Across(
-                            Sized(Ui.Field("Name", Ui.Settled(_run.Name, string.Empty,
-                                name => Keep(_ => _run.Name = name), Ui.Wide.Name)), 200),
-                            Sized(Ui.Field("Folder", Ui.Folder(_run.Folder,
+                        Ui.Evenly(
+                            Filled(Ui.Field("Name", Ui.Settled(_run.Name, string.Empty,
+                                name => Keep(_ => _run.Name = name), Ui.Wide.Name))),
+                            Filled(Ui.Field("Folder", Ui.Folder(_run.Folder,
                                 Seated.Folders(_check),
                                 folder => Keep(_ => _run.Folder =
                                     string.IsNullOrWhiteSpace(folder) ? null : folder),
-                                160)), 170))),
+                                160))))),
 
                     // The two sides, then what narrows them, then the two numbers. Five fields,
                     // which is the whole of what a clearance test is.
                     Bench.Group("What is checked",
-                        Sized(SourcePicker.Drawn(_seat, "Search for walkable surfaces in",
+                        Filled(SourcePicker.Drawn(_seat, "Search for walkable surfaces in",
                                   _surfaces,
                                   () => Keep(one => one.Surfaces = SourcePicker.Written(_surfaces)),
                                   blocked,
-                                  new[] { SourcePicker.Everywhere }),
-                              380),
-                        Sized(SourcePicker.Drawn(_seat, "Search against", _targets,
+                                  new[] { SourcePicker.Everywhere })),
+                        Filled(SourcePicker.Drawn(_seat, "Search against", _targets,
                                   () => Keep(one => one.Targets = SourcePicker.Written(_targets)),
                                   blocked,
-                                  new[] { SourcePicker.Remainder, SourcePicker.Everywhere }),
-                              380),
+                                  new[] { SourcePicker.Remainder, SourcePicker.Everywhere })),
                         Chosen("Levels", settings.Levels, storeys, EveryLevel,
                                "Reports only the surfaces on the storeys named.",
                                (one, add) => one.Levels.Add(add),
                                (one, drop) => one.Levels.Remove(drop))),
 
                     Bench.Group("How much room",
-                        Ui.Across(
-                            Sized(Number("Height", settings.MinimumMetres,
+                        Ui.Evenly(
+                            Filled(Number("Height", settings.MinimumMetres,
                                          metres => metres > 0,
                                          (one, metres) => one.MinimumMetres = metres,
-                                         Need.Required), 190),
-                            Sized(Number("Tolerance", settings.ToleranceMetres,
+                                         Need.Required)),
+                            Filled(Number("Tolerance", settings.ToleranceMetres,
                                          metres => metres >= 0,
                                          (one, metres) => one.ToleranceMetres = metres,
-                                         Need.Optional), 190)),
+                                         Need.Optional))),
                         settings.ToleranceMetres > 0
                             ? null
                             : Ui.Note("Every shortfall is reported, however small.")),
@@ -218,7 +216,7 @@ namespace CamelWorks.UI.Views
 
                 stack.Children.Add(Ui.Small(hint));
 
-                return Sized(stack, 380);
+                return Filled(stack);
             }
 
             /// <summary>What the level picker reads when no level narrows the run.</summary>
@@ -338,31 +336,21 @@ namespace CamelWorks.UI.Views
                          }), 90),
                          null, need);
 
-            /// <summary>A field capped to a readable width, so short fields sit two to a row.</summary>
+            /// <summary>
+            /// A field that takes the width of the panel it is in.
+            ///
+            /// It carried a ceiling before. A cap plus the default stretch centres an element in
+            /// what is left over, which is why the panel's fields started at three different left
+            /// edges; a cap alone leaves the panel's right half white at every window width. This
+            /// panel is already the narrower half of the tab, so its fields take all of it and a
+            /// pair of them splits it through <see cref="Ui.Evenly"/>.
+            /// </summary>
             /// <param name="field">The field.</param>
-            /// <param name="width">How wide it may be.</param>
-            private static UIElement Sized(FrameworkElement field, double width)
+            private static UIElement Filled(FrameworkElement field)
             {
-                // A ceiling, not a width: a fixed width meant every field stayed exactly as wide
-                // as it was written however wide the pane was, so narrowing the window clipped
-                // them instead of shrinking them.
-                //
-                // The cap is on a column rather than on the field. A stretched element carrying a
-                // MaxWidth is centred in what is left over, which is why some fields on this panel
-                // started level with the heading and the wider ones started an inch in.
                 field.HorizontalAlignment = HorizontalAlignment.Stretch;
 
-                var row = new Grid();
-
-                row.ColumnDefinitions.Add(new ColumnDefinition
-                {
-                    Width = new GridLength(1, GridUnitType.Star),
-                    MaxWidth = width,
-                });
-
-                row.Children.Add(field);
-
-                return row;
+                return field;
             }
 
             /// <summary>Write the settings back onto the test and into the project file.</summary>

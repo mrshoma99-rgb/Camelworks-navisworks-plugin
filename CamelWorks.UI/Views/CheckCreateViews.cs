@@ -108,6 +108,12 @@ namespace CamelWorks.UI.Views
 
             /// <summary>The verbs under the list, pinned to the bottom of the pane.</summary>
             private readonly ContentControl _picking = new ContentControl();
+
+            /// <summary>How many rows are picked, on the list pane's own header.</summary>
+            private readonly ContentControl _tally = new ContentControl();
+
+            /// <summary>The All and None links, hard right on that same header.</summary>
+            private readonly ContentControl _links = new ContentControl();
             private readonly ContentControl _panel = new ContentControl();
             private readonly ContentControl _foot = new ContentControl();
             private readonly TextBox _search;
@@ -214,7 +220,9 @@ namespace CamelWorks.UI.Views
                 if (_all.Count == 0)
                     return Bench.Surface(null, _foot, Ui.Stack(Empty()));
 
-                var left = Bench.Pane("Tests", null, Listing(), null, scrolls: false);
+                // The count and the two links sit on the pane's own header line rather than on a
+                // bar of their own: the header already names the list and had the room.
+                var left = Bench.Pane("Tests", _tally, Listing(), _links, scrolls: false);
                 var right = Bench.Pane("Settings", null, _panel, null);
 
                 // The list pane holds four columns of names; the settings pane holds fields
@@ -247,14 +255,19 @@ namespace CamelWorks.UI.Views
                 DockPanel.SetDock(_make, Dock.Left);
                 row.Children.Add(Ui.Loose(_make));
 
+                // On the same line as New test, not under it. A second row for five verbs is a
+                // row of the pane's height spent on chrome, and the verbs are what New test is
+                // next to in the first place.
+                _picking.Margin = new Thickness(10, 0, 0, 0);
+                _picking.VerticalAlignment = VerticalAlignment.Center;
+
+                DockPanel.SetDock(_picking, Dock.Left);
+                row.Children.Add(Ui.Loose(_picking));
+
                 DockPanel.SetDock(_search, Dock.Right);
                 row.Children.Add(Ui.Loose(_search));
 
-                // The verbs under the strip rather than under the table: what you do to a test
-                // belongs beside what makes one, and the bar says how many rows it is about.
-                var held = Ui.Stack(row, Ui.Loose(_picking));
-
-                return held;
+                return row;
             }
 
             // ---- The list ------------------------------------------------------------------
@@ -347,7 +360,7 @@ namespace CamelWorks.UI.Views
                 {
                     _table = null;
                     _list.Content = Empty();
-                    _picking.Content = null;
+                    Unpicked();
                     RedrawFoot();
                     return;
                 }
@@ -355,7 +368,7 @@ namespace CamelWorks.UI.Views
                 if (shown.Count == 0)
                 {
                     _table = null;
-                    _picking.Content = null;
+                    Unpicked();
 
                     _list.Content = Ui.Empty("Nothing matches \"" + _query.Trim() + "\".",
                         Ui.Count(_all.Count, "test") + " in this project.", "Clear the search",
@@ -452,8 +465,25 @@ namespace CamelWorks.UI.Views
                 // table stacked above its own bar, so assigning that stack to the pinned bar
                 // reparents the table into it — which is why the rows drew at the foot of the
                 // pane with the bar, and the list above them was empty.
-                _picking.Content = Ui.Picking(table, verbs.ToArray());
-                _list.Content = Ui.Loose(table);
+                // The bar's three parts, in three places: the verbs on the strip, the count and
+                // the links on the list pane's header.
+                var bar = Ui.PickingParts(table, null, verbs.ToArray());
+
+                bar.Tally.Margin = new Thickness(10, 0, 0, 0);
+
+                _picking.Content = bar.Verbs;
+                _tally.Content = bar.Tally;
+                _links.Content = bar.Links;
+
+                _list.Content = Ui.Stack(Ui.Loose(table), bar.Said);
+            }
+
+            /// <summary>Clear the three places the verb bar's parts sit.</summary>
+            private void Unpicked()
+            {
+                _picking.Content = null;
+                _tally.Content = null;
+                _links.Content = null;
             }
 
             /// <summary>What the last run of a test found: never run, clean, or a count.</summary>
