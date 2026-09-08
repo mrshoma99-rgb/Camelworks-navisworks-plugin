@@ -1652,36 +1652,27 @@ namespace CamelWorks.UI.Views
                     Content = _rows,
                 };
 
-                // Above the rows, inside the row the rows live in.
+                // Over the rows, not above them.
                 //
-                // It was drawn over them, which hid the list whose count it was changing: you
-                // could not see what a filter did while setting it. The reason it was an overlay
-                // is recorded and is real — put inside the head it pushed the test list down, so
-                // the rail's column headings and the board's stopped lining up the moment it
-                // opened, which is two panes of one table with their heads at different heights.
+                // This was changed to dock above the list, on the reasoning that a panel drawn
+                // over the rows hides the list whose count it is changing. Worked on a real
+                // project the docked version was worse in four ways at once: it pushed the list
+                // down, it needed a height cap, the cap gave it a scrollbar of its own inside a
+                // pane that already had one, and the last chip was cut off at the bottom. The
+                // overlay had none of those.
                 //
-                // That assumed the only alternative was the head. This is the third place: the
-                // body row holds the panel docked above the list, so the head never moves and the
-                // headings stay level, while the list shortens instead of being covered.
-                var body = new DockPanel { LastChildFill = true };
-
-                _railPanel.Margin = new Thickness(10, 0, 10, 8);
-                _railPanel.HorizontalAlignment = HorizontalAlignment.Stretch;
-
-                // Capped, and it scrolls inside itself. A project with forty disciplines would
-                // otherwise hand the whole rail to chips and leave no list under them.
-                var narrowing = new ScrollViewer
-                {
-                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                    MaxHeight = 280,
-                    Content = Ui.Loose(_railPanel),
-                };
-
-                DockPanel.SetDock(narrowing, Dock.Top);
-                body.Children.Add(narrowing);
+                // So: back over the list, with the close button the docked version brought with
+                // it, and no cap - a panel of twenty-five chips is about three hundred pixels
+                // and fits the rail without scrolling anything.
+                var body = new Grid();
 
                 body.Children.Add(list);
+
+                _railPanel.Margin = new Thickness(10, 0, 10, 8);
+                _railPanel.VerticalAlignment = VerticalAlignment.Top;
+                _railPanel.HorizontalAlignment = HorizontalAlignment.Stretch;
+
+                body.Children.Add(Ui.Loose(_railPanel));
 
                 Grid.SetRow(body, 1);
                 grid.Children.Add(body);
@@ -1715,8 +1706,21 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private void RedrawRail()
             {
-                var read = Current();
+                RedrawRailTools();
+                RedrawRailList();
+                RedrawRailFoot();
+            }
 
+            /// <summary>
+            /// The rail's two symbols and the panel one of them opens, and nothing else.
+            ///
+            /// Apart from the list because opening the filter panel does not change the list.
+            /// It used to redraw the whole rail, so pressing the funnel on a project of a
+            /// hundred and sixty tests rebuilt all hundred and sixty rows before the panel
+            /// appeared - which is why it was slow to open and slow to close again.
+            /// </summary>
+            private void RedrawRailTools()
+            {
                 _railTools.Children.Clear();
 
                 _railTools.Children.Add(Parts.MoreMenu(Glyphs.Sort, "Sort: " + Ordered(State.Sort),
@@ -1725,7 +1729,7 @@ namespace CamelWorks.UI.Views
                 var narrow = Ui.Icon(Glyphs.Filter, WhatIsNarrowed(), () =>
                 {
                     _panel = !_panel;
-                    RedrawRail();
+                    RedrawRailTools();
                 });
 
                 // The funnel says whether it is doing anything. With the chips gone this is the
@@ -1735,10 +1739,7 @@ namespace CamelWorks.UI.Views
 
                 _railTools.Children.Add(narrow);
 
-                _railPanel.Child = _panel ? Narrowing(read) : null;
-
-                RedrawRailList();
-                RedrawRailFoot();
+                _railPanel.Child = _panel ? Narrowing(Current()) : null;
             }
 
             /// <summary>
@@ -8651,11 +8652,13 @@ namespace CamelWorks.UI.Views
                     Mark(row.Rows.Cast<object>().ToList(), status, _toast);
                 });
 
-                // Handled here, or the press that sets a status also selects the row and opens
-                // the detail beside it - which is what the group name cell had to do too.
-                if (cell is FrameworkElement pressable)
-                    pressable.PreviewMouseLeftButtonUp += (s, e) => e.Handled = true;
-
+                // Nothing is handled here. Parts.Opens already marks the chip's own
+                // MouseLeftButtonUp, for exactly the reason this cell wanted: a press meant for
+                // the status must not also move the row selection.
+                //
+                // The handler that used to sit here was on PreviewMouseLeftButtonUp, which
+                // tunnels - it ran before the popup's own bubbling handler and marked the event
+                // done, so the chip did nothing at all. A dropdown that never opened.
                 return cell;
             }
 
@@ -10688,12 +10691,64 @@ namespace CamelWorks.UI.Views
             /// <param name="row">The clash.</param>
             private void Kept(Row row)
             {
-                _ = row;
-
                 Moved();
                 KeepFindings();
                 ArmSync();
-                RedrawRows();
+
+                // The row, where the row is all that changed. Setting a status used to rebuild
+                // the table: a fresh pass of every result through every filter, a new list, and
+                // the scroll offset put back afterwards - which on five hundred results is the
+                // second of lag before the new status appears, and the visible jump to the top
+                // and back that the restore is.
+                //
+                // A write can only move a row when something is deciding where rows go by the
+                // field it wrote. With nothing narrowing and nothing banding, membership and
+                // order cannot have changed, so nothing but that row needs drawing again.
+                if (Settled()) Repainted(row);
+                else RedrawRows();
+            }
+
+            /// <summary>
+            /// Whether the board is showing its rows plainly: nothing narrowing, nothing banding.
+            ///
+            /// Deliberately conservative. Anything at all deciding which rows show or what order
+            /// they are in sends a write back through the full rebuild, because a status set to
+            /// Approved on a board showing only New rows has to leave the list.
+            /// </summary>
+            private bool Settled() =>
+                State.Status == null
+                && State.Party == null
+                && State.ByColumn.Count == 0
+                && _sameAs == null
+                && _by == null
+                && _bands.Count == 0
+                && _showing == BothKinds
+                && _boardBox.Text.Trim().Length == 0;
+
+            /// <summary>
+            /// Draw again every line one result appears on.
+            ///
+            /// By the object, not by an id: a result is a loose line under its own id and a
+            /// member of its group's line under another, and both show what it holds.
+            /// </summary>
+            /// <param name="row">The clash that changed.</param>
+            private void Repainted(Row row)
+            {
+                if (_lines != null && _list != null)
+                    foreach (var line in _lines)
+                        if (ReferenceEquals(line.Clash, row)
+                            || line.GroupRow?.Rows.Contains(row) == true)
+                            _list.Redraw(line);
+
+                var entry = Entry();
+
+                if (entry != null)
+                {
+                    var shape = Shape(entry);
+                    _head.Content = Header(shape.Groups, shape.Loose);
+                }
+
+                RedrawSelection();
             }
 
             /// <summary>Add one comment to everything picked.</summary>
