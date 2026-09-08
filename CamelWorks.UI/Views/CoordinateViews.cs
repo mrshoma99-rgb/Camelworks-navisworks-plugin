@@ -3194,7 +3194,11 @@ namespace CamelWorks.UI.Views
                 var session = _live;
                 var board = LastBoard;
 
-                if (session == null || board == null) return;
+                // Only the revision line and the history need the session; everything above them
+                // is a fact about the board. Gating the lot on one drew the whole left column
+                // empty whenever the model was closed, so the tab said nothing at all about a
+                // board it was holding.
+                if (board == null) return;
 
                 var regressed = Regressed();
 
@@ -3239,7 +3243,7 @@ namespace CamelWorks.UI.Views
                         + (unowned > 0 ? " and one for the unassigned issues" : string.Empty)
                         + ". Each takes the next letter in that party's own sequence."));
                 }
-                else
+                else if (session != null)
                 {
                     var was = LastIssue(session, audience);
                     var revision = Deliverable.NextRevision(was?.Revision);
@@ -3253,7 +3257,7 @@ namespace CamelWorks.UI.Views
                     _shape.Children.Add(Say(Lands(session, audience, revision, now)));
                 }
 
-                History(session);
+                if (session != null) History(session);
             }
 
             /// <summary>
