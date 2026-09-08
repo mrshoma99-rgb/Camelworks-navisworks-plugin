@@ -113,19 +113,21 @@ namespace CamelWorks.UI.Views
             {
                 Redraw();
 
-                // Blocked when the form cannot succeed, which it already knew: the same reason
-                // it draws in the notice above was computed and then not asked. A form that
-                // states "No document is open" and offers its primary as available lets somebody
-                // fill in six fields to be told at the press.
-                var blocked = Blocked;
-
-                var make = blocked == null
-                    ? (System.Windows.Controls.Button)Ui.Primary("Make the test", Make)
-                    : Ui.Cannot("Make the test", blocked);
-
+                // No "Make the test" button.
+                //
+                // Every other kind of test on this tab is saved as you go, and the footer says
+                // so. This one had a commit button because a clash test's two sides are settled
+                // when the host takes it and cannot be re-pointed afterwards - so something has
+                // to decide the moment it is made. That is a real constraint and it is not a
+                // reason for a button: the moment both sides have something on them is the
+                // moment, and the form knows when that is.
+                //
+                // Which is also why it sat at the foot of a form long enough to scroll. Somebody
+                // filling in two sides had to find their way to the bottom of the panel to
+                // finish, on the one tab where nothing else asks that.
                 var drop = Ui.Quiet("Cancel", () => Ui.Safely(_onDropped));
 
-                var foot = Ui.Actions(make, drop);
+                var foot = Ui.Actions(drop);
 
                 foot.Margin = new Thickness(0, 10, 0, 0);
 
@@ -144,13 +146,23 @@ namespace CamelWorks.UI.Views
                 return Ui.Stack(
                     Bench.Group(string.Empty,
                         Ui.Across(
-                            Sized(Ui.Field("Name", Ui.Text(_name, text => _name = text, Ui.Wide.Name)), 200),
+                            // Settle on the name too: with both sides already picked, typing the
+                            // name is the last thing left, and the test is made when it lands.
+                            Sized(Ui.Field("Name", Ui.Text(_name, text =>
+                                {
+                                    _name = text;
+                                    Settle();
+                                }, Ui.Wide.Name)), 200),
                             Sized(Ui.Field("Folder", Folder()), 190))),
 
                     // The sides first and together. They are the test: the two numbers under them
                     // are what it is judged at, and they can be changed afterwards where the sides
                     // cannot.
                     Bench.Group("What is tested against what",
+                        Ui.Small("The test is made as soon as both sides have something on them. "
+                                 + "Its name, folder, kind and tolerance can all be changed "
+                                 + "afterwards; its two sides cannot, because Navisworks will "
+                                 + "not re-point a test that exists."),
                         Side("First side", _a, sets, models, blocked),
                         Side("Second side", _b, sets, models, blocked)),
 
@@ -184,13 +196,6 @@ namespace CamelWorks.UI.Views
                     blocked == null ? null : Ui.Note(blocked));
             }
 
-            /// <summary>
-            /// Which clash folder the test goes in: the ones the document has, or a new one.
-            ///
-            /// A box on its own asked somebody to remember and retype a folder name that is on
-            /// the screen behind the form, and a misspelling made a second folder rather than an
-            /// error.
-            /// </summary>
             /// <summary>
             /// Which folder the new test is filed in.
             ///
@@ -271,7 +276,7 @@ namespace CamelWorks.UI.Views
                 }
 
                 held.Children.Add(Parts.Ticked(lines, side.Has,
-                    (line, on) => { side.Put(line, on); Said(); },
+                    (line, on) => { side.Put(line, on); Said(); Settle(); },
                     models_ ? "Nothing is loaded." : "This document holds no saved sets.",
                     () => { side.Picked.Clear(); Said(); }));
 
@@ -314,6 +319,36 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>Make it, or say why the host would not.</summary>
+            /// <summary>
+            /// Make the test if the form is ready, and say nothing if it is not.
+            ///
+            /// Called after every change rather than from a button. Quiet on a form that is not
+            /// finished: a half-filled side is somebody still working, not somebody who made a
+            /// mistake, so it does not complain about the second side while the first is being
+            /// picked.
+            ///
+            /// Once. The flag matters because the calls that reach here come from a redraw, and
+            /// the host taking a test is not something to do twice on one form.
+            /// </summary>
+            private void Settle()
+            {
+                if (_made) return;
+                if (Blocked != null) return;
+                if (string.IsNullOrWhiteSpace(_name)) return;
+
+                var ready = Read(_a);
+                var also = Read(_b);
+
+                if (ready == null || also == null) return;
+
+                _made = true;
+
+                Make();
+            }
+
+            /// <summary>True once the host has taken this form's test, so it is never made twice.</summary>
+            private bool _made;
+
             private void Make()
             {
                 _log.Children.Clear();
@@ -325,12 +360,14 @@ namespace CamelWorks.UI.Views
                 {
                     _log.Children.Add(Ui.Problem("A clash test is between two things. Both sides "
                                                  + "need something on them."));
+                    _made = false;
                     return;
                 }
 
                 if (string.IsNullOrWhiteSpace(_name))
                 {
                     _log.Children.Add(Ui.Problem("Give the test a name."));
+                    _made = false;
                     return;
                 }
 
@@ -343,6 +380,10 @@ namespace CamelWorks.UI.Views
                 if (made == null)
                 {
                     _log.Children.Add(Ui.Problem(problem ?? "The document would not take it."));
+
+                    // Left open, so a refusal is something to correct on the form rather than a
+                    // form that has quietly stopped trying.
+                    _made = false;
                     return;
                 }
 
@@ -376,9 +417,17 @@ namespace CamelWorks.UI.Views
                 return named.Count == 0 ? null : ClashSide.Sets(named);
             }
 
-            /// <summary>Draw the form again, so a change to one field reaches the rest.</summary>
+            /// <summary>
+            /// Draw the form again, so a change to one field reaches the rest.
+            ///
+            /// And settle first: every change that could finish the form comes through here, so
+            /// this is where the test is made. Before the draw, because making it hands the tab
+            /// its id and the tab replaces this form with the panel for the test that now exists.
+            /// </summary>
             private void Redraw()
             {
+                Settle();
+
                 _body.Children.Clear();
                 _body.Children.Add(Ui.Loose(Build()));
             }

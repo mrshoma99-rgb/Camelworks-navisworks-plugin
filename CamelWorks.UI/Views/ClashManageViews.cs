@@ -3436,7 +3436,18 @@ namespace CamelWorks.UI.Views
             /// <param name="entry">The test on the board.</param>
             private UIElement Title(TestEntry entry)
             {
-                var row = new DockPanel { LastChildFill = true };
+                // Two lines, not one row with three things fighting over it.
+                //
+                // It was a dock panel with the name docked left, the buttons docked right and
+                // the search and the status chips as the child that fills. A fill child is given
+                // the whole of the remaining rectangle, top to bottom, and its contents sit at
+                // the top of it - while the name is aligned to the bottom. So the search box and
+                // the chips drew above the title of the test they belong to, and on a narrow
+                // pane the chips wrapped as well, which made the row taller and the gap worse.
+                //
+                // The name and the buttons are what the row is; the search and the chips are
+                // what is being done to the table, and they go under it on a line of their own.
+                var row = new DockPanel { LastChildFill = false };
 
                 var verbs = new StackPanel
                 {
@@ -3615,9 +3626,9 @@ namespace CamelWorks.UI.Views
                 DockPanel.SetDock(naming, Dock.Left);
                 row.Children.Add(naming);
 
-                row.Children.Add(words);
+                words.Margin = new Thickness(0, 8, 0, 0);
 
-                return row;
+                return Ui.Stack(row, words);
             }
 
             /// <summary>
