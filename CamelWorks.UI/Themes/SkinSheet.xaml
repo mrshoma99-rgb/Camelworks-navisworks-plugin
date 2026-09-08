@@ -521,12 +521,16 @@
             <Trigger Property="IsKeyboardFocused" Value="True">
               <Setter TargetName="ring" Property="Visibility" Value="Visible"/>
             </Trigger>
-            <!-- Still filled, and still the loudest control on the screen. Dropping to an outline
-                 left a blocked screen with no filled control at all, so the one action the screen
-                 is for became the quietest thing on it and screens took to swapping the style for
-                 the secondary weight to get a button back. -->
+            <!-- Off, and readable. The plate was kept and faded to 0.42, but Opacity fades the
+                 whole subtree, caption included: white text on a washed brand plate is about
+                 1.4:1, which is why "Include tests" with nothing selected and "Apply to the
+                 board" with no packs chosen could not be read at all. Both halves are opaque
+                 now - the plate goes, the outline that the template always draws carries the
+                 shape, and Muted on the pane is a tier below Text and well above the floor. -->
             <Trigger Property="IsEnabled" Value="False">
-              <Setter TargetName="b" Property="Opacity" Value="0.42"/>
+              <Setter TargetName="b" Property="Background" Value="Transparent"/>
+              <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource BtnBd}"/>
+              <Setter Property="Foreground" Value="{DynamicResource Muted}"/>
               <Setter Property="Cursor" Value="Arrow"/>
             </Trigger>
           </ControlTemplate.Triggers>
