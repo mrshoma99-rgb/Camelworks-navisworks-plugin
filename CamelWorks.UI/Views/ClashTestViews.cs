@@ -191,40 +191,17 @@ namespace CamelWorks.UI.Views
             /// the screen behind the form, and a misspelling made a second folder rather than an
             /// error.
             /// </summary>
-            private UIElement Folder()
-            {
-                var held = Folders();
-                var offered = new List<string> { Root };
-
-                offered.AddRange(held);
-
-                if (_folder != null && !offered.Contains(_folder, StringComparer.OrdinalIgnoreCase))
-                    offered.Add(_folder);
-
-                offered.Add(NewFolder);
-
-                return Ui.Choice(offered, _folder ?? Root, picked =>
-                {
-                    if (string.Equals(picked, NewFolder, StringComparison.Ordinal))
-                    {
-                        Parts.Ask(_body, "What the new clash folder is called", string.Empty,
-                                  "Use it", said =>
-                        {
-                            var wanted = said.Trim();
-
-                            _folder = wanted.Length == 0 ? null : wanted;
-
-                            Redraw();
-                        });
-
-                        return;
-                    }
-
-                    _folder = string.Equals(picked, Root, StringComparison.Ordinal) ? null : picked;
-
-                    Redraw();
-                }, 190);
-            }
+            /// <summary>
+            /// Which folder the new test is filed in.
+            ///
+            /// The same control the panel beside this uses, and the settings panels of the other
+            /// two checks. This was a closed dropdown carrying "The root", the folders, and "A
+            /// new folder..." - which opened a prompt - while filing a test that already existed
+            /// was a bare text box. Two different answers to one question, a window apart.
+            /// </summary>
+            private UIElement Folder() =>
+                Ui.Folder(_folder, Folders(),
+                          said => _folder = said.Length == 0 ? null : said, 190);
 
             /// <summary>The clash folders this document already has, named once each.</summary>
             private IReadOnlyList<string> Folders() => Seated.Folders(_check);
@@ -409,8 +386,6 @@ namespace CamelWorks.UI.Views
             private const string FromSets = "Saved sets";
             private const string FromModels = "Whole models";
             private const string FromSelection = "What is selected";
-            private const string Root = "The root";
-            private const string NewFolder = "A new folder...";
 
             /// <summary>A set as one line: its folder, then its name.</summary>
             /// <param name="set">The set.</param>

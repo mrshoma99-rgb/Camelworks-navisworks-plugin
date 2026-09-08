@@ -2329,6 +2329,74 @@ namespace CamelWorks.UI.Views
             return box;
         }
 
+        /// <summary>
+        /// A folder: the ones that exist, and room to type one that does not.
+        ///
+        /// One control, because there were three. Filing a test as it is made was a bare text
+        /// box, changing the folder of one that exists was a different bare text box, and "Move
+        /// these..." was the only place that offered the folders already on the job - so the two
+        /// places somebody actually files a test were the two that made them remember its name
+        /// and spell it the same way twice. A folder that exists is a pick; a new one is typed
+        /// over the top, which is what an editable dropdown is for.
+        ///
+        /// Empty means the root. The placeholder says so rather than the list carrying a "none"
+        /// row that reads as a folder called None.
+        /// </summary>
+        /// <param name="value">The folder now, or null for the root.</param>
+        /// <param name="folders">The folders this check already has.</param>
+        /// <param name="onSettled">Called with the folder, or empty for the root.</param>
+        /// <param name="width">The narrowest it may be.</param>
+        public static ComboBox Folder(string? value, IEnumerable<string> folders,
+                                      Action<string>? onSettled, double width = Wide.Name)
+        {
+            var was = value ?? string.Empty;
+
+            var box = new ComboBox
+            {
+                IsEditable = true,
+                MinWidth = width,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Center,
+                Text = was,
+            };
+
+            foreach (var one in Listed(folders))
+                if (!string.IsNullOrWhiteSpace(one)) box.Items.Add(one);
+
+            void Report()
+            {
+                var now = (box.Text ?? string.Empty).Trim();
+
+                if (string.Equals(now, was, StringComparison.Ordinal)) return;
+
+                was = now;
+                onSettled?.Invoke(now);
+            }
+
+            // Both, because either can be the last thing that happens: picking off the list
+            // never loses focus if the field is the only control being used, and typing a new
+            // name never raises a selection.
+            box.LostFocus += (s, e) => Safely(Report);
+            box.SelectionChanged += (s, e) => Safely(Report);
+
+            box.KeyDown += (s, e) =>
+            {
+                if (e.Key == System.Windows.Input.Key.Enter)
+                {
+                    e.Handled = true;
+                    Safely(Report);
+                    return;
+                }
+
+                if (e.Key != System.Windows.Input.Key.Escape) return;
+
+                e.Handled = true;
+                box.Text = was;
+            };
+
+            return box;
+        }
+
         /// <summary>A dropdown of fixed options.</summary>
         /// <param name="options">What can be picked.</param>
         /// <param name="selected">What is picked now, or null.</param>
@@ -3611,6 +3679,70 @@ namespace CamelWorks.UI.Views
         /// <param name="element">The element to ask.</param>
         public static bool GetFills(DependencyObject element) =>
             (bool)element.GetValue(FillsProperty);
+
+        /// <summary>
+        /// Where a table is scrolled to, so a rebuild can put it back.
+        ///
+        /// A screen that rebuilds its table to show a change hands the list a new set of rows,
+        /// and a new set starts at the top: delete a test four hundred rows down and the list
+        /// returns to the first one, with the row that was under the pointer nowhere near it.
+        /// The board solved this for its own list; every ListView on a bench has the same fault,
+        /// so the pair lives here.
+        ///
+        /// Returns zero for a list with no scroller yet, which restores as no scroll.
+        /// </summary>
+        /// <param name="list">The table, or null.</param>
+        public static double Scrolled(ItemsControl? list) => Scroller(list)?.VerticalOffset ?? 0;
+
+        /// <summary>Put a rebuilt table back where the old one was.</summary>
+        /// <param name="list">The table, or null.</param>
+        /// <param name="offset">What <see cref="Scrolled"/> read before the rebuild.</param>
+        public static void ScrollTo(ItemsControl? list, double offset)
+        {
+            if (list == null || offset <= 0) return;
+
+            // After the layout pass, not during it. A list handed a new set of rows has not been
+            // measured, so its ScrollableHeight is still zero and scrolling now clamps to the
+            // top - which is the fault this is meant to fix, arriving a frame later.
+            list.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                var scroll = Scroller(list);
+
+                if (scroll == null) return;
+
+                scroll.ScrollToVerticalOffset(
+                    Math.Min(offset, Math.Max(0, scroll.ScrollableHeight)));
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
+        }
+
+        /// <summary>The scroller inside a list's template, once the template has been applied.</summary>
+        /// <param name="list">The list.</param>
+        private static ScrollViewer? Scroller(ItemsControl? list)
+        {
+            if (list == null) return null;
+
+            list.ApplyTemplate();
+
+            return Found(list);
+
+            static ScrollViewer? Found(DependencyObject from)
+            {
+                var count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(from);
+
+                for (var i = 0; i < count; i++)
+                {
+                    var child = System.Windows.Media.VisualTreeHelper.GetChild(from, i);
+
+                    if (child is ScrollViewer scroll) return scroll;
+
+                    var deeper = Found(child);
+
+                    if (deeper != null) return deeper;
+                }
+
+                return null;
+            }
+        }
 
         /// <summary>A table.</summary>
         /// <param name="rows">The rows.</param>

@@ -132,8 +132,8 @@ namespace CamelWorks.UI.Views
                         Ui.Across(
                             Sized(Ui.Field("Name", Ui.Settled(_run.Name, string.Empty,
                                 name => Keep(_ => _run.Name = name), Ui.Wide.Name)), 200),
-                            Sized(Ui.Field("Folder", Ui.Settled(_run.Folder ?? string.Empty,
-                                string.Empty,
+                            Sized(Ui.Field("Folder", Ui.Folder(_run.Folder,
+                                Seated.Folders(_check),
                                 folder => Keep(_ => _run.Folder =
                                     string.IsNullOrWhiteSpace(folder) ? null : folder),
                                 160)), 170))),
@@ -278,17 +278,41 @@ namespace CamelWorks.UI.Views
             /// Every sentence here answers "why would I change this", which is a question asked
             /// once. Standing text answers it on every visit and pushes the fields off the panel.
             /// </summary>
-            private void More(ClearanceSettings settings) =>
+            private void More(ClearanceSettings settings)
+            {
+                // The ignore list, in a holder so a scan can draw it again. Building it inline
+                // meant the only way to offer the model's categories was to read them on the way
+                // in, which is what froze the host.
+                var ignoring = new ContentControl();
+
+                void Ignoring()
+                {
+                    var scan = _scanned != null || Blocked != null
+                        ? null
+                        : Ui.Link("Read the categories from this model",
+                                  () => Ui.Safely(() => Scan(Ignoring)));
+
+                    ignoring.Content = Ui.Stack(
+                        Chosen("Categories to leave out", settings.Ignore, Categories(settings),
+                               NoCategories,
+                               "Matched anywhere in the category name, so \u201cDuct\u201d also "
+                               + "leaves out \u201cDuct Fittings\u201d.",
+                               (one, add) => one.Ignore.Add(add),
+                               (one, drop) => one.Ignore.Remove(drop)),
+                        scan,
+                        scan == null ? null : Ui.Small(
+                            "The list offers the three left out by default and whatever this run "
+                            + "already leaves out. Reading the model adds the categories it "
+                            + "carries, and takes a moment on a large federation."));
+                }
+
+                Ignoring();
+
                 Ui.Configure("How this is measured", () => Ui.Safely(_onChanged), new Ui.Page(
                     "How this is measured",
                     () => Ui.Stack(
                         Bench.Group("What is left out",
-                            Chosen("Categories to leave out", settings.Ignore, Categories(),
-                                   NoCategories,
-                                   "Matched anywhere in the category name, so \u201cDuct\u201d also "
-                                   + "leaves out \u201cDuct Fittings\u201d.",
-                                   (one, add) => one.Ignore.Add(add),
-                                   (one, drop) => one.Ignore.Remove(drop)),
+                            ignoring,
                             Ui.Check("One row per surface, its worst obstruction only",
                                      settings.WorstPerPatch,
                                      on => Keep(one => one.WorstPerPatch = on))),
@@ -307,6 +331,7 @@ namespace CamelWorks.UI.Views
                                      + "how far below it a surface has to fall before it is "
                                      + "reported, so a slab 3 mm out of level is not a hundred "
                                      + "results.")))));
+            }
 
             /// <summary>A short number field, with its unit in the label.</summary>
             /// <param name="label">What the number is, without its unit.</param>
@@ -378,15 +403,56 @@ namespace CamelWorks.UI.Views
             private IReadOnlyList<string> Sets() => _seat.SetNames();
 
             /// <summary>
-            /// The categories this document's elements carry, for the ignore list.
+            /// What has been read off the model, or null until somebody asks for it.
             ///
-            /// The three the run leaves out by default are always offered, whether or not the
-            /// bounded scan reached one: a list that cannot show what a run is set to is a list
-            /// that cannot take it back off.
+            /// Held rather than re-read, so opening the window twice in a session costs one walk.
             /// </summary>
-            private IReadOnlyList<string> Categories() =>
-                Ui.Listed(Seated.Offer(() => Pickers.CategoryNames().ToList())
-                                .Concat(ClearanceSettings.Unreported));
+            private IReadOnlyList<string>? _scanned;
+
+            /// <summary>
+            /// The categories offered in the ignore list.
+            ///
+            /// The three the run leaves out by default are always offered, and so is whatever
+            /// this run already ignores, whether or not the model has been read: a list that
+            /// cannot show what a run is set to is a list that cannot take it back off.
+            ///
+            /// The model is not read to build this. It used to be, and that is the freeze: the
+            /// walk is bounded at 600 items but every one of them is a property read across the
+            /// host's boundary, it ran on the UI thread while the window was being built, and it
+            /// had no progress and no way out. On a federation of any size, pressing the button
+            /// stopped Navisworks. A window opening is not a thing anybody asked to wait for.
+            /// </summary>
+            /// <param name="settings">The run's settings, for what it already ignores.</param>
+            private IReadOnlyList<string> Categories(ClearanceSettings settings) =>
+                Ui.Listed((_scanned ?? Array.Empty<string>())
+                    .Concat(settings.Ignore)
+                    .Concat(ClearanceSettings.Unreported));
+
+            /// <summary>
+            /// Read the model's categories, on a press rather than on an open.
+            ///
+            /// Still synchronous and still bounded: what changed is that somebody asked for it
+            /// and is told it is happening, rather than a window taking a walk of the model on
+            /// its way to being drawn.
+            /// </summary>
+            /// <param name="onDone">Called once the list is in, to draw the picker again.</param>
+            private void Scan(Action onDone)
+            {
+                var was = System.Windows.Input.Mouse.OverrideCursor;
+
+                System.Windows.Input.Mouse.OverrideCursor = System.Windows.Input.Cursors.Wait;
+
+                try
+                {
+                    _scanned = Seated.Offer(() => Pickers.CategoryNames().ToList());
+                }
+                finally
+                {
+                    System.Windows.Input.Mouse.OverrideCursor = was;
+                }
+
+                onDone();
+            }
 
             /// <summary>The storeys this project declares, for the level scope.</summary>
             private IReadOnlyList<string> Storeys() =>

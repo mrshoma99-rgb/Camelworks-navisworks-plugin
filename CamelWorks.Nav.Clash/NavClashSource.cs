@@ -183,17 +183,31 @@ namespace CamelWorks.Nav.Clash
                     return null;
                 }
 
+                // What the document held before the add, by guid, so the one that appears can be
+                // told from the ones that were already there.
+                var before = new HashSet<Guid>(AllTests(clash).Select(t => t.Test.Guid));
+
                 // AddCopy, not Add: the host takes a copy of the test and owns it from then on, so
                 // the object built above is not the one in the document and must not be run.
                 clash.TestsData.TestsAddCopy(into, test);
 
+                // The test that was not there a moment ago, not the one whose name matches.
+                //
+                // Matching on DisplayName is what "the host accepted the test but it cannot be
+                // found again by name" was: a name is not this test's identity. The host decides
+                // what DisplayName returns and need not return what CustomTestName was set to -
+                // it de-duplicates, and on some releases it trims - so a copy called
+                // "A2B1.PrStl_Structural Elements Vs Ductwork (2)" is stored under a name the
+                // lookup then fails to find, and a test that was made correctly is reported as
+                // lost. A guid is the identity the rest of this file already uses.
                 var made = AllTests(clash)
                     .Select(t => t.Test)
-                    .LastOrDefault(t => string.Equals(t.DisplayName, spec.Name, StringComparison.Ordinal));
+                    .FirstOrDefault(t => !before.Contains(t.Guid));
 
                 if (made == null)
                 {
-                    LastProblem = "The host accepted the test but it cannot be found again by name.";
+                    LastProblem = "The host accepted the test but it is not in the document "
+                                + "afterwards.";
                     return null;
                 }
 

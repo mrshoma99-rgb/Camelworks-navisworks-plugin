@@ -317,6 +317,11 @@ namespace CamelWorks.UI.Views
 
             private void RedrawList()
             {
+                // Where the old table was, before it is thrown away. Every edit on this screen
+                // rebuilds the list, and a rebuilt list starts at the top: deleting a test four
+                // hundred rows down returned the reader to the first one.
+                var at = Ui.Scrolled(_table);
+
                 var shown = Filtered();
 
                 _shown = shown;
@@ -406,6 +411,8 @@ namespace CamelWorks.UI.Views
                 };
 
                 _table = table;
+
+                Ui.ScrollTo(table, at);
 
                 var verbs = new List<Ui.OnPicked>
                 {
@@ -718,7 +725,10 @@ namespace CamelWorks.UI.Views
                     Changed();
                 }, 190);
 
-                var folder = Ui.Settled(run.Folder ?? string.Empty, string.Empty, text =>
+                // The folders this check already has, offered rather than remembered. It was a
+                // bare box, so filing a test beside its neighbours meant recalling the folder's
+                // name and spelling it the same way - and one letter out is a second folder.
+                var folder = Ui.Folder(run.Folder, Seated.Folders(check), text =>
                 {
                     naming?.Refile(run.Id, string.IsNullOrWhiteSpace(text) ? null : text);
                     Changed();

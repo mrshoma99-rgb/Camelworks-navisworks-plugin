@@ -92,8 +92,8 @@ namespace CamelWorks.UI.Views
                         Ui.Across(
                             Sized(Ui.Field("Name", Ui.Settled(_run.Name, string.Empty,
                                 name => Keep(_ => _run.Name = name), Ui.Wide.Name)), 200),
-                            Sized(Ui.Field("Folder", Ui.Settled(_run.Folder ?? string.Empty,
-                                string.Empty,
+                            Sized(Ui.Field("Folder", Ui.Folder(_run.Folder,
+                                Seated.Folders(_check),
                                 folder => Keep(_ => _run.Folder =
                                     string.IsNullOrWhiteSpace(folder) ? null : folder),
                                 160)), 170))),
