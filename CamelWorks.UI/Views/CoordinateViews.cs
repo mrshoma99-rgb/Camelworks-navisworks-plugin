@@ -2889,6 +2889,18 @@ namespace CamelWorks.UI.Views
             /// <summary>The audience that means everybody.</summary>
             private const string Everyone = "Everyone";
 
+            /// <summary>Order the issues by their own name.</summary>
+            private const string ByIssue = "Issue";
+
+            /// <summary>Order them by the party they are assigned to.</summary>
+            private const string ByParty = "Party";
+
+            /// <summary>Order them by how many clashes each holds, most first.</summary>
+            private const string BySize = "Clashes";
+
+            /// <summary>Order them by priority.</summary>
+            private const string ByPriority = "Priority";
+
             /// <summary>The audience that means the groups nobody owns yet.</summary>
             private const string Nobody = "Only the unassigned";
 
@@ -2996,6 +3008,32 @@ namespace CamelWorks.UI.Views
             private string _mode;
             private string _audience;
             private bool _changedOnly;
+
+            /// <summary>
+            /// The statuses an issue must hold one of, or empty for every status.
+            ///
+            /// A report is a thing sent to somebody, and what is sent is almost never the whole
+            /// board: an issue sheet for a trade is the open work, not the four hundred results
+            /// somebody already approved. The tab offered a recipient and a total and nothing
+            /// between them.
+            /// </summary>
+            private readonly HashSet<FindingStatus> _statuses = new HashSet<FindingStatus>();
+
+            /// <summary>The priorities to keep, or empty for every one.</summary>
+            private readonly HashSet<string> _priorities =
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            /// <summary>
+            /// The issues ticked by hand, or empty when the filters alone decide.
+            ///
+            /// Held by id, so a filter change does not lose what was picked and picking survives
+            /// the preview being drawn again.
+            /// </summary>
+            private readonly HashSet<string> _picked =
+                new HashSet<string>(StringComparer.Ordinal);
+
+            /// <summary>How the issues are ordered in the document.</summary>
+            private string _order = ByIssue;
             private bool _pictures;
             private bool _keyPlan;
             private bool _perParty;
@@ -3164,7 +3202,9 @@ namespace CamelWorks.UI.Views
 
                 foreach (var section in Sections()) _shape.Children.Add(Say("— " + section));
 
-                _shape.Children.Add(Listed(groups));
+                _shape.Children.Add(Listed(groups, board));
+
+                Counted();
 
                 if (_perParty)
                 {
@@ -3202,13 +3242,12 @@ namespace CamelWorks.UI.Views
             /// rather than the register. The board itself is the place to work them.
             /// </summary>
             /// <param name="groups">The issues the recipient and the filters leave.</param>
-            private static UIElement Listed(IReadOnlyList<ClashGroup> groups)
+            /// <param name="board">The whole board, for the values its filters offer.</param>
+            private UIElement Listed(IReadOnlyList<ClashGroup> groups, ClashPipelineResult board)
             {
-                const int Most = 40;
-
                 var rows = new List<TableRow>();
 
-                foreach (var group in groups.Take(Most))
+                foreach (var group in groups)
                 {
                     rows.Add(new TableRow(group, group.Name,
                                           group.AssignedTo ?? "Unassigned",
@@ -3223,13 +3262,99 @@ namespace CamelWorks.UI.Views
                                      ("Issue", 0), ("Party", 130),
                                      ("Priority", 90), ("Clashes", 80));
 
-                var held = Ui.Stack(Title("What goes in it"), table);
+                // Ticked, and the ticks are what gets written. With none ticked the filters
+                // decide, so an untouched screen still reports everything the recipient is owed.
+                table.Multi();
 
-                if (groups.Count > Most)
-                    held.Children.Add(Say("The first " + Most + " of "
-                        + Ui.Count(groups.Count, "issue") + ". All of them are written."));
+                foreach (var row in table.Items.OfType<TableRow>())
+                    if (row.Source is ClashGroup one && _picked.Contains(one.Id))
+                        table.SelectedItems.Add(row);
 
-                return held;
+                table.SelectionChanged += (s, e) => Ui.Safely(() =>
+                {
+                    _picked.Clear();
+
+                    foreach (var row in table.SelectedItems.OfType<TableRow>())
+                        if (row.Source is ClashGroup one) _picked.Add(one.Id);
+
+                    // Only the sentence under the table. Redrawing the preview from inside its
+                    // own selection handler would replace the table mid-tick.
+                    Counted();
+                });
+
+                return Ui.Stack(Title("What goes in it"), Narrowing(board), table, _tally);
+            }
+
+            /// <summary>What the ticks and the filters have left, under the table.</summary>
+            private readonly TextBlock _tally = Ui.Small(string.Empty);
+
+            /// <summary>How the picking reads now.</summary>
+            private void Counted()
+            {
+                _tally.Text = _picked.Count == 0
+                    ? "Nothing ticked, so everything above is written."
+                    : Ui.Count(_picked.Count, "issue") + " ticked. Only these are written.";
+            }
+
+            /// <summary>
+            /// What narrows the document: the statuses, the priorities and the order.
+            ///
+            /// The same three questions the Exchange tab asks before it writes a BCF, asked here
+            /// because a report is the same act with a different file at the end of it.
+            /// </summary>
+            /// <param name="board">The whole board, for the values it actually holds.</param>
+            private UIElement Narrowing(ClashPipelineResult board)
+            {
+                var row = new WrapPanel { Orientation = Orientation.Horizontal };
+
+                foreach (var status in FindingStatusLattice.All)
+                {
+                    var here = status;
+
+                    var box = Ui.Check(FindingStatusWords.Of(here), _statuses.Contains(here), on =>
+                    {
+                        if (on) _statuses.Add(here); else _statuses.Remove(here);
+
+                        Restate();
+                    });
+
+                    box.Margin = new Thickness(0, 0, 12, 4);
+
+                    row.Children.Add(box);
+                }
+
+                var priorities = board.Groups
+                    .Select(g => g.Priority ?? Unset)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(one => one, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                foreach (var priority in priorities)
+                {
+                    var here = priority;
+
+                    var box = Ui.Check(here, _priorities.Contains(here), on =>
+                    {
+                        if (on) _priorities.Add(here); else _priorities.Remove(here);
+
+                        Restate();
+                    });
+
+                    box.Margin = new Thickness(0, 0, 12, 4);
+
+                    row.Children.Add(box);
+                }
+
+                var orders = new[] { ByIssue, ByParty, BySize, ByPriority };
+
+                var sort = Ui.Choice(orders, _order, pick => { _order = pick; Restate(); },
+                                     Ui.Wide.Word);
+
+                return Ui.Stack(
+                    Say("Nothing ticked below reports everything these leave. A status or a "
+                        + "priority with nothing on it is not narrowing anything."),
+                    Ui.Loose(row),
+                    Ui.Field("Order", sort));
             }
 
             /// <summary>
@@ -3423,6 +3548,11 @@ namespace CamelWorks.UI.Views
                 return Ui.Stack(
                     Say("One marker per clash on the board, grouped by test, written as an OBJ "
                         + "file that can be appended to the model."),
+
+                    // What it needs, at the top rather than at the press. This window opened
+                    // looking ready on a seat with no board: three settings, a button, and the
+                    // refusal only after pressing it — which reads as a button that does nothing.
+                    BoardState("The markers are one per clash on it."),
                     Ui.Field("Shape", shape),
                     Ui.Field("Marker diameter (mm)", size),
                     Ui.Field("Model units", units),
@@ -3733,7 +3863,47 @@ namespace CamelWorks.UI.Views
 
                 if (_changedOnly) groups = groups.Where(g => Changed(g, regressed));
 
-                return groups.ToList();
+                // An issue is kept when it holds a clash of a status being reported. Per issue and
+                // not per clash: an issue is the unit somebody acts on, and half of one is not a
+                // thing to send.
+                if (_statuses.Count > 0)
+                    groups = groups.Where(g => g.Items.Any(i => _statuses.Contains(i.Status)));
+
+                if (_priorities.Count > 0)
+                    groups = groups.Where(g => _priorities.Contains(g.Priority ?? Unset));
+
+                // The ticks last, so they narrow what the filters left rather than reviving what
+                // they removed. Nothing ticked means the filters decide, which is what an
+                // untouched screen should do.
+                if (_picked.Count > 0) groups = groups.Where(g => _picked.Contains(g.Id));
+
+                return Ordered(groups).ToList();
+            }
+
+            /// <summary>What a group with no priority set is filed under.</summary>
+            private const string Unset = "None";
+
+            /// <summary>The issues in the order the document will carry them.</summary>
+            /// <param name="groups">The issues the filters left.</param>
+            private IEnumerable<ClashGroup> Ordered(IEnumerable<ClashGroup> groups)
+            {
+                switch (_order)
+                {
+                    case ByParty:
+                        return groups.OrderBy(g => g.AssignedTo ?? "\uffff", StringComparer.OrdinalIgnoreCase)
+                                     .ThenBy(g => g.Name, StringComparer.OrdinalIgnoreCase);
+
+                    case BySize:
+                        return groups.OrderByDescending(g => g.Items.Count)
+                                     .ThenBy(g => g.Name, StringComparer.OrdinalIgnoreCase);
+
+                    case ByPriority:
+                        return groups.OrderBy(g => g.Priority ?? "\uffff", StringComparer.OrdinalIgnoreCase)
+                                     .ThenBy(g => g.Name, StringComparer.OrdinalIgnoreCase);
+
+                    default:
+                        return groups.OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase);
+                }
             }
 
             /// <summary>Where the file goes, made from the audience so two reports never collide.</summary>
@@ -3745,29 +3915,28 @@ namespace CamelWorks.UI.Views
                 var stem = Deliverable.Name(_template.Text, session.Profile.ProjectName,
                                             audience == Everyone ? null : audience, revision, issued);
 
-                if (typed.Length == 0)
-                {
-                    var made = System.IO.Path.Combine(
-                        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-                        stem + extension);
-
-                    if (!_perParty) _path.Text = made;
-                    return made;
-                }
-
-                if (!_perParty) return typed;
-
-                // One box, several files: the typed path becomes the folder and the stem, and each
-                // party's name is added. Otherwise the last party written would be the only file
-                // left on disk, which is the kind of thing somebody discovers on Monday.
+                // The box asks for a folder and says so. It was returned as the path to write,
+                // which handed a directory to the writer: every report written to a folder anyone
+                // had picked failed with "Windows refused access to the path". The stem already
+                // carries the project, the party and the revision, so a folder and a stem is the
+                // whole of the answer.
                 //
                 // System.IO.Path here rather than Core's separator-agnostic helper: this assembly
                 // only ever runs on Windows, where Path is the one that is right about backslashes.
-                var directory = System.IO.Path.GetDirectoryName(typed) ?? string.Empty;
-                var name = System.IO.Path.GetFileNameWithoutExtension(typed);
+                var folder = typed.Length == 0
+                    ? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
+                    : System.IO.Path.HasExtension(typed)
+                        ? System.IO.Path.GetDirectoryName(typed) ?? string.Empty
+                        : typed;
 
-                return System.IO.Path.Combine(directory,
-                    Deliverable.Safe(name + " - " + audience + " - Rev " + revision) + extension);
+                var made = System.IO.Path.Combine(folder, Deliverable.Safe(stem) + extension);
+
+                // The box is left alone once a party's name is in the file name: one box cannot
+                // hold the several paths a per-party write produces, and filling it with the last
+                // of them says the others were not written.
+                if (typed.Length == 0 && !_perParty) _path.Text = folder;
+
+                return made;
             }
 
             /// <summary>
