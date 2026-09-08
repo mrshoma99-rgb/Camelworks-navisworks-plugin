@@ -191,7 +191,8 @@ namespace CamelWorks.UI.Views
             /// is two host calls per test.
             /// </summary>
             private ClashCheck Clash =>
-                _clash ??= new ClashCheck(_seat.Clash, _seat.MetresPerUnit, _seat.ClashProblem);
+                _clash ??= new ClashCheck(_seat.Clash, _seat.MetresPerUnit, _seat.ClashProblem,
+                                          project: _seat.Store);
 
             /// <summary>Every check whose tests belong in this list, clash first.</summary>
             private IReadOnlyList<ICheck> Checks()
@@ -475,7 +476,20 @@ namespace CamelWorks.UI.Views
                 _tally.Content = bar.Tally;
                 _links.Content = bar.Links;
 
-                _list.Content = Ui.Stack(Ui.Loose(table), bar.Said);
+                // A dock, not a stack. A StackPanel measures its children with infinite height, so
+                // the table grew to all its rows, never scrolled, and was clipped by the pane: a
+                // project of 166 tests showed the first fifteen and no scrollbar. The line a verb
+                // writes docks under it and the table fills what is left.
+                var held = new DockPanel { LastChildFill = true };
+
+                var wrote = Ui.Loose(bar.Said);
+
+                DockPanel.SetDock(wrote, Dock.Bottom);
+                held.Children.Add(wrote);
+
+                held.Children.Add(Ui.Loose(table));
+
+                _list.Content = held;
             }
 
             /// <summary>Clear the three places the verb bar's parts sit.</summary>
@@ -746,7 +760,16 @@ namespace CamelWorks.UI.Views
             /// <summary>Redraw the list after a settings edit, without re-walking the document.</summary>
             private void Changed()
             {
-                Reload(rereadHost: false);
+                // The host is read again, because this is what changes it. Reload was told to
+                // reuse the clash tests it last read, on the reasoning that editing a
+                // project-file test cannot have changed any of them - true, but these three
+                // fields are the clash test's own name, folder and tolerance, so the cached
+                // copy is exactly what has just gone stale. A rename showed the old name and a
+                // refile left the test in its old band.
+                Reload();
+
+                // And the panel, so the folder box offers the folder that has just been made.
+                RedrawPanel();
                 RedrawFoot();
             }
 
@@ -771,7 +794,14 @@ namespace CamelWorks.UI.Views
                 {
                     if (naming == null || string.IsNullOrWhiteSpace(text)) return;
 
-                    naming.Rename(run.Id, text);
+                    if (!naming.Rename(run.Id, text))
+                    {
+                        _log.Children.Add(Ui.Problem("That name could not be kept, so this test "
+                            + "is still called what it was."));
+
+                        return;
+                    }
+
                     Changed();
                 }, 190);
 
@@ -780,7 +810,20 @@ namespace CamelWorks.UI.Views
                 // name and spelling it the same way - and one letter out is a second folder.
                 var folder = Ui.Folder(run.Folder, Seated.Folders(check), text =>
                 {
-                    naming?.Refile(run.Id, string.IsNullOrWhiteSpace(text) ? null : text);
+                    var into = string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+
+                    // The answer, not the attempt. This dropped what the check said on the floor,
+                    // so filing a test into a folder the document would not take looked exactly
+                    // like filing it into one that worked: the box kept the typed name, the list
+                    // never gained the folder, and nothing said why.
+                    if (naming?.Refile(run.Id, into) != true)
+                    {
+                        _log.Children.Add(Ui.Problem("\"" + (into ?? "the root")
+                            + "\" could not be kept, so this test has not been moved."));
+
+                        return;
+                    }
+
                     Changed();
                 }, 160);
 
@@ -825,8 +868,8 @@ namespace CamelWorks.UI.Views
                     // beside it has a Test column, and "TEST" over the first two boxes named
                     // nothing the reader did not already have.
                     Bench.Group(string.Empty,
-                        Ui.Across(Sized(Ui.Field("Name", name), 210),
-                                  Sized(Ui.Field("Folder", folder), 170))),
+                        Ui.Evenly(Ui.Filled(Ui.Field("Name", name)),
+                                  Ui.Filled(Ui.Field("Folder", folder)))),
                     // The sides first: they are what the test is, and they are the one thing on
                     // this panel that cannot be changed.
                     Bench.Group("What is tested against what",
@@ -835,12 +878,11 @@ namespace CamelWorks.UI.Views
                                 + "not re-point one that already has results, so changing them "
                                 + "means a new test.")),
                     Bench.Group("How it is judged",
-                        Sized(Ui.Field("Kind of test", kind,
-                                       ClashTestViews.Explains(here)), 380),
+                        Ui.Filled(Ui.Field("Kind of test", kind,
+                                       ClashTestViews.Explains(here))),
                         here == MatrixTest.Duplicate
                             ? null
-                            : Sized(Ui.Field("Tolerance (" + Units.LengthUnit + ")", tolerance),
-                                    190),
+                            : Ui.Filled(Ui.Field("Tolerance (" + Units.LengthUnit + ")", tolerance)),
                         Ui.Small("Both are changed on the test itself, and the results it already "
                                  + "holds are kept until it is run again.")),
                     blocked == null ? null : Ui.Note(blocked));
@@ -875,26 +917,7 @@ namespace CamelWorks.UI.Views
             /// <summary>A field capped to a readable width, so short fields sit two to a row.</summary>
             /// <param name="field">The field.</param>
             /// <param name="width">How wide it may be.</param>
-            private static UIElement Sized(Panel field, double width)
-            {
-                // A ceiling, not a width.
-                //
-                // It was a width, so every field on the panel was exactly as wide as it was
-                // written to be however wide the pane was: narrow the window and the fields
-                // stayed put and were clipped by the pane rather than shrinking with it. The
-                // cap is what the figure was for - a text field running the whole width of a
-                // wide pane is a line nobody can scan - and a cap does that without also being
-                // a floor.
-                field.MaxWidth = width;
-
-                // Stretch, so the field takes what it is given up to the cap. With a fixed
-                // width this had to be Left, because a stretched element given a fixed width is
-                // centred in what is left over.
-                field.HorizontalAlignment = HorizontalAlignment.Stretch;
-
-                return field;
-            }
-
+            
             // ---- Running -------------------------------------------------------------------
 
             /// <summary>What Run would act on: what is selected, or every test when nothing is.</summary>
@@ -1261,6 +1284,7 @@ namespace CamelWorks.UI.Views
                     var refused = chosen
                         .Where(one => one.Check.Naming?.Refile(one.Run.Id, into) != true)
                         .ToList();
+
 
                     Reload();
 

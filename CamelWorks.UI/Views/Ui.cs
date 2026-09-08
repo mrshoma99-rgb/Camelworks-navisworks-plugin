@@ -1085,6 +1085,35 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
+        /// A field that takes the width of the panel it is in.
+        ///
+        /// One rule, in one place. Four set-up panels each had their own: two set a fixed Width
+        /// and aligned left, one capped the width and stretched, one capped a grid column. So the
+        /// same form drawn on four tabs had four different field widths, and a report about one of
+        /// them fixed one of them.
+        ///
+        /// A cap plus the default stretch is the trap worth naming: WPF centres a stretched
+        /// element that carries a MaxWidth, so a capped field starts wherever the leftover space
+        /// puts it rather than where the heading does. A field takes what the panel gives it, and
+        /// a pair of fields splits that through <see cref="Evenly"/>.
+        /// </summary>
+        /// <typeparam name="T">The field's type, so a caller keeps it.</typeparam>
+        /// <param name="field">The field.</param>
+        public static T Filled<T>(T field) where T : FrameworkElement
+        {
+            if (field == null) throw new ArgumentNullException(nameof(field));
+
+            field.HorizontalAlignment = HorizontalAlignment.Stretch;
+
+            // Any cap an earlier hand left on it comes off. A field that fills has no ceiling,
+            // and a leftover one puts it back in the middle of the panel.
+            field.MaxWidth = double.PositiveInfinity;
+            field.Width = double.NaN;
+
+            return field;
+        }
+
+        /// <summary>
         /// Two or more controls sharing a row in equal columns.
         ///
         /// Not <see cref="Across"/>, which wraps and gives each child its desired width: a pair of
@@ -3919,6 +3948,11 @@ namespace CamelWorks.UI.Views
                 BindingOperations.ClearBinding(table, FrameworkElement.MaxHeightProperty);
                 table.MaxHeight = double.PositiveInfinity;
                 table.VerticalAlignment = VerticalAlignment.Stretch;
+
+                // And no gap over it. The margin separates a table from whatever is stacked above
+                // it on a stage; on a bench the pane's header is directly above and the margin is
+                // an empty band under a heading with nothing in it.
+                table.Margin = new Thickness(0, 0, 0, 2);
             };
 
             // Top, not the default stretch. A stretched element carrying a MaxHeight is centred
@@ -5001,6 +5035,15 @@ namespace CamelWorks.UI.Views
 
             var buttons = new List<System.Windows.Controls.Button>();
 
+            // The word inside a verb drawn as a symbol and a caption. It carries its own ink, so
+            // it does not follow the button's foreground the way a worded verb does, and it is
+            // kept here so an off verb dims whole rather than half.
+            var captions = new Dictionary<System.Windows.Controls.Button, TextBlock>();
+
+            // The verbs that carry their own ink in both states: a destructive verb keeps its
+            // red, a primary keeps white on the accent fill.
+            var dangers = new HashSet<System.Windows.Controls.Button>();
+
             if (aside != null)
             {
                 bar.Children.Add(aside);
@@ -5048,6 +5091,8 @@ namespace CamelWorks.UI.Views
 
                     face.Children.Add(caption);
 
+                    if (!here.Danger) captions[button] = caption;
+
                     button.Content = face;
                 }
 
@@ -5059,6 +5104,8 @@ namespace CamelWorks.UI.Views
                 button.Margin = new Thickness(here.Danger ? Gap * 2 : Gap, 2, 0, 2);
                 button.VerticalAlignment = VerticalAlignment.Center;
                 button.Tag = here.Caption;
+
+                if (here.Danger || here.Primary) dangers.Add(button);
 
                 buttons.Add(button);
                 bar.Children.Add(button);
@@ -5080,6 +5127,18 @@ namespace CamelWorks.UI.Views
                 foreach (var button in buttons)
                 {
                     button.IsEnabled = picked > 0;
+
+                    // An off verb reads as off in one tier, not two. The quiet button's own
+                    // disabled trigger paints Faint, which is reasoned about against the
+                    // large-text floor and these captions are eleven pixels; a verb drawn with a
+                    // symbol did not follow it at all, because its caption holds its own ink. Both
+                    // go to Muted, which is a tier below Text and still readable. "Include tests"
+                    // with nothing selected was the case that showed it.
+                    if (captions.TryGetValue(button, out var word))
+                        word.Tint(TextBlock.ForegroundProperty, picked > 0 ? "Text" : "Muted");
+                    else if (!dangers.Contains(button) && !(button.Tag is null))
+                        button.Tint(Control.ForegroundProperty,
+                                    picked > 0 ? "Accent" : "Muted");
 
                     if (!(button.Tag is string caption)) continue;
 
@@ -5677,6 +5736,13 @@ namespace CamelWorks.UI.Views
             // Already plural. "of them" is the phrase five screens count with, and the generic
             // rule wrote "2 of thems" on every one of them.
             if (Already.Contains(tail)) return unit;
+
+            // A consonant then y: party, priority, storey is not one of these because its y
+            // follows a vowel. "0 partys" is the kind of typo that makes a count read as a bug.
+            if (tail.Length > 1
+                && tail.EndsWith("y", StringComparison.OrdinalIgnoreCase)
+                && "aeiou".IndexOf(char.ToLowerInvariant(tail[tail.Length - 2])) < 0)
+                return head + tail.Substring(0, tail.Length - 1) + "ies" + trailing;
 
             if (tail.EndsWith("s", StringComparison.OrdinalIgnoreCase)
                 || tail.EndsWith("x", StringComparison.OrdinalIgnoreCase)

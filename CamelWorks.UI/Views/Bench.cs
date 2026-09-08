@@ -642,8 +642,24 @@ namespace CamelWorks.UI.Views
             {
                 if (field == null) continue;
 
-                if (field is FrameworkElement fe && fe.Margin == default)
-                    fe.Margin = across ? new Thickness(0, 0, 14, 0) : new Thickness(0, 0, 0, 8);
+                if (field is FrameworkElement fe)
+                {
+                    // Across, the gap that separates two fields in a row is added whatever
+                    // vertical margin the field arrived with. The test used to be "no margin at
+                    // all", and Ui.Field sets its own bottom margin, so every strip built out of
+                    // fields - the Exchange tab's two groups among them - had its fields flush
+                    // against each other.
+                    if (across)
+                    {
+                        if (fe.Margin.Right <= 0)
+                            fe.Margin = new Thickness(fe.Margin.Left, fe.Margin.Top, 14,
+                                                      fe.Margin.Bottom);
+                    }
+                    else if (fe.Margin == default)
+                    {
+                        fe.Margin = new Thickness(0, 0, 0, 8);
+                    }
+                }
 
                 // Loose, for the same reason Ui.Stack does it: a group rebuilt around a
                 // control the screen keeps in a field must not be told it already has a parent.

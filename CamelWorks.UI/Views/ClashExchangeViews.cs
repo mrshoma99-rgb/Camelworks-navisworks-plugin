@@ -525,7 +525,9 @@ namespace CamelWorks.UI.Views
 
                     CheckKey = key;
 
-                    Ui.Told(Shell.AppWindow.Show("clash", "exchange"));
+                    // Afresh: this tab reads the kind when it builds, so the cached surface would
+                    // come back showing the kind that was picked before.
+                    Ui.Told(Shell.AppWindow.Show("clash", "exchange", afresh: true));
                 }, Ui.Wide.Word);
             }
 
@@ -917,152 +919,12 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// The filter bar: one chip per parameter, saying where it stands.
             ///
-            /// The common four are always drawn - status, who it is assigned to, the storey and
-            /// the level - so the bar answers "what am I sending them" before anybody adds
-            /// anything. Every other parameter the board carries is one press further on.
+            /// ClashPicking's, not this tab's. The Report tab asks the same question before it
+            /// writes a document and had its own weaker answer, so the bar is one control over
+            /// the pick both screens save.
             /// </summary>
-            private UIElement Filters()
-            {
-                var bar = new WrapPanel { Margin = new Thickness(0, 6, 0, 2) };
-
-                var says = Ui.Small("Only results where");
-
-                says.VerticalAlignment = VerticalAlignment.Center;
-                says.Margin = new Thickness(0, 2, 8, 2);
-
-                bar.Children.Add(says);
-
-                var facets = new List<ClashFacet>();
-
-                foreach (var key in new[] { "status", "assignee", "storey", "level" })
-                {
-                    var found = ClashFacets.Of(key, Results(), Storeys(), Issued());
-
-                    if (found != null) facets.Add(found);
-                }
-
-                // Anything already filtered on, so a clause added from the menu gets a chip of its
-                // own rather than disappearing.
-                foreach (var clause in _profile.Pick.Clauses)
-                {
-                    if (facets.Any(one => string.Equals(one.Key, clause.Facet,
-                                                        StringComparison.OrdinalIgnoreCase)))
-                        continue;
-
-                    var found = ClashFacets.Of(clause.Facet, Results(), Storeys(), Issued());
-
-                    if (found != null) facets.Add(found);
-                }
-
-                foreach (var facet in facets) bar.Children.Add(Chip(facet));
-
-                // The rest of the parameters, counted and named. "and one more" said neither how
-                // many there were nor what they were about.
-                var rest = ClashFacets.Every(Results(), Storeys(), Issued())
-                    .Where(one => !facets.Any(shown => string.Equals(shown.Key, one.Key,
-                                                                     StringComparison.OrdinalIgnoreCase)))
-                    .ToList();
-
-                if (rest.Count > 0)
-                {
-                    var add = Ui.Link("Add a filter (" + rest.Count.ToString(CultureInfo.InvariantCulture)
-                                      + " more)", () => { });
-
-                    add.Click += (s, e) => Ui.Safely(() => Parts.PopMenu(add, Facets()));
-                    add.Margin = new Thickness(4, 2, 0, 2);
-                    add.VerticalAlignment = VerticalAlignment.Center;
-                    add.ToolTip = "Filter on: " + string.Join(", ", rest.Take(12).Select(one => one.Title))
-                                + (rest.Count > 12 ? ", and more" : string.Empty) + ".";
-
-                    bar.Children.Add(add);
-                }
-
-                // What the filters are keeping out. A bar of chips says what is let through and
-                // never how much of the board that leaves behind, which is the number a
-                // coordinator is actually deciding on.
-                var held = Results().Count;
-                var kept = _profile.Pick.Take(Results(), Storeys(), Issued()).Count;
-
-                if (kept < held)
-                {
-                    var left = Ui.Small(Ui.Count(held - kept, "result") + " left out");
-
-                    left.VerticalAlignment = VerticalAlignment.Center;
-                    left.Margin = new Thickness(10, 2, 0, 2);
-
-                    bar.Children.Add(left);
-                }
-
-                return bar;
-            }
-
-            /// <summary>One parameter, as a chip that says which of its values are let through.</summary>
-            /// <param name="facet">The parameter.</param>
-            private UIElement Chip(ClashFacet facet)
-            {
-                var here = facet;
-
-                var clause = _profile.Pick.Clauses.FirstOrDefault(
-                    one => string.Equals(one.Facet, here.Key, StringComparison.OrdinalIgnoreCase));
-
-                var button = Ui.Quiet(
-                    here.Title + ": " + (clause == null ? "any" : Values(clause)),
-                    () => Ui.Safely(() => Choose(here)));
-
-                button.Margin = new Thickness(0, 2, 6, 2);
-                button.VerticalAlignment = VerticalAlignment.Center;
-                button.ToolTip = clause == null
-                    ? "Every value goes. Press to choose which."
-                    : clause.Describe(here) + ". Press to change it.";
-
-                // A set filter is tinted, so the bar reads at a glance as which parameters are
-                // narrowing the export and which are letting everything through.
-                if (clause == null)
-                {
-                    button.Margin = new Thickness(0, 2, 6, 2);
-
-                    return button;
-                }
-
-                button.Tint(System.Windows.Controls.Control.ForegroundProperty, "Accent");
-                button.Margin = new Thickness(0, 2, 0, 2);
-
-                // A filter in force is a chip you can take off. Every one of them was a link that
-                // reopened the value list, so clearing one meant opening it and unticking whatever
-                // was in there.
-                var off = Ui.Icon(Glyphs.Close, "Stop filtering on " + here.Title, () => Ui.Safely(() =>
-                {
-                    _profile.Pick.Clauses.Remove(clause);
-                    Rebuild();
-                }));
-
-                off.VerticalAlignment = VerticalAlignment.Center;
-                off.Margin = new Thickness(0, 2, 6, 2);
-
-                var chip = new StackPanel
-                {
-                    Orientation = Orientation.Horizontal,
-                    VerticalAlignment = VerticalAlignment.Center,
-                };
-
-                chip.Children.Add(button);
-                chip.Children.Add(off);
-
-                return chip;
-            }
-
-            /// <summary>The values a clause names, short enough for a chip.</summary>
-            /// <param name="clause">The clause.</param>
-            private static string Values(ClashClause clause)
-            {
-                if (clause.Values.Count == 0) return "a range";
-
-                var said = string.Join(", ", clause.Values.Take(2));
-
-                return clause.Values.Count > 2
-                    ? said + " +" + (clause.Values.Count - 2).ToString(CultureInfo.InvariantCulture)
-                    : said;
-            }
+            private UIElement Filters() =>
+                ClashPicking.Bar(_profile.Pick, Results(), Storeys(), Issued(), Rebuild);
 
             private bool Holds(string? said) =>
                 said != null && said.IndexOf(_search, StringComparison.OrdinalIgnoreCase) >= 0;
@@ -1087,74 +949,6 @@ namespace CamelWorks.UI.Views
 
                 /// <inheritdoc />
                 public override string ToString() => Name;
-            }
-
-            /// <summary>Every parameter a result filter can be about, as a menu.</summary>
-            private IReadOnlyList<Parts.Entry> Facets()
-            {
-                var items = new List<Parts.Entry> { Parts.Entry.Heading("Filter by") };
-
-                foreach (var facet in ClashFacets.Every(Results(), Storeys(), Issued()))
-                {
-                    var here = facet;
-
-                    items.Add(Parts.Entry.Act(here.Title, null, () => Choose(here)));
-                }
-
-                return items;
-            }
-
-            /// <summary>Ask which values of one parameter go in, from the ones the board holds.</summary>
-            /// <param name="facet">The parameter chosen.</param>
-            private void Choose(ClashFacet facet)
-            {
-                var held = ClashFacets.Values(facet, Results());
-
-                if (held.Count == 0)
-                {
-                    Ui.Told("No clash on the board carries a value for "
-                            + facet.Title.ToLowerInvariant() + ".");
-
-                    return;
-                }
-
-                var standing = _profile.Pick.Clauses.FirstOrDefault(
-                    one => string.Equals(one.Facet, facet.Key, StringComparison.OrdinalIgnoreCase));
-
-                var box = Ui.Stack();
-
-                var taken = new HashSet<string>(standing?.Values ?? Array.Empty<string>(),
-                                                StringComparer.OrdinalIgnoreCase);
-
-                foreach (var value in held.Take(60))
-                {
-                    var here = value;
-
-                    box.Children.Add(Ui.Check(here, taken.Contains(here), on =>
-                    {
-                        if (on) taken.Add(here);
-                        else taken.Remove(here);
-                    }));
-                }
-
-                var page = new Ui.Page(facet.Title,
-                    () => Bench.Group(facet.Title + " values to include", box));
-
-                Ui.Configure(facet.Title, () =>
-                {
-                    // One clause per parameter. A second clause on the same one would have to hold
-                    // as well as the first, so choosing New and then Active would send nothing.
-                    if (standing != null) _profile.Pick.Clauses.Remove(standing);
-
-                    if (taken.Count > 0)
-                    {
-                        var clause = _profile.Pick.Add(facet.Key);
-
-                        foreach (var one in taken) clause.Values.Add(one);
-                    }
-
-                    Rebuild();
-                }, page);
             }
 
             /// <summary>
@@ -1189,40 +983,9 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>Which parameter the clashes inside each pack are ordered by.</summary>
-            private UIElement Sorting()
-            {
-                var offered = new List<string> { AsFound };
-
-                offered.AddRange(ClashFacets.Every(Results(), Storeys(), Issued())
-                    .Select(one => By + Lowered(one.Title)));
-
-                var here = _profile.Pick.Sort == null ? AsFound : By + Lowered(Titled(_profile.Pick.Sort));
-
-                if (!offered.Contains(here)) offered.Add(here);
-
-                var box = Ui.Choice(offered, here, said =>
-                {
-                    _profile.Pick.Sort = said == AsFound ? null : Keyed(Stripped(said, By));
-                    Rebuild();
-                }, 190);
-
-                box.ToolTip = "The order the clashes are written in, which is not the order the "
-                              + "table happens to be sorted in.";
-
-                // Only where there is an order to reverse. Left in place it was a symbol that was
-                // permanently unavailable on the setting the screen opens on.
-                if (_profile.Pick.Sort == null) return box;
-
-                var way = Ui.Icon(_profile.Pick.Descending ? Glyphs.Down : Glyphs.Up,
-                                  _profile.Pick.Descending ? "Descending" : "Ascending",
-                                  () => Ui.Safely(() =>
-                                  {
-                                      _profile.Pick.Descending = !_profile.Pick.Descending;
-                                      Rebuild();
-                                  }));
-
-                return Ui.Across(box, way);
-            }
+            private UIElement Sorting() =>
+                ClashPicking.Ordering(_profile.Pick, Results(), Storeys(), Issued(), Rebuild,
+                                      AsFound);
 
             /// <summary>What the split chooser calls writing everything into one pack.</summary>
             private const string Whole = "One pack for everything";
@@ -1321,6 +1084,15 @@ namespace CamelWorks.UI.Views
                             : "the split fell back to " + fell.SplitBy + ".")));
 
                 into.Children.Add(Ui.Small(Framing(going.Count)));
+
+                // The rehearsal is a table and three paragraphs under the footer, and it stayed
+                // until something else was run. It closes from where it ends.
+                var close = Ui.Quiet("Close the preview", () => into.Children.Clear());
+
+                close.HorizontalAlignment = HorizontalAlignment.Left;
+                close.Margin = new Thickness(0, 8, 0, 0);
+
+                into.Children.Add(close);
 
                 _ = job;
             }

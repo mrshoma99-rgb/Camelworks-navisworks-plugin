@@ -128,9 +128,9 @@ namespace CamelWorks.UI.Views
                     // list beside this has a Test column.
                     Bench.Group(string.Empty,
                         Ui.Evenly(
-                            Filled(Ui.Field("Name", Ui.Settled(_run.Name, string.Empty,
+                            Ui.Filled(Ui.Field("Name", Ui.Settled(_run.Name, string.Empty,
                                 name => Keep(_ => _run.Name = name), Ui.Wide.Name))),
-                            Filled(Ui.Field("Folder", Ui.Folder(_run.Folder,
+                            Ui.Filled(Ui.Field("Folder", Ui.Folder(_run.Folder,
                                 Seated.Folders(_check),
                                 folder => Keep(_ => _run.Folder =
                                     string.IsNullOrWhiteSpace(folder) ? null : folder),
@@ -139,12 +139,12 @@ namespace CamelWorks.UI.Views
                     // The two sides, then what narrows them, then the two numbers. Five fields,
                     // which is the whole of what a clearance test is.
                     Bench.Group("What is checked",
-                        Filled(SourcePicker.Drawn(_seat, "Search for walkable surfaces in",
+                        Ui.Filled(SourcePicker.Drawn(_seat, "Search for walkable surfaces in",
                                   _surfaces,
                                   () => Keep(one => one.Surfaces = SourcePicker.Written(_surfaces)),
                                   blocked,
                                   new[] { SourcePicker.Everywhere })),
-                        Filled(SourcePicker.Drawn(_seat, "Search against", _targets,
+                        Ui.Filled(SourcePicker.Drawn(_seat, "Search against", _targets,
                                   () => Keep(one => one.Targets = SourcePicker.Written(_targets)),
                                   blocked,
                                   new[] { SourcePicker.Remainder, SourcePicker.Everywhere })),
@@ -155,11 +155,11 @@ namespace CamelWorks.UI.Views
 
                     Bench.Group("How much room",
                         Ui.Evenly(
-                            Filled(Number("Height", settings.MinimumMetres,
+                            Ui.Filled(Number("Height", settings.MinimumMetres,
                                          metres => metres > 0,
                                          (one, metres) => one.MinimumMetres = metres,
                                          Need.Required)),
-                            Filled(Number("Tolerance", settings.ToleranceMetres,
+                            Ui.Filled(Number("Tolerance", settings.ToleranceMetres,
                                          metres => metres >= 0,
                                          (one, metres) => one.ToleranceMetres = metres,
                                          Need.Optional))),
@@ -216,7 +216,7 @@ namespace CamelWorks.UI.Views
 
                 stack.Children.Add(Ui.Small(hint));
 
-                return Filled(stack);
+                return Ui.Filled(stack);
             }
 
             /// <summary>What the level picker reads when no level narrows the run.</summary>
@@ -346,13 +346,7 @@ namespace CamelWorks.UI.Views
             /// pair of them splits it through <see cref="Ui.Evenly"/>.
             /// </summary>
             /// <param name="field">The field.</param>
-            private static UIElement Filled(FrameworkElement field)
-            {
-                field.HorizontalAlignment = HorizontalAlignment.Stretch;
-
-                return field;
-            }
-
+            
             /// <summary>Write the settings back onto the test and into the project file.</summary>
             /// <param name="change">What to change.</param>
             private void Keep(Action<ClearanceSettings> change)

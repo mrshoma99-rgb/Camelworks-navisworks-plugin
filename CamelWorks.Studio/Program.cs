@@ -321,6 +321,16 @@ namespace CamelWorks.Studio
             // all of them.
             Dirty(host);
 
+            // Loaded, by hand, because this window is never shown.
+            //
+            // WPF raises Loaded when an element reaches a tree with a presentation source, and a
+            // page that is only measured and arranged never gets one. So every Loaded handler in
+            // the product was invisible to this harness — including the one on Ui.Table that
+            // decides whether a table fills its pane or stops at two thirds of it. A shoot could
+            // therefore report a screen clean while the built product drew it differently, which
+            // is the one thing a render harness must not do.
+            Loaded(host);
+
             // Measured, laid out, and measured again, because laying it out realises rows a
             // virtualising list did not have before and those rows change how tall the page is.
             // The second pass settles it; the third is the guard.
@@ -366,6 +376,20 @@ namespace CamelWorks.Studio
         /// less room than it asked for and that is rarely the root.
         /// </summary>
         /// <param name="element">The page, or one element of it.</param>
+        /// <summary>
+        /// Raise Loaded on a page and everything under it, once.
+        /// </summary>
+        /// <param name="element">The page.</param>
+        private static void Loaded(DependencyObject element)
+        {
+            if (element is FrameworkElement one)
+                one.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent, one));
+
+            var children = VisualTreeHelper.GetChildrenCount(element);
+
+            for (var at = 0; at < children; at++) Loaded(VisualTreeHelper.GetChild(element, at));
+        }
+
         private static void Dirty(DependencyObject element)
         {
             if (element is UIElement one)

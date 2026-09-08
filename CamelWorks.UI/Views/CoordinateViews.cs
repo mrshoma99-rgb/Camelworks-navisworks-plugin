@@ -2859,6 +2859,32 @@ namespace CamelWorks.UI.Views
         /// <param name="seat">The seat. Its project file holds the settings and the revisions.</param>
         public static UIElement Report(ISeat seat) => new ReportScreen(seat).Build();
 
+        /// <summary>
+        /// The report screen over a supplied board, for the render harness.
+        ///
+        /// A report is written from the board and the board is built from an open model, so this
+        /// screen on a seat with no document draws its empty page and nothing else. Every picture
+        /// of the tab was therefore of that empty page: the document picker, the audience, the
+        /// selection table, the marker settings and the revision line had never been drawn, which
+        /// is where the faults on this tab have been.
+        ///
+        /// The board is a parameter for the same reason the Manage tab's engine is: the seat's
+        /// own reports itself unavailable. Everything else comes off the seat as it does on a
+        /// licensed one.
+        /// </summary>
+        /// <param name="seat">The seat. Its project file holds the settings and the revisions.</param>
+        /// <param name="board">The board the report is written from.</param>
+        public static UIElement Report(ISeat seat, ClashPipelineResult board)
+        {
+            if (seat == null) throw new ArgumentNullException(nameof(seat));
+            if (board == null) throw new ArgumentNullException(nameof(board));
+
+            LastBoard = board;
+            LastBoardLabel = seat.Profile.ProjectName;
+
+            return new ReportScreen(seat).Build();
+        }
+
         /// <summary>The penetration schedule, as its own tool rather than a document choice.</summary>
         internal static UIElement PenetrationsReport()
         {
@@ -2923,9 +2949,6 @@ namespace CamelWorks.UI.Views
             };
 
             private readonly StackPanel _results = Ui.Stack();
-
-            /// <summary>The preview of the document about to be written, redrawn on every setting change.</summary>
-            private readonly StackPanel _shape = Ui.Stack();
 
             /// <summary>The seat. Everything the screen reads without a document comes from here.</summary>
             private readonly ISeat _seat;
@@ -2996,6 +3019,53 @@ namespace CamelWorks.UI.Views
             private string _mode;
             private string _audience;
             private bool _changedOnly;
+
+            /// <summary>The tests pane's body, redrawn in place.</summary>
+            private readonly DockPanel _tests = new DockPanel();
+
+            /// <summary>How much of the board is going, over the tests table.</summary>
+            private readonly StackPanel _testsSaid = Ui.Stack();
+
+            /// <summary>The issues pane's body, redrawn in place.</summary>
+            private readonly DockPanel _issues = new DockPanel();
+
+            /// <summary>What the issues pane holds, over its table.</summary>
+            private readonly StackPanel _issuesSaid = Ui.Stack();
+
+            /// <summary>
+            /// The tests left out by hand, by name. Empty means every test is going.
+            ///
+            /// Left out rather than let in, so a test run after this screen was last opened is
+            /// in the report rather than silently missing from it.
+            /// </summary>
+            private readonly HashSet<string> _without =
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            /// <summary>The tests table's search.</summary>
+            private TextBox? _find;
+
+            /// <summary>What is typed in it.</summary>
+            private string _search = string.Empty;
+
+            /// <summary>
+            /// What narrows the document, and what orders it.
+            ///
+            /// The same pick the Exchange tab saves in its profiles, over the same twenty-four
+            /// parameters and every property the models carry. This screen had three status tick
+            /// boxes, three priority tick boxes and a four-way order picker of its own, which was
+            /// a second and weaker selector over one set of results.
+            /// </summary>
+            private readonly ClashPick _pick = new ClashPick();
+
+            /// <summary>
+            /// The issues ticked by hand, or empty when the filters alone decide.
+            ///
+            /// Held by id, so a filter change does not lose what was picked and picking survives
+            /// the preview being drawn again.
+            /// </summary>
+            private readonly HashSet<string> _picked =
+                new HashSet<string>(StringComparer.Ordinal);
+
             private bool _pictures;
             private bool _keyPlan;
             private bool _perParty;
@@ -3062,56 +3132,168 @@ namespace CamelWorks.UI.Views
 
                 Retune();
 
-                // Locked: the document is the tool, so the picker is not a choice this window has.
-                var setup = Ui.Stack(
-                    Bench.Group(string.Empty,
-                        _locked == null ? Ui.Field("Document", document) : null,
-                        _what,
-                        Ui.Across(Ui.Field("Recipient", _for), Ui.Field("File format", format))),
-                    Bench.Group("What else is in it", _changed, plan, _split, pictures, cost),
-                    Bench.Group("Where it goes",
-                        Ui.PathField("Folder", _path, PathKind.Folder,
-                                     hint: "blank writes it to your Documents folder"),
-                        Ui.Field("File name", _template,
-                                 "tokens: " + string.Join(", ", Deliverable.Tokens))));
-
-                // Labelled, as on Exchange. Two bare symbols beside the primary said nothing
-                // about what they open, and one of them was the same picture the board uses for
-                // something else.
-                var help = Ui.Quiet("What goes in each document…", Help);
-                var markers = Ui.Quiet("Markers in the model…", Markers);
-
-                // The button, not a footer row of its own: this screen's footer is built below,
-                // and a Blocked row inside it was a second footer anatomy nested in the first.
-                var write = _live == null
-                    ? (UIElement)Ui.Cannot("Write the report",
-                                           "A report is written from the board, which needs an open model.")
-                    : Ui.Runner("Write the report", _results, Write);
-
-                // The scope, the coverage and the way to load a board are kept out of _results:
-                // a runner clears its output panel on every press, so anything put there is gone
-                // the first time the button is used and never comes back.
-                var stage = Ui.Stack(
-                    // A state banner, not an empty state. Ui.Empty says a collection holds
-                    // nothing; this screen's collection is fine and the seat is what will not
-                    // let it be read, which is a different thing and was drawn as the same one.
+                // The strip, the two panes and one action row - the anatomy the Exchange tab uses
+                // for the same act. This screen was an options column beside one flat list of
+                // issues, so narrowing to a party still showed every test on the board and the
+                // filter had nothing to act on that could be seen.
+                //
+                // Which tests are in it is a different question from which of their issues go
+                // out, and the two are answered by different things: a test by its name and its
+                // folder, an issue by its status, its party and everything else the pick offers.
+                // One list cannot ask both.
+                var strip = Ui.Stack(
                     _live == null
                         ? Ui.Standing(Stand.Blocked,
                                       "No model is open. The report is written from the clash "
                                       + "board, which is built from the results in the open "
                                       + "model.")
-                        : BoardState("Writing builds it fresh from the tests and the saved rules."),
-                    Say(Covers()),
-                    _shape,
-                    _results);
+                        : (UIElement)BoardState("Writing builds it fresh from the tests and the "
+                                                + "saved rules."),
+                    null);
 
-                Restate();
+                _find = Ui.Find("a test or a folder", said =>
+                {
+                    _search = (said ?? string.Empty).Trim();
 
-                // Ui.Foot, like every other tab. Across put the whole footer in a horizontal
-                // stack, so the two set-up presses crowded the primary instead of sitting at the
-                // far left and the blocking reason had nowhere of its own to be drawn.
-                return Bench.Surface(setup, Ui.Foot(write, null, Ui.Across(help, markers)),
-                                     stage, PanelWidth);
+                    DrawTests();
+                });
+
+                strip.Children.Add(Groups(document, format));
+
+                // Labelled, as on Exchange. Two bare symbols beside the primary said nothing
+                // about what they open, and one of them was the same picture the board uses for
+                // something else.
+                var elsewhere = Ui.Quiet("What else is in it\u2026", () => Else(plan, pictures, cost));
+                var lands = Ui.Quiet("Where it goes\u2026", Landing);
+                var help = Ui.Quiet("What goes in each document\u2026", Help);
+                var markers = Ui.Quiet("Markers in the model\u2026", Markers);
+
+                var write = _live == null
+                    ? (UIElement)Ui.Cannot("Write the report",
+                                           "A report is written from the board, which needs an "
+                                           + "open model.")
+                    : Ui.Runner("Write the report", _results, Write);
+
+                var links = new StackPanel { Orientation = Orientation.Horizontal };
+
+                links.Children.Add(elsewhere);
+                links.Children.Add(lands);
+                links.Children.Add(help);
+                links.Children.Add(markers);
+
+                DrawTests();
+                DrawIssues();
+
+                // Loosed on the way in: the pane bodies are fields this screen redraws in place,
+                // and a pane puts the body it is given inside a border of its own.
+                return Bench.Split(strip,
+                                   Bench.Pane("Tests", Ui.Loose(_testsSaid), Ui.Loose(_tests),
+                                              null, scrolls: false),
+                                   Bench.Pane("Issues", Ui.Loose(_issuesSaid), Ui.Loose(_issues),
+                                              null, scrolls: false),
+                                   Ui.Stack(Ui.Foot(write, null, links), _results),
+                                   leftWidth: 420);
+            }
+
+            /// <summary>The strip's two groups: what goes out, and how it is written.</summary>
+            /// <param name="document">The document picker, or null on a locked screen.</param>
+            /// <param name="format">The file format switch.</param>
+            private UIElement Groups(UIElement document, UIElement format)
+            {
+                // A wrap panel of its own, not Ui.Across: that sets a six-pixel margin on
+                // everything it is given, which is the gutter between two fields and too little
+                // between two groups.
+                var groups = new WrapPanel();
+
+                groups.Children.Add(Bench.Group("What goes out", across: true,
+                                                _locked == null
+                                                    ? Ui.Field("Document", document)
+                                                    : null,
+                                                _for == null ? null : Ui.Field("Recipient", _for),
+                                                _find == null ? null : Ui.Field("Find a test", _find)));
+
+                groups.Children.Add(Bench.Group("How it is written", across: true,
+                                                Ui.Field("File format", format),
+                                                _what));
+
+                return groups;
+            }
+
+            /// <summary>The four options that are not about which issues go in, on their own page.</summary>
+            /// <param name="plan">The site-plan tick.</param>
+            /// <param name="pictures">The rendered-view tick.</param>
+            /// <param name="cost">What a rendered view costs, under it.</param>
+            private void Else(UIElement plan, UIElement pictures, UIElement cost) =>
+                Ui.Configure("What else is in it", null,
+                             new Ui.Page("What else is in it",
+                                         () => Bench.Group(string.Empty,
+                                                           _changed == null ? null : Ui.Loose(_changed),
+                                                           Ui.Loose(plan),
+                                                           _split == null ? null : Ui.Loose(_split),
+                                                           Ui.Loose(pictures), Ui.Loose(cost))));
+
+            /// <summary>Where the file lands, on its own page.</summary>
+            private void Landing() =>
+                Ui.Configure("Where it goes", null, new Ui.Page("Where it goes", () =>
+                {
+                    var page = Ui.Stack(Bench.Group(string.Empty,
+                        Ui.PathField("Folder", _path, PathKind.Folder,
+                                     hint: "blank writes it to your Documents folder"),
+                        Ui.Field("File name", _template,
+                                 "tokens: " + string.Join(", ", Deliverable.Tokens))));
+
+                    // The register the next revision letter is derived from belongs where the
+                    // letter is stated rather than only on the cover of the file.
+                    if (_live != null)
+                    {
+                        page.Children.Add(Revision(_live));
+
+                        var was = History(_live);
+
+                        if (was != null) page.Children.Add(was);
+                    }
+
+                    return page;
+                }));
+
+            /// <summary>Which revision this issue becomes, and where it lands.</summary>
+            /// <param name="session">The live session.</param>
+            private UIElement Revision(Session session)
+            {
+                var audience = _perParty ? Everyone : _audience;
+
+                if (_perParty)
+                {
+                    var board = LastBoard;
+
+                    var groups = board == null
+                        ? Array.Empty<ClashGroup>()
+                        : (IReadOnlyList<ClashGroup>)Chosen(board, audience, Regressed());
+
+                    var parties = groups.Select(g => g.AssignedTo)
+                                        .Where(p => !string.IsNullOrWhiteSpace(p))
+                                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                                        .Count();
+
+                    var unowned = groups.Count(g => g.AssignedTo == null);
+
+                    return Bench.Group("This issue",
+                        Say(Ui.Count(parties + (unowned > 0 ? 1 : 0), "file")
+                            + ", one for each party on the board"
+                            + (unowned > 0 ? " and one for the unassigned issues" : string.Empty)
+                            + ". Each takes the next letter in that party's own sequence."));
+                }
+
+                var last = LastIssue(session, audience);
+                var next = Deliverable.NextRevision(last?.Revision);
+                var now = DateTimeOffset.UtcNow;
+
+                return Bench.Group("This issue",
+                    Say("Revision " + next + ". "
+                        + (last == null
+                            ? "Nothing has been issued to this recipient before."
+                            : last.Supersedes)),
+                    Say(Lands(session, audience, next, now)));
             }
 
             /// <summary>
@@ -3125,68 +3307,281 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private void Restate()
             {
-                _shape.Children.Clear();
+                DrawTests();
+                DrawIssues();
+            }
 
-                var session = _live;
-                var board = LastBoard;
-
-                if (session == null || board == null) return;
-
-                var regressed = Regressed();
-
-                // One file per party still reports on the whole board, split at the end, so the
-                // preview counts the board rather than one recipient's share of it.
-                var audience = _perParty ? Everyone : _audience;
-                var groups = Chosen(board, audience, regressed);
-
-                _shape.Children.Add(Title("In this issue"));
-
-                if (groups.Count == 0)
+            /// <summary>One test on the board: what it is called, and how much of it is going.</summary>
+            private sealed class ReportTest
+            {
+                internal ReportTest(string name, string? folder)
                 {
-                    _shape.Children.Add(Nothing());
+                    Name = name;
+                    Folder = folder;
+                }
+
+                /// <summary>What it is called.</summary>
+                internal string Name { get; }
+
+                /// <summary>The folder it sits in, or null.</summary>
+                internal string? Folder { get; }
+
+                /// <summary>How many issues it holds.</summary>
+                internal int Issues { get; set; }
+
+                /// <summary>How many clashes those issues hold.</summary>
+                internal int Clashes { get; set; }
+
+                /// <inheritdoc />
+                public override string ToString() => Name;
+            }
+
+            /// <summary>The tests the board holds, in the order they first appear on it.</summary>
+            private IReadOnlyList<ReportTest> Tests()
+            {
+                var found = new List<ReportTest>();
+                var seen = new Dictionary<string, ReportTest>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var group in LastBoard?.Groups ?? (IReadOnlyList<ClashGroup>)Array.Empty<ClashGroup>())
+                {
+                    var head = group.Items.FirstOrDefault();
+                    var name = head?.TestName;
+
+                    if (string.IsNullOrWhiteSpace(name)) name = "Unnamed test";
+
+                    if (!seen.TryGetValue(name!, out var held))
+                        seen[name!] = held = Add(found, name!, head?.TestFolder);
+
+                    held.Issues++;
+                    held.Clashes += group.Items.Count;
+                }
+
+                return found;
+            }
+
+            /// <summary>Put a test on the list and hand it back.</summary>
+            /// <param name="into">The list.</param>
+            /// <param name="name">What the test is called.</param>
+            /// <param name="folder">The folder it sits in.</param>
+            private static ReportTest Add(List<ReportTest> into, string name, string? folder)
+            {
+                var made = new ReportTest(name, folder);
+
+                into.Add(made);
+
+                return made;
+            }
+
+            /// <summary>Whether a test's issues are going in the document.</summary>
+            /// <param name="name">The test's name.</param>
+            private bool Sending(string name) => !_without.Contains(name);
+
+            /// <summary>Whether some text holds what is in the search box.</summary>
+            /// <param name="said">The text.</param>
+            private bool Holds(string? said) =>
+                said != null && said.IndexOf(_search, StringComparison.OrdinalIgnoreCase) >= 0;
+
+            /// <summary>Put tests in or out of the document.</summary>
+            /// <param name="picked">The rows picked.</param>
+            /// <param name="said">Where a refusal would be said. Unused: nothing here refuses.</param>
+            /// <param name="on">True to include them.</param>
+            /// <param name="rebuild">Whether to draw the table again.</param>
+            private void Included(IReadOnlyList<object> picked, Panel? said, bool on,
+                                  bool rebuild = true)
+            {
+                foreach (var one in picked)
+                {
+                    var test = one is TableRow row ? row.Source as ReportTest : one as ReportTest;
+
+                    if (test == null) continue;
+
+                    if (on) _without.Remove(test.Name);
+                    else _without.Add(test.Name);
+                }
+
+                _ = said;
+
+                if (rebuild) DrawTests();
+                else DrawTestsSaid();
+
+                DrawIssues();
+            }
+
+            /// <summary>The tests pane: which tests the document covers.</summary>
+            private void DrawTests()
+            {
+                _tests.Children.Clear();
+                _testsSaid.Children.Clear();
+
+                var all = Tests();
+
+                if (all.Count == 0)
+                {
+                    _tests.Children.Add(Ui.Empty("No tests on the board.",
+                                                 "Run them on the Manage tab first."));
+
                     return;
                 }
 
-                var parties = groups
-                    .Select(g => g.AssignedTo)
-                    .Where(p => !string.IsNullOrWhiteSpace(p))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .Count();
+                var showing = _search.Length == 0
+                    ? all
+                    : all.Where(one => Holds(one.Name) || Holds(one.Folder)).ToList();
 
-                var unowned = groups.Count(g => g.AssignedTo == null);
+                var rows = showing.Select(one => new TableRow(one,
+                    string.Empty,
+                    one.Name,
+                    one.Folder ?? string.Empty,
+                    one.Issues.ToString("N0", CultureInfo.InvariantCulture),
+                    one.Clashes.ToString("N0", CultureInfo.InvariantCulture))
+                    .Ticking(Sending(one.Name),
+                             on => Included(new object[] { one }, null, on, rebuild: false)))
+                    .ToList();
 
-                _shape.Children.Add(Ui.Across(
-                    Ui.Figure(Tallied(groups.Count), "issues"),
-                    Ui.Figure(Tallied(groups.Sum(g => g.Items.Count)), "clashes"),
-                    Ui.Figure(Tallied(parties), "parties"),
-                    Ui.Figure(Tallied(unowned), "issues unassigned",
-                              unowned > 0 ? Tone.Warn : Tone.Good)));
+                var table = Ui.Table(rows,
+                    ("In", 34), ("Test", 0), ("Folder", 100), ("Issues", 60),
+                    ("Clashes", 66)).Multi().Ticking(0);
 
-                foreach (var section in Sections()) _shape.Children.Add(Say("— " + section));
+                Ui.SetFills(_tests, true);
 
-                if (_perParty)
-                {
-                    _shape.Children.Add(Say(Ui.Count(parties + (unowned > 0 ? 1 : 0), "file")
-                        + ", one for each party on the board"
-                        + (unowned > 0 ? " and one for the unassigned issues" : string.Empty)
-                        + ". Each takes the next letter in that party's own sequence."));
-                }
-                else
-                {
-                    var was = LastIssue(session, audience);
-                    var revision = Deliverable.NextRevision(was?.Revision);
-                    var now = DateTimeOffset.UtcNow;
+                var verbs = Ui.Picking(table,
+                    new Ui.OnPicked("Include {n} tests", (picked, said) =>
+                        Included(picked, said, on: true), primary: true),
+                    new Ui.OnPicked("Exclude {n} tests", (picked, said) =>
+                        Included(picked, said, on: false)));
 
-                    _shape.Children.Add(Say("This issue is revision " + revision + ". "
-                        + (was == null
-                            ? "Nothing has been issued to this recipient before."
-                            : was.Supersedes)));
+                Bench.Listed(_tests, table, verbs);
 
-                    _shape.Children.Add(Say(Lands(session, audience, revision, now)));
-                }
-
-                History(session);
+                DrawTestsSaid();
             }
+
+            /// <summary>How much of the board is going, without rebuilding the table under it.</summary>
+            private void DrawTestsSaid()
+            {
+                _testsSaid.Children.Clear();
+
+                var all = Tests();
+                var chosen = all.Count(one => Sending(one.Name));
+
+                var found = _search.Length == 0
+                    ? all.Count
+                    : all.Count(one => Holds(one.Name) || Holds(one.Folder));
+
+                _testsSaid.Children.Add(Ui.Small(
+                    chosen + " of " + Ui.Count(all.Count, "test") + " included"
+                    + (_search.Length == 0
+                        ? string.Empty
+                        : " \u00b7 " + found.ToString(CultureInfo.InvariantCulture)
+                          + " match the search")));
+            }
+
+            /// <summary>
+            /// The issues pane: the filter, and the issues the document will carry.
+            /// </summary>
+            private void DrawIssues()
+            {
+                _issues.Children.Clear();
+                _issuesSaid.Children.Clear();
+
+                var board = LastBoard;
+
+                if (board == null)
+                {
+                    _issues.Children.Add(Ui.Empty("No board is loaded.",
+                                                  "Read the results on the Manage tab first."));
+
+                    return;
+                }
+
+                var items = board.Groups.SelectMany(g => g.Items)
+                                        .Where(one => one != null).ToList();
+
+                var filters = Ui.Stack(
+                    ClashPicking.Bar(_pick, items, Storeys(), null, Restate,
+                                     "Only issues holding a clash where"),
+                    Ui.Across(Ui.Field("Order",
+                                       ClashPicking.Ordering(_pick, items, Storeys(), null,
+                                                             Restate, "By issue name"))));
+
+                // Docked top here, and again by Bench.Listed once there is a table: the empty
+                // states below add themselves to this same panel, so the bar has to be on it
+                // before them and cannot wait for the listing.
+                DockPanel.SetDock(filters, Dock.Top);
+                _issues.Children.Add(filters);
+
+                var groups = Chosen(board, _perParty ? Everyone : _audience, Regressed());
+
+                if (groups.Count == 0)
+                {
+                    _issues.Children.Add(Nothing());
+                    _issuesSaid.Children.Add(Ui.Small("Nothing in this document."));
+
+                    return;
+                }
+
+                var rows = groups.Select(group => new TableRow(group, group.Name,
+                                                               group.AssignedTo ?? "Unassigned",
+                                                               group.Priority ?? string.Empty,
+                                                               Ui.Count(group.Items.Count, "clash"))
+                {
+                    Tone = group.AssignedTo == null ? Tone.Warn : Tone.Plain,
+                }).ToList();
+
+                var table = Ui.Table(rows,
+                                     ("Issue", 0), ("Party", 130),
+                                     ("Priority", 90), ("Clashes", 80));
+
+                // Ticked, and the ticks are what gets written. With none ticked the filters
+                // decide, so an untouched screen still reports everything the recipient is owed.
+                table.Multi();
+
+                foreach (var row in table.Items.OfType<TableRow>())
+                    if (row.Source is ClashGroup one && _picked.Contains(one.Id))
+                        table.SelectedItems.Add(row);
+
+                table.SelectionChanged += (s, e) => Ui.Safely(() =>
+                {
+                    _picked.Clear();
+
+                    foreach (var row in table.SelectedItems.OfType<TableRow>())
+                        if (row.Source is ClashGroup one) _picked.Add(one.Id);
+
+                    // Only the line over the table. Redrawing the pane from inside its own
+                    // selection handler would replace the table mid-tick.
+                    Counted(groups);
+                });
+
+                Ui.SetFills(_issues, true);
+
+                // The filter bar goes in as the pane's "over": Bench.Listed clears the body
+                // before it lays the rows out, so anything docked into it beforehand is gone.
+                Bench.Listed(_issues, table, Ui.Picking(table), null, filters);
+
+                Counted(groups);
+            }
+
+            /// <summary>What the ticks and the filters have left, over the table.</summary>
+            /// <param name="groups">The issues the filters left.</param>
+            private void Counted(IReadOnlyList<ClashGroup> groups)
+            {
+                _issuesSaid.Children.Clear();
+
+                var parties = groups.Select(g => g.AssignedTo)
+                                    .Where(p => !string.IsNullOrWhiteSpace(p))
+                                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                                    .Count();
+
+                _issuesSaid.Children.Add(Ui.Small(
+                    Ui.Count(groups.Count, "issue") + ", "
+                    + Ui.Count(groups.Sum(g => g.Items.Count), "clash") + ", "
+                    + Ui.Count(parties, "party") + " \u00b7 "
+                    + (_picked.Count == 0
+                        ? "nothing ticked, so all of these are written"
+                        : Ui.Count(_picked.Count, "issue") + " ticked, and only those are written")));
+            }
+
+            /// <summary>The project's storeys, so a filter can name a level.</summary>
+            private LevelPlan Storeys() =>
+                LevelPlan.FromJson(_seat.Store.Section(ProjectStore.ProfileSection)[LevelPlan.Key]);
 
             /// <summary>
             /// Where the file will be written, without the side effect of working it out for real.
@@ -3249,23 +3644,26 @@ namespace CamelWorks.UI.Views
             /// the letter is stated rather than only on the cover of the file.
             /// </summary>
             /// <param name="session">The live session, whose project file holds the register.</param>
-            private void History(Session session)
+            /// <returns>The lines, or null when nothing has gone out.</returns>
+            private UIElement? History(Session session)
             {
                 var register = Deliverable.Read(
                     session.Store.Section(ProjectStore.ClashSection)[ClashKeys.Issued]);
 
-                if (register.Count == 0) return;
+                if (register.Count == 0) return null;
 
-                _shape.Children.Add(Title("Issued so far"));
+                var said = Ui.Stack();
 
                 foreach (var entry in register.OrderBy(e => e.Key, StringComparer.OrdinalIgnoreCase))
-                    _shape.Children.Add(Say(entry.Key + " — revision " + entry.Value.Revision
+                    said.Children.Add(Say(entry.Key + " \u2014 revision " + entry.Value.Revision
                         + ", issued "
                         + entry.Value.IssuedUtc.UtcDateTime.ToString("d MMMM yyyy",
                                                                      CultureInfo.InvariantCulture)
                         + (string.IsNullOrWhiteSpace(entry.Value.File)
                             ? "."
                             : " as " + entry.Value.File + ".")));
+
+                return Bench.Group("Issued so far", said);
             }
 
             /// <summary>A count as it reads beside a figure.</summary>
@@ -3379,6 +3777,11 @@ namespace CamelWorks.UI.Views
                 return Ui.Stack(
                     Say("One marker per clash on the board, grouped by test, written as an OBJ "
                         + "file that can be appended to the model."),
+
+                    // What it needs, at the top rather than at the press. This window opened
+                    // looking ready on a seat with no board: three settings, a button, and the
+                    // refusal only after pressing it — which reads as a button that does nothing.
+                    BoardState("The markers are one per clash on it."),
                     Ui.Field("Shape", shape),
                     Ui.Field("Marker diameter (mm)", size),
                     Ui.Field("Model units", units),
@@ -3689,7 +4092,61 @@ namespace CamelWorks.UI.Views
 
                 if (_changedOnly) groups = groups.Where(g => Changed(g, regressed));
 
-                return groups.ToList();
+                // An issue is kept when it holds a clash the pick lets through. Per issue and not
+                // per clash: an issue is the unit somebody acts on, and half of one is not a thing
+                // to send.
+                if (!_pick.IsEverything)
+                {
+                    var plan = Storeys();
+
+                    groups = groups.Where(g => _pick.Take(g.Items, plan).Count > 0);
+                }
+
+                // The ticks last, so they narrow what the filters left rather than reviving what
+                // they removed. Nothing ticked means the filters decide, which is what an
+                // untouched screen should do.
+                if (_picked.Count > 0) groups = groups.Where(g => _picked.Contains(g.Id));
+
+                return Ordered(groups.ToList()).ToList();
+            }
+
+            /// <summary>
+            /// The issues in the order the document will carry them.
+            ///
+            /// Ordered by the pick, which orders results. An issue takes the place of its first
+            /// result under that order, so "by level" puts the lowest issue first without the
+            /// screen holding a second idea of what an order is.
+            /// </summary>
+            /// <param name="groups">The issues the filters left.</param>
+            private IEnumerable<ClashGroup> Ordered(IReadOnlyList<ClashGroup> groups)
+            {
+                if (_pick.Sort == null)
+                    return groups.OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase);
+
+                var plan = Storeys();
+
+                // One result per issue, put in the pick's order. Ordering every result and then
+                // taking the issues off it is the same answer over four hundred rows instead of
+                // forty.
+                var first = groups
+                    .Select(g => g.Items.FirstOrDefault())
+                    .Where(one => one != null)
+                    .ToList();
+
+                var at = 0;
+                var where = new Dictionary<ClashKey, int>();
+
+                foreach (var item in _pick.Ordered(first, plan))
+                    if (item != null && !where.ContainsKey(item.Key)) where[item.Key] = at++;
+
+                return groups.OrderBy(g =>
+                {
+                    var head = g.Items.FirstOrDefault();
+
+                    return head != null && where.TryGetValue(head.Key, out var seat)
+                        ? seat
+                        : int.MaxValue;
+                }).ThenBy(g => g.Name, StringComparer.OrdinalIgnoreCase);
             }
 
             /// <summary>Where the file goes, made from the audience so two reports never collide.</summary>
@@ -3701,29 +4158,28 @@ namespace CamelWorks.UI.Views
                 var stem = Deliverable.Name(_template.Text, session.Profile.ProjectName,
                                             audience == Everyone ? null : audience, revision, issued);
 
-                if (typed.Length == 0)
-                {
-                    var made = System.IO.Path.Combine(
-                        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-                        stem + extension);
-
-                    if (!_perParty) _path.Text = made;
-                    return made;
-                }
-
-                if (!_perParty) return typed;
-
-                // One box, several files: the typed path becomes the folder and the stem, and each
-                // party's name is added. Otherwise the last party written would be the only file
-                // left on disk, which is the kind of thing somebody discovers on Monday.
+                // The box asks for a folder and says so. It was returned as the path to write,
+                // which handed a directory to the writer: every report written to a folder anyone
+                // had picked failed with "Windows refused access to the path". The stem already
+                // carries the project, the party and the revision, so a folder and a stem is the
+                // whole of the answer.
                 //
                 // System.IO.Path here rather than Core's separator-agnostic helper: this assembly
                 // only ever runs on Windows, where Path is the one that is right about backslashes.
-                var directory = System.IO.Path.GetDirectoryName(typed) ?? string.Empty;
-                var name = System.IO.Path.GetFileNameWithoutExtension(typed);
+                var folder = typed.Length == 0
+                    ? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
+                    : System.IO.Path.HasExtension(typed)
+                        ? System.IO.Path.GetDirectoryName(typed) ?? string.Empty
+                        : typed;
 
-                return System.IO.Path.Combine(directory,
-                    Deliverable.Safe(name + " - " + audience + " - Rev " + revision) + extension);
+                var made = System.IO.Path.Combine(folder, Deliverable.Safe(stem) + extension);
+
+                // The box is left alone once a party's name is in the file name: one box cannot
+                // hold the several paths a per-party write produces, and filling it with the last
+                // of them says the others were not written.
+                if (typed.Length == 0 && !_perParty) _path.Text = folder;
+
+                return made;
             }
 
             /// <summary>

@@ -5,6 +5,7 @@ using System.Linq;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Findings;
+using CamelWorks.Core.Project;
 using CamelWorks.Core.Identity;
 
 namespace CamelWorks.Core.Checks
@@ -30,6 +31,15 @@ namespace CamelWorks.Core.Checks
         private readonly double _cell;
         private readonly string? _unavailable;
 
+        // Where this project keeps what it calls the host's tests, or null when there is none.
+        //
+        // A clash test's name and folder belong to the document, and a document will not always
+        // take a write: a published NWD refuses, and so does any seat whose edition has no clash
+        // engine to write through. Without somewhere else to put it, renaming or refiling a test
+        // did nothing and said nothing - which is what "you create a folder, press OK and it
+        // shows up nowhere" was.
+        private readonly ProjectStore? _project;
+
         // The tolerance and kind of each test, as the last read or Runs() call saw them. Held
         // because Sides() is a host call that walks the test's selection: the rail asks every test
         // what it is between on every keystroke in its search box.
@@ -54,11 +64,19 @@ namespace CamelWorks.Core.Checks
         /// <param name="unavailable">
         /// Why this seat has no clash engine, for the empty state. Null uses a plain sentence.
         /// </param>
+        /// <param name="project">
+        /// Where this project keeps what it calls the host's tests, or null for none.
+        ///
+        /// Without it a rename or a refile the document refuses is lost, and every screen shows
+        /// the host's own name and folder however the coordinator filed the test.
+        /// </param>
         /// <param name="cell">The cell size the clash keys are quantised to.</param>
         public ClashCheck(IClashSource source, double metresPerUnit = 1.0,
-                          string? unavailable = null, double cell = ClashKey.DefaultCell)
+                          string? unavailable = null, double cell = ClashKey.DefaultCell,
+                          ProjectStore? project = null)
         {
             _source = source ?? throw new ArgumentNullException(nameof(source));
+            _project = project;
             _metresPerUnit = metresPerUnit > 0 ? metresPerUnit : 1.0;
             _unavailable = unavailable;
             _cell = cell;
@@ -314,7 +332,23 @@ namespace CamelWorks.Core.Checks
         /// The board's own list is worked out from where the tests are, which cannot see a
         /// folder nothing is in yet. This asks the document.
         /// </summary>
-        public IReadOnlyList<string> Folders() => _source.Folders();
+        public IReadOnlyList<string> Folders()
+        {
+            var found = new List<string>(_source.Folders());
+            var ours = Ours();
+
+            // And the folders this project made that the document would not take. A folder that
+            // exists only here is still a folder somebody is filing into, and leaving it off the
+            // list is why they could not file anything else into it.
+            foreach (var id in ours.Ids)
+            {
+                var folder = ours.For(id)?.Folder;
+
+                if (!string.IsNullOrWhiteSpace(folder)) found.Add(folder!);
+            }
+
+            return found;
+        }
 
         /// <summary>One side of a copy, or null when the host would not say what it is.</summary>
         /// <param name="set">The saved set behind it, or null.</param>
@@ -369,11 +403,54 @@ namespace CamelWorks.Core.Checks
         public IReadOnlyList<CheckRun> Runs()
         {
             var found = new List<CheckRun>();
+            var ours = Ours();
 
             foreach (var test in _source.Tests())
-                found.Add(Run(test, Shape(test.Id)));
+                found.Add(Run(Told(test, ours), Shape(test.Id)));
 
             return found;
+        }
+
+        /// <summary>What this project calls the host's tests, read off the project file.</summary>
+        private ClashTestNames Ours() =>
+            _project == null
+                ? new ClashTestNames()
+                : ClashTestNames.FromJson(_project.Section(ProjectStore.ClashSection)[ClashTestNames.Key]);
+
+        /// <summary>
+        /// One test as this project calls it, where it calls it anything.
+        ///
+        /// Applied on the way out of the check rather than on one screen. It used to live in the
+        /// Manage board alone, so the board showed a test by the name and folder somebody gave it
+        /// and the Create tab showed the host's, which is two screens disagreeing about the same
+        /// test in the same session.
+        /// </summary>
+        /// <param name="test">The test as the host reports it.</param>
+        /// <param name="ours">What this project calls its tests.</param>
+        private static ClashTestInfo Told(ClashTestInfo test, ClashTestNames ours)
+        {
+            var said = ours.For(test.Id);
+
+            if (said == null || said.IsEmpty) return test;
+
+            var name = string.IsNullOrWhiteSpace(said.Name) ? test.Name : said.Name!;
+
+            var folder = said.FolderCleared ? null
+                : string.IsNullOrWhiteSpace(said.Folder) ? test.Folder
+                : said.Folder;
+
+            return new ClashTestInfo(test.Id, name, folder, test.ResultCount, test.LastRunTicks);
+        }
+
+        /// <summary>Keep what this project calls its tests. False when the file would not take it.</summary>
+        /// <param name="ours">What this project calls its tests.</param>
+        private bool Keep(ClashTestNames ours)
+        {
+            if (_project == null) return false;
+
+            _project.Section(ProjectStore.ClashSection).Set(ClashTestNames.Key, ours.ToJson());
+
+            return _project.Save();
         }
 
         /// <summary>
@@ -962,11 +1039,30 @@ namespace CamelWorks.Core.Checks
 
             public bool HasBook => true;
 
-            public bool Rename(string runId, string name) =>
-                _check._source.RenameTest(runId, name);
+            // The host first, this project when the host will not take it. Both report whether
+            // the change was kept anywhere, so a caller that ignores the answer at least does not
+            // get a silent no from a document that simply cannot be written to.
+            public bool Rename(string runId, string name)
+            {
+                if (_check._source.RenameTest(runId, name)) return true;
 
-            public bool Refile(string runId, string? folder) =>
-                _check._source.MoveTests(new[] { runId }, folder);
+                var ours = _check.Ours();
+
+                ours.Rename(runId, name);
+
+                return _check.Keep(ours);
+            }
+
+            public bool Refile(string runId, string? folder)
+            {
+                if (_check._source.MoveTests(new[] { runId }, folder)) return true;
+
+                var ours = _check.Ours();
+
+                ours.Refile(runId, folder ?? string.Empty);
+
+                return _check.Keep(ours);
+            }
         }
 
         /// <summary>
