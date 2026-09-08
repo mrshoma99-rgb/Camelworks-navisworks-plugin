@@ -3783,13 +3783,17 @@ namespace CamelWorks.UI.Views
                 grid.Columns.Add(column);
             }
 
+            var built = rows.ToList();
+
             var table = new ListView
             {
                 View = grid,
-                ItemsSource = rows.ToList(),
+                ItemsSource = built,
                 Margin = new Thickness(0, Gap, 0, 2),
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
             };
+
+            table.SetValue(RowsProperty, built);
 
             // How tall a table may be is a question about the pane, not a number. It was 420,
             // which overflowed the dock pane at its 340 minimum and left most of a tall monitor
@@ -3908,7 +3912,15 @@ namespace CamelWorks.UI.Views
 
                     var index = grid.Columns.IndexOf(header.Column);
                     if (index < 0) return;
-                    if (!(table.ItemsSource is List<TableRow> current)) return;
+
+                    // The rows the table was built from, not whatever its ItemsSource happens to
+                    // be now. A table that groups its rows by folder has a CollectionView there
+                    // rather than a list, so this test used to fail on exactly the table that
+                    // most needs sorting - the Create tab's, where the headers did nothing at
+                    // all.
+                    var current = Held(table);
+
+                    if (current.Count == 0) return;
 
                     ascending = sortedBy == index ? !ascending : true;
                     sortedBy = index;
@@ -3940,7 +3952,7 @@ namespace CamelWorks.UI.Views
 
                     if (!ascending) sorted.Reverse();
 
-                    table.ItemsSource = sorted;
+                    Refill(table, sorted);
                 }));
 
             // A 3px bar down the left of the row, not the row's text.
@@ -3968,6 +3980,45 @@ namespace CamelWorks.UI.Views
             };
 
             return table;
+        }
+
+        /// <summary>Where a table keeps the rows it was built from, whatever it is showing.</summary>
+        private static readonly DependencyProperty RowsProperty =
+            DependencyProperty.RegisterAttached("Rows", typeof(List<TableRow>), typeof(Ui),
+                                                new PropertyMetadata(null));
+
+        /// <summary>The rows a table was built from.</summary>
+        /// <param name="table">The table.</param>
+        private static List<TableRow> Held(ListView table) =>
+            table.GetValue(RowsProperty) as List<TableRow> ?? new List<TableRow>();
+
+        /// <summary>
+        /// Show these rows, keeping whatever shape the table was given.
+        ///
+        /// A grouped table is showing a view over its rows rather than the rows, so putting a
+        /// list back in its place would take the folder bands off the first time somebody sorted
+        /// it. The grouping is rebuilt over the new order instead.
+        /// </summary>
+        /// <param name="table">The table.</param>
+        /// <param name="rows">The rows, in the order they are to show.</param>
+        private static void Refill(ListView table, List<TableRow> rows)
+        {
+            table.SetValue(RowsProperty, rows);
+
+            var groups = (table.ItemsSource as System.ComponentModel.ICollectionView)?
+                .GroupDescriptions;
+
+            if (groups == null || groups.Count == 0)
+            {
+                table.ItemsSource = rows;
+                return;
+            }
+
+            var grouped = new CollectionViewSource { Source = rows };
+
+            foreach (var one in groups) grouped.GroupDescriptions.Add(one);
+
+            table.ItemsSource = grouped.View;
         }
 
         /// <summary>
