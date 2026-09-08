@@ -5737,6 +5737,13 @@ namespace CamelWorks.UI.Views
             // rule wrote "2 of thems" on every one of them.
             if (Already.Contains(tail)) return unit;
 
+            // A consonant then y: party, priority, storey is not one of these because its y
+            // follows a vowel. "0 partys" is the kind of typo that makes a count read as a bug.
+            if (tail.Length > 1
+                && tail.EndsWith("y", StringComparison.OrdinalIgnoreCase)
+                && "aeiou".IndexOf(char.ToLowerInvariant(tail[tail.Length - 2])) < 0)
+                return head + tail.Substring(0, tail.Length - 1) + "ies" + trailing;
+
             if (tail.EndsWith("s", StringComparison.OrdinalIgnoreCase)
                 || tail.EndsWith("x", StringComparison.OrdinalIgnoreCase)
                 || tail.EndsWith("z", StringComparison.OrdinalIgnoreCase)

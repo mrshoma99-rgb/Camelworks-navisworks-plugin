@@ -3502,6 +3502,9 @@ namespace CamelWorks.UI.Views
                                        ClashPicking.Ordering(_pick, items, Storeys(), null,
                                                              Restate, "By issue name"))));
 
+                // Docked top here, and again by Bench.Listed once there is a table: the empty
+                // states below add themselves to this same panel, so the bar has to be on it
+                // before them and cannot wait for the listing.
                 DockPanel.SetDock(filters, Dock.Top);
                 _issues.Children.Add(filters);
 
@@ -3549,7 +3552,9 @@ namespace CamelWorks.UI.Views
 
                 Ui.SetFills(_issues, true);
 
-                Bench.Listed(_issues, table, Ui.Picking(table), null, null);
+                // The filter bar goes in as the pane's "over": Bench.Listed clears the body
+                // before it lays the rows out, so anything docked into it beforehand is gone.
+                Bench.Listed(_issues, table, Ui.Picking(table), null, filters);
 
                 Counted(groups);
             }
