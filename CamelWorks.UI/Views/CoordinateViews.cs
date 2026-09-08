@@ -2915,18 +2915,6 @@ namespace CamelWorks.UI.Views
             /// <summary>The audience that means everybody.</summary>
             private const string Everyone = "Everyone";
 
-            /// <summary>Order the issues by their own name.</summary>
-            private const string ByIssue = "Issue";
-
-            /// <summary>Order them by the party they are assigned to.</summary>
-            private const string ByParty = "Party";
-
-            /// <summary>Order them by how many clashes each holds, most first.</summary>
-            private const string BySize = "Clashes";
-
-            /// <summary>Order them by priority.</summary>
-            private const string ByPriority = "Priority";
-
             /// <summary>The audience that means the groups nobody owns yet.</summary>
             private const string Nobody = "Only the unassigned";
 
@@ -3036,18 +3024,14 @@ namespace CamelWorks.UI.Views
             private bool _changedOnly;
 
             /// <summary>
-            /// The statuses an issue must hold one of, or empty for every status.
+            /// What narrows the document, and what orders it.
             ///
-            /// A report is a thing sent to somebody, and what is sent is almost never the whole
-            /// board: an issue sheet for a trade is the open work, not the four hundred results
-            /// somebody already approved. The tab offered a recipient and a total and nothing
-            /// between them.
+            /// The same pick the Exchange tab saves in its profiles, over the same twenty-four
+            /// parameters and every property the models carry. This screen had three status tick
+            /// boxes, three priority tick boxes and a four-way order picker of its own, which was
+            /// a second and weaker selector over one set of results.
             /// </summary>
-            private readonly HashSet<FindingStatus> _statuses = new HashSet<FindingStatus>();
-
-            /// <summary>The priorities to keep, or empty for every one.</summary>
-            private readonly HashSet<string> _priorities =
-                new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            private readonly ClashPick _pick = new ClashPick();
 
             /// <summary>
             /// The issues ticked by hand, or empty when the filters alone decide.
@@ -3058,8 +3042,6 @@ namespace CamelWorks.UI.Views
             private readonly HashSet<string> _picked =
                 new HashSet<string>(StringComparer.Ordinal);
 
-            /// <summary>How the issues are ordered in the document.</summary>
-            private string _order = ByIssue;
             private bool _pictures;
             private bool _keyPlan;
             private bool _perParty;
@@ -3331,65 +3313,31 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// What narrows the document: the statuses, the priorities and the order.
+            /// What narrows the document, and what orders it.
             ///
-            /// The same three questions the Exchange tab asks before it writes a BCF, asked here
-            /// because a report is the same act with a different file at the end of it.
+            /// ClashPicking's bar and order picker, over the same pick the Exchange tab saves in
+            /// a profile: the same twenty-four parameters and every property the models carry.
+            /// This screen asked the same question with three status tick boxes and three
+            /// priority ones, which could not narrow by level, by discipline, by model or by any
+            /// property at all.
             /// </summary>
-            /// <param name="board">The whole board, for the values it actually holds.</param>
+            /// <param name="board">The whole board, for the parameters and values it holds.</param>
             private UIElement Narrowing(ClashPipelineResult board)
             {
-                var row = new WrapPanel { Orientation = Orientation.Horizontal };
-
-                foreach (var status in FindingStatusLattice.All)
-                {
-                    var here = status;
-
-                    var box = Ui.Check(FindingStatusWords.Of(here), _statuses.Contains(here), on =>
-                    {
-                        if (on) _statuses.Add(here); else _statuses.Remove(here);
-
-                        Restate();
-                    });
-
-                    box.Margin = new Thickness(0, 0, 12, 4);
-
-                    row.Children.Add(box);
-                }
-
-                var priorities = board.Groups
-                    .Select(g => g.Priority ?? Unset)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .OrderBy(one => one, StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-
-                foreach (var priority in priorities)
-                {
-                    var here = priority;
-
-                    var box = Ui.Check(here, _priorities.Contains(here), on =>
-                    {
-                        if (on) _priorities.Add(here); else _priorities.Remove(here);
-
-                        Restate();
-                    });
-
-                    box.Margin = new Thickness(0, 0, 12, 4);
-
-                    row.Children.Add(box);
-                }
-
-                var orders = new[] { ByIssue, ByParty, BySize, ByPriority };
-
-                var sort = Ui.Choice(orders, _order, pick => { _order = pick; Restate(); },
-                                     Ui.Wide.Word);
+                var items = board.Groups.SelectMany(g => g.Items).Where(one => one != null).ToList();
 
                 return Ui.Stack(
-                    Say("Nothing ticked below reports everything these leave. A status or a "
-                        + "priority with nothing on it is not narrowing anything."),
-                    Ui.Loose(row),
-                    Ui.Field("Order", sort));
+                    Say("An issue goes in when a clash of its own gets through. Tick issues below "
+                        + "to send only those."),
+                    ClashPicking.Bar(_pick, items, Storeys(), null, Restate,
+                                     "Only issues holding a clash where"),
+                    Ui.Field("Order", ClashPicking.Ordering(_pick, items, Storeys(), null, Restate,
+                                                            "By issue name")));
             }
+
+            /// <summary>The project's storeys, so a filter can name a level.</summary>
+            private LevelPlan Storeys() =>
+                LevelPlan.FromJson(_seat.Store.Section(ProjectStore.ProfileSection)[LevelPlan.Key]);
 
             /// <summary>
             /// Where the file will be written, without the side effect of working it out for real.
@@ -3897,47 +3845,61 @@ namespace CamelWorks.UI.Views
 
                 if (_changedOnly) groups = groups.Where(g => Changed(g, regressed));
 
-                // An issue is kept when it holds a clash of a status being reported. Per issue and
-                // not per clash: an issue is the unit somebody acts on, and half of one is not a
-                // thing to send.
-                if (_statuses.Count > 0)
-                    groups = groups.Where(g => g.Items.Any(i => _statuses.Contains(i.Status)));
+                // An issue is kept when it holds a clash the pick lets through. Per issue and not
+                // per clash: an issue is the unit somebody acts on, and half of one is not a thing
+                // to send.
+                if (!_pick.IsEverything)
+                {
+                    var plan = Storeys();
 
-                if (_priorities.Count > 0)
-                    groups = groups.Where(g => _priorities.Contains(g.Priority ?? Unset));
+                    groups = groups.Where(g => _pick.Take(g.Items, plan).Count > 0);
+                }
 
                 // The ticks last, so they narrow what the filters left rather than reviving what
                 // they removed. Nothing ticked means the filters decide, which is what an
                 // untouched screen should do.
                 if (_picked.Count > 0) groups = groups.Where(g => _picked.Contains(g.Id));
 
-                return Ordered(groups).ToList();
+                return Ordered(groups.ToList()).ToList();
             }
 
-            /// <summary>What a group with no priority set is filed under.</summary>
-            private const string Unset = "None";
-
-            /// <summary>The issues in the order the document will carry them.</summary>
+            /// <summary>
+            /// The issues in the order the document will carry them.
+            ///
+            /// Ordered by the pick, which orders results. An issue takes the place of its first
+            /// result under that order, so "by level" puts the lowest issue first without the
+            /// screen holding a second idea of what an order is.
+            /// </summary>
             /// <param name="groups">The issues the filters left.</param>
-            private IEnumerable<ClashGroup> Ordered(IEnumerable<ClashGroup> groups)
+            private IEnumerable<ClashGroup> Ordered(IReadOnlyList<ClashGroup> groups)
             {
-                switch (_order)
+                if (_pick.Sort == null)
+                    return groups.OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase);
+
+                var plan = Storeys();
+
+                // One result per issue, put in the pick's order. Ordering every result and then
+                // taking the issues off it is the same answer over four hundred rows instead of
+                // forty.
+                var first = groups
+                    .Select(g => g.Items.FirstOrDefault())
+                    .Where(one => one != null)
+                    .ToList();
+
+                var at = 0;
+                var where = new Dictionary<ClashKey, int>();
+
+                foreach (var item in _pick.Ordered(first, plan))
+                    if (item != null && !where.ContainsKey(item.Key)) where[item.Key] = at++;
+
+                return groups.OrderBy(g =>
                 {
-                    case ByParty:
-                        return groups.OrderBy(g => g.AssignedTo ?? "\uffff", StringComparer.OrdinalIgnoreCase)
-                                     .ThenBy(g => g.Name, StringComparer.OrdinalIgnoreCase);
+                    var head = g.Items.FirstOrDefault();
 
-                    case BySize:
-                        return groups.OrderByDescending(g => g.Items.Count)
-                                     .ThenBy(g => g.Name, StringComparer.OrdinalIgnoreCase);
-
-                    case ByPriority:
-                        return groups.OrderBy(g => g.Priority ?? "\uffff", StringComparer.OrdinalIgnoreCase)
-                                     .ThenBy(g => g.Name, StringComparer.OrdinalIgnoreCase);
-
-                    default:
-                        return groups.OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase);
-                }
+                    return head != null && where.TryGetValue(head.Key, out var seat)
+                        ? seat
+                        : int.MaxValue;
+                }).ThenBy(g => g.Name, StringComparer.OrdinalIgnoreCase);
             }
 
             /// <summary>Where the file goes, made from the audience so two reports never collide.</summary>
