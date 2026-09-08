@@ -355,12 +355,15 @@ namespace CamelWorks.UI.Views
             /// <param name="width">How wide it may be.</param>
             private static UIElement Sized(FrameworkElement field, double width)
             {
-                field.Width = width;
+                // A ceiling, not a width. See the same method on the Create tab: a width meant
+                // every field stayed exactly as wide as it was written however wide the pane
+                // was, so narrowing the window clipped them instead of shrinking them.
+                field.MaxWidth = width;
 
-                // Left, not the default stretch. A stretched element given a fixed width is
-                // centred in what is left over, so a chip row started under the picker with an
-                // empty cell to its left.
-                field.HorizontalAlignment = HorizontalAlignment.Left;
+                // Stretch, so the field takes what it is given up to the cap. With a fixed
+                // width this had to be Left, because a stretched element given a fixed width is
+                // centred in what is left over.
+                field.HorizontalAlignment = HorizontalAlignment.Stretch;
 
                 return field;
             }

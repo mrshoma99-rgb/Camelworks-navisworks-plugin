@@ -851,12 +851,20 @@ namespace CamelWorks.UI.Views
             /// <param name="width">How wide it may be.</param>
             private static UIElement Sized(Panel field, double width)
             {
-                field.Width = width;
+                // A ceiling, not a width.
+                //
+                // It was a width, so every field on the panel was exactly as wide as it was
+                // written to be however wide the pane was: narrow the window and the fields
+                // stayed put and were clipped by the pane rather than shrinking with it. The
+                // cap is what the figure was for - a text field running the whole width of a
+                // wide pane is a line nobody can scan - and a cap does that without also being
+                // a floor.
+                field.MaxWidth = width;
 
-                // Left, not the default stretch. A stretched element given a fixed width is
-                // centred in what is left over, so a full-width field under a row of two started
-                // half a column in from the margin.
-                field.HorizontalAlignment = HorizontalAlignment.Left;
+                // Stretch, so the field takes what it is given up to the cap. With a fixed
+                // width this had to be Left, because a stretched element given a fixed width is
+                // centred in what is left over.
+                field.HorizontalAlignment = HorizontalAlignment.Stretch;
 
                 return field;
             }
