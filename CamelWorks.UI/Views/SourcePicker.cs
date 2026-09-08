@@ -25,7 +25,14 @@ namespace CamelWorks.UI.Views
         /// <summary>What the sets origin is called.</summary>
         public const string FromSets = "Saved sets";
 
-        /// <summary>What the models origin is called.</summary>
+        /// <summary>
+        /// What the models origin is called.
+        ///
+        /// Not offered any more: the model tree's top level is one node per loaded model, so
+        /// ticking a root there is the same source said once. It is still shown on a side that is
+        /// already set to it, so a test saved by an earlier build opens on what it actually holds
+        /// rather than being switched to something else the moment it is drawn.
+        /// </summary>
         public const string FromModels = "Whole models";
 
         /// <summary>What the selection-tree origin is called.</summary>
@@ -226,7 +233,13 @@ namespace CamelWorks.UI.Views
 
             if (!string.IsNullOrEmpty(label)) held.Children.Add(Ui.Eyebrow(label));
 
-            var origins = new List<string> { FromSets, FromModels, FromTree, FromSelection };
+            var origins = new List<string> { FromSets, FromTree, FromSelection };
+
+            // A side already on the retired origin keeps it. Ui.Segmented turns on its first
+            // option when the value matches none of them and tells the caller somebody picked it,
+            // which on this control would rewrite a saved test the moment the panel was drawn.
+            if (string.Equals(side.From, FromModels, StringComparison.Ordinal))
+                origins.Insert(1, FromModels);
 
             if (extras != null) origins.AddRange(extras.Select(one => one.Label));
 
