@@ -191,7 +191,8 @@ namespace CamelWorks.UI.Views
             /// is two host calls per test.
             /// </summary>
             private ClashCheck Clash =>
-                _clash ??= new ClashCheck(_seat.Clash, _seat.MetresPerUnit, _seat.ClashProblem);
+                _clash ??= new ClashCheck(_seat.Clash, _seat.MetresPerUnit, _seat.ClashProblem,
+                                          project: _seat.Store);
 
             /// <summary>Every check whose tests belong in this list, clash first.</summary>
             private IReadOnlyList<ICheck> Checks()
@@ -759,7 +760,16 @@ namespace CamelWorks.UI.Views
             /// <summary>Redraw the list after a settings edit, without re-walking the document.</summary>
             private void Changed()
             {
-                Reload(rereadHost: false);
+                // The host is read again, because this is what changes it. Reload was told to
+                // reuse the clash tests it last read, on the reasoning that editing a
+                // project-file test cannot have changed any of them - true, but these three
+                // fields are the clash test's own name, folder and tolerance, so the cached
+                // copy is exactly what has just gone stale. A rename showed the old name and a
+                // refile left the test in its old band.
+                Reload();
+
+                // And the panel, so the folder box offers the folder that has just been made.
+                RedrawPanel();
                 RedrawFoot();
             }
 
@@ -784,7 +794,14 @@ namespace CamelWorks.UI.Views
                 {
                     if (naming == null || string.IsNullOrWhiteSpace(text)) return;
 
-                    naming.Rename(run.Id, text);
+                    if (!naming.Rename(run.Id, text))
+                    {
+                        _log.Children.Add(Ui.Problem("That name could not be kept, so this test "
+                            + "is still called what it was."));
+
+                        return;
+                    }
+
                     Changed();
                 }, 190);
 
@@ -793,7 +810,20 @@ namespace CamelWorks.UI.Views
                 // name and spelling it the same way - and one letter out is a second folder.
                 var folder = Ui.Folder(run.Folder, Seated.Folders(check), text =>
                 {
-                    naming?.Refile(run.Id, string.IsNullOrWhiteSpace(text) ? null : text);
+                    var into = string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+
+                    // The answer, not the attempt. This dropped what the check said on the floor,
+                    // so filing a test into a folder the document would not take looked exactly
+                    // like filing it into one that worked: the box kept the typed name, the list
+                    // never gained the folder, and nothing said why.
+                    if (naming?.Refile(run.Id, into) != true)
+                    {
+                        _log.Children.Add(Ui.Problem("\"" + (into ?? "the root")
+                            + "\" could not be kept, so this test has not been moved."));
+
+                        return;
+                    }
+
                     Changed();
                 }, 160);
 
@@ -1254,6 +1284,7 @@ namespace CamelWorks.UI.Views
                     var refused = chosen
                         .Where(one => one.Check.Naming?.Refile(one.Run.Id, into) != true)
                         .ToList();
+
 
                     Reload();
 

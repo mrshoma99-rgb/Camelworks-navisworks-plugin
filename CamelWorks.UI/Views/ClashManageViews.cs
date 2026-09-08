@@ -107,7 +107,22 @@ namespace CamelWorks.UI.Views
 
         /// <summary>The surface, for a desk to bench.</summary>
         /// <param name="session">The open document.</param>
-        public static UIElement Manage(Session session) => new Screen(session).Build();
+        public static UIElement Manage(Session session)
+        {
+            // A holder, so picking another check can rebuild the tab in place.
+            //
+            // Picking one used to ask the shell to show this tab again, which does nothing when
+            // this tab is already the one on screen - so the check picker set which check was
+            // wanted and then drew the old one's board, which reads as a switcher that does not
+            // work. The fold button had the same fault and the same cause.
+            var holder = new ContentControl();
+
+            void Draw() => holder.Content = new Screen(session, Draw).Build();
+
+            Draw();
+
+            return holder;
+        }
 
         /// <summary>
         /// The board over a supplied clash engine, read, for the render harness.
@@ -138,7 +153,7 @@ namespace CamelWorks.UI.Views
             // whichever one ran first.
             Forget();
 
-            _engine = new ClashCheck(clash, seat.MetresPerUnit, null);
+            _engine = new ClashCheck(clash, seat.MetresPerUnit, null, project: seat.Store);
 
             var screen = new Screen(seat);
 
@@ -187,7 +202,7 @@ namespace CamelWorks.UI.Views
 
             Forget();
 
-            _engine = new ClashCheck(clash, seat.MetresPerUnit, null);
+            _engine = new ClashCheck(clash, seat.MetresPerUnit, null, project: seat.Store);
 
             var screen = new Screen(seat);
 
@@ -1227,10 +1242,14 @@ namespace CamelWorks.UI.Views
             private const string SecondSide = "Second item";
             private const string BothSides = "Both";
 
-            internal Screen(ISeat seat)
+            /// <summary>Draw this tab again from scratch, or null when nothing can.</summary>
+            private readonly Action? _rebuild;
+
+            internal Screen(ISeat seat, Action? rebuild = null)
             {
                 _seat = seat;
                 _live = seat as Session;
+                _rebuild = rebuild;
 
                 // Before anything is drawn, so the first board is already the way this person
                 // left it rather than the way it looked the first time they ever opened it.
@@ -1333,7 +1352,11 @@ namespace CamelWorks.UI.Views
                 // Nothing is lost by rebuilding — the read, the property columns and the board
                 // state are all held per check — so the rebuilt tab draws the new check's board as
                 // it was left and coming back finds this one as it is now.
-                Ui.Told(Shell.AppWindow.Show("clash", "manage"));
+                //
+                // By the holder this screen was built into, not by asking the shell to show the
+                // tab: the shell does nothing when the tab asked for is already on screen.
+                if (_rebuild != null) Ui.Safely(_rebuild);
+                else Ui.Told(Shell.AppWindow.Show("clash", "manage"));
             }
 
             /// <summary>
@@ -1344,7 +1367,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private ClashCheck Engine =>
                 _engine ??= new ClashCheck(_seat.Clash, _seat.MetresPerUnit,
-                                           _seat.ClashProblem);
+                                           _seat.ClashProblem, project: _seat.Store);
 
             /// <summary>
             /// The check the board is drawing: the document's clash data, or the file being marked
@@ -11050,7 +11073,20 @@ namespace CamelWorks.UI.Views
                 // for each of them - a row per test in the job to move one number on one row, or
                 // for an assignee and a comment, which the rail does not show at all.
                 RailChanged(touched);
-                RedrawBoard();
+
+                // The rows that changed, where nothing is deciding which rows show or in what
+                // order. This is the door every status, assignee, group and comment goes through,
+                // and it rebuilt the board for all of them: a fresh pass of every result through
+                // every filter, a new table, and the scroll offset put back afterwards - which is
+                // the second of lag and the visible jump to the top and back.
+                //
+                // Kept was given this treatment already and the report came back saying the jump
+                // was still there, because Kept is not this door. Same rule, same guard, here.
+                if (Settled())
+                    foreach (var row in rows) Repainted(row);
+                else
+                    RedrawBoard();
+
                 RedrawFoot();
                 ArmSync();
 
