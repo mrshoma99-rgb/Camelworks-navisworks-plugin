@@ -2489,9 +2489,15 @@ namespace CamelWorks.UI.Views
         public static UIElement Segmented(IReadOnlyList<string> options, string? selected, Action<string>? onChanged)
         {
             if (options == null || options.Count == 0) return Stack();
-            if (options.Count > 4) return Choice(options, selected, onChanged);
 
-            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            // Beyond six the row is a list wearing a row's clothes, whatever it wraps onto.
+            if (options.Count > 6) return Choice(options, selected, onChanged);
+
+            // Wraps rather than running off the edge. A horizontal StackPanel measures its
+            // children with infinite width, so a fourth segment inside a capped card was drawn
+            // past the card's own edge with nothing saying it was there - which is what a source
+            // picker offering "Everything loaded" looked like.
+            var row = new WrapPanel { Orientation = Orientation.Horizontal };
             var buttons = new List<ToggleButton>();
 
             foreach (var option in options)
@@ -3871,6 +3877,12 @@ namespace CamelWorks.UI.Views
                 table.MaxHeight = double.PositiveInfinity;
                 table.VerticalAlignment = VerticalAlignment.Stretch;
             };
+
+            // Top, not the default stretch. A stretched element carrying a MaxHeight is centred
+            // in what is left over, so a table capped at 420 in a taller pane drew its header
+            // half way down with an empty band above it. The Loaded handler above puts Stretch
+            // back on a table that fills, which is the only case where stretching is meant.
+            table.VerticalAlignment = VerticalAlignment.Top;
 
             table.SetBinding(FrameworkElement.MaxHeightProperty, new Binding("ActualHeight")
             {

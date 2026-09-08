@@ -1032,6 +1032,11 @@ namespace CamelWorks.UI.Views
                 CornerRadius = new CornerRadius(8),
                 BorderThickness = new Thickness(1),
                 Padding = new Thickness(11, 7, 11, 7),
+
+                // A gap on the left, so two of these side by side read as two buttons. The board's
+                // tool row put Run, Filter and Settings in a stack with no spacing and their
+                // borders met, which reads as one control with three labels in it.
+                Margin = new Thickness(6, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
                 Cursor = Cursors.Hand,
                 Child = row,

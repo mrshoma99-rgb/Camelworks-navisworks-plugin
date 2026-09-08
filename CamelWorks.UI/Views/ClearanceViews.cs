@@ -343,17 +343,26 @@ namespace CamelWorks.UI.Views
             /// <param name="width">How wide it may be.</param>
             private static UIElement Sized(FrameworkElement field, double width)
             {
-                // A ceiling, not a width. See the same method on the Create tab: a width meant
-                // every field stayed exactly as wide as it was written however wide the pane
-                // was, so narrowing the window clipped them instead of shrinking them.
-                field.MaxWidth = width;
-
-                // Stretch, so the field takes what it is given up to the cap. With a fixed
-                // width this had to be Left, because a stretched element given a fixed width is
-                // centred in what is left over.
+                // A ceiling, not a width: a fixed width meant every field stayed exactly as wide
+                // as it was written however wide the pane was, so narrowing the window clipped
+                // them instead of shrinking them.
+                //
+                // The cap is on a column rather than on the field. A stretched element carrying a
+                // MaxWidth is centred in what is left over, which is why some fields on this panel
+                // started level with the heading and the wider ones started an inch in.
                 field.HorizontalAlignment = HorizontalAlignment.Stretch;
 
-                return field;
+                var row = new Grid();
+
+                row.ColumnDefinitions.Add(new ColumnDefinition
+                {
+                    Width = new GridLength(1, GridUnitType.Star),
+                    MaxWidth = width,
+                });
+
+                row.Children.Add(field);
+
+                return row;
             }
 
             /// <summary>Write the settings back onto the test and into the project file.</summary>

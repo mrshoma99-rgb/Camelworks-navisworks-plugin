@@ -235,21 +235,17 @@ namespace CamelWorks.UI.Views
 
             /// <summary>
             /// The strip over both panes: what makes a test on the left, the search on the right.
+            ///
+            /// There was a second button here that opened the Clash matrix tab. The tab strip
+            /// already reaches it, and a second way in on this strip put a tab switch beside the
+            /// button that makes a test.
             /// </summary>
             private UIElement Strip()
             {
                 var row = new DockPanel { LastChildFill = false };
 
-                var matrix = Ui.Button("From the matrix", () =>
-                    Ui.Told(Shell.AppWindow.Show("clash", "matrix")));
-
-                matrix.Margin = new Thickness(8, 0, 0, 0);
-
                 DockPanel.SetDock(_make, Dock.Left);
                 row.Children.Add(Ui.Loose(_make));
-
-                DockPanel.SetDock(matrix, Dock.Left);
-                row.Children.Add(matrix);
 
                 DockPanel.SetDock(_search, Dock.Right);
                 row.Children.Add(Ui.Loose(_search));

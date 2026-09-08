@@ -2770,6 +2770,14 @@ namespace CamelWorks.UI.Views
                 };
             }
 
+            /// <summary>Put a tooltip on a control the parts library returns as a plain element.</summary>
+            /// <param name="element">The control.</param>
+            /// <param name="said">What the tooltip says.</param>
+            private static void Tip(UIElement element, string said)
+            {
+                if (element is FrameworkElement framed) framed.ToolTip = said;
+            }
+
             private void RedrawRailFoot()
             {
                 var read = Current() ?? new List<TestEntry>();
@@ -2781,18 +2789,35 @@ namespace CamelWorks.UI.Views
 
                 if (Check?.Runner != null)
                 {
-                    // Worded, not a play triangle. This runs every test on the rail, which is
-                    // the longest-running thing on the tab, and the picture said neither "run"
-                    // nor "all" - it was the one control on this screen whose whole meaning was
-                    // in a tooltip nobody hovers a corner for.
-                    var all = Ui.Button("Run all", () => RunTests(read.Cast<object>().ToList(), _log));
+                    // The three a coordinator uses, on the rail, worded and with their symbols.
+                    // Everything a test can have done to it was behind one "..." press: running
+                    // every test was the only visible control, and renaming or refiling the test
+                    // under the pointer took two presses and a read of a menu of twelve.
+                    var run = Parts.WordedButton("Run all", Glyphs.Play,
+                        () => RunTests(read.Cast<object>().ToList(), _log));
 
-                    all.MinWidth = 0;
-                    all.Padding = new Thickness(9, 3, 9, 4);
-                    all.Margin = new Thickness(0, 0, 4, 0);
-                    all.ToolTip = "Run every test on this rail";
+                    Tip(run, "Run every test on this rail");
 
-                    verbs.Children.Add(all);
+                    verbs.Children.Add(Ui.Loose(run));
+
+                    var rename = Parts.WordedButton("Rename", Glyphs.Pencil,
+                        () => Prompt("Rename", entry?.Run.Name ?? string.Empty, "Rename",
+                                     name => RenameTest(entry, name)));
+
+                    if (entry == null)
+                    {
+                        rename.IsEnabled = false;
+                        Tip(rename, "Pick one test to rename.");
+                    }
+
+                    verbs.Children.Add(Ui.Loose(rename));
+
+                    var move = Parts.WordedButton("Move", Glyphs.MoveIn,
+                        () => MoveInto(Reaching(entry), entry));
+
+                    Tip(move, "Move the picked tests into a folder");
+
+                    verbs.Children.Add(Ui.Loose(move));
 
                     verbs.Children.Add(Parts.MoreMenu(Glyphs.More,
                         "More actions", TestMenu(entry), up: true));
@@ -3106,7 +3131,6 @@ namespace CamelWorks.UI.Views
                 }
 
                 _title.Children.Add(Title(entry));
-                _title.Children.Add(Standing(entry));
 
                 _strip.Content = Strip(entry);
 
@@ -3626,6 +3650,16 @@ namespace CamelWorks.UI.Views
                 DockPanel.SetDock(naming, Dock.Left);
                 row.Children.Add(naming);
 
+                // Beside the name, not on a row of its own. When a test last ran is one short
+                // line, and it had a full line of the pane's height to itself over the results.
+                var standing = Standing(entry);
+
+                standing.VerticalAlignment = VerticalAlignment.Bottom;
+                standing.Margin = new Thickness(0, 0, 10, 2);
+
+                DockPanel.SetDock(standing, Dock.Left);
+                row.Children.Add(standing);
+
                 words.Margin = new Thickness(0, 8, 0, 0);
 
                 return Ui.Stack(row, words);
@@ -3646,7 +3680,7 @@ namespace CamelWorks.UI.Views
             /// every test, and this board's groups are the host's own.
             /// </summary>
             /// <param name="entry">The test on the board.</param>
-            private UIElement Standing(TestEntry entry)
+            private FrameworkElement Standing(TestEntry entry)
             {
                 var row = new WrapPanel { Margin = new Thickness(0, 2, 0, 0) };
 
