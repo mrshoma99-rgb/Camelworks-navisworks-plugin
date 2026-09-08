@@ -490,6 +490,9 @@ namespace CamelWorks.UI.Views
             public System.Collections.Generic.IReadOnlyList<ClashTestInfo> Tests() =>
                 Array.Empty<ClashTestInfo>();
 
+            public System.Collections.Generic.IReadOnlyList<string> Folders() =>
+                Array.Empty<string>();
+
             public System.Collections.Generic.IReadOnlyList<ClashResultInfo> Results(string testId) =>
                 Array.Empty<ClashResultInfo>();
 

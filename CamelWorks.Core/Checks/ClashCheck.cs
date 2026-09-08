@@ -308,6 +308,14 @@ namespace CamelWorks.Core.Checks
                                           MatrixDiff.Kinded(shape.Kind)), out problem);
         }
 
+        /// <summary>
+        /// Every clash folder the document holds, including the empty ones.
+        ///
+        /// The board's own list is worked out from where the tests are, which cannot see a
+        /// folder nothing is in yet. This asks the document.
+        /// </summary>
+        public IReadOnlyList<string> Folders() => _source.Folders();
+
         /// <summary>One side of a copy, or null when the host would not say what it is.</summary>
         /// <param name="set">The saved set behind it, or null.</param>
         /// <param name="scopes">The whole models behind it, when it is whole models.</param>

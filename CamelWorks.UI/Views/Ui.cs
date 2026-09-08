@@ -4848,7 +4848,10 @@ namespace CamelWorks.UI.Views
                         VerticalAlignment = VerticalAlignment.Center,
                     };
 
-                    if (here.Danger) caption.Tint(TextBlock.ForegroundProperty, "RedTx");
+                    // The word in ordinary ink, not the quiet button's accent. Five accented
+                    // phrases in a row beside the All and None links read as seven links, and
+                    // two of them are.
+                    caption.Tint(TextBlock.ForegroundProperty, here.Danger ? "RedTx" : "Text");
 
                     face.Children.Add(caption);
 

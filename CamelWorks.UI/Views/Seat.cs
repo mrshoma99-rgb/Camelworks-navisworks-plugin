@@ -252,9 +252,23 @@ namespace CamelWorks.UI.Views
         /// a test is in it, and one nothing is in is one the document has forgotten.
         /// </summary>
         /// <param name="check">The check.</param>
-        public static IReadOnlyList<string> Folders(ICheck? check) =>
-            check == null
-                ? Array.Empty<string>()
-                : Ui.Listed(Offer(() => check.Runs()).Select(one => one.Folder));
+        public static IReadOnlyList<string> Folders(ICheck? check)
+        {
+            if (check == null) return Array.Empty<string>();
+
+            // Off the tests, which is all a project-file check has to go on.
+            var used = Offer(() => check.Runs()).Select(one => one.Folder);
+
+            // And, where the check is the document's own clash data, the folders the document
+            // holds with nothing in them. The comment that used to stand here said a folder
+            // nothing is in is one the document has forgotten. It is not: it is the folder
+            // somebody made in Navisworks a moment ago and is trying to file into, and leaving
+            // it off the list is why they could not.
+            var held = check is ClashCheck clash
+                ? Offer(() => clash.Folders())
+                : Array.Empty<string>();
+
+            return Ui.Listed(used.Concat(held));
+        }
     }
 }

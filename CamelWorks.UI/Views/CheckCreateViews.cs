@@ -435,13 +435,16 @@ namespace CamelWorks.UI.Views
 
                 Ui.ScrollTo(table, at);
 
+                // One word each. The bar says how many rows are selected immediately to their
+                // left, so a verb repeating the count is the same fact twice - and five phrases
+                // of three words is the wall of text the symbols were meant to avoid.
                 var verbs = new List<Ui.OnPicked>
                 {
-                    new Ui.OnPicked("Run these {n}", (picked, said) => RunPicked(picked, said)),
-                    new Ui.OnPicked("Duplicate this one", (picked, said) => Duplicate(picked, said)),
-                    new Ui.OnPicked("Rename this one...", (picked, said) => Rename(picked, said)),
-                    new Ui.OnPicked("Move these {n}...", (picked, said) => Refile(picked, said)),
-                    new Ui.OnPicked("Delete these {n}", (picked, said) => Delete(picked, said)),
+                    new Ui.OnPicked("Run", (picked, said) => RunPicked(picked, said)),
+                    new Ui.OnPicked("Duplicate", (picked, said) => Duplicate(picked, said)),
+                    new Ui.OnPicked("Rename", (picked, said) => Rename(picked, said)),
+                    new Ui.OnPicked("Move", (picked, said) => Refile(picked, said)),
+                    new Ui.OnPicked("Delete", (picked, said) => Delete(picked, said)),
                 };
 
                 // The same verbs on right-click, writing into the screen's own log: OnMenu carries

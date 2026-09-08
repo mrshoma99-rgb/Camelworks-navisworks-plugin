@@ -52,6 +52,45 @@ namespace CamelWorks.Nav.Clash
         }
 
         /// <inheritdoc />
+        public IReadOnlyList<string> Folders()
+        {
+            var found = new List<string>();
+
+            var clash = Clash();
+
+            if (clash == null) return found;
+
+            var root = clash.TestsData.Value.TestsRoot;
+
+            if (root != null) CollectFolders(root.Children, null, found);
+
+            return found;
+        }
+
+        /// <summary>Every folder under a collection, and every folder under those.</summary>
+        /// <param name="items">What to walk.</param>
+        /// <param name="folder">The path to here, or null at the root.</param>
+        /// <param name="found">Where the paths are collected.</param>
+        private static void CollectFolders(SavedItemCollection items, string? folder,
+                                           List<string> found)
+        {
+            if (items == null) return;
+
+            foreach (SavedItem item in items)
+            {
+                if (!(item is ClashTestFolder nested)) continue;
+
+                var path = Join(folder, nested.DisplayName);
+
+                // The empty ones too: a folder with nothing in it is the one somebody has just
+                // made and is about to file into.
+                if (!string.IsNullOrWhiteSpace(path)) found.Add(path!);
+
+                CollectFolders(nested.Children, path, found);
+            }
+        }
+
+        /// <inheritdoc />
         public IReadOnlyList<ClashTestInfo> Tests()
         {
             var tests = new List<ClashTestInfo>();
