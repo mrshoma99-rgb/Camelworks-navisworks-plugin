@@ -39,6 +39,15 @@ namespace CamelWorks.Core.Search
         /// </summary>
         /// <param name="finding">The result.</param>
         string? IssueOf(Finding finding);
+
+        /// <summary>
+        /// How many metres one model unit is.
+        ///
+        /// The seam reports an element's box in the document's own units, and every threshold
+        /// somebody types into a search is in metres like every other threshold in the product.
+        /// This is where the two meet.
+        /// </summary>
+        double MetresPerUnit { get; }
     }
 
     /// <summary>
@@ -191,6 +200,17 @@ namespace CamelWorks.Core.Search
             // otherwise hold for every result whose model is not open.
             if (items.Count < 2) return false;
 
+            // A measurement across the pair is one reading off the two boxes, not two readings
+            // compared. No check declares an angle and the elements are on the result, so the
+            // search measures them.
+            //
+            // Answered even when there is nothing to measure: an element whose box will not say
+            // which way it runs has no angle, so every number clause about it fails and "has no
+            // value" is the clause that holds.
+            if (ResultFields.Measured.Any(one => string.Equals(one.Id, term.Field,
+                                                               StringComparison.Ordinal)))
+                return Compared(term, Measured(term, items[0]!, items[1]!, world.MetresPerUnit));
+
             var read = items.Select(item => OnItem(term, item)).ToList();
 
             var first = read[0];
@@ -198,6 +218,39 @@ namespace CamelWorks.Core.Search
 
             return term.Op == QueryOp.Different ? !same : same;
         }
+
+        /// <summary>
+        /// What is measured across the two elements, or null when there is nothing to measure.
+        /// </summary>
+        /// <param name="term">The clause.</param>
+        /// <param name="a">The first element.</param>
+        /// <param name="b">The second.</param>
+        /// <param name="metresPerUnit">How many metres one model unit is.</param>
+        private static string? Measured(QueryTerm term, IModelItem a, IModelItem b,
+                                        double metresPerUnit)
+        {
+            var scale = metresPerUnit > 0 ? metresPerUnit : 1.0;
+
+            switch (term.Field)
+            {
+                case ResultFields.Gap:
+                    return Said(ElementGeometry.Gap(a.Bounds, b.Bounds) * scale);
+
+                case ResultFields.Centres:
+                    return Said(ElementGeometry.Centres(a.Bounds, b.Bounds) * scale);
+
+                case ResultFields.Angle:
+                    return Said(ElementGeometry.Angle(a.Bounds, b.Bounds));
+
+                default:
+                    return null;
+            }
+        }
+
+        /// <summary>A measurement as the operators read it, or null when there was none.</summary>
+        /// <param name="value">The measurement.</param>
+        private static string? Said(double? value) =>
+            value == null ? null : value.Value.ToString("R", CultureInfo.InvariantCulture);
 
         /// <summary>The element keys one scope names.</summary>
         /// <param name="where">The scope.</param>
@@ -314,6 +367,12 @@ namespace CamelWorks.Core.Search
 
                 case ResultFields.TreePath:
                     return Listed(item.TreePath);
+
+                case ResultFields.Orientation:
+                    return ElementGeometry.Orientation(item.Bounds);
+
+                case ResultFields.Tilt:
+                    return Said(ElementGeometry.Tilt(item.Bounds));
 
                 default:
                     return null;

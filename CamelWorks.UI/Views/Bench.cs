@@ -62,24 +62,37 @@ namespace CamelWorks.UI.Views
             body.ColumnDefinitions.Add(new ColumnDefinition
             {
                 Width = new GridLength(shared ? 1 - setupShare : 1, GridUnitType.Star),
+                MinWidth = shared ? 260 : 0,
             });
+
+            // The grip's own column, so a shared surface can be dragged. Zero wide and empty on
+            // a fixed panel, where there is nothing to trade.
+            body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             body.ColumnDefinitions.Add(new ColumnDefinition
             {
                 Width = shared
                     ? new GridLength(setupShare, GridUnitType.Star)
                     : GridLength.Auto,
+                MinWidth = shared ? 300 : 0,
             });
 
-            var data = scrollStage
-                ? (UIElement)new ScrollViewer
+            UIElement data = stage;
+
+            if (scrollStage)
+            {
+                var staged = new ScrollViewer
                 {
                     VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                     HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                     Content = stage,
                     Padding = new Thickness(16, 12, 16, 16),
-                }
-                : stage;
+                };
+
+                Ui.WheelThrough(staged);
+
+                data = staged;
+            }
 
             var ground = new Border { Child = data };
             ground.Tint(Border.BackgroundProperty, "Bg");
@@ -87,23 +100,46 @@ namespace CamelWorks.UI.Views
 
             if (setup != null)
             {
+                var sidebar = new ScrollViewer
+                {
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    Content = setup,
+                    Padding = new Thickness(14, 12, 14, 12),
+                };
+
+                Ui.WheelThrough(sidebar);
+
                 var options = new Border
                 {
                     Width = shared ? double.NaN : width,
                     BorderThickness = new Thickness(1, 0, 0, 0),
-                    Child = new ScrollViewer
-                    {
-                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                        Content = setup,
-                        Padding = new Thickness(14, 12, 14, 12),
-                    },
+                    Child = sidebar,
                 };
 
                 options.Tint(Border.BackgroundProperty, "Pane");
                 options.Tint(Border.BorderBrushProperty, "Bd");
 
-                Grid.SetColumn(options, 1);
+                if (shared)
+                {
+                    // Two star columns, so what one takes the other gives. A preview line while
+                    // dragging rather than a live re-layout, for the same reason as the split
+                    // bench: both sides re-measure on every pixel otherwise.
+                    var grip = new GridSplitter
+                    {
+                        Width = 4,
+                        HorizontalAlignment = HorizontalAlignment.Stretch,
+                        VerticalAlignment = VerticalAlignment.Stretch,
+                        ResizeBehavior = GridResizeBehavior.PreviousAndNext,
+                        ShowsPreview = true,
+                    };
+
+                    grip.Tint(GridSplitter.BackgroundProperty, "Bd");
+                    Grid.SetColumn(grip, 1);
+                    body.Children.Add(grip);
+                }
+
+                Grid.SetColumn(options, 2);
                 body.Children.Add(options);
             }
 
@@ -153,11 +189,33 @@ namespace CamelWorks.UI.Views
         /// Anything else sizes to its content and is pushed right instead.
         /// </summary>
         /// <param name="foot">The footer element.</param>
-        private static bool Spread(UIElement foot) =>
-            foot is DockPanel
-            || (foot is StackPanel column
-                && column.Orientation == Orientation.Vertical
-                && column.Children.OfType<DockPanel>().Any());
+        private static bool Spread(UIElement foot)
+        {
+            switch (foot)
+            {
+                case DockPanel _:
+                    return true;
+
+                // Through the holder to what it holds. A screen that redraws its footer in place
+                // keeps it in a ContentControl and sets the row as its content, which is the
+                // ordinary pattern here — and the holder is not a DockPanel, so the footer was
+                // sized to its content and pushed right. Ui.Foot docks one end left and the other
+                // right, so with no width to work in the two ends were arranged on top of each
+                // other: "0 tests in this project" under "There is no test to run."
+                case ContentControl held:
+                    return held.Content is UIElement inside && Spread(inside);
+
+                case Border edged:
+                    return edged.Child != null && Spread(edged.Child);
+
+                case StackPanel column:
+                    return column.Orientation == Orientation.Vertical
+                        && column.Children.OfType<DockPanel>().Any();
+
+                default:
+                    return false;
+            }
+        }
 
         /// <summary>
         /// The other anatomy: a strip, two tables side by side, and one action row.
@@ -176,8 +234,14 @@ namespace CamelWorks.UI.Views
         /// <param name="right">The detail pane.</param>
         /// <param name="foot">The action row, laid out left to right rather than right-aligned.</param>
         /// <param name="leftWidth">How wide the master pane starts.</param>
+        /// <param name="leftShut">
+        /// True to give the master pane no room at all. A screen whose detail pane is the work —
+        /// a board of results being read — gets the whole window for it, and the pane comes back
+        /// when the reader wants to choose something else.
+        /// </param>
         public static UIElement Split(UIElement? strip, UIElement left, UIElement right,
-                                      UIElement? foot, double leftWidth = 380)
+                                      UIElement? foot, double leftWidth = 380,
+                                      bool leftShut = false)
         {
             if (left == null) throw new ArgumentNullException(nameof(left));
             if (right == null) throw new ArgumentNullException(nameof(right));
@@ -202,9 +266,20 @@ namespace CamelWorks.UI.Views
             }
 
             var body = new Grid();
-            body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(leftWidth), MinWidth = 220 });
+            body.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(leftShut ? 0 : leftWidth),
+                MinWidth = leftShut ? 0 : 220,
+            });
             body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 320 });
+
+            // Collapsed, not merely narrow. A pane given no width still measures and arranges
+            // everything in it, which is the cost of a list nobody can see and, on the layout
+            // reader, fifteen of its own children reported as overlapping in a column zero
+            // pixels wide.
+            if (leftShut && left is FrameworkElement folded)
+                folded.Visibility = Visibility.Collapsed;
 
             body.Children.Add(left);
 
@@ -226,6 +301,11 @@ namespace CamelWorks.UI.Views
             };
 
             grip.Tint(GridSplitter.BackgroundProperty, "Bd");
+
+            // Nothing to drag between when one side has no width, and a grip against the window
+            // edge reads as a scrollbar that does not scroll.
+            if (leftShut) grip.Visibility = Visibility.Collapsed;
+
             Grid.SetColumn(grip, 1);
             body.Children.Add(grip);
 
@@ -347,13 +427,17 @@ namespace CamelWorks.UI.Views
 
             if (scrolls)
             {
-                under = new ScrollViewer
+                var scroller = new ScrollViewer
                 {
                     VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                     HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                     Content = body,
                     Padding = new Thickness(10, 4, 10, 8),
                 };
+
+                Ui.WheelThrough(scroller);
+
+                under = scroller;
             }
             else
             {
@@ -384,6 +468,110 @@ namespace CamelWorks.UI.Views
             pane.Tint(Border.BackgroundProperty, "Card");
 
             return pane;
+        }
+
+        /// <summary>
+        /// A pane body whose rows scroll and whose verbs do not.
+        ///
+        /// Three benches needed this and each derived it: Exchange docked the verbs and made the
+        /// table the filling child; the Create tab put the table inside a second scroller sized
+        /// to the pane, which measured it against a height it did not use and drew the rows at
+        /// the foot of an otherwise empty pane.
+        ///
+        /// A dock, not a grid with a scroller in it. A table here is a <see cref="ListView"/> and
+        /// scrolls itself; giving it a scroller of its own is the fault, not the fix.
+        ///
+        /// Hand the result to <see cref="Pane"/> with <c>scrolls: false</c> — the pane must not
+        /// wrap this in a scroller either.
+        ///
+        /// Where the verbs come from <see cref="Ui.Picking(ListView, Ui.OnPicked[])"/>, build
+        /// them first: that returns the table stacked above its own bar, so it has to be taken
+        /// back out with <see cref="Ui.Loose{T}"/> before it is handed here as the rows.
+        /// </summary>
+        /// <param name="rows">The table, which fills what the verbs leave.</param>
+        /// <param name="verbs">The bar under it, or null when there is none.</param>
+        /// <param name="said">A line or two above the table — a log, a count — or null.</param>
+        public static UIElement Listing(UIElement rows, UIElement? verbs, UIElement? said = null)
+        {
+            if (rows == null) throw new ArgumentNullException(nameof(rows));
+
+            var body = new DockPanel { LastChildFill = true };
+
+            if (verbs != null)
+            {
+                var pinned = Ui.Loose(verbs);
+
+                DockPanel.SetDock(pinned, Dock.Bottom);
+                body.Children.Add(pinned);
+            }
+
+            if (said != null)
+            {
+                var top = Ui.Loose(said);
+
+                DockPanel.SetDock(top, Dock.Top);
+                body.Children.Add(top);
+            }
+
+            // The table fills the pane rather than stopping at two thirds of it: on a bench the
+            // table is what the pane is for.
+            Ui.SetFills(body, true);
+
+            body.Children.Add(Ui.Loose(rows));
+
+            return body;
+        }
+
+        /// <summary>
+        /// The same shape, filled into a pane body the screen redraws in place.
+        ///
+        /// A screen that rebuilds one pane holds its body as a field and hands it to
+        /// <see cref="Pane"/> once, so it needs the dock filled rather than returned.
+        /// </summary>
+        /// <param name="body">The pane body, cleared first.</param>
+        /// <param name="rows">The table, which fills what the docked children leave.</param>
+        /// <param name="verbs">The bar under it, or null when there is none.</param>
+        /// <param name="under">
+        /// What lands under the verb bar — a note, a mapping, a line about what was left out.
+        /// Docked before the verbs, because a dock stacks inward from the edge.
+        /// </param>
+        /// <param name="over">What lands above the table, or null.</param>
+        public static void Listed(DockPanel body, UIElement rows, UIElement? verbs,
+                                  UIElement? under = null, UIElement? over = null)
+        {
+            if (body == null) throw new ArgumentNullException(nameof(body));
+            if (rows == null) throw new ArgumentNullException(nameof(rows));
+
+            body.Children.Clear();
+            body.LastChildFill = true;
+
+            if (under != null)
+            {
+                var below = Ui.Loose(under);
+
+                DockPanel.SetDock(below, Dock.Bottom);
+                body.Children.Add(below);
+            }
+
+            if (verbs != null)
+            {
+                var bar = Ui.Loose(verbs);
+
+                DockPanel.SetDock(bar, Dock.Bottom);
+                body.Children.Add(bar);
+            }
+
+            if (over != null)
+            {
+                var top = Ui.Loose(over);
+
+                DockPanel.SetDock(top, Dock.Top);
+                body.Children.Add(top);
+            }
+
+            Ui.SetFills(body, true);
+
+            body.Children.Add(Ui.Loose(rows));
         }
 
         /// <summary>
@@ -420,9 +608,12 @@ namespace CamelWorks.UI.Views
 
             if (!string.IsNullOrEmpty(label))
             {
-                var eyebrow = Ui.Eyebrow(label);
-                eyebrow.Margin = new Thickness(0, 0, 0, 6);
-                stack.Children.Add(eyebrow);
+                // A heading, not an eyebrow. At 11px bold it was smaller than the 12px labels
+                // beneath it, so "What is checked" did not read as governing the three fields
+                // under it.
+                var heading = Ui.Grouping(label);
+                heading.Margin = new Thickness(0, 0, 0, 8);
+                stack.Children.Add(heading);
             }
 
             var row = across ? new WrapPanel() : null;

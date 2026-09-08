@@ -119,7 +119,9 @@ namespace CamelWorks.UI.Views
                 line.Children.Add(press);
             }
 
-            var head = Ui.Heading(title);
+            // The screen's title, not a card's. This section is a whole screen in the rail, and
+            // at Heading it was the same size as the card headings under it.
+            var head = Ui.Titled(title);
 
             head.VerticalAlignment = VerticalAlignment.Center;
             line.Children.Add(head);
@@ -208,13 +210,20 @@ namespace CamelWorks.UI.Views
 
                 var rail = new StackPanel { Margin = new Thickness(8, 10, 8, 10) };
 
-                // What applies everywhere first, then a page per tab. A coordinator looking for a
-                // setting knows either what it is about or which screen it changes, and the rail
-                // answers both without them having to guess which tab hid it.
-                Railed(rail, "Everywhere",
-                       Part.Units, Part.Levels, Part.Disciplines, Part.Team);
-
-                Railed(rail, "Per tab", Part.Naming, Part.Board);
+                // One list, named for what each section is about.
+                //
+                // It was two groups on two axes: "Everywhere" held Units, Levels, Disciplines and
+                // Team — subjects — and "Per tab" held Create and Manage, which are screens. A
+                // reader had to know which scheme a row was using before they could scan it, and
+                // two of the six rows named a tab rather than what they held: "Create" opened a
+                // pane headed "Test naming", "Manage" one headed "Board grouping".
+                //
+                // Naming was filed under Create because that is where tests are made. It is read
+                // by the board's banding, its filtering and its sorting, by the renumber and by
+                // every export — which is the reasoning this tab rejects for the other five.
+                Railed(rail, null,
+                       Part.Units, Part.Levels, Part.Disciplines, Part.Team,
+                       Part.Naming, Part.Board);
 
                 var side = new Border
                 {
@@ -263,21 +272,26 @@ namespace CamelWorks.UI.Views
                 Part.Levels => "Levels",
                 Part.Disciplines => "Disciplines",
                 Part.Team => "Team",
-                Part.Naming => "Create",
-                Part.Board => "Manage",
+                Part.Naming => "Test naming",
+                Part.Board => "Board grouping",
                 _ => "Units and distances",
             };
 
-            /// <summary>One heading on the rail, and the sections under it.</summary>
+            /// <summary>Sections on the rail, under a heading where there is one.</summary>
             /// <param name="rail">The rail.</param>
-            /// <param name="title">What the group is called.</param>
+            /// <param name="title">What the group is called, or null for no heading.</param>
             /// <param name="parts">Its sections, in the order they read.</param>
-            private void Railed(Panel rail, string title, params Part[] parts)
+            private void Railed(Panel rail, string? title, params Part[] parts)
             {
-                var head = Ui.Small(title.ToUpperInvariant());
+                // A heading only where there is more than one group to tell apart. One list of
+                // six subjects needs no word over it saying they are settings.
+                if (title != null)
+                {
+                    var head = Ui.Small(title.ToUpperInvariant());
 
-                head.Margin = new Thickness(10, rail.Children.Count == 0 ? 0 : 14, 10, 4);
-                rail.Children.Add(head);
+                    head.Margin = new Thickness(10, rail.Children.Count == 0 ? 0 : 14, 10, 4);
+                    rail.Children.Add(head);
+                }
 
                 foreach (var part in parts)
                 {
@@ -353,9 +367,13 @@ namespace CamelWorks.UI.Views
             {
                 _state.Children.Clear();
 
-                if (!_dirty) return;
+                // Both states, not only the unsaved one. A tab that says nothing until its first
+                // edit leaves the reader to guess whether a section writes as it is typed or waits
+                // for the action at the foot, and five sections here wait while a sixth - the
+                // renumber - writes to the document at once and says so itself.
+                var line = Ui.Kept(_dirty ? Keeping.OnPress : Keeping.Settled);
 
-                var line = Ui.Small("Not saved yet");
+                if (line == null) return;
 
                 line.VerticalAlignment = VerticalAlignment.Center;
                 line.Margin = new Thickness(0, 0, 12, 0);
@@ -464,7 +482,7 @@ namespace CamelWorks.UI.Views
                         // The inch fraction is only a control at all in feet and inches, so the
                         // section is drawn again rather than leaving a dead box on a metric job.
                         Show(Part.Units);
-                    }, 200));
+                    }, Ui.Wide.Name));
 
                 var inches = imperial
                     ? Ui.Field("Round inches to",
@@ -478,24 +496,73 @@ namespace CamelWorks.UI.Views
 
                 held.Children.Add(Rowed(units, inches));
 
+                // Both distances are stored in metres and were labelled "(m)" whatever the unit
+                // above them said. On a feet-and-inches job the pane read "Lengths in: Feet and
+                // inches" directly over two boxes marked (m), and a coordinator reading the label
+                // as feet and typing 16 set a 16-metre grouping distance, which collapses every
+                // band on the board. They are written and read in the project's own unit now, and
+                // parsed on commit rather than on every keystroke, so "5m" or "abc" no longer
+                // reaches the project file.
+                var shown = Measure.Of(lengths, Denominator(fraction));
+
                 held.Children.Add(Rowed(
-                    Ui.Field("Grouping distance (m)",
-                             Ui.Text(grouping, typed => Set(ProfileKeys.ClashProximity, typed),
-                                     120)),
-                    Ui.Field("Same-conflict distance (m)",
-                             Ui.Text(duplicate, typed => Set(ProfileKeys.DuplicateBand, typed),
-                                     120))));
+                    Distance("Grouping distance", ProfileKeys.ClashProximity, grouping, shown),
+                    Distance("Same-conflict distance", ProfileKeys.DuplicateBand, duplicate,
+                             shown)));
 
                 return held;
             }
+
+            /// <summary>
+            /// A distance held in metres, written and read in the project's own unit.
+            /// </summary>
+            /// <param name="label">What the distance is, without its unit.</param>
+            /// <param name="key">Which setting it is.</param>
+            /// <param name="metres">What it holds now, as the profile stores it.</param>
+            /// <param name="units">The unit the project writes lengths in.</param>
+            private UIElement Distance(string label, string key, string? metres, Measure units) =>
+                Ui.Field(label + " (" + units.LengthUnit + ")",
+                         Ui.Settled(Said(units, metres), string.Empty, typed =>
+                         {
+                             if (typed.Trim().Length == 0)
+                             {
+                                 Set(key, null);
+                                 return;
+                             }
+
+                             if (units.TryRead(typed, out var read) && read >= 0)
+                                 Set(key, read.ToString("0.###", CultureInfo.InvariantCulture));
+                         }, 120),
+                         null, Need.Optional);
+
+            /// <summary>A stored distance in metres, written in the project's own unit.</summary>
+            /// <param name="units">The unit the project writes lengths in.</param>
+            /// <param name="metres">What the profile holds, or null.</param>
+            private static string Said(Measure units, string? metres) =>
+                double.TryParse(metres, NumberStyles.Float, CultureInfo.InvariantCulture,
+                                out var value)
+                    ? units.Bare(value)
+                    : string.Empty;
+
+            /// <summary>The inch denominator a stored setting names, or the usual sixteenth.</summary>
+            /// <param name="fraction">What the profile holds, or null.</param>
+            private static int Denominator(string? fraction) =>
+                int.TryParse(fraction, NumberStyles.Integer, CultureInfo.InvariantCulture,
+                             out var read) && read > 0
+                    ? read
+                    : 16;
 
             /// <summary>What the Manage tab's board does with the results it is given.</summary>
             private UIElement BoardPart()
             {
                 var held = Ui.Stack();
 
+                // "Board grouping", not "Bands". Three things on this screen group results -
+                // the host's folders, the host's clash groups, and this, which is ours and is
+                // about how the board draws them - and only this one gets to say which it is in
+                // its own heading. Its subtitle already said "the board divides".
                 held.Children.Add(Head(
-                    "Bands",
+                    "Board grouping",
                     "How the board divides the results it is given into headings.",
                     "A band decides which heading a result is drawn under and changes nothing "
                     + "about the result itself, which is why it is a setting rather than a rule "
@@ -573,6 +640,12 @@ namespace CamelWorks.UI.Views
 
                 offered.AddRange(Disciplines.All);
 
+                // The project's own words after the ones a file name can be read as. A job with a
+                // facade package or a vertical-transport model could not file them at all while
+                // the only disciplines on offer were the built-in ones.
+                foreach (var own in Own())
+                    if (!offered.Contains(own, StringComparer.OrdinalIgnoreCase)) offered.Add(own);
+
                 var rows = models.Select(one => new TableRow(one,
                     one.Title,
                     string.IsNullOrWhiteSpace(Read(one.Key)) ? NoDiscipline : Read(one.Key)!))
@@ -585,7 +658,7 @@ namespace CamelWorks.UI.Views
                 // by it, so a whole selection is set in one press.
                 var wanted = NoDiscipline;
 
-                var pick = Ui.Choice(offered, NoDiscipline, chosen => wanted = chosen, 180);
+                var pick = Ui.Choice(offered, NoDiscipline, chosen => wanted = chosen, Ui.Wide.Name);
 
                 pick.VerticalAlignment = VerticalAlignment.Center;
 
@@ -606,6 +679,67 @@ namespace CamelWorks.UI.Views
 
                         Show(Part.Disciplines);
                     })));
+
+                held.Children.Add(Adding());
+
+                return held;
+            }
+
+            /// <summary>The discipline words this project has added to the built-in ones.</summary>
+            private IReadOnlyList<string> Own() =>
+                (Read(ProfileKeys.OwnDisciplines) ?? string.Empty)
+                    .Split(',')
+                    .Select(one => one.Trim())
+                    .Where(one => one.Length > 0)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+            /// <summary>Add a discipline this project has and CamelWorks does not know.</summary>
+            private UIElement Adding()
+            {
+                var held = Ui.Stack();
+
+                held.Children.Add(Ui.Small("CamelWorks knows "
+                    + Ui.Count(Disciplines.All.Count, "discipline")
+                    + " it can read off a file name. Add the ones this job has that it does not."));
+
+                var own = Own();
+
+                if (own.Count > 0)
+                    held.Children.Add(Ui.Across(own
+                        .Select(one => (UIElement)Parts.FilterChip(string.Empty, one, () =>
+                        {
+                            Set(ProfileKeys.OwnDisciplines,
+                                string.Join(", ", Own().Where(two =>
+                                    !string.Equals(two, one, StringComparison.OrdinalIgnoreCase))));
+
+                            Show(Part.Disciplines);
+                        }))
+                        .ToArray()));
+
+                var add = Ui.Button("Add a discipline", () => Parts.Ask(held,
+                    "What this job calls it", string.Empty, "Add", said =>
+                {
+                    var wanted = said.Trim();
+
+                    if (wanted.Length == 0) return;
+
+                    // Refused rather than added twice: a second "Facade" in the list is a second
+                    // entry in every picker that reads it, and a model can only be on one.
+                    if (Disciplines.All.Contains(wanted, StringComparer.OrdinalIgnoreCase)
+                        || Own().Contains(wanted, StringComparer.OrdinalIgnoreCase))
+                        return;
+
+                    Set(ProfileKeys.OwnDisciplines, string.Join(", ", Own().Concat(new[] { wanted })));
+
+                    Show(Part.Disciplines);
+                }));
+
+                add.HorizontalAlignment = HorizontalAlignment.Left;
+                add.Margin = new Thickness(0, 6, 0, 0);
+
+                held.Children.Add(add);
+                held.Margin = new Thickness(0, 12, 0, 0);
 
                 return held;
             }
@@ -641,9 +775,33 @@ namespace CamelWorks.UI.Views
             // Test naming
             // ---------------------------------------------------------------------------------
 
-            /// <summary>The fields, the patterns, which pattern reads which test, and renumber.</summary>
-            private UIElement NamingPart() =>
-                ClashNaming.Section(Book, Tests(), Rename, Opening(), _pane, Touched);
+            /// <summary>The fields, the patterns, and which pattern reads which test.</summary>
+            private UIElement NamingPart()
+            {
+                var held = Ui.Stack();
+
+                // Where the renumber went, above the work rather than under it: somebody who
+                // opens this section looking for the renumber has their answer before they read
+                // the table. It used to be a fourth pane here, and it writes the new names into
+                // the Navisworks document the moment it is pressed - under a tab whose footer
+                // says the settings are saved when you press Save.
+                //
+                // Info rather than a warning. Nothing is wrong and there is nothing to be
+                // careful about on this screen; it is a pointer.
+                var said = Ui.Info(
+                    "Renumbering the tests is on the Manage tab, under the test's own menu, "
+                    + "beside the run and the compact. It writes the new names into the model "
+                    + "when you press it, so it is not one of the settings this tab holds.");
+
+                if (said is FrameworkElement placed) placed.Margin = new Thickness(0, 0, 0, 12);
+
+                held.Children.Add(said);
+
+                held.Children.Add(
+                    ClashNaming.Section(Book, Tests(), Rename, Opening(), _pane, Touched));
+
+                return held;
+            }
 
             /// <summary>The project's naming, read once and edited in place.</summary>
             private NamingBook Book => _book ??= _bookGiven ?? NamingBook.FromJson(

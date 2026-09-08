@@ -37,6 +37,8 @@ namespace CamelWorks.Core.Tests
             public IReadOnlyList<ResultColumn> Columns(Finding finding) => _columns;
 
             public string? IssueOf(Finding finding) => null;
+
+            public double MetresPerUnit { get; set; } = 1.0;
         }
 
         /// <summary>A world with no document behind it, as a board read from a file has.</summary>
@@ -53,6 +55,8 @@ namespace CamelWorks.Core.Tests
 
             public string? IssueOf(Finding finding) =>
                 Raised.TryGetValue(finding.Id, out var said) ? said : null;
+
+            public double MetresPerUnit => 1.0;
         }
 
         /// <summary>A finding over the given elements, told apart by its title.</summary>
@@ -244,6 +248,162 @@ namespace CamelWorks.Core.Tests
             });
 
             Assert.Empty(ResultSearch.Run(term, new[] { finding }, new World(new FakeDocument())));
+        }
+
+        // ---------------------------------------------------------------------------------
+        // What is measured off the elements
+        // ---------------------------------------------------------------------------------
+
+        /// <summary>A box, from one corner and a size.</summary>
+        private static BoundingBox Box(double x, double y, double z,
+                                       double sizeX, double sizeY, double sizeZ) =>
+            new BoundingBox(x, y, z, x + sizeX, y + sizeY, z + sizeZ);
+
+        [Fact]
+        public void A_duct_and_a_riser_cross_square_and_a_pair_of_ducts_do_not()
+        {
+            var document = new FakeDocument();
+            var model = document.AddModel("MEP", "mep.nwc");
+
+            // Ten metres along X, half a metre thick: clearly a run.
+            var along = document.AddItem(model, "Duct 1", "Ducts", bounds: Box(0, 0, 0, 10, .4, .4));
+            var beside = document.AddItem(model, "Duct 2", "Ducts", bounds: Box(0, 2, 0, 10, .4, .4));
+            var riser = document.AddItem(model, "Riser", "Pipes", bounds: Box(4, 0, 0, .3, .3, 8));
+
+            var world = new World(document);
+
+            var square = One(new QueryTerm(ResultFields.Angle, QueryOp.AtLeast)
+            {
+                Where = QueryWhere.BetweenElements,
+                Number = 80,
+            });
+
+            var crossing = Found("crossing", along.Key, riser.Key);
+            var parallel = Found("parallel", along.Key, beside.Key);
+
+            Assert.Equal(new[] { "crossing" },
+                ResultSearch.Run(square, new[] { crossing, parallel }, world).Select(f => f.Title));
+
+            var same = One(new QueryTerm(ResultFields.Angle, QueryOp.AtMost)
+            {
+                Where = QueryWhere.BetweenElements,
+                Number = 1,
+            });
+
+            Assert.Equal(new[] { "parallel" },
+                ResultSearch.Run(same, new[] { crossing, parallel }, world).Select(f => f.Title));
+        }
+
+        [Fact]
+        public void An_element_whose_box_will_not_say_which_way_it_runs_has_no_angle()
+        {
+            var document = new FakeDocument();
+            var model = document.AddModel("STR", "str.nwc");
+
+            var run = document.AddItem(model, "Duct", "Ducts", bounds: Box(0, 0, 0, 10, .4, .4));
+            var blocky = document.AddItem(model, "Plant", "Equipment", bounds: Box(0, 0, 0, 3, 3, 3));
+
+            var world = new World(document);
+            var finding = Found("a", run.Key, blocky.Key);
+
+            // Every number clause fails rather than answering out of a box that does not say.
+            foreach (var op in new[] { QueryOp.AtLeast, QueryOp.AtMost, QueryOp.Equals,
+                                       QueryOp.NotEquals })
+                Assert.Empty(ResultSearch.Run(
+                    One(new QueryTerm(ResultFields.Angle, op)
+                        { Where = QueryWhere.BetweenElements, Number = 0 }),
+                    new[] { finding }, world));
+
+            // And "has no value" is the clause that holds.
+            Assert.Single(ResultSearch.Run(
+                One(new QueryTerm(ResultFields.Angle, QueryOp.IsEmpty)
+                    { Where = QueryWhere.BetweenElements }),
+                new[] { finding }, world));
+        }
+
+        [Fact]
+        public void The_distance_between_two_elements_is_measured_in_metres()
+        {
+            var document = new FakeDocument();
+            var model = document.AddModel("MEP", "mep.nwc");
+
+            var near = document.AddItem(model, "A", bounds: Box(0, 0, 0, 1, 1, 1));
+            var far = document.AddItem(model, "B", bounds: Box(3, 0, 0, 1, 1, 1));
+            var touching = document.AddItem(model, "C", bounds: Box(0.5, 0, 0, 1, 1, 1));
+
+            var apart = Found("apart", near.Key, far.Key);
+            var overlapping = Found("overlapping", near.Key, touching.Key);
+
+            var gap = One(new QueryTerm(ResultFields.Gap, QueryOp.GreaterThan)
+            {
+                Where = QueryWhere.BetweenElements,
+                Number = 1.5,
+            });
+
+            // Two metres between the boxes, and nothing between the pair that overlap.
+            Assert.Equal(new[] { "apart" },
+                ResultSearch.Run(gap, new[] { apart, overlapping }, new World(document))
+                            .Select(f => f.Title));
+
+            // A millimetre model states the same threshold in metres.
+            var millimetres = new World(document) { MetresPerUnit = 0.001 };
+
+            Assert.Empty(ResultSearch.Run(gap, new[] { apart }, millimetres));
+        }
+
+        [Fact]
+        public void An_elements_orientation_is_read_off_its_box()
+        {
+            var document = new FakeDocument();
+            var model = document.AddModel("MEP", "mep.nwc");
+
+            var duct = document.AddItem(model, "Duct", "Ducts", bounds: Box(0, 0, 0, 10, .4, .4));
+            var riser = document.AddItem(model, "Riser", "Pipes", bounds: Box(0, 0, 0, .3, .3, 8));
+
+            var world = new World(document);
+
+            var flat = Found("flat", duct.Key);
+            var upright = Found("upright", riser.Key);
+
+            var vertical = One(new QueryTerm(ResultFields.Orientation, QueryOp.Is)
+            {
+                Where = QueryWhere.AnyElement,
+                Text = ElementGeometry.Vertical,
+            });
+
+            Assert.Equal(new[] { "upright" },
+                ResultSearch.Run(vertical, new[] { flat, upright }, world).Select(f => f.Title));
+
+            // And as a number, for a clause that wants a range.
+            var tilted = One(new QueryTerm(ResultFields.Tilt, QueryOp.AtLeast)
+            {
+                Where = QueryWhere.AnyElement,
+                Number = 45,
+            });
+
+            Assert.Equal(new[] { "upright" },
+                ResultSearch.Run(tilted, new[] { flat, upright }, world).Select(f => f.Title));
+        }
+
+        [Fact]
+        public void A_measurement_across_the_pair_is_offered_in_one_scope_with_number_operators()
+        {
+            var angle = ResultFields.Measured.First(one => one.Id == ResultFields.Angle);
+
+            Assert.Equal(new[] { QueryWhere.BetweenElements }, ResultFields.ScopesFor(angle));
+
+            var offered = ResultFields.Operators(angle, QueryValue.Text,
+                                                 QueryWhere.BetweenElements);
+
+            Assert.Contains(QueryOp.AtLeast, offered);
+            Assert.DoesNotContain(QueryOp.Same, offered);
+
+            // A field read off each element still compares the two in that scope.
+            var category = ResultFields.OnElements.First(one => one.Id == ResultFields.Category);
+
+            Assert.Equal(new[] { QueryOp.Same, QueryOp.Different },
+                         ResultFields.Operators(category, QueryValue.Text,
+                                                QueryWhere.BetweenElements));
         }
 
         [Fact]

@@ -27,6 +27,12 @@ namespace CamelWorks.UI.Views
     public static class Parts
     {
         /// <summary>The height of a chip, and of the inline control a chip becomes.</summary>
+        /// <summary>How wide a dropdown's chevron well is, matching the skin's ComboBox.</summary>
+        private const double WellWidth = 26;
+
+        /// <summary>How tall a field is, matching the skin's TextBox and ComboBox.</summary>
+        private const double FieldHeight = 31;
+
         private const double ChipHeight = 26;
 
         /// <summary>
@@ -1194,12 +1200,18 @@ namespace CamelWorks.UI.Views
         /// <param name="starting">What the box starts with.</param>
         /// <param name="caption">What the commit button says.</param>
         /// <param name="onDone">Given the trimmed text, once somebody commits.</param>
+        /// <param name="offer">
+        /// Answers already in use, offered as chips under the box. A prompt that only takes typing
+        /// makes somebody remember and retype a name that is on the screen behind it, and a
+        /// misspelling makes a second folder rather than an error.
+        /// </param>
         public static void Ask(FrameworkElement near, string prompt, string? starting,
-                               string caption, Action<string> onDone)
+                               string caption, Action<string> onDone,
+                               IReadOnlyList<string>? offer = null)
         {
             _ = near;
 
-            var box = Ui.Text(starting ?? string.Empty, null, 320);
+            var box = Ui.Text(starting ?? string.Empty, null, Ui.Wide.Path);
 
             var label = new TextBlock
             {
@@ -1255,6 +1267,29 @@ namespace CamelWorks.UI.Views
 
             body.Children.Add(label.Wearing("Body"));
             body.Children.Add(box);
+
+            if (offer != null && offer.Count > 0)
+            {
+                var chips = new WrapPanel { Margin = new Thickness(0, 8, 0, 0), MaxWidth = 320 };
+
+                foreach (var one in offer)
+                {
+                    var named = one;
+
+                    var chip = Ui.Quiet(named, () =>
+                    {
+                        box.Text = named;
+                        box.SelectAll();
+                        box.Focus();
+                    });
+
+                    chip.Margin = new Thickness(0, 0, 6, 6);
+                    chips.Children.Add(chip);
+                }
+
+                body.Children.Add(chips);
+            }
+
             body.Children.Add(buttons);
 
             var ground = new Border { Child = body };
@@ -1451,6 +1486,263 @@ namespace CamelWorks.UI.Views
         }
 
 
+        /// <summary>How many entries a list may hold before it is given a box to narrow it.</summary>
+        private const int Searchable = 8;
+
+        /// <summary>How tall a ticked list grows before it scrolls.</summary>
+        private const double TickedHeight = 190;
+
+        /// <summary>
+        /// Several things chosen out of a list, with a box that narrows it.
+        ///
+        /// Five screens built this: the sides of a clash test, which tests to read into a matrix,
+        /// which tests to act on, a facet's values on the board, and which tests a naming pattern
+        /// reads. Each had its own filter loop, its own empty state and its own idea of what to
+        /// say under the list, so the one that was fixed stayed fixed and the other four did not.
+        ///
+        /// The caller owns what is picked. This draws it and reports every change, because a
+        /// picked set is the screen's own state — saved with a rule, sent with an export — and a
+        /// control that held it would be a second copy to keep in step.
+        /// </summary>
+        /// <param name="offered">Everything that can be picked, in the order to show it.</param>
+        /// <param name="picked">What is picked now. Read on every redraw, never written to.</param>
+        /// <param name="onPicked">Given a line and whether it is now ticked.</param>
+        /// <param name="empty">What to say when the list itself is empty.</param>
+        /// <param name="onCleared">Clears the caller's selection, or null for no Clear.</param>
+        public static UIElement Ticked(IReadOnlyList<string> offered,
+                                       Func<string, bool> picked,
+                                       Action<string, bool> onPicked,
+                                       string empty,
+                                       Action? onCleared = null)
+        {
+            if (offered == null) throw new ArgumentNullException(nameof(offered));
+            if (picked == null) throw new ArgumentNullException(nameof(picked));
+            if (onPicked == null) throw new ArgumentNullException(nameof(onPicked));
+
+            var held = Ui.Stack();
+            var list = Ui.Stack();
+
+            // Only once there is more to read than fits, for the same reason a menu gets one:
+            // a box over four lines is a control asking to be used on something it cannot help.
+            var find = offered.Count > Searchable
+                ? Ui.Find("part of a name", null, Ui.Wide.Name)
+                : null;
+
+            void Fill()
+            {
+                list.Children.Clear();
+
+                var query = (find?.Text ?? string.Empty).Trim();
+
+                if (offered.Count == 0)
+                {
+                    list.Children.Add(Ui.Small(empty));
+                    return;
+                }
+
+                var shown = offered
+                    .Where(one => query.Length == 0
+                                  || one.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
+                    .ToList();
+
+                if (shown.Count == 0)
+                {
+                    list.Children.Add(Ui.Small("Nothing here contains \u201c" + query + "\u201d."));
+                    return;
+                }
+
+                foreach (var one in shown)
+                {
+                    var line = one;
+
+                    var tick = Ui.Check(line, picked(line), on => Ui.Safely(() =>
+                    {
+                        onPicked(line, on);
+                        Fill();
+                    }));
+
+                    tick.Margin = new Thickness(0, 1, 0, 1);
+
+                    list.Children.Add(tick);
+                }
+            }
+
+            if (find != null || onCleared != null)
+            {
+                var bar = new DockPanel
+                {
+                    LastChildFill = true,
+                    Margin = new Thickness(0, 4, 0, 4),
+                };
+
+                if (onCleared != null)
+                {
+                    var clear = Ui.Quiet("Clear", () => Ui.Safely(() =>
+                    {
+                        onCleared();
+                        Fill();
+                    }));
+
+                    DockPanel.SetDock(clear, Dock.Right);
+                    bar.Children.Add(clear);
+                }
+
+                bar.Children.Add(find == null ? new Border() : (UIElement)Ui.Loose(find));
+
+                held.Children.Add(bar);
+            }
+
+            if (find != null) find.TextChanged += (s, e) => Ui.Safely(Fill);
+
+            Fill();
+
+            var scroller = new ScrollViewer
+            {
+                MaxHeight = TickedHeight,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = Ui.Loose(list),
+            };
+
+            Ui.WheelThrough(scroller);
+
+            held.Children.Add(scroller);
+
+            return held;
+        }
+
+        /// <summary>
+        /// What a run reads from, as a press naming it that opens the list.
+        ///
+        /// Four shapes did this: the clearance panel's three fields, the fall-hazard panel's
+        /// three, the two sides of a clash test, and an editable combo in Pickers that none of
+        /// them used. Each was reported unusable separately, on a federation carrying two hundred
+        /// saved sets with no way to narrow the list.
+        /// </summary>
+        /// <param name="near">The screen this belongs to, which owns the list window.</param>
+        /// <param name="offered">Everything that could be read from.</param>
+        /// <param name="chosen">What it is read from now.</param>
+        /// <param name="prompt">What the list asks.</param>
+        /// <param name="onPicked">Records the choice.</param>
+        /// <param name="width">How wide the press is.</param>
+        /// <param name="blocked">Why it cannot be changed, or null when it can.</param>
+        public static UIElement Source(FrameworkElement? near,
+                                       IReadOnlyList<string> offered,
+                                       string chosen, string prompt,
+                                       Action<string> onPicked,
+                                       double width = 380,
+                                       string? blocked = null)
+        {
+            if (offered == null) throw new ArgumentNullException(nameof(offered));
+            if (onPicked == null) throw new ArgumentNullException(nameof(onPicked));
+
+            // Drawn as the dropdown it stands in for, not as a button. A source field sits beside
+            // an ordinary Ui.Choice — the levels on the clearance panel — and a plain button next
+            // to a combo reads as a disabled box: same rectangle, no chevron, nothing saying it
+            // opens. Whether the list is short enough for a combo or long enough to need a search
+            // window is this file's business, not something the eye should have to tell apart.
+            var said = new TextBlock
+            {
+                Text = chosen,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            };
+
+            said.Tint(TextBlock.ForegroundProperty, "Text");
+
+            said.Margin = new Thickness(10, 0, 6, 0);
+
+            // The dropdown's own geometry, taken from the skin's ComboBox template rather than
+            // approximated: the same height, the same radius, and the same capped gutter with its
+            // own edge. Drawn 3px shorter and 2px squarer, this sat beside a real Ui.Choice on the
+            // clearance panel and read as a third kind of control.
+            var row = new DockPanel { LastChildFill = true };
+
+            var well = new Border
+            {
+                Width = WellWidth,
+                BorderThickness = new Thickness(1, 0, 0, 0),
+                CornerRadius = new CornerRadius(0, 5, 5, 0),
+                Child = Ui.Glyph(Glyphs.Down, 12, "Muted"),
+            };
+
+            well.Tint(Border.BackgroundProperty, "Well");
+            well.Tint(Border.BorderBrushProperty, "FieldBd");
+
+            DockPanel.SetDock(well, Dock.Right);
+            row.Children.Add(well);
+            row.Children.Add(said);
+
+            var box = new Border
+            {
+                Width = width,
+                MinHeight = FieldHeight,
+                CornerRadius = new CornerRadius(6),
+                BorderThickness = new Thickness(1),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Cursor = Cursors.Hand,
+                Child = row,
+            };
+
+            box.Tint(Border.BackgroundProperty, "Field");
+            box.Tint(Border.BorderBrushProperty, "FieldBd");
+
+            if (blocked != null)
+            {
+                // Dimmed, not disabled. A disabled element does not raise the events a tooltip
+                // needs, so the field that most needs to say why it cannot be used was the one
+                // field that said nothing when pointed at.
+                box.Opacity = 0.55;
+                box.Cursor = Cursors.Arrow;
+                box.ToolTip = blocked;
+                well.Background = System.Windows.Media.Brushes.Transparent;
+
+                return box;
+            }
+
+            box.ToolTip = prompt;
+            box.Focusable = true;
+
+            void Open() => Ui.Safely(() =>
+                Choose(near!, prompt, offered, chosen, null, null, picked =>
+                {
+                    if (picked.Length == 0) return;
+
+                    onPicked(picked);
+                }));
+
+            box.MouseLeftButtonUp += (s, e) => Open();
+
+            // Reachable from the keyboard, which it was not: a Border with a mouse handler takes
+            // no tab stop, so the two fields that say what a clearance test measures could only be
+            // set with a pointer.
+            box.KeyDown += (s, e) =>
+            {
+                if (e.Key != Key.Enter && e.Key != Key.Space && e.Key != Key.Down) return;
+
+                e.Handled = true;
+                Open();
+            };
+
+            box.GotKeyboardFocus += (s, e) => box.Tint(Border.BorderBrushProperty, "Focus");
+            box.LostKeyboardFocus += (s, e) => box.Tint(Border.BorderBrushProperty, "FieldBd");
+
+            box.MouseEnter += (s, e) =>
+            {
+                box.Tint(Border.BorderBrushProperty, "Accent");
+                well.Tint(Border.BackgroundProperty, "AccentWash");
+            };
+
+            box.MouseLeave += (s, e) =>
+            {
+                if (!box.IsKeyboardFocused) box.Tint(Border.BorderBrushProperty, "FieldBd");
+
+                well.Tint(Border.BackgroundProperty, "Well");
+            };
+
+            return box;
+        }
+
         /// <summary>
         /// Ask which of a known set of things, with the option of a new one.
         ///
@@ -1504,23 +1796,62 @@ namespace CamelWorks.UI.Views
             body.Children.Add(label.Wearing("Body"));
 
             var list = new StackPanel();
+            var held = (known ?? Array.Empty<string>())
+                .Where(one => !string.IsNullOrWhiteSpace(one))
+                .ToList();
 
-            foreach (var one in known ?? Array.Empty<string>())
+            // A box that narrows the list, once there are more entries than can be read at a
+            // glance. A federation carries two hundred saved sets and finding one by scrolling a
+            // column of buttons is not finding it.
+            var find = held.Count > Searchable ? Ui.Find("part of a name", null, Ui.Wide.Path) : null;
+
+            void Fill()
             {
-                if (string.IsNullOrWhiteSpace(one)) continue;
+                list.Children.Clear();
 
-                var here = one;
-                var on = string.Equals(here, current, StringComparison.OrdinalIgnoreCase);
+                var query = (find?.Text ?? string.Empty).Trim();
 
-                var press = Ui.Quiet(on ? here + "  ·  where it is now" : here, () => Done(here));
+                var shown = held
+                    .Where(one => query.Length == 0
+                                  || one.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
+                    .ToList();
 
-                press.HorizontalAlignment = HorizontalAlignment.Stretch;
-                press.HorizontalContentAlignment = HorizontalAlignment.Left;
-                press.Margin = new Thickness(0, 0, 0, 4);
-                press.IsEnabled = !on;
+                if (shown.Count == 0)
+                {
+                    var none = Ui.Small("Nothing here contains \u201C" + query + "\u201D.");
 
-                list.Children.Add(press);
+                    none.Margin = new Thickness(2, 4, 2, 4);
+                    list.Children.Add(none);
+
+                    return;
+                }
+
+                foreach (var one in shown)
+                {
+                    var here = one;
+                    var on = string.Equals(here, current, StringComparison.OrdinalIgnoreCase);
+
+                    var press = Ui.Quiet(on ? here + "  \u00b7  where it is now" : here,
+                                         () => Done(here));
+
+                    press.HorizontalAlignment = HorizontalAlignment.Stretch;
+                    press.HorizontalContentAlignment = HorizontalAlignment.Left;
+                    press.Margin = new Thickness(0, 0, 0, 4);
+                    press.IsEnabled = !on;
+
+                    list.Children.Add(press);
+                }
             }
+
+            if (find != null)
+            {
+                find.Margin = new Thickness(0, 0, 0, 8);
+                find.TextChanged += (s, e) => Ui.Safely(Fill);
+
+                body.Children.Add(find);
+            }
+
+            Fill();
 
             // Scrolled rather than grown: a job with forty folders should not open a window taller
             // than the screen it is opening on.
@@ -1534,7 +1865,7 @@ namespace CamelWorks.UI.Views
 
             if (fresh != null)
             {
-                var box = Ui.Text(starting ?? string.Empty, null, 300);
+                var box = Ui.Text(starting ?? string.Empty, null, Ui.Wide.Path);
                 box.Margin = new Thickness(0, 10, 0, 0);
 
                 void Make()
@@ -1665,7 +1996,7 @@ namespace CamelWorks.UI.Views
             DockPanel.SetDock(label.Wearing("Body"), Dock.Top);
             body.Children.Add(label);
 
-            var box = Ui.Text(string.Empty, "Search", null, 0);
+            var box = Ui.Find("part of a name", null, 0);
             box.Margin = new Thickness(0, 0, 0, 10);
             box.HorizontalAlignment = HorizontalAlignment.Stretch;
             DockPanel.SetDock(box, Dock.Top);
@@ -2245,7 +2576,7 @@ namespace CamelWorks.UI.Views
 
             var count = new TextBlock
             {
-                Text = Ui.Count(picked, what) + " picked",
+                Text = Ui.Count(picked, what) + " selected",
                 FontWeight = FontWeights.SemiBold,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 10, 0),
@@ -2358,14 +2689,6 @@ namespace CamelWorks.UI.Views
                 // this the shadow is drawn and immediately cut off on every side.
                 Margin = new Thickness(8),
                 Child = content,
-                Effect = new DropShadowEffect
-                {
-                    BlurRadius = 14,
-                    ShadowDepth = 2,
-                    Direction = 270,
-                    Opacity = 0.18,
-                    Color = Colors.Black,
-                },
             };
 
             // The theme sheet is merged onto the card itself. A popup's child is not in the
@@ -2379,6 +2702,7 @@ namespace CamelWorks.UI.Views
 
             card.Tint(Border.BackgroundProperty, "Card");
             card.Tint(Border.BorderBrushProperty, "Bd");
+            card.Raised();
 
             return card;
         }

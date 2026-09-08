@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Data;
 
 namespace CamelWorks.UI.Views
@@ -31,7 +32,13 @@ namespace CamelWorks.UI.Views
         /// </summary>
         /// <param name="plan">The storeys, edited in place.</param>
         /// <param name="near">What a prompt belongs to, or null in the harness.</param>
-        /// <param name="onKeep">Writes the plan to the project file, and says whether it landed.</param>
+        /// <param name="onKeep">
+        /// Records that the plan changed. Its caller decides when the plan reaches the project
+        /// file: the Settings tab holds it until the tab's own action is pressed, and says so in
+        /// its footer. This used to be documented as writing the plan and reporting whether it
+        /// landed, and the only caller always answered yes, so "5 levels added" was printed from
+        /// a write that had not happened and the failure branch was unreachable.
+        /// </param>
         /// <param name="onChanged">Called after a change was kept, so the board can redraw.</param>
         public static UIElement Panel(LevelPlan plan, FrameworkElement? near,
                                       Func<bool>? onKeep = null, Action? onChanged = null)
@@ -138,6 +145,14 @@ namespace CamelWorks.UI.Views
                 foot.Children.Add(says);
             }
 
+            // Working the storeys out reads the height of every element in the federation, which
+            // is the most expensive read this product makes. It is a press somebody chooses,
+            // once, rather than something every board load pays for.
+            var worked = Ui.Stack();
+
+            var derive = Ui.Runner("Work them out from the model", worked, job =>
+                Derive(plan, job, worked, Keep, Redraw), primary: false);
+
             void Add() => Ui.Safely(() => Adding(plan, near, millimetres, Keep, Redraw));
 
             var unit = Ui.Choice(new[] { Metres, Millimetres },
@@ -146,7 +161,7 @@ namespace CamelWorks.UI.Views
                 millimetres = string.Equals(chosen, Millimetres, StringComparison.Ordinal);
 
                 Redraw();
-            }, 140);
+            }, Ui.Wide.Word);
 
             var units = Ui.Field("Heights in", unit);
 
@@ -169,7 +184,88 @@ namespace CamelWorks.UI.Views
             held.Children.Add(foot);
             held.Children.Add(undo);
 
+            var derived = Ui.Small("Or have them worked out from where the elements actually sit. "
+                + "What it finds is added to the list above, named after each height, for you to "
+                + "rename to the client's own words.");
+
+            derived.Margin = new Thickness(0, 10, 0, 0);
+
+            held.Children.Add(derived);
+
+            held.Children.Add(derive);
+            held.Children.Add(worked);
+
             return held;
+        }
+
+        /// <summary>
+        /// Work the storeys out of the model and put what is found in the plan.
+        ///
+        /// A histogram of where elements sit, which is what <see cref="LevelSet.Derive"/> does.
+        /// The heights it finds are added to whatever the plan already holds rather than
+        /// replacing it: a coordinator who has typed three storeys and wants the rest found
+        /// keeps the three they typed, and a height already claimed is refused by the plan.
+        /// </summary>
+        /// <param name="plan">The storeys, added to in place.</param>
+        /// <param name="job">The run this is part of, for progress and for stopping.</param>
+        /// <param name="said">Where it reports what it found.</param>
+        /// <param name="keep">Writes the plan to the project file.</param>
+        /// <param name="redraw">Redraws the list.</param>
+        private static void Derive(LevelPlan plan, Job job, Panel said, Func<bool> keep,
+                                   Action redraw)
+        {
+            var session = Host.Current;
+
+            if (session == null)
+            {
+                said.Children.Add(Ui.Line(Host.NoModel));
+                return;
+            }
+
+            var scale = session.MetresPerUnit;
+            var elevations = new List<double>();
+
+            job.Say("Measuring the model...");
+
+            foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
+            {
+                if (!item.HasGeometry) continue;
+
+                elevations.Add(item.Bounds.MinZ * scale);
+
+                if (!job.Step(elevations.Count, "elements measured")) return;
+            }
+
+            if (elevations.Count == 0)
+            {
+                said.Children.Add(Ui.Note("Nothing loaded has geometry to measure."));
+                return;
+            }
+
+            var found = LevelSet.Derive(elevations);
+            var added = 0;
+
+            foreach (var band in found.Bands)
+                if (plan.Add(band.Name, band.Elevation)) added++;
+
+            if (added == 0)
+            {
+                said.Children.Add(Ui.Note("Nothing new: the heights it found are already claimed "
+                    + "by storeys in the list."));
+                return;
+            }
+
+            keep();
+            redraw();
+
+            said.Children.Add(Ui.Done(Ui.Count(added, "level") + " added, from "
+                + Ui.Count(found.ElementsConsidered, "element") + ". "
+                + (found.DiscardedClusters > 0
+                    ? Ui.Count(found.DiscardedClusters, "other height")
+                      + " had too little standing on them to be a storey. "
+                    : string.Empty)
+                + "Rename them to whatever the client calls them. They reach the project when "
+                + "the settings are saved."));
         }
 
         /// <summary>The editor over a plan nobody can save, so the harness can draw it.</summary>
@@ -216,7 +312,7 @@ namespace CamelWorks.UI.Views
         /// <param name="near">What the prompt belongs to, or null in the harness.</param>
         /// <param name="picked">The picked rows.</param>
         /// <param name="said">Where the bar says what happened.</param>
-        /// <param name="onKeep">Writes the plan, and says whether it landed.</param>
+        /// <param name="onKeep">Records that the plan changed.</param>
         /// <param name="onChange">Called after the plan changed.</param>
         private static void Rename(LevelPlan plan, FrameworkElement? near,
                                    IReadOnlyList<object> picked, Panel said,
@@ -260,7 +356,7 @@ namespace CamelWorks.UI.Views
         /// <param name="picked">The picked rows.</param>
         /// <param name="said">Where the bar says what happened.</param>
         /// <param name="millimetres">Whether heights are typed in millimetres.</param>
-        /// <param name="onKeep">Writes the plan, and says whether it landed.</param>
+        /// <param name="onKeep">Records that the plan changed.</param>
         /// <param name="onChange">Called after the plan changed.</param>
         private static void Raise(LevelPlan plan, FrameworkElement? near,
                                   IReadOnlyList<object> picked, Panel said, bool millimetres,
@@ -319,7 +415,7 @@ namespace CamelWorks.UI.Views
         /// <param name="picked">The picked rows.</param>
         /// <param name="said">Where the bar says what happened.</param>
         /// <param name="millimetres">Whether heights are shown in millimetres.</param>
-        /// <param name="onKeep">Writes the plan, and says whether it landed.</param>
+        /// <param name="onKeep">Records that the plan changed.</param>
         /// <param name="onChange">Called after the plan changed.</param>
         /// <param name="onDropped">Called with what was taken out, so it can be put back.</param>
         private static void Drop(LevelPlan plan, FrameworkElement? near,
@@ -375,7 +471,7 @@ namespace CamelWorks.UI.Views
         /// <param name="plan">The plan to add to.</param>
         /// <param name="near">What the prompt belongs to.</param>
         /// <param name="millimetres">Whether heights are typed and read in millimetres.</param>
-        /// <param name="onKeep">Writes the plan, and says whether it landed.</param>
+        /// <param name="onKeep">Records that the plan changed.</param>
         /// <param name="onAdded">Called once one is added.</param>
         private static void Adding(LevelPlan plan, FrameworkElement? near, bool millimetres,
                                    Func<bool> onKeep, Action onAdded)

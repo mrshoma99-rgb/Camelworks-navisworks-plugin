@@ -222,6 +222,13 @@ jobs:
       - name: Check no progress pump sits behind a count gate
         run: python3 checks/validate-pump.py
 
+      # The harness draws the product's screens over a fake source. A field the real reader fills
+      # and the fake does not is a column photographed empty, and the picture is then reviewed as
+      # though it were the product - which is how the Manage board was sized and judged with the
+      # two facts it exists to state missing from every render of it.
+      - name: Check the fake source carries what the real one does
+        run: python3 checks/validate-fixture-fidelity.py
+
       # There is no C# compiler on the Linux job, so a mistyped field name only shows up on Windows
       # twenty minutes later. This catches the one way it happens: a replacement whose search string
       # was a suffix of a longer identifier.

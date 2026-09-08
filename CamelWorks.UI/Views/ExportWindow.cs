@@ -81,7 +81,7 @@ namespace CamelWorks.UI.Views
 
         private static UIElement Geometry(Session session, UIElement scoped, Func<string> scope)
         {
-            var path = Ui.Text(Suggested(session, ".glb"), null, 240);
+            var path = Ui.Text(Suggested(session, ".glb"), null, Ui.Wide.Phrase);
             var colour = "By discipline";
             var results = Ui.Stack();
 
@@ -264,7 +264,7 @@ namespace CamelWorks.UI.Views
         /// </summary>
         private static UIElement Drawing(Session session, UIElement scoped, Func<string> scope)
         {
-            var path = Ui.Text(Suggested(session, ".dxf"), null, 240);
+            var path = Ui.Text(Suggested(session, ".dxf"), null, Ui.Wide.Phrase);
             var by = "By discipline";
             var results = Ui.Stack();
 
@@ -406,11 +406,11 @@ namespace CamelWorks.UI.Views
             // the same five-column sheet every Friday should find Friday's columns already there.
             var kept = ToolMemory.Of(session.Store, "publish.sheet");
 
-            var path = Ui.Text(Suggested(session, ".xlsx"), null, 240);
+            var path = Ui.Text(Suggested(session, ".xlsx"), null, Ui.Wide.Phrase);
             var format = "Spreadsheet (.xlsx)";
             var tabName = kept.Text("tab", "Element") ?? "Element";
             var tab = Pickers.Tab(tabName, pick => tabName = pick, 150);
-            var names = Ui.Text(kept.Text("columns", "Category, Type, Level, Discipline"), null, 240);
+            var names = Ui.Text(kept.Text("columns", "Category, Type, Level, Discipline"), null, Ui.Wide.Phrase);
             var results = Ui.Stack();
 
             // A pick from the model's own vocabulary joins the list; the box above stays typable

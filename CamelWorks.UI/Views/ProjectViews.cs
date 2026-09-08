@@ -949,9 +949,8 @@ namespace CamelWorks.UI.Views
 
             if (carried.Count > 0)
                 review.Watch(Check, Ui.Count(carried.Count, "model") + " carries a transform",
-                    "That is legitimate - it is how a survey-grid model is brought onto a project "
-                    + "grid - and it is worth knowing which ones, because a transform is also the "
-                    + "thing most easily overlooked.",
+                    "A transform is how a survey-grid model is brought onto a project grid. "
+                    + "These are the models that carry one.",
                     null,
                     carried.Select(m => m.DisplayName).ToList(), "model-transformed");
         }
@@ -1111,7 +1110,7 @@ namespace CamelWorks.UI.Views
             // their exporter puts the IFC class in does not change between Tuesdays.
             var kept = ToolMemory.Of(live.Store, "project.ids");
 
-            var path = Ui.Text(kept.Text("file"), text => kept.Set("file", text), 200);
+            var path = Ui.Text(kept.Text("file"), text => kept.Set("file", text), Ui.Wide.Name);
 
             // A picker over the model's property names: when a run says "put one of these in the
             // box", the box should already be offering them rather than asking for a retype.
@@ -1133,7 +1132,7 @@ namespace CamelWorks.UI.Views
             {
                 from = pick;
                 kept.Set("from", pick);
-            }, 200);
+            }, Ui.Wide.Name);
 
             var over = kept.Text("over");
 
@@ -1143,7 +1142,7 @@ namespace CamelWorks.UI.Views
             {
                 over = pick;
                 kept.Set("over", pick);
-            }, 200);
+            }, Ui.Wide.Name);
 
             var run = Ui.Runner("Check the rules", results, primary: false, work: job =>
             {
@@ -1740,7 +1739,7 @@ namespace CamelWorks.UI.Views
 
             // The register runs to thirty-odd rows and somebody arriving is nearly always after
             // one of them by name. A search at the top of the list, not a scroll.
-            var find = Ui.Text(string.Empty, "search the register", null, 220);
+            var find = Ui.Find("a name in the register", null, Ui.Wide.Phrase);
 
             void Fill()
             {
@@ -2041,8 +2040,8 @@ namespace CamelWorks.UI.Views
         {
             var status = Ui.Stack();
 
-            var parties = Ui.Text(string.Join(", ", session.Profile.Parties), null, 200);
-            var priorities = Ui.Text(string.Join(", ", session.Profile.Priorities), null, 200);
+            var parties = Ui.Text(string.Join(", ", session.Profile.Parties), null, Ui.Wide.Name);
+            var priorities = Ui.Text(string.Join(", ", session.Profile.Priorities), null, Ui.Wide.Name);
 
             var save = Ui.Icon(Glyphs.Save, "Save these", () =>
             {
@@ -2077,8 +2076,8 @@ namespace CamelWorks.UI.Views
             var status = Ui.Stack();
             var list = Ui.Stack();
 
-            var name = Ui.Text("Uniclass", null, 180);
-            var body = Ui.Text(string.Empty, null, 200);
+            var name = Ui.Text("Uniclass", null, Ui.Wide.Name);
+            var body = Ui.Text(string.Empty, null, Ui.Wide.Name);
 
             var tables = CodeTables.FromJson(
                 session.Store.Section(ProjectStore.ProfileSection)["codeTables"]);
@@ -2356,8 +2355,8 @@ namespace CamelWorks.UI.Views
             var value = Ui.Stack();
 
             FrameworkElement editor = setting.Choices.Count > 0
-                ? (FrameworkElement)Ui.Choice(setting.Choices, setting.Value, pick => setting.Override = pick, 200)
-                : Ui.Text(setting.Value, typed => setting.Override = typed, 200);
+                ? (FrameworkElement)Ui.Choice(setting.Choices, setting.Value, pick => setting.Override = pick, Ui.Wide.Name)
+                : Ui.Text(setting.Value, typed => setting.Override = typed, Ui.Wide.Name);
 
             value.Children.Add(editor);
 
@@ -2384,7 +2383,7 @@ namespace CamelWorks.UI.Views
         private static UIElement Repoint(Session session)
         {
             var results = Ui.Stack();
-            var folder = Ui.Text(string.Empty, null, 300);
+            var folder = Ui.Text(string.Empty, null, Ui.Wide.Path);
 
             var run = Ui.Runner("Look for missing sources", results, job =>
             {

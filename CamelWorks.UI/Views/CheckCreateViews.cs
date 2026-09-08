@@ -98,10 +98,16 @@ namespace CamelWorks.UI.Views
 
         private sealed class Screen
         {
+            /// <summary>The band a test in no folder sits under.</summary>
+            private const string Unfiled = "Not filed";
+
             private readonly ISeat _seat;
 
             private readonly StackPanel _log = Ui.Stack();
             private readonly ContentControl _list = new ContentControl();
+
+            /// <summary>The verbs under the list, pinned to the bottom of the pane.</summary>
+            private readonly ContentControl _picking = new ContentControl();
             private readonly ContentControl _panel = new ContentControl();
             private readonly ContentControl _foot = new ContentControl();
             private readonly TextBox _search;
@@ -134,16 +140,19 @@ namespace CamelWorks.UI.Views
             /// <summary>The document's clash tests as a check, built once because reading is host calls.</summary>
             private ClashCheck? _clash;
 
+            /// <summary>The form for a clash test being made, or null when none is.</summary>
+            private UIElement? _making;
+
             internal Screen(ISeat seat)
             {
                 _seat = seat;
 
-                _search = Ui.Text(string.Empty, "Search tests", text =>
+                _search = Ui.Find("a test name or folder", text =>
                 {
                     _query = text ?? string.Empty;
 
                     RedrawList();
-                }, 220);
+                }, Ui.Wide.Phrase);
 
                 // The menu is hung off the button it is opened from, so it needs the button. A
                 // handler that names the control it is attached to cannot be written in the
@@ -186,7 +195,16 @@ namespace CamelWorks.UI.Views
                 RedrawPanel();
                 RedrawFoot();
 
-                var left = Bench.Pane("Tests", null, Ui.Stack(_log, _list), null);
+                // A first run is one card, not two panes.
+                //
+                // With no tests the screen said so four times: the empty card, a settings pane
+                // holding "A test's settings appear here", a footer saying there was nothing to
+                // run, and a search box over an empty list. It also drew "New test" twice, in
+                // two weights, four inches apart.
+                if (_all.Count == 0)
+                    return Bench.Surface(null, _foot, Ui.Stack(Empty()));
+
+                var left = Bench.Pane("Tests", null, Listing(), null, scrolls: false);
                 var right = Bench.Pane("Settings", null, _panel, null);
 
                 // The list pane holds four columns of names; the settings pane holds fields
@@ -194,6 +212,9 @@ namespace CamelWorks.UI.Views
                 // fields with white space they had no use for.
                 return Bench.Split(Strip(), left, right, _foot, 620);
             }
+
+            /// <summary>The list pane's body: the rows scroll, the verbs under them do not.</summary>
+            private UIElement Listing() => Bench.Listing(_list, _picking, _log);
 
             /// <summary>
             /// The strip over both panes: what makes a test on the left, the search on the right.
@@ -272,8 +293,11 @@ namespace CamelWorks.UI.Views
                     ? _all
                     : _all.Where(one => Matches(one, query)).ToList();
 
-                return kept.OrderBy(one => one.Run.Folder ?? string.Empty,
-                                    StringComparer.OrdinalIgnoreCase)
+                // Filed first, unfiled last, and by name within each. The list is drawn in bands
+                // and a band is a run of adjacent rows, so this order is what makes the folders.
+                return kept.OrderBy(one => string.IsNullOrEmpty(one.Run.Folder) ? 1 : 0)
+                           .ThenBy(one => one.Run.Folder ?? string.Empty,
+                                   StringComparer.OrdinalIgnoreCase)
                            .ThenBy(one => one.Run.Name, StringComparer.OrdinalIgnoreCase)
                            .ToList();
             }
@@ -301,6 +325,7 @@ namespace CamelWorks.UI.Views
                 {
                     _table = null;
                     _list.Content = Empty();
+                    _picking.Content = null;
                     RedrawFoot();
                     return;
                 }
@@ -308,6 +333,7 @@ namespace CamelWorks.UI.Views
                 if (shown.Count == 0)
                 {
                     _table = null;
+                    _picking.Content = null;
 
                     _list.Content = Ui.Empty("Nothing matches \"" + _query.Trim() + "\".",
                         Ui.Count(_all.Count, "test") + " in this project.", "Clear the search",
@@ -329,12 +355,13 @@ namespace CamelWorks.UI.Views
                 {
                     var folder = one.Run.Folder ?? string.Empty;
 
-                    // The folder is printed on every row. Printing it once per group and leaving
-                    // the rows under it blank read as "this test is in no folder", which is a
-                    // state the same column has to be able to show.
-                    rows.Add(new TableRow(one, one.Run.Name, one.Check.Name,
-                                          folder.Length == 0 ? "Not filed" : folder, Found(one))
+                    rows.Add(new TableRow(one, one.Run.Name, one.Check.Name, Found(one))
                     {
+                        // The folder is the band the row sits under, not a cell. It was a column,
+                        // which printed one folder's name once per test in it and left the filing
+                        // to be read back out of the repetition.
+                        Filed = folder.Length == 0 ? Unfiled : folder,
+
                         Tone = one.Is(PickedCheck, PickedRun) ? Tone.Good : Tone.Plain,
 
                         // The check's own symbol, beside its own name. The list mixes kinds and
@@ -343,7 +370,7 @@ namespace CamelWorks.UI.Views
                     });
                 }
 
-                // The name takes what is left and the other three ask for what their longest
+                // The name takes what is left and the other two ask for what their longest
                 // ordinary value needs, so nothing in this table is drawn with an ellipsis at the
                 // pane's own width.
                 //
@@ -354,8 +381,8 @@ namespace CamelWorks.UI.Views
                 // Kind is column 1, and it is the one column whose value is a kind rather than a
                 // measurement, so it is the one that carries the symbol.
                 var table = Ui.Table(rows,
-                                     ("Test", 0), ("Kind", 118), ("Folder", 120),
-                                     ("Last run", 160)).Multi().Symbolled(1);
+                                     ("Test", 0), ("Kind", 118),
+                                     ("Last run", 160)).Multi().Symbolled(1).Filed();
 
                 _filling = true;
 
@@ -394,7 +421,12 @@ namespace CamelWorks.UI.Views
                 table.Menu(verbs.Select(one =>
                     new Ui.OnMenu(one.Caption, chosen => one.Act(chosen, _log))).ToArray());
 
-                _list.Content = Ui.Stack(table, Ui.Picking(table, verbs.ToArray()));
+                // The bar first, then the table taken back out of it. Ui.Picking returns the
+                // table stacked above its own bar, so assigning that stack to the pinned bar
+                // reparents the table into it — which is why the rows drew at the foot of the
+                // pane with the bar, and the list above them was empty.
+                _picking.Content = Ui.Picking(table, verbs.ToArray());
+                _list.Content = Ui.Loose(table);
             }
 
             /// <summary>What the last run of a test found: never run, clean, or a count.</summary>
@@ -421,10 +453,18 @@ namespace CamelWorks.UI.Views
                     return Ui.Empty("No checks are registered in this session.",
                                     "This is a fault in this build rather than anything you did.");
 
-                return Ui.Empty("No tests yet.",
-                                "A test is a named set of settings, saved in this project and run "
-                                + "as often as you like.", "New test",
-                                () => Parts.PopMenu(_make, Kinds()));
+                // The matrix first, because it is what a project is set up with: a test for
+                // every pair of disciplines ticked, made in one press. Making them one at a time
+                // was the only route with a button on it, so every new user took the slow road.
+                return Ui.Empty(
+                    "No tests yet.",
+                    "The matrix is a grid of the project's disciplines: tick the pairs that have "
+                    + "to be checked and it makes a test for each. One at a time is the other "
+                    + "way, and it is the one to use for a single check of a single thing.",
+                    "Build them from the matrix",
+                    () => Ui.Told(Shell.AppWindow.Show("clash", "matrix")),
+                    "Make one test",
+                    () => Parts.PopMenu(_make, Kinds()));
             }
 
             // ---- Making one ----------------------------------------------------------------
@@ -497,9 +537,14 @@ namespace CamelWorks.UI.Views
             /// settings panel afterwards.
             /// </summary>
             /// <param name="check">The clash check.</param>
-            private void NewClash(ClashCheck check) =>
-                ClashTestViews.New(_seat, check, Next(check, "Clash"), id =>
+            private void NewClash(ClashCheck check)
+            {
+                // In the panel, where every other kind of test is set up, rather than in a window
+                // over the tab. Nothing is made until the form's own press.
+                _making = ClashTestViews.Panel(_seat, check, Next(check, "Clash"), id =>
                 {
+                    _making = null;
+
                     Reload();
 
                     PickedCheck = check.Key;
@@ -508,7 +553,17 @@ namespace CamelWorks.UI.Views
                     RedrawList();
                     RedrawPanel();
                     RedrawFoot();
+                }, () =>
+                {
+                    _making = null;
+
+                    RedrawPanel();
+                    RedrawFoot();
                 });
+
+                RedrawPanel();
+                RedrawFoot();
+            }
 
             /// <summary>Save a new fall-hazard test and pick it.</summary>
             /// <param name="check">The fall-hazard check.</param>
@@ -563,6 +618,14 @@ namespace CamelWorks.UI.Views
 
             private void RedrawPanel()
             {
+                // A test being made owns the panel until it is made or abandoned: it is the only
+                // thing on this tab that is not yet in the list beside it.
+                if (_making != null)
+                {
+                    _panel.Content = Ui.Loose(_making);
+                    return;
+                }
+
                 var picked = Picked();
 
                 if (picked == null)
@@ -817,6 +880,13 @@ namespace CamelWorks.UI.Views
                     : _shown.Count.ToString(CultureInfo.InvariantCulture) + " of "
                       + Ui.Count(_all.Count, "test") + " shown"));
 
+                // The settings panel beside this list writes every settled edit straight into the
+                // project file. Nothing said so, on the one tab where a coordinator does most of
+                // their typing.
+                var kept = Ui.Kept(Keeping.AsYouGo);
+
+                if (kept != null && _all.Count > 0) said.Children.Add(kept);
+
                 if (_outcome != null) said.Children.Add(Ui.Line(_outcome, 0.9));
 
                 if (_went != null)
@@ -827,23 +897,17 @@ namespace CamelWorks.UI.Views
                         Ui.Told(Shell.AppWindow.Show("clash", "manage"));
                     }));
 
-                var row = new Grid();
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-                row.Children.Add(said);
-
-                // Primary bottom-right, which is where this product's one action always sits.
+                // Ui.Foot, like every other tab. This built its own row — a two-column grid with
+                // Ui.Blocked, which is itself a footer row, nested in the right-hand column — so
+                // the screen carried one footer anatomy inside another, and Bench could not tell
+                // the grid was meant to spread. Content-sized and pushed right, the left column
+                // got no width and its line was arranged over the one beside it: "0 tests in this
+                // project" under "There is no test to run."
                 var press = blocked == null
-                    ? Ui.Runner(caption, _log, RunNow)
-                    : Ui.Blocked(caption, blocked);
+                    ? (UIElement)Ui.Runner(caption, _log, RunNow)
+                    : Ui.Cannot(caption, blocked);
 
-                press.VerticalAlignment = VerticalAlignment.Center;
-
-                Grid.SetColumn(press, 1);
-                row.Children.Add(press);
-
-                _foot.Content = row;
+                _foot.Content = Ui.Foot(press, null, said);
             }
 
             /// <summary>Run whatever the footer's button covers.</summary>
@@ -978,11 +1042,30 @@ namespace CamelWorks.UI.Views
                              fall, said);
                         break;
 
+                    case ClashCheck clash:
+                        var copy = clash.Copy(one.Run.Id, name, one.Run.Folder, out var refused);
+
+                        if (copy == null)
+                        {
+                            said.Children.Add(Ui.Problem(refused
+                                ?? "The host would not copy that test."));
+                            break;
+                        }
+
+                        PickedCheck = clash.Key;
+                        PickedRun = copy.Value.Id;
+
+                        Reload();
+                        RedrawPanel();
+                        RedrawFoot();
+
+                        said.Children.Add(Ui.Done("Copied. It is between the same two sides at the "
+                            + "same tolerance, and has not been run."));
+                        break;
+
                     default:
                         said.Children.Add(Ui.Note(
-                            one.Check.Name + " tests are not duplicated here. A clash test is a "
-                            + "row of the Clash matrix, and the matrix duplicates a row with its "
-                            + "two sides and its symbol."));
+                            one.Check.Name + " tests are not copied here."));
                         break;
                 }
             }
@@ -1081,15 +1164,33 @@ namespace CamelWorks.UI.Views
                 Parts.Ask(said, "Folder, or empty for none", chosen[0].Run.Folder ?? string.Empty,
                           "Move", folder =>
                 {
-                    var into = string.IsNullOrWhiteSpace(folder) ? null : folder;
+                    var into = string.IsNullOrWhiteSpace(folder) ? null : folder.Trim();
 
-                    foreach (var one in chosen) one.Check.Naming?.Refile(one.Run.Id, into);
+                    // What the host said, not what was asked of it. Every refusal used to be
+                    // dropped on the floor and the bar reported the whole selection moved.
+                    var refused = chosen
+                        .Where(one => one.Check.Naming?.Refile(one.Run.Id, into) != true)
+                        .ToList();
 
                     Reload();
 
-                    said.Children.Add(Ui.Done(Ui.Count(chosen.Count, "test") + " moved."));
-                });
+                    var moved = chosen.Count - refused.Count;
+
+                    if (moved > 0)
+                        said.Children.Add(Ui.Done(Ui.Count(moved, "test") + " moved"
+                            + (into == null ? " out of their folders." : " into " + into + ".")));
+
+                    if (refused.Count > 0)
+                        said.Children.Add(Ui.Problem(Ui.Count(refused.Count, "test")
+                            + " could not be moved: "
+                            + string.Join(", ", refused.Take(3).Select(one => one.Run.Name))
+                            + (refused.Count > 3 ? " and others." : ".")));
+                }, Folders());
             }
+
+            /// <summary>The folders the tests are already filed in, for the move prompt.</summary>
+            private IReadOnlyList<string> Folders() =>
+                Ui.Listed(_all.Select(one => one.Run.Folder));
 
             /// <summary>Delete tests, and the findings that name them.</summary>
             /// <param name="picked">The tests picked.</param>

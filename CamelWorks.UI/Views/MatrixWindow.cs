@@ -598,13 +598,7 @@ namespace CamelWorks.UI.Views
                 _said.CornerRadius = new CornerRadius(8);
 
                 // Floating over the grid rather than above it, so it carries its own edge.
-                _said.Effect = new System.Windows.Media.Effects.DropShadowEffect
-                {
-                    BlurRadius = 14,
-                    ShadowDepth = 2,
-                    Opacity = 0.18,
-                    Direction = 270,
-                };
+                _said.Raised();
                 _said.Child = inside;
                 _said.Visibility = Visibility.Collapsed;
 
@@ -2545,7 +2539,7 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>The find box in the corner, and whether it has been wired yet.</summary>
-            private readonly TextBox _finder = Ui.Text(string.Empty, null, 60);
+            private readonly TextBox _finder = Ui.Text(string.Empty, null, Ui.Wide.Tight);
             private bool _finding;
 
             /// <summary>
@@ -2800,15 +2794,13 @@ namespace CamelWorks.UI.Views
 
                 // The corner is about 190 x 230px and previously held two lines of text. A matrix
                 // of forty rows needs a way to reach a row by name, which is placed here.
+                // The magnifier is inside the box, from the Find style, rather than a glyph
+                // beside it: this was the one search on the product drawn as an icon and a
+                // separate field.
                 var find = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 6) };
 
-                var glass = Ui.Glyph(Glyphs.Find, 12, "Muted", new Thickness(0, 0, 5, 0));
-
-                glass.VerticalAlignment = VerticalAlignment.Center;
-                DockPanel.SetDock(glass, Dock.Left);
-                find.Children.Add(glass);
-
-                _finder.Tag = "Find a row";
+                _finder.Wearing("Find");
+                _finder.Tag = "a row";
                 _finder.VerticalAlignment = VerticalAlignment.Center;
                 _finder.FontSize = 11;
 
@@ -5722,7 +5714,7 @@ namespace CamelWorks.UI.Views
 
                 var items = new List<Parts.Entry>
                 {
-                    Parts.Entry.Heading(Ui.Count(many.Count, what) + " picked"),
+                    Parts.Entry.Heading(Ui.Count(many.Count, what) + " selected"),
                 };
 
                 // Through the same gutter act, so filling eight rows from the menu and filling
@@ -7208,7 +7200,7 @@ namespace CamelWorks.UI.Views
                 if (_chosen.Count > 1)
                 {
                     Say(Ui.Small(Ui.Count(_chosen.Count, _chosenRows ? "row" : "column")
-                                 + " picked"));
+                                 + " selected"));
 
                     Say(Ui.Quiet("Pick one", () => Pick(_picked, _chosenRows)), 8);
                 }
@@ -9319,6 +9311,100 @@ namespace CamelWorks.UI.Views
             /// is saved with the matrix like any other edit - because a colour is judged by
             /// looking at the grid, not by reading the name of it in a dialogue.
             /// </summary>
+            /// <summary>
+            /// The pattern every test this board builds is named with, on its own screen.
+            ///
+            /// The pattern, the tokens that can go in it and the name it makes, together. A token
+            /// is inserted where the caret is rather than appended, and the example under the box
+            /// is the first cell this board would actually build, so a pattern can be judged
+            /// before two hundred tests are named with it.
+            /// </summary>
+            private void Patterning()
+            {
+                Ui.Configure("How a test is named", null, new Ui.Page("How a test is named", () =>
+                {
+                    var held = Ui.Stack();
+                    var says = Ui.Stack();
+
+                    var box = Ui.Text(_pattern, MatrixNaming.Default, null, Ui.Wide.Path);
+
+                    box.TextWrapping = TextWrapping.Wrap;
+                    box.AcceptsReturn = false;
+                    box.MinHeight = 46;
+
+                    void Shown()
+                    {
+                        says.Children.Clear();
+
+                        var made = Example();
+
+                        says.Children.Add(Ui.Small(made == null
+                            ? "Nothing on the grid yet, so there is no name to show."
+                            : "The first test this board builds: " + made));
+                    }
+
+                    box.TextChanged += (s, e) => Ui.Safely(() =>
+                    {
+                        _pattern = box.Text.Trim().Length == 0 ? MatrixNaming.Default : box.Text;
+
+                        Touched();
+                        Recount();
+                        Shown();
+                    });
+
+                    var chips = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
+
+                    foreach (var token in MatrixNaming.Offered(_board.Scheme))
+                    {
+                        var one = token;
+
+                        var chip = Ui.Quiet(one.Token, () =>
+                        {
+                            // At the caret, so a token can be put between two words rather than
+                            // only on the end.
+                            var at = Math.Max(0, Math.Min(box.CaretIndex, box.Text.Length));
+
+                            box.Text = box.Text.Insert(at, one.Token);
+                            box.CaretIndex = at + one.Token.Length;
+                            box.Focus();
+                        });
+
+                        chip.ToolTip = one.Title + " \u2014 " + one.Why;
+                        chip.Margin = new Thickness(0, 0, 6, 6);
+
+                        chips.Children.Add(chip);
+                    }
+
+                    var reset = Ui.Quiet("Back to the default", () =>
+                    {
+                        box.Text = MatrixNaming.Default;
+                        box.CaretIndex = box.Text.Length;
+                    });
+
+                    reset.HorizontalAlignment = HorizontalAlignment.Left;
+                    reset.Margin = new Thickness(0, 8, 0, 0);
+
+                    held.Children.Add(Ui.Field("Pattern", box,
+                        "Every test this board builds is named with it."));
+                    held.Children.Add(Ui.Small("Press a token to put it where the caret is."));
+                    held.Children.Add(chips);
+                    held.Children.Add(says);
+                    held.Children.Add(reset);
+
+                    Shown();
+
+                    return held;
+                }));
+            }
+
+            /// <summary>The name the first cell on the grid would be built with, or null.</summary>
+            private string? Example()
+            {
+                var plan = MatrixPlanner.Plan(_board, _legend, _pattern);
+
+                return plan.Tests.Count == 0 ? null : plan.Tests[0].Name;
+            }
+
             private void Looks() =>
                 MatrixLook.Ask(_style,
                     () =>
@@ -9760,44 +9846,14 @@ namespace CamelWorks.UI.Views
                     + "and which of a line's fields are shown", Looks),
 
                 Parts.Entry.Rule(),
-                Parts.Entry.Heading("How a test is named: " + _pattern),
+                Parts.Entry.Heading("Naming"),
 
-                Parts.Entry.Act("Edit the pattern", Glyphs.Pencil,
-                    () => Parts.Ask(_grid,
-                        "How every test is named. " + string.Join(", ",
-                            MatrixNaming.Tokens.Select(t => t.Token)) + " are filled in.",
-                        _pattern, "Use it", typed =>
-                        {
-                            _pattern = string.IsNullOrWhiteSpace(typed)
-                                ? MatrixNaming.Default : typed.Trim();
-
-                            Touched();
-                            Recount();
-                        })),
-
-                Parts.Entry.Act("Insert a token", Glyphs.Add,
-                    () => Parts.Choose(_grid, "Add to the pattern",
-                        MatrixNaming.Tokens.Select(t => t.Title + "  " + t.Token).ToList(),
-                        null, null, null, picked =>
-                        {
-                            var token = MatrixNaming.Tokens.FirstOrDefault(
-                                t => picked.EndsWith(t.Token, StringComparison.Ordinal));
-
-                            if (token == null) return;
-
-                            _pattern = (_pattern + " " + token.Token).Trim();
-
-                            Touched();
-                            Recount();
-                        })),
-
-                Parts.Entry.Act("Reset", Glyphs.Close, () =>
-                {
-                    _pattern = MatrixNaming.Default;
-
-                    Touched();
-                    Recount();
-                }),
+                // One entry that opens the pattern's own screen. Writing a pattern was three
+                // items on this menu — a prompt for the text, a list to append one token, and a
+                // reset — so the pattern, the tokens that go in it and what it produces were
+                // never on screen together, and each token cost a round trip through the menu.
+                Parts.Entry.Saying("How a test is named: " + _pattern, Glyphs.Pencil,
+                    "The pattern, the tokens it can hold, and the name it makes", Patterning),
 
                 // One storey for the whole board, which is what {level} fills from. A level cuts
                 // across every discipline on the grid, so it is not a row's field: the same grid
@@ -10031,8 +10087,11 @@ namespace CamelWorks.UI.Views
 
             /// <summary>The mark that goes with a view.</summary>
             /// <param name="which">The view.</param>
+            // Not Glyphs.Warn for priority. That is the severity mark the alert strips above this
+            // toolbar carry, so the control naming the current view was drawn as a warning about
+            // it. Sort reads as a ranking, which is what the view is.
             private static string ViewGlyph(Showing which) =>
-                which == Showing.Priority ? Glyphs.Warn
+                which == Showing.Priority ? Glyphs.Sort
                 : which == Showing.Results ? Glyphs.Report
                 : Glyphs.Palette;
 

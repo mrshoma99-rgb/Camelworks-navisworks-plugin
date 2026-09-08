@@ -53,6 +53,18 @@ namespace CamelWorks.Core.Project
         /// <param name="title">What the issue is called.</param>
         bool Raise(IReadOnlyList<Finding> findings, string title);
 
+        /// <summary>
+        /// Write a marker sphere per result to an OBJ file.
+        ///
+        /// The one action that changes nothing about the results. It is here because it is what a
+        /// coordinator does with a set of results once they have found them — hand the points to
+        /// somebody without this product — and doing it by hand meant filtering the board to the
+        /// same set again on the export screen.
+        /// </summary>
+        /// <param name="findings">Which results.</param>
+        /// <param name="path">Where the file goes.</param>
+        bool Mark(IReadOnlyList<Finding> findings, string path);
+
         /// <summary>Why the last write returned false.</summary>
         string? LastProblem { get; }
     }
@@ -275,6 +287,11 @@ namespace CamelWorks.Core.Project
 
                     break;
 
+                case ClashActionKind.Markers:
+                    if (!writer.Mark(changing, value)) return Refused(card, matched, writer);
+
+                    break;
+
                 case ClashActionKind.Remove:
                     if (!writer.Remove(changing)) return Refused(card, matched, writer);
 
@@ -336,6 +353,12 @@ namespace CamelWorks.Core.Project
                 case ClashActionKind.Issue:
                     return !string.Equals(world.IssueOf(finding), value, StringComparison.Ordinal);
 
+                case ClashActionKind.Markers:
+                    // Every result the rule found, every run. Writing a file is not a change to a
+                    // result, so there is nothing on one to say it has already been written, and
+                    // a file written from half the matches would be the wrong file.
+                    return true;
+
                 default:
                     return false;
             }
@@ -361,6 +384,7 @@ namespace CamelWorks.Core.Project
                 ClashActionKind.Label => "label",
                 ClashActionKind.Priority => "priority",
                 ClashActionKind.Issue => "issue to attach them to",
+                ClashActionKind.Markers => "file to write them to",
                 _ => "value",
             };
     }

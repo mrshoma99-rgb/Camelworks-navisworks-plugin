@@ -73,13 +73,18 @@ namespace CamelWorks.UI.Views
         internal static ExchangeRequest? Preferred { get; set; }
 
         /// <summary>
-        /// Which check this tab exchanges. The Manage tab owns the choice.
+        /// Which check this tab exchanges.
         ///
-        /// Not a second picker. Two pickers that can disagree is a coordinator exporting one
-        /// check's findings while reading another check's board, so this tab says which check is
-        /// selected and links back to Manage to change it.
+        /// The Clash Manager's one selection, not a copy of it. This was a field of its own that
+        /// the Manage tab wrote on every draw, on the reasoning that two pickers can disagree.
+        /// Two pickers over one value cannot: the field was the disagreement, and it made
+        /// exporting another check's results a trip to Manage and back.
         /// </summary>
-        internal static string CheckKey { get; set; } = FindingSource.Clash;
+        internal static string CheckKey
+        {
+            get => ClashManageViews.Showing;
+            set => ClashManageViews.Showing = value;
+        }
 
         /// <summary>The surface, for a desk to bench.</summary>
         /// <param name="session">The open document.</param>
@@ -112,13 +117,19 @@ namespace CamelWorks.UI.Views
         /// harness, which cannot press a file dialog: without it the import mode can only ever be
         /// drawn with nothing chosen.
         /// </param>
+        /// <param name="seat">
+        /// Which checks this seat offers, for the Kind picker. Defaults to the session, which is
+        /// one; the harness has a seat but not a document, and without this the picker could only
+        /// ever be drawn with the one kind on it.
+        /// </param>
         public static UIElement Drawn(ProjectStore store, string? projectName = null,
                                       IReadOnlyList<ClashGroup>? board = null,
                                       bool importing = false, FindingStore? findings = null,
                                       Session? session = null,
-                                      IReadOnlyList<string>? returned = null) =>
+                                      IReadOnlyList<string>? returned = null,
+                                      ISeat? seat = null) =>
             new Desk(store, projectName ?? "Untitled project", board, importing, findings,
-                     session, returned).View;
+                     session, returned, seat).View;
 
         /// <summary>The two modes of the tab: writing packs out.</summary>
         private const string SendOut = "Export";
@@ -158,9 +169,9 @@ namespace CamelWorks.UI.Views
             /// <summary>Clashes left out by hand, on top of what the filter already removed.</summary>
             private readonly HashSet<Core.Identity.ClashKey> _dropped =
                 new HashSet<Core.Identity.ClashKey>();
-            private readonly TextBox _find = Ui.Text(string.Empty, "a test or a folder", null, 200);
+            private readonly TextBox _find = Ui.Find("a test or a folder", null, Ui.Wide.Name);
 
-            private readonly TextBox _named = Ui.Text("Everything", null, 180);
+            private readonly TextBox _named = Ui.Text("Everything", null, Ui.Wide.Name);
 
             private string _search = string.Empty;
             private System.Windows.Threading.DispatcherTimer? _typing;
@@ -205,13 +216,16 @@ namespace CamelWorks.UI.Views
             /// <summary>The open document, or null when the desk was drawn from the project file.</summary>
             private readonly Session? _session;
 
+            /// <summary>Which checks this seat offers, for the Kind picker. A Session is one.</summary>
+            private readonly ISeat? _seat;
+
             /// <summary>Whether each topic carries a rendered picture. Needs a document.</summary>
             private bool _pictures;
 
             internal Desk(ProjectStore store, string projectName,
                           IReadOnlyList<ClashGroup>? board = null, bool importing = false,
                           FindingStore? findings = null, Session? session = null,
-                          IReadOnlyList<string>? returned = null)
+                          IReadOnlyList<string>? returned = null, ISeat? seat = null)
             {
                 _store = store;
                 _projectName = projectName;
@@ -219,6 +233,7 @@ namespace CamelWorks.UI.Views
                 _importing = importing;
                 _findings = findings;
                 _session = session;
+                _seat = seat ?? session;
 
                 Load();
 
@@ -452,41 +467,90 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Which kind of test is being exchanged, and where it is chosen.
+            /// Which kind of test is being exchanged.
             ///
-            /// Read-only here on purpose: see <see cref="CheckKey"/>. Drawn as the value it is
-            /// rather than as a button, with the way to change it beside it.
+            /// A picker, like every other field on this strip. It was a read-only value with a
+            /// link to the Manage tab, on the reasoning that two pickers over one choice can
+            /// disagree — but both write the one selection, so they cannot, and the link made
+            /// exporting a clearance run a trip to Manage and back for a value this strip was
+            /// already showing.
+            ///
+            /// The tab is rebuilt rather than patched, as on Manage: the tests, the results, the
+            /// filter and the profile all belong to the check that was showing.
             /// </summary>
             private UIElement Kind()
             {
-                var row = new StackPanel
+                var offered = Kinds();
+
+                // Nothing to choose between. With no seat there is no register to list, so the
+                // value is drawn as the value it is rather than as a picker over one entry.
+                if (offered.Count < 2)
                 {
-                    Orientation = Orientation.Horizontal,
-                    VerticalAlignment = VerticalAlignment.Center,
-                };
+                    var row = new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        VerticalAlignment = VerticalAlignment.Center,
 
-                var named = new TextBlock
+                        // The width the picker would have taken. Without it the group sized this
+                        // column to the word, and "Clash" was clipped by the box beside it.
+                        MinWidth = Ui.Wide.Word,
+                        MinHeight = 31,
+                        ToolTip = "This seat offers one kind of check, so there is nothing to "
+                                + "choose between.",
+                    };
+
+                    // The symbol first, then the word. The same mark this kind carries in the
+                    // Create list and the check picker.
+                    row.Children.Add(Ui.Glyph(Symbolled(CheckKey), 15, "Muted",
+                                              new Thickness(0, 0, 7, 0)));
+
+                    row.Children.Add(new TextBlock
+                    {
+                        Text = Named(CheckKey),
+                        VerticalAlignment = VerticalAlignment.Center,
+                    }.Wearing("Body"));
+
+                    return row;
+                }
+
+                var words = offered.Select(Named).ToList();
+
+                return Ui.Choice(words, Named(CheckKey), picked =>
                 {
-                    Text = Named(CheckKey),
-                    VerticalAlignment = VerticalAlignment.Center,
-                }.Wearing("Body");
+                    var key = offered.FirstOrDefault(
+                        one => string.Equals(Named(one), picked, StringComparison.Ordinal));
 
-                var link = Ui.Link("Change on Manage",
-                                   () => Ui.Told(Shell.AppWindow.Show("clash", "manage")));
+                    if (key == null || string.Equals(key, CheckKey, StringComparison.OrdinalIgnoreCase))
+                        return;
 
-                link.ToolTip = "The Manage tab holds the selected kind. This tab exchanges "
-                             + "whatever it has selected, so the two cannot disagree.";
-                link.VerticalAlignment = VerticalAlignment.Center;
-                link.Margin = new Thickness(10, 0, 0, 0);
+                    CheckKey = key;
 
-                // The symbol first, then the word. The same mark this kind carries in the Create
-                // list and the check picker, so the three screens name the kind the same way.
-                row.Children.Add(Ui.Glyph(Symbolled(CheckKey), 15, "Muted",
-                                          new Thickness(0, 0, 7, 0)));
-                row.Children.Add(named);
-                row.Children.Add(link);
+                    Ui.Told(Shell.AppWindow.Show("clash", "exchange"));
+                }, Ui.Wide.Word);
+            }
 
-                return row;
+            /// <summary>
+            /// Every kind this seat can exchange: clash first, then whatever else is registered.
+            ///
+            /// The same list and the same order the Manage tab's own picker offers, so the two
+            /// name the kinds identically.
+            /// </summary>
+            private IReadOnlyList<string> Kinds()
+            {
+                var found = new List<string> { FindingSource.Clash };
+
+                if (_seat == null) return found;
+
+                foreach (var one in _seat.Checks.All)
+                    if (!string.Equals(one.Key, FindingSource.Clash, StringComparison.OrdinalIgnoreCase)
+                        && !found.Contains(one.Key, StringComparer.OrdinalIgnoreCase))
+                        found.Add(one.Key);
+
+                // A key the board carries that this seat cannot offer still has to be shown, or
+                // the picker would silently read as a kind other than the one being exported.
+                if (!found.Contains(CheckKey, StringComparer.OrdinalIgnoreCase)) found.Add(CheckKey);
+
+                return found;
             }
 
             /// <summary>
@@ -565,7 +629,7 @@ namespace CamelWorks.UI.Views
 
                 if (names.Count == 0) names.Add(_profile.Name);
 
-                return Ui.Choice(names, _profile.Name, Pick, 180);
+                return Ui.Choice(names, _profile.Name, Pick, Ui.Wide.Name);
             }
 
             /// <summary>Redraw the tests table once the typing in the find box has stopped.</summary>
@@ -698,15 +762,7 @@ namespace CamelWorks.UI.Views
                     new Ui.OnPicked("Exclude {n} tests", (picked, said) =>
                         Included(picked, said, on: false)));
 
-                // The verb bar takes its line at the bottom of the pane and the table fills what
-                // is left, so a table longer than the pane scrolls instead of being cut off at
-                // the bottom edge. Ui.Picking returns the table stacked above its own bar, and a
-                // stack gives the table the height it asks for, which is the whole of it - so the
-                // table is taken back out of that stack and docked as the filling child.
-                DockPanel.SetDock(verbs, Dock.Bottom);
-
-                _tests.Children.Add(verbs);
-                _tests.Children.Add(Ui.Loose(table));
+                Bench.Listed(_tests, table, verbs);
 
                 DrawTestsSaid();
             }
@@ -793,6 +849,9 @@ namespace CamelWorks.UI.Views
 
                 var filters = Filters();
 
+                // Docked top here, and again by Bench.Listed once there is a table: the empty
+                // states below add themselves to this same panel, so the filter bar has to be on
+                // it before them and cannot wait for the listing.
                 DockPanel.SetDock(filters, Dock.Top);
                 _results.Children.Add(filters);
 
@@ -811,15 +870,15 @@ namespace CamelWorks.UI.Views
                 var rows = scope.Take(2000).Select(one => new TableRow(one,
                     one.Name ?? one.Key.ToString(),
                     one.TestName,
-                    one.Status.ToString(),
+                    FindingStatusWords.Of(one.Status),
                     one.AssignedTo ?? string.Empty,
                     one.Level ?? string.Empty)).ToList();
 
                 // Every column fixed. With the first one flexible it took the whole leftover
                 // width and pushed the last column past the right edge of the pane.
                 var table = Ui.Table(rows,
-                    ("Clash", 150), ("Test", 130), ("Status", 80),
-                    ("Assigned to", 100), ("Level", 56)).Multi();
+                    ("Clash", 150), ("Test", 130), ("Status", 92),
+                    ("Assigned to", 100), ("Level", 56)).Multi().Stated(2);
 
                 Ui.SetFills(_results, true);
 
@@ -842,25 +901,12 @@ namespace CamelWorks.UI.Views
                         Redraw();
                     }));
 
-                DockPanel.SetDock(verbs, Dock.Bottom);
+                var dropped = _dropped.Count == 0 ? null : Ui.Across(
+                    Ui.Small(Ui.Count(_dropped.Count, "clash") + " left out by hand."),
+                    Ui.Link("Put them back",
+                            () => Ui.Safely(() => { _dropped.Clear(); Rebuild(); })));
 
-                if (_dropped.Count > 0)
-                {
-                    var dropped = Ui.Across(
-                        Ui.Small(Ui.Count(_dropped.Count, "clash") + " left out by hand."),
-                        Ui.Link("Put them back",
-                                () => Ui.Safely(() => { _dropped.Clear(); Rebuild(); })));
-
-                    // Docked first, so it lands under the verb bar rather than over it.
-                    DockPanel.SetDock(dropped, Dock.Bottom);
-                    _results.Children.Add(dropped);
-                }
-
-                _results.Children.Add(verbs);
-
-                // Last, and taken back out of the stack Ui.Picking put it in, so the table fills
-                // what the docked rows left and scrolls in it.
-                _results.Children.Add(Ui.Loose(table));
+                Bench.Listed(_results, table, verbs, dropped, filters);
 
                 var rounds = Rounds(scope);
 
@@ -1626,7 +1672,7 @@ namespace CamelWorks.UI.Views
                                    Bench.Pane("Returned clashes", Ui.Loose(_rowsSaid),
                                               Ui.Loose(_rows), null, scrolls: false),
                                    Ui.Stack(foot, applying.Progress, _back, _applied),
-                                   leftWidth: 400);
+                                   leftWidth: 520);
             }
 
             /// <summary>Draw the import mode again, for the states it has different shapes in.</summary>
@@ -1657,7 +1703,7 @@ namespace CamelWorks.UI.Views
                 {
                     _showing = said;
                     DrawReading();
-                }, 170);
+                }, Ui.Wide.Name);
 
                 box.ToolTip = "A pack of four hundred clashes usually holds a dozen answers. "
                               + "This is how to see only those.";
@@ -1746,8 +1792,12 @@ namespace CamelWorks.UI.Views
                     };
                 }).ToList();
 
+                // The file name takes what is left and the three others ask for what their own
+                // values need. The counts used to ask for the width of their headings, which on a
+                // pane this wide left the file name — the one column somebody reads to tell two
+                // packs apart — showing three characters and an ellipsis.
                 var table = Ui.Table(rows,
-                    ("Party", 130), ("File", 0), ("In the pack", 84), ("On this board", 92))
+                    ("Party", 110), ("File", 0), ("In pack", 62), ("On board", 70))
                     .Multi();
 
                 Ui.SetFills(_files, true);
@@ -1805,10 +1855,7 @@ namespace CamelWorks.UI.Views
                         else Receive(null);
                     }));
 
-                DockPanel.SetDock(verbs, Dock.Bottom);
-
-                _files.Children.Add(verbs);
-                _files.Children.Add(Ui.Loose(table));
+                Bench.Listed(_files, table, verbs);
 
                 _packsSaid.Children.Add(Ui.Small(
                     _reading == null
@@ -1971,12 +2018,12 @@ namespace CamelWorks.UI.Views
                 var rows = showing.Take(2000).Select(one => new TableRow(one,
                     one.Item.Name ?? one.Item.Key.ToString(),
                     one.Item.TestName,
-                    one.Current.ToString(),
+                    FindingStatusWords.Of(one.Current),
                     one.IsDisputed && one.Chosen == null
                         ? (one.IsThreeWay
                             ? Ui.Count(one.Parties, "way") + " conflict"
                             : "Conflict")
-                        : one.Would.ToString(),
+                        : FindingStatusWords.Of(one.Would),
                     string.Join(", ", one.Answers.Select(say => say.Party))
                     + (string.IsNullOrWhiteSpace(one.Note) ? string.Empty : " · noted"),
                     one.Take ? "Yes" : "No")
@@ -1985,9 +2032,13 @@ namespace CamelWorks.UI.Views
                          : one.Changes ? Tone.Good : Tone.Plain,
                 }).ToList();
 
+                // Both status columns drawn as the board draws them. The conflict rows fall
+                // through to their words, which is the point: a row the trades disagree about is
+                // not one of the five statuses and must not be dressed as one.
                 var table = Ui.Table(rows,
                     ("Clash", 140), ("Test", 130), ("On the board", 96),
-                    ("Returned", 90), ("Parties", 130), ("Apply", 60)).Multi();
+                    ("Returned", 104), ("Parties", 120), ("Apply", 60))
+                    .Multi().Stated(2).Stated(3);
 
                 Ui.SetFills(_rows, true);
 
@@ -2076,13 +2127,7 @@ namespace CamelWorks.UI.Views
 
                 DrawStatusMapping(under);
 
-                // Docked first, so what the answers become lands under the verb bar.
-                DockPanel.SetDock(under, Dock.Bottom);
-                DockPanel.SetDock(verbs, Dock.Bottom);
-
-                _rows.Children.Add(under);
-                _rows.Children.Add(verbs);
-                _rows.Children.Add(Ui.Loose(table));
+                Bench.Listed(_rows, table, verbs, under);
 
                 _rowsSaid.Children.Add(Ui.Small(
                     showing.Count.ToString("N0", CultureInfo.InvariantCulture) + " shown · "
@@ -2342,7 +2387,7 @@ namespace CamelWorks.UI.Views
 
                 var reach = Ui.Text(
                     _profile.SectionMetres.ToString("0.##", CultureInfo.InvariantCulture),
-                    null, 70);
+                    null, Ui.Wide.Number);
 
                 reach.TextChanged += (s, e) => Ui.Safely(() =>
                 {
@@ -2379,7 +2424,7 @@ namespace CamelWorks.UI.Views
                 _named.Text = _profile.Name;
 
                 return Ui.Stack(
-                    Ui.Field("Saved", Ui.Choice(names, _profile.Name, Pick, 220)),
+                    Ui.Field("Saved", Ui.Choice(names, _profile.Name, Pick, Ui.Wide.Phrase)),
                     Ui.Field("Called", _named),
                     Ui.Across(
                         Ui.Quiet("Keep", () => Keep(quiet: false)),

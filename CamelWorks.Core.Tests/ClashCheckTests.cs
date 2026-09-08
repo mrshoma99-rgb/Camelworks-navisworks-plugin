@@ -221,6 +221,157 @@ namespace CamelWorks.Core.Tests
             Assert.Contains(read.Notes, note => note.Contains("t9", StringComparison.Ordinal));
         }
 
+        // ---------------------------------------------------------------------------------
+        // Copying a test
+        // ---------------------------------------------------------------------------------
+
+        [Fact]
+        public void A_test_is_copied_between_the_same_two_sides_at_the_same_tolerance()
+        {
+            var seat = Seat().Between("MEP", "Structure", 0.05, MatrixTest.Clearance);
+            var check = new ClashCheck(seat);
+
+            var made = check.Copy("t2", "L04 MEP v STR copy", "Weekly", out var problem);
+
+            Assert.Null(problem);
+            Assert.NotNull(made);
+            Assert.Equal("L04 MEP v STR copy", made!.Value.Name);
+            Assert.Equal("Weekly", made.Value.Folder);
+
+            // No results: it is a test to run, not last week's answers under a new name.
+            Assert.Equal(0, made.Value.ResultCount);
+
+            var shape = check.Sides(made.Value.Id);
+
+            Assert.Equal("MEP", shape!.SetA);
+            Assert.Equal("Structure", shape.SetB);
+            Assert.Equal(0.05, shape.ToleranceMetres);
+            Assert.Equal(MatrixTest.Clearance, MatrixDiff.Kinded(shape.Kind));
+        }
+
+        [Fact]
+        public void A_side_can_be_built_from_several_saved_sets()
+        {
+            var seat = Seat();
+            var check = new ClashCheck(seat);
+
+            var side = ClashSide.Sets(new[]
+            {
+                new ClashSetName("Mechanical", "Level 03"),
+                new ClashSetName("Electrical", "Level 03"),
+            });
+
+            Assert.Equal(2, side.Named.Count);
+
+            // Name and Path answer for the first, which is what the callers that only ever put
+            // one set on a side read.
+            Assert.Equal("Mechanical", side.Name);
+            Assert.Equal("Level 03", side.Path);
+
+            var made = check.Make(
+                new ClashTestSpec("L03 MEP v ELE", side, ClashSide.Set("Structure"), 0.025),
+                out var problem);
+
+            Assert.Null(problem);
+            Assert.NotNull(made);
+
+            // The host names the side back as what it is between, not as one of the two.
+            Assert.Equal("Mechanical + Electrical", check.Sides(made!.Value.Id)!.SetA);
+        }
+
+        [Fact]
+        public void A_test_between_sides_the_document_will_not_describe_is_not_copied()
+        {
+            var check = new ClashCheck(Seat());
+
+            Assert.Null(check.Copy("t1", "A copy", null, out var problem));
+            Assert.Contains("cannot be copied", problem, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Copying_a_test_the_host_no_longer_has_says_so()
+        {
+            var check = new ClashCheck(Seat());
+
+            Assert.Null(check.Copy("t9", "A copy", null, out var problem));
+            Assert.NotNull(problem);
+        }
+
+        [Fact]
+        public void Listing_the_tests_again_does_not_ask_the_host_what_each_one_is_between()
+        {
+            var seat = Seat();
+            var check = new ClashCheck(seat);
+
+            Assert.Equal(2, check.Runs().Count);
+            Assert.Equal(2, Sided(seat));
+
+            // The Create tab lists the tests again after every settings edit. The shape only
+            // changes through this class, so the second listing costs the test list alone.
+            check.Runs();
+            check.Runs();
+
+            Assert.Equal(2, Sided(seat));
+        }
+
+        [Fact]
+        public void Retuning_a_test_makes_the_next_listing_ask_the_host_about_it_again()
+        {
+            var seat = Seat();
+            var check = new ClashCheck(seat);
+
+            check.Runs();
+            check.Retune("t1", 0.05, MatrixTest.Clearance, out var problem);
+
+            Assert.Null(problem);
+
+            check.Runs();
+
+            // t1 alone: the other test's shape is untouched by the retune.
+            Assert.Equal(3, Sided(seat));
+            Assert.Equal(2, seat.Log.Count(said => string.Equals(said, "Sides t1",
+                                                                 StringComparison.Ordinal)));
+        }
+
+        /// <summary>How many times the engine was asked what a test is between.</summary>
+        /// <param name="seat">The engine.</param>
+        private static int Sided(FakeClashSource seat) =>
+            seat.Log.Count(said => said.StartsWith("Sides", StringComparison.Ordinal));
+
+        [Fact]
+        public void Results_the_tests_report_but_do_not_hand_over_are_counted_in_a_note()
+        {
+            var seat = Seat().Unkeyed(4);
+
+            var read = new ClashCheck(seat).Read(null, null);
+
+            var note = Assert.Single(read.Notes);
+
+            Assert.StartsWith("4 results the tests report are not on the board", note,
+                              StringComparison.Ordinal);
+            Assert.Contains("L04 MEP v STR", note, StringComparison.Ordinal);
+            Assert.Equal(3, read.Findings.Count);
+        }
+
+        [Fact]
+        public void Reading_one_test_counts_what_that_test_did_not_hand_over()
+        {
+            var seat = Seat().Unkeyed(1);
+
+            var read = new ClashCheck(seat).Read(new[] { "t2" }, null);
+
+            var note = Assert.Single(read.Notes);
+
+            Assert.StartsWith("1 result the tests report is not on the board", note,
+                              StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_read_that_loses_nothing_says_nothing()
+        {
+            Assert.Empty(new ClashCheck(Seat()).Read(null, null).Notes);
+        }
+
         [Fact]
         public void A_seat_with_no_clash_engine_reads_nothing_and_says_why()
         {
@@ -540,6 +691,7 @@ namespace CamelWorks.Core.Tests
             // element keys itself would return the same number and index the federation to get it.
             Assert.Equal(new[] { "SelectResults t1" },
                          seat.Log.Where(said => !said.StartsWith("Tests", StringComparison.Ordinal)
+                                                && !said.StartsWith("Sides", StringComparison.Ordinal)
                                                 && !said.StartsWith("Results", StringComparison.Ordinal)));
             Assert.Equal(seat.Results("t1").Select(one => one.Id), seat.Selected);
             Assert.Equal(4, selected);

@@ -53,6 +53,19 @@ namespace CamelWorks.UI.Views
         /// <summary>Which check the board is drawing. The picker above the rail sets it.</summary>
         private static string _checkKey = FindingSource.Clash;
 
+        /// <summary>
+        /// Which check the Clash Manager is working on, across every tab.
+        ///
+        /// One value, not a board setting that other tabs mirror. Exchange used to hold a copy
+        /// that this tab overwrote on every draw, so the only way to export another check's
+        /// results was to come here, change the board, and go back.
+        /// </summary>
+        internal static string Showing
+        {
+            get => _checkKey;
+            set => _checkKey = string.IsNullOrWhiteSpace(value) ? FindingSource.Clash : value;
+        }
+
         // The property columns survive tab switches with the read: they are how somebody set the
         // board up, and rebuilding them after every glance at another tab is work nobody should
         // have to repeat. Keyed on the check, because a column reading a duct's system name means
@@ -113,7 +126,9 @@ namespace CamelWorks.UI.Views
         /// <param name="seat">The seat this is running in.</param>
         /// <param name="clash">The clash engine to read.</param>
         /// <param name="panel">Whether the rail's filter panel is open.</param>
-        public static UIElement Drawn(ISeat seat, IClashSource clash, bool panel = false)
+        /// <param name="railShut">True to open with the test list folded away.</param>
+        public static UIElement Drawn(ISeat seat, IClashSource clash, bool panel = false,
+                                      bool railShut = false)
         {
             if (seat == null) throw new ArgumentNullException(nameof(seat));
             if (clash == null) throw new ArgumentNullException(nameof(clash));
@@ -125,7 +140,62 @@ namespace CamelWorks.UI.Views
 
             _engine = new ClashCheck(clash, seat.MetresPerUnit, null);
 
-            return new Screen(seat).Drawn(panel);
+            var screen = new Screen(seat);
+
+            screen.State.RailShut = railShut;
+
+            return screen.Drawn(panel);
+        }
+
+        /// <summary>One of the board's menus: what it is called, and what is in it.</summary>
+        public sealed class BoardMenu
+        {
+            /// <summary>Name one.</summary>
+            /// <param name="name">How the menu reads.</param>
+            /// <param name="items">What is in it.</param>
+            public BoardMenu(string name, IReadOnlyList<Parts.Entry> items)
+            {
+                Name = name ?? string.Empty;
+                Items = items ?? Array.Empty<Parts.Entry>();
+            }
+
+            /// <summary>How the menu reads.</summary>
+            public string Name { get; }
+
+            /// <summary>What is in it.</summary>
+            public IReadOnlyList<Parts.Entry> Items { get; }
+        }
+
+        /// <summary>
+        /// The board's own menus, as their lists rather than in a popup.
+        ///
+        /// A menu lives in a popup, a popup needs a screen to open on, and the design harness has
+        /// neither - so the sort, filter and row menus, which a coordinator opens dozens of times
+        /// a day, had never been drawn or reviewed. This is the door CheckPicker.Entries already
+        /// opened for the check picker, one level up: the screen is built exactly as the tab
+        /// builds it and asked for the lists it would have put in those popups.
+        ///
+        /// Nothing here is harness-only. Each list is the one the product opens; if this returned
+        /// something the product does not, the pictures would be of a screen nobody ships.
+        /// </summary>
+        /// <param name="seat">The seat.</param>
+        /// <param name="clash">The clash engine.</param>
+        public static IReadOnlyList<BoardMenu> Menus(ISeat seat, IClashSource clash)
+        {
+            if (seat == null) throw new ArgumentNullException(nameof(seat));
+            if (clash == null) throw new ArgumentNullException(nameof(clash));
+
+            Forget();
+
+            _engine = new ClashCheck(clash, seat.MetresPerUnit, null);
+
+            var screen = new Screen(seat);
+
+            // Built, because the menus read what the board is showing. A screen that has not been
+            // drawn has no entry to sort, filter or act on.
+            _ = screen.Drawn(false);
+
+            return screen.Menus();
         }
 
         static ClashManageViews() => Host.WhenDocumentChanges(Forget);
@@ -750,6 +820,16 @@ namespace CamelWorks.UI.Views
 
                 internal bool OpenOnly { get; set; }
 
+                /// <summary>
+                /// Whether the test list is out of the way.
+                ///
+                /// The rail takes 372 of an 1180-pixel window to show a handful of test names,
+                /// and the board it sits beside then has to fit seven columns and four row verbs
+                /// into what is left. Choosing a test is a moment; reading its results is the
+                /// afternoon, so the pane that serves the moment folds away.
+                /// </summary>
+                internal bool RailShut { get; set; }
+
                 /// <summary>Folders whose runs are hidden. Keyed the way the rail groups them.</summary>
                 internal HashSet<string> ShutFolders { get; } =
                     new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -803,7 +883,7 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>How the check being drawn was left, made on the first visit to it.</summary>
-            private BoardState State =>
+            internal BoardState State =>
                 _states.TryGetValue(_checkKey, out var held)
                     ? held
                     : _states[_checkKey] = new BoardState();
@@ -1161,8 +1241,8 @@ namespace CamelWorks.UI.Views
                 // supplied — see Drawn — and the source has to follow what is actually read.
                 if (!Engine.IsAvailable) _source = FromFile;
 
-                _path = Ui.Text(_file?.Path ?? string.Empty, null, 190);
-                _markups = Ui.Text(string.Empty, null, 190);
+                _path = Ui.Text(_file?.Path ?? string.Empty, null, Ui.Wide.Name);
+                _markups = Ui.Text(string.Empty, null, Ui.Wide.Name);
 
                 // Both search boxes are built here and placed once. Rebuilding a text box inside
                 // the handler for its own keystroke takes the caret out of it, which is a search
@@ -1171,13 +1251,13 @@ namespace CamelWorks.UI.Views
                 // rail's tools, its filter panel, every row and its foot, so typing a six-letter
                 // discipline did all of that six times — five of them for a string nobody was
                 // looking for yet.
-                _railBox = Ui.Text(string.Empty, "Search tests by name or discipline", text =>
+                _railBox = Ui.Find("a test name or discipline", text =>
                 {
                     State.RailFind = text;
 
                     _railTyping.Stop();
                     _railTyping.Start();
-                }, 150);
+                }, Ui.Wide.Word);
 
                 _railTyping.Interval = TimeSpan.FromMilliseconds(160);
                 _railTyping.Tick += (s, e) => Ui.Safely(() =>
@@ -1186,7 +1266,7 @@ namespace CamelWorks.UI.Views
                     RedrawRail();
                 });
 
-                _boardBox = Ui.Text(string.Empty, "Search", text =>
+                _boardBox = Ui.Find("the board", text =>
                 {
                     State.BoardFind = text;
 
@@ -1195,7 +1275,7 @@ namespace CamelWorks.UI.Views
                     // them for a string nobody was looking for.
                     _typing.Stop();
                     _typing.Start();
-                }, 128);
+                }, Ui.Wide.Word);
 
                 _typing.Interval = TimeSpan.FromMilliseconds(160);
                 _typing.Tick += (s, e) => Ui.Safely(() =>
@@ -1319,12 +1399,6 @@ namespace CamelWorks.UI.Views
                 Wanted();
                 Indexed();
 
-                // The Exchange tab exchanges whatever this tab has selected, and it holds that as
-                // a key rather than a check. Set on every draw, not only when Export is pressed:
-                // opening Exchange from the ribbon otherwise exported whichever check was selected
-                // the last time somebody did press it.
-                ClashExchangeViews.CheckKey = Check?.Key ?? FindingSource.Clash;
-
                 // One caption for both sources: the results are what gets read either way, and
                 // the tool registry promises this exact action.
                 var already = Current() != null;
@@ -1378,7 +1452,8 @@ namespace CamelWorks.UI.Views
 
                 Redraw();
 
-                var tab = Bench.Split(null, Rail(), BoardPane(), Footer(read), RailWidth);
+                var tab = Bench.Split(null, Rail(), BoardPane(), Footer(read), RailWidth,
+                                      State.RailShut);
 
                 // Called after the footer is built, since it dresses the buttons created there.
                 //
@@ -1577,20 +1652,39 @@ namespace CamelWorks.UI.Views
                     Content = _rows,
                 };
 
-                Grid.SetRow(list, 1);
-                grid.Children.Add(list);
+                // Above the rows, inside the row the rows live in.
+                //
+                // It was drawn over them, which hid the list whose count it was changing: you
+                // could not see what a filter did while setting it. The reason it was an overlay
+                // is recorded and is real — put inside the head it pushed the test list down, so
+                // the rail's column headings and the board's stopped lining up the moment it
+                // opened, which is two panes of one table with their heads at different heights.
+                //
+                // That assumed the only alternative was the head. This is the third place: the
+                // body row holds the panel docked above the list, so the head never moves and the
+                // headings stay level, while the list shortens instead of being covered.
+                var body = new DockPanel { LastChildFill = true };
 
-                // The filter panel is drawn over the rows, not above them. Inside the head it
-                // pushed the test list down by its own height, so the rail's column headings and
-                // the board's stopped lining up the moment the panel was opened — two panes of one
-                // table with their heads at different heights.
-                _railPanel.Margin = new Thickness(10, 0, 10, 0);
-                _railPanel.VerticalAlignment = VerticalAlignment.Top;
+                _railPanel.Margin = new Thickness(10, 0, 10, 8);
                 _railPanel.HorizontalAlignment = HorizontalAlignment.Stretch;
 
-                Grid.SetRow(_railPanel, 1);
-                Panel.SetZIndex(_railPanel, 2);
-                grid.Children.Add(Ui.Loose(_railPanel));
+                // Capped, and it scrolls inside itself. A project with forty disciplines would
+                // otherwise hand the whole rail to chips and leave no list under them.
+                var narrowing = new ScrollViewer
+                {
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    MaxHeight = 280,
+                    Content = Ui.Loose(_railPanel),
+                };
+
+                DockPanel.SetDock(narrowing, Dock.Top);
+                body.Children.Add(narrowing);
+
+                body.Children.Add(list);
+
+                Grid.SetRow(body, 1);
+                grid.Children.Add(body);
 
                 Grid.SetRow(_railNotes, 2);
                 grid.Children.Add(Ui.Loose(_railNotes));
@@ -1625,40 +1719,8 @@ namespace CamelWorks.UI.Views
 
                 _railTools.Children.Clear();
 
-                var orders = new List<Parts.Entry>();
-
-                foreach (var one in new[]
-                         {
-                             MostNew, MostOpen, MostReviewed, MostApproved, MostClosed,
-                             ByName, LastRun,
-                         })
-                {
-                    var here = one;
-
-                    orders.Add(Parts.Entry.Act(here, null, () => { State.Sort = here; RedrawRail(); }));
-                }
-
-                // The naming's own fields, under a heading, because sorting by phase and sorting
-                // by how many results are new are not the same kind of order and a flat list of
-                // both reads as one.
-                var tokens = Tokened();
-
-                if (tokens.Count > 0)
-                {
-                    orders.Add(Parts.Entry.Rule());
-                    orders.Add(Parts.Entry.Heading("By the name's own fields"));
-
-                    foreach (var one in tokens)
-                    {
-                        var here = ByToken + one;
-
-                        orders.Add(Parts.Entry.Act(Titled(one), null,
-                                                   () => { State.Sort = here; RedrawRail(); }));
-                    }
-                }
-
                 _railTools.Children.Add(Parts.MoreMenu(Glyphs.Sort, "Sort: " + Ordered(State.Sort),
-                    orders, on: State.Sort != MostNew));
+                    RailSortMenu(), on: State.Sort != MostNew));
 
                 var narrow = Ui.Icon(Glyphs.Filter, WhatIsNarrowed(), () =>
                 {
@@ -1678,6 +1740,59 @@ namespace CamelWorks.UI.Views
                 RedrawRailList();
                 RedrawRailFoot();
             }
+
+            /// <summary>
+            /// What the rail's sort symbol opens: the orders the test list can be put in.
+            ///
+            /// Built apart from the symbol that opens it so the harness can draw the list
+            /// without a popup, which is the only way this menu is ever reviewed. The rail's
+            /// order is not the board's: this one orders tests, the board's orders results.
+            /// </summary>
+            internal List<Parts.Entry> RailSortMenu()
+            {
+                var orders = new List<Parts.Entry>();
+
+                foreach (var one in new[]
+                         {
+                             MostNew, MostOpen, MostReviewed, MostApproved, MostClosed,
+                             ByName, LastRun,
+                         })
+                {
+                    var here = one;
+
+                    // A tick on the one in force. Here it is the right symbol: these are the
+                    // orders the list can be in, one of them is the order it is in, and without
+                    // the mark the menu says what is on offer and not what is happening.
+                    orders.Add(Parts.Entry.Act(here, Marks(here),
+                                               () => { State.Sort = here; RedrawRail(); }));
+                }
+
+                // The naming's own fields, under a heading, because sorting by phase and sorting
+                // by how many results are new are not the same kind of order and a flat list of
+                // both reads as one.
+                var tokens = Tokened();
+
+                if (tokens.Count > 0)
+                {
+                    orders.Add(Parts.Entry.Rule());
+                    orders.Add(Parts.Entry.Heading("By the name's own fields"));
+
+                    foreach (var one in tokens)
+                    {
+                        var here = ByToken + one;
+
+                        orders.Add(Parts.Entry.Act(Titled(one), Marks(here),
+                                                   () => { State.Sort = here; RedrawRail(); }));
+                    }
+                }
+
+                return orders;
+            }
+
+            /// <summary>The tick, on the order the rail is in, and nothing on the rest.</summary>
+            /// <param name="order">The order this line would set.</param>
+            private string? Marks(string order) =>
+                string.Equals(State.Sort, order, StringComparison.Ordinal) ? Glyphs.Tick : null;
 
             /// <summary>Whether anything is narrowing the rail.</summary>
             private bool Narrowed =>
@@ -1724,6 +1839,30 @@ namespace CamelWorks.UI.Views
             private UIElement Narrowing(List<TestEntry>? read)
             {
                 var body = Ui.Stack();
+
+                // A heading and a way out. This card is drawn over the rows it filters, so it
+                // hides the list whose count it is changing, and it had no close: the only way
+                // back was the funnel it was opened from, four inches away and unmarked.
+                var head = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 6) };
+
+                var shut = Ui.Icon(Glyphs.Close, "Close the filters", () =>
+                {
+                    _panel = false;
+                    RedrawRail();
+                });
+
+                DockPanel.SetDock(shut, Dock.Right);
+                head.Children.Add(shut);
+
+                var said = new TextBlock
+                {
+                    Text = "Narrow the list",
+                    VerticalAlignment = VerticalAlignment.Center,
+                }.Wearing("Section");
+
+                head.Children.Add(said);
+
+                body.Children.Add(head);
 
                 body.Children.Add(Titling("Discipline"));
 
@@ -1799,13 +1938,7 @@ namespace CamelWorks.UI.Views
                 panel.Tint(Border.BackgroundProperty, "Card");
                 panel.Tint(Border.BorderBrushProperty, "Bd");
 
-                panel.Effect = new System.Windows.Media.Effects.DropShadowEffect
-                {
-                    BlurRadius = 12,
-                    ShadowDepth = 2,
-                    Direction = 270,
-                    Opacity = 0.18,
-                };
+                panel.Raised();
 
                 return panel;
             }
@@ -2647,8 +2780,18 @@ namespace CamelWorks.UI.Views
 
                 if (Check?.Runner != null)
                 {
-                    verbs.Children.Add(Ui.Icon(Glyphs.Play, "Run all tests",
-                        () => RunTests(read.Cast<object>().ToList(), _log)));
+                    // Worded, not a play triangle. This runs every test on the rail, which is
+                    // the longest-running thing on the tab, and the picture said neither "run"
+                    // nor "all" - it was the one control on this screen whose whole meaning was
+                    // in a tooltip nobody hovers a corner for.
+                    var all = Ui.Button("Run all", () => RunTests(read.Cast<object>().ToList(), _log));
+
+                    all.MinWidth = 0;
+                    all.Padding = new Thickness(9, 3, 9, 4);
+                    all.Margin = new Thickness(0, 0, 4, 0);
+                    all.ToolTip = "Run every test on this rail";
+
+                    verbs.Children.Add(all);
 
                     verbs.Children.Add(Parts.MoreMenu(Glyphs.More,
                         "More actions", TestMenu(entry), up: true));
@@ -3302,9 +3445,6 @@ namespace CamelWorks.UI.Views
                     verbs.Children.Add(Ui.Icon(Glyphs.Play, "Run this test",
                         () => RunTests(One(entry), _log)));
 
-                verbs.Children.Add(Ui.Icon(Glyphs.Columns, "Which columns the board shows",
-                    () => Configure("columns")));
-
                 // Up here with the rest of the controls that open something, rather than beside
                 // the search box where it read as a button that did something to the board.
                 // One control, not two.
@@ -3317,8 +3457,20 @@ namespace CamelWorks.UI.Views
                 // one menu, and it says the whole answer in its tooltip.
                 verbs.Children.Add(Ui.Loose(_view));
 
-                verbs.Children.Add(Ui.Icon(Glyphs.Tune, "This board",
-                    () => Configure("source")));
+                // Two symbols became one menu with two words in it. They opened the two halves
+                // of the same window - which columns show, and where the results come from - and
+                // as pictures they said neither: a grid and a slider beside a play and a funnel
+                // is four drawings and no sentence. The controls used continuously keep their
+                // place on the row; setting the board up is not one of them.
+                verbs.Children.Add(Parts.MoreMenu(Glyphs.Tune, "Set this board up",
+                    new List<Parts.Entry>
+                    {
+                        Parts.Entry.Heading("Set this board up"),
+                        Parts.Entry.Act("Which columns the board shows", Glyphs.Columns,
+                                        () => Configure("columns")),
+                        Parts.Entry.Act("Where the results come from", Glyphs.Tune,
+                                        () => Configure("source")),
+                    }));
 
                 DockPanel.SetDock(verbs, Dock.Right);
                 row.Children.Add(verbs);
@@ -3416,6 +3568,22 @@ namespace CamelWorks.UI.Views
                     MaxWidth = 250,
                     Margin = new Thickness(0, 0, 10, 0),
                 };
+
+                // The way back to the test list, first on the row, so it is where the eye
+                // already is and it is reachable when the list is not on screen at all.
+                var folding = Ui.Icon(State.RailShut ? Glyphs.Right : Glyphs.Left,
+                                      State.RailShut ? "Show the tests" : "Hide the tests",
+                                      () =>
+                                      {
+                                          State.RailShut = !State.RailShut;
+                                          Ui.Told(Shell.AppWindow.Show("clash", "manage"));
+                                      });
+
+                folding.VerticalAlignment = VerticalAlignment.Bottom;
+                folding.Margin = new Thickness(0, 0, 6, 1);
+
+                DockPanel.SetDock(folding, Dock.Left);
+                naming.Children.Add(folding);
 
                 // The kind's symbol before the name, so the board says what sort of thing it is
                 // showing without being read. The rail below it lists one kind, and the words for
@@ -3838,6 +4006,34 @@ namespace CamelWorks.UI.Views
                 return items;
             }
 
+            /// <summary>
+            /// This board's menus, named, for the harness door above.
+            ///
+            /// Each entry is a menu the screen actually opens, not a fragment of one. The first
+            /// draft of this listed <c>SortMenu</c> and <c>FilterMenu</c> separately; they are
+            /// halves of <c>TableMenu</c>, which is what the funnel opens, so the page was
+            /// drawing two menus a coordinator never sees and hiding the one they do.
+            ///
+            /// The column menu is absent: it wants a particular property column and a board with
+            /// none has nothing to hand it. The harness page says so rather than drawing four
+            /// and meaning three.
+            /// </summary>
+            internal IReadOnlyList<BoardMenu> Menus()
+            {
+                var entry = Current()?.FirstOrDefault();
+                var rows = entry?.Rows ?? new List<Row>();
+
+                return new List<BoardMenu>
+                {
+                    new BoardMenu("The rail's order, over the tests", RailSortMenu()),
+                    new BoardMenu("What the table shows, and in what order", entry == null
+                        ? (IReadOnlyList<Parts.Entry>)Array.Empty<Parts.Entry>()
+                        : TableMenu(entry)),
+                    new BoardMenu("The test's own menu", TestMenu(entry)),
+                    new BoardMenu("More actions on the picked rows", PickedMenu(rows)),
+                };
+            }
+
             /// <summary>What is behind the board's filter menu: show, assigned to, the columns.</summary>
             /// <param name="entry">The test on the board.</param>
             private List<Parts.Entry> FilterMenu(TestEntry entry)
@@ -3947,6 +4143,13 @@ namespace CamelWorks.UI.Views
                     }));
                 }
 
+                // The keys the table answers, on the table's own menu. There is nowhere else on
+                // the board to put it: the row of symbols above the table is already four
+                // unlabelled pictures, and a fifth would not say what it opens either.
+                items.Add(Parts.Entry.Rule());
+                items.Add(Parts.Entry.Act("Keyboard shortcuts", Glyphs.Keyboard,
+                                          BoardKeys.Show));
+
                 return items;
             }
 
@@ -4012,13 +4215,20 @@ namespace CamelWorks.UI.Views
                 // between a board that fits and a board scrolled off its row verbs, and a column
                 // somebody added on purpose should not cost them the verbs.
                 //
-                // The name takes twice what either item does, and all three give ground before
-                // the table starts scrolling sideways. The design fixes Item 1 and Item 2 at 118
-                // apiece and lets only the name flex, which adds up to 862 - wider than the board
-                // is at the window's own default size. The picture that came back was a table
-                // scrolled off its own status and assignee columns, which are the two things this
-                // screen was rebuilt to put on the row. Horizontal scroll is meant to be the last
-                // resort here, not the resting state.
+                // The two element columns take the room, and the name gives it up.
+                //
+                // It was the other way round: the name took twice what either item did. The name
+                // is "Clash1", "Clash2", "Clash3" — the host's own numbering, the same width on
+                // every row and no help in telling one row from another. The item columns hold
+                // what the board exists to say, and a real one holds "Basic Wall: SW-01
+                // Plasterboard 140mm [214880]". At a share of one apiece they came out at 90
+                // pixels and every Architecture row read "Basic Wall: E…", so a coordinator could
+                // not tell two rows apart by looking at them.
+                //
+                // All three still give ground before the table scrolls sideways. Fixing the item
+                // columns at their full width adds up to more than the board is wide at the
+                // window's default size, and a table scrolled off its own status and assignee
+                // columns loses the two things this screen was rebuilt to put on the row.
                 var tight = Added.Count > 0;
 
                 // Walked in the order the columns are drawn in rather than written out in a fixed
@@ -4029,7 +4239,9 @@ namespace CamelWorks.UI.Views
                 {
                     if (string.Equals(name, Named, StringComparison.Ordinal))
                     {
-                        Named2(Named, 2, tight ? 110 : 130);
+                        // A share of one, and the smallest floor of the three. The host's row
+                        // number is a label, not a fact about the clash.
+                        Named2(Named, 1, tight ? 82 : 96);
                         continue;
                     }
 
@@ -4070,10 +4282,17 @@ namespace CamelWorks.UI.Views
                     // a column scrolls sideways off its own row verbs on the second one. It takes
                     // a share of what there is and ellipsises, with the whole value on the
                     // tooltip.
-                    Named2(name, 1,
-                           column != null && column.Kind == ColumnKind.Element
-                               ? (tight ? 74 : 90)
-                               : 76);
+                    // An element column takes three shares, because a model's own name for a
+                    // thing is three or four words and a code, and it is the fact the row is
+                    // about. Everything else added to the board takes one.
+                    var element = column != null && column.Kind == ColumnKind.Element;
+
+                    // Two shares, not three. At three the two columns fitted their names and the
+                    // table gained a horizontal scrollbar, which costs the row its last column —
+                    // and a board scrolled off its own verbs is worse than one that trims a name.
+                    Named2(name,
+                           element ? 2 : 1,
+                           element ? (tight ? 104 : 124) : 76);
                 }
 
                 // Four row buttons, at the tighter margin the bar below sets on them. The
@@ -4618,6 +4837,11 @@ namespace CamelWorks.UI.Views
                     _lines = Lines(entry, shape);
                     _list = new BoardList(Drawn) { ItemsSource = _lines };
 
+                    // Preview, and on the list rather than the window: the board owns these keys
+                    // only while the table itself has the keyboard, so nothing typed anywhere
+                    // else on the tab - or anywhere in Navisworks - reaches this.
+                    _list.PreviewKeyDown += (s, e) => Ui.Safely(() => Typed(e));
+
                     Grid.SetRow(_list, 1);
                     frame.Children.Add(Ui.Loose(_list));
                 }
@@ -5102,12 +5326,16 @@ namespace CamelWorks.UI.Views
                 });
 
                 // The member count, at the right of the name's own cell. It had a column of its
-                // own, which carried an em-dash on every clash row. The figure alone, with the
-                // word on its tooltip: "7 clashes" spelt out took most of a 110-pixel column and
-                // left the group's name showing one letter.
+                // own, which carried an em-dash on every clash row.
+                //
+                // Spelt out, as the loose band beside it already does. It was the figure alone on
+                // the reasoning that "7 clashes" took most of a 110-pixel column and left the
+                // group's name showing one letter — but a group row's name cell spans the element
+                // columns now, so there is room, and a bare number sitting a few pixels from the
+                // Overlap column reads as a second measurement of the same thing.
                 var many = new TextBlock
                 {
-                    Text = Skin.Num(row.Rows.Count),
+                    Text = Ui.Count(row.Rows.Count, Result),
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(8, 0, 0, 0),
                     TextAlignment = TextAlignment.Right,
@@ -5480,7 +5708,8 @@ namespace CamelWorks.UI.Views
             /// <param name="inside">True when it is a member of an open group.</param>
             private UIElement Finish(Grid grid, BoardRow row, bool on, bool inside)
             {
-                Put(grid, StatusChip(row.Status), Where(Status));
+                // A control, not a label. The row's own status, set on the row.
+                Put(grid, StatusCell(row), Where(Status));
 
                 // The person, and nothing else in the cell. What kind of party it is comes from
                 // the symbol in front of the name, and everyone the row is assigned to is on the
@@ -5684,23 +5913,16 @@ namespace CamelWorks.UI.Views
                 var adding = (keys & System.Windows.Input.ModifierKeys.Control) != 0;
                 var run = (keys & System.Windows.Input.ModifierKeys.Shift) != 0;
 
+                // A press also gives the table the keyboard, so the keys below work without a
+                // separate act of focusing it. The row containers are not focusable - they are
+                // recycled - so the list itself takes it.
+                _list?.Focus();
+
                 // A plain press moves the eye, not the selection. Nothing is ticked, the bar
                 // stays down, and the row that was being read stops being the row being read.
                 if (!adding && !run)
                 {
-                    var leaving = _reading;
-
-                    _reading = id;
-                    State.PickedFrom = id;
-
-                    var moved = new HashSet<string>(StringComparer.Ordinal) { id };
-
-                    if (leaving != null) moved.Add(leaving);
-
-                    Repainted(moved);
-
-                    if (_focusOnClick) Look(id);
-
+                    Reading(id, reveal: false);
                     return;
                 }
 
@@ -5741,6 +5963,188 @@ namespace CamelWorks.UI.Views
                 against.Add(id);
 
                 Repainted(against);
+            }
+
+            /// <summary>
+            /// Move the eye to one row: repaint the row it left and the row it arrived at.
+            ///
+            /// The read row is not the selection. It is the row somebody is looking at, which is
+            /// what shows its verbs, what the camera follows when focus-on-click is on, and what
+            /// the keys below act on.
+            /// </summary>
+            /// <param name="id">The row to read.</param>
+            /// <param name="reveal">True to scroll it into view, for a move made from the keyboard.</param>
+            private void Reading(string id, bool reveal)
+            {
+                var leaving = _reading;
+
+                _reading = id;
+                State.PickedFrom = id;
+
+                var moved = new HashSet<string>(StringComparer.Ordinal) { id };
+
+                if (leaving != null) moved.Add(leaving);
+
+                Repainted(moved);
+
+                if (reveal)
+                    _list?.Reveal(_lines?.FirstOrDefault(
+                        l => string.Equals(l.Id, id, StringComparison.Ordinal)));
+
+                if (_focusOnClick) Look(id);
+            }
+
+            /// <summary>
+            /// The lines a keystroke can move to: the rows, not the bands.
+            ///
+            /// A band is a heading across the table. Landing on one would give the keys a row
+            /// with no status, no tick and nothing to focus, and pressing 3 there would look
+            /// like the board ignoring the keyboard.
+            /// </summary>
+            private List<BoardLine> Walkable() =>
+                _lines?.Where(l => l.Id.Length > 0).ToList() ?? new List<BoardLine>();
+
+            /// <summary>
+            /// The results one line stands for: a group's members, or the single clash.
+            ///
+            /// Every write verb on this screen takes results. A group row handed to one is
+            /// filtered out on the way in and the write reports that nothing was selected.
+            /// </summary>
+            /// <param name="id">The row.</param>
+            private List<Row> Resulting(string id)
+            {
+                var line = _lines?.FirstOrDefault(
+                    l => string.Equals(l.Id, id, StringComparison.Ordinal));
+
+                if (line?.GroupRow != null) return new List<Row>(line.GroupRow.Rows);
+
+                return line?.Clash == null ? new List<Row>() : new List<Row> { line.Clash };
+            }
+
+            /// <summary>
+            /// What the results table does with a keystroke.
+            ///
+            /// Three hundred results is three hundred rounds of mouse, menu, click without this,
+            /// and it is the single largest daily cost in the tool. The keys are listed in
+            /// <see cref="BoardKeys"/> and the sheet on the table's menu is drawn from the same
+            /// list, so the two cannot disagree.
+            ///
+            /// Two rules make it safe to leave on:
+            ///
+            /// <list type="bullet">
+            /// <item><description>A key held with any modifier is left alone. Ctrl, Alt and the
+            /// Windows key belong to the host and to the standard edit commands, and a plug-in
+            /// that claimed one would take it away from something Navisworks already
+            /// does.</description></item>
+            /// <item><description>A key typed while a box has the keyboard goes to the box. That
+            /// single rule covers the search field, the inline editors and any IME - typing 3
+            /// into "the board" must type a 3.</description></item>
+            /// </list>
+            ///
+            /// Nothing bound here takes work away. A status change does reach the Navisworks
+            /// document at once where the check has a host echo, so it is a real edit rather than
+            /// a pending one - but it is undone by setting the status back, which is why status
+            /// is on the keyboard and delete, remove and run are not.
+            /// </summary>
+            /// <param name="e">The keystroke.</param>
+            private void Typed(System.Windows.Input.KeyEventArgs e)
+            {
+                if (System.Windows.Input.Keyboard.Modifiers != System.Windows.Input.ModifierKeys.None)
+                    return;
+
+                if (Typing(System.Windows.Input.Keyboard.FocusedElement as DependencyObject)) return;
+
+                var meant = BoardKeys.Meaning(e.Key);
+
+                if (meant.Did == BoardKeys.Does.Nothing) return;
+
+                var walk = Walkable();
+
+                if (walk.Count == 0) return;
+
+                var at = _reading == null
+                    ? -1
+                    : walk.FindIndex(l => string.Equals(l.Id, _reading, StringComparison.Ordinal));
+
+                switch (meant.Did)
+                {
+                    case BoardKeys.Does.Up:
+                        Reading(walk[at <= 0 ? 0 : at - 1].Id, reveal: true);
+                        break;
+
+                    case BoardKeys.Does.Down:
+                        Reading(walk[at < 0 ? 0 : Math.Min(walk.Count - 1, at + 1)].Id, reveal: true);
+                        break;
+
+                    case BoardKeys.Does.Tick:
+                        if (_reading == null) return;
+
+                        if (!State.Picked.Remove(_reading)) State.Picked.Add(_reading);
+
+                        Repaint(_reading);
+                        break;
+
+                    case BoardKeys.Does.Status:
+                        if (_reading == null || meant.Status == null) return;
+
+                        Mark(Resulting(_reading).Cast<object>().ToList(), meant.Status.Value, _toast);
+                        break;
+
+                    case BoardKeys.Does.Focus:
+                        if (_reading == null) return;
+
+                        Focus(Resulting(_reading).Cast<object>().ToList(), _toast);
+                        break;
+
+                    case BoardKeys.Does.Clear:
+                        if (State.Picked.Count == 0) return;
+
+                        var was = new HashSet<string>(State.Picked, StringComparer.Ordinal);
+
+                        State.Picked.Clear();
+                        State.PickedFrom = null;
+
+                        Repainted(was);
+                        break;
+
+                    default:
+                        return;
+                }
+
+                e.Handled = true;
+            }
+
+            /// <summary>
+            /// Whether the keyboard is in something that takes typing.
+            ///
+            /// Walked up the tree rather than tested on the focused element alone: a combo box
+            /// hands focus to the text box inside its own template, and an element inside a
+            /// template of ours may sit under an editor several levels up.
+            /// </summary>
+            /// <param name="focused">What has the keyboard.</param>
+            private static bool Typing(DependencyObject? focused)
+            {
+                for (var at = focused; at != null; at = Parented(at))
+                {
+                    if (at is TextBox || at is System.Windows.Controls.PasswordBox) return true;
+                    if (at is ComboBox combo && combo.IsEditable) return true;
+                }
+
+                return false;
+            }
+
+            /// <summary>One step up the tree, taking the visual parent or the logical one.</summary>
+            /// <param name="from">Where to step from.</param>
+            private static DependencyObject? Parented(DependencyObject from)
+            {
+                if (from is System.Windows.Media.Visual || from is System.Windows.Media.Media3D.Visual3D)
+                {
+                    var up = System.Windows.Media.VisualTreeHelper.GetParent(from);
+
+                    if (up != null) return up;
+                }
+
+                return System.Windows.LogicalTreeHelper.GetParent(from);
             }
 
             /// <summary>
@@ -5821,7 +6225,7 @@ namespace CamelWorks.UI.Views
                 var many = reaching.Count > row.Rows.Count;
 
                 var what = many
-                    ? Ui.Count(State.Picked.Count, "picked row")
+                    ? Ui.Count(State.Picked.Count, "selected row")
                     : row.IsGroup ? "this group" : "this " + Result;
 
                 var picked = reaching;
@@ -5872,7 +6276,7 @@ namespace CamelWorks.UI.Views
                 var reaching = Reaching(row);
 
                 var what = State.Picked.Count > 1 && State.Picked.Contains(row.Id)
-                    ? Ui.Count(State.Picked.Count, "picked row")
+                    ? Ui.Count(State.Picked.Count, "selected row")
                     : row.IsGroup ? "this group" : "this " + Result;
 
                 var picked = reaching;
@@ -6064,7 +6468,7 @@ namespace CamelWorks.UI.Views
                 // control.
                 var count = new TextBlock
                 {
-                    Text = Ui.Count(State.Picked.Count, "row") + " picked",
+                    Text = Ui.Count(State.Picked.Count, "row") + " selected",
                     FontWeight = FontWeights.SemiBold,
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(0, 0, 10, 0),
@@ -6195,7 +6599,7 @@ namespace CamelWorks.UI.Views
             /// <param name="rows">The picked results.</param>
             private List<Parts.Entry> PickedMenu(List<Row> rows)
             {
-                var menu = Doing(rows, "the picked rows");
+                var menu = Doing(rows, "the selected rows");
 
                 menu.Add(Parts.Entry.Rule());
                 menu.Add(GroupVerb(rows));
@@ -6288,7 +6692,12 @@ namespace CamelWorks.UI.Views
 
                     var here = status;
 
-                    setting.Add(Parts.Entry.Act(FindingStatusWords.Of(here), Glyphs.Tick,
+                    // No symbol. A tick beside a word means that word is the current one, and
+                    // five of them down a menu read as five states at once; a chevron means the
+                    // word opens a submenu, and five of those read as five submenus - which is
+                    // what the first attempt at this drew. These are verbs, and the heading over
+                    // them already says what they do.
+                    setting.Add(Parts.Entry.Act(FindingStatusWords.Of(here), null,
                         () => SetMany(picked, FindingStatusWords.Of(here), true)));
                 }
 
@@ -7316,7 +7725,7 @@ namespace CamelWorks.UI.Views
                     // The markers already hanging in the view are the ones being looked at, so
                     // they change now rather than at the next focus.
                     Remarked();
-                }, 150));
+                }, Ui.Wide.Word));
 
                 return row;
             }
@@ -8164,66 +8573,48 @@ namespace CamelWorks.UI.Views
             /// <param name="name">The group's name.</param>
             private static string GroupId(string name) => "group" + name;
 
-            /// <summary>How a status reads.</summary>
-            /// <param name="status">The status.</param>
-            private static Tone Reads(FindingStatus status) => status switch
-            {
-                FindingStatus.New => Tone.Bad,
-                FindingStatus.Reviewed => Tone.Warn,
-                FindingStatus.Approved => Tone.Good,
-                FindingStatus.Resolved => Tone.Good,
-                _ => Tone.Plain,
-            };
-
             /// <summary>
-            /// A row's status, as a chip that reads rather than a control that opens.
+            /// The row's status, as the control that sets it.
             ///
-            /// Every row carried a drop-down, so the column was five chip widths wide with a
-            /// chevron on each of them, and a board of four hundred rows carried four hundred
-            /// controls to change one value at a time. The chip is one width for all five
-            /// statuses, so the column reads down; the status is set from the row's own menu and
-            /// from the bar for picked rows, which is where every other verb on a row is.
+            /// This reverses an earlier decision and the argument for that decision is worth
+            /// keeping: every row used to carry a drop-down, the column was five chip widths plus
+            /// a chevron on each, and a board of four hundred rows carried four hundred controls
+            /// to change one value at a time. So it became a chip that reads, one width for all
+            /// five statuses, set from the row's menu and from the bar.
+            ///
+            /// What that cost is the reason to go back. Setting a status is the most frequent
+            /// edit on this board, and it ended up the only common one with no control at all:
+            /// the chip's own tooltip read "Set it from the row's menu, or pick rows and set it
+            /// on the bar", which is a control telling you where the control is. The assignee
+            /// cell beside it - a far less frequent edit - kept its chevron the whole time, so
+            /// the "four hundred controls is noise" argument was already conceded one column
+            /// along, on the less useful of the two.
+            ///
+            /// The column width is the real cost and it is watched: the chevron adds about
+            /// fourteen pixels to a chip whose floor is seventy-six, in a column of a hundred and
+            /// four, on a board that has twice had to be pulled back from a sideways scroll.
             /// </summary>
-            /// <param name="status">The row's status.</param>
-            private static UIElement StatusChip(FindingStatus status)
+            /// <param name="row">The row.</param>
+            private UIElement StatusCell(BoardRow row)
             {
-                var tone = Reads(status);
-
-                var label = new TextBlock
+                var cell = FindingStatusWords.Picker(row.Status, status =>
                 {
-                    Text = FindingStatusWords.Of(status),
-                    FontSize = 11,
-                    FontWeight = FontWeights.SemiBold,
-                    TextAlignment = TextAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Foreground = Skin.Ink(tone),
-                };
+                    // This row, whatever else is ticked: the tooltip promises it and a press that
+                    // meant one row here and twenty there is a press nobody can use quickly.
+                    //
+                    // Its results, not the board row itself. Every write verb on this screen
+                    // takes results, and a board row handed to one is filtered out on the way in
+                    // and comes back as "Nothing is selected" - a picker that opens, closes and
+                    // changes nothing.
+                    Mark(row.Rows.Cast<object>().ToList(), status, _toast);
+                });
 
-                var chip = new Border
-                {
-                    // One width for all five, or the column is five ragged edges.
-                    MinWidth = 76,
-                    Height = 20,
-                    CornerRadius = new CornerRadius(7),
-                    BorderThickness = new Thickness(1),
-                    Padding = new Thickness(8, 0, 8, 0),
-                    HorizontalAlignment = HorizontalAlignment.Left,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Background = Skin.Wash(tone),
-                    BorderBrush = Skin.Edge(tone),
-                    Child = label,
-                    ToolTip = FindingStatusWords.Of(status)
-                              + ". Set it from the row's menu, or pick rows and set it on the bar.",
-                };
+                // Handled here, or the press that sets a status also selects the row and opens
+                // the detail beside it - which is what the group name cell had to do too.
+                if (cell is FrameworkElement pressable)
+                    pressable.PreviewMouseLeftButtonUp += (s, e) => e.Handled = true;
 
-                if (tone == Tone.Plain)
-                {
-                    chip.Tint(Border.BackgroundProperty, "Nav");
-                    chip.Tint(Border.BorderBrushProperty, "Bd");
-                    label.Tint(TextBlock.ForegroundProperty, "Muted");
-                }
-
-                return chip;
+                return cell;
             }
 
             /// <summary>
@@ -9216,7 +9607,7 @@ namespace CamelWorks.UI.Views
 
                 if (tests.Count == 0)
                 {
-                    Warned(Ui.Problem("No " + word + " is picked, so there was nothing to move."));
+                    Warned(Ui.Problem("No " + word + " is selected, so there was nothing to move."));
                     return;
                 }
 
@@ -10333,7 +10724,7 @@ namespace CamelWorks.UI.Views
                 // dropdown opens but does not change the status" gets reported.
                 if (rows.Count == 0)
                 {
-                    say.Children.Add(Ui.Problem("Nothing is picked, so there was nothing to "
+                    say.Children.Add(Ui.Problem("Nothing is selected, so there was nothing to "
                         + "change. Tick the rows first, or use the row's own menu."));
                     return;
                 }
@@ -10727,7 +11118,7 @@ namespace CamelWorks.UI.Views
                         Ui.Field("Property", Pickers.ClashProperty(here.Name,
                             pick => Recut(here, null, pick, null))),
                         Ui.Field("Read from", Ui.Choice(new[] { BothSides, FirstSide, SecondSide },
-                            here.Side, pick => Recut(here, null, null, pick), 150)));
+                            here.Side, pick => Recut(here, null, null, pick), Ui.Wide.Word)));
 
                     _columnList.Children.Add(card);
                 }
@@ -10940,7 +11331,7 @@ namespace CamelWorks.UI.Views
 
                 if (rows.Count == 0)
                 {
-                    Warned(Ui.Problem("Nothing is picked, so there was nothing to picture."));
+                    Warned(Ui.Problem("Nothing is selected, so there was nothing to picture."));
                     return;
                 }
 

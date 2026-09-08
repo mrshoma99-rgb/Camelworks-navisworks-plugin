@@ -27,6 +27,30 @@ namespace CamelWorks.UI.Views
     /// </summary>
     internal sealed class SearchEditor
     {
+        /// <summary>
+        /// One value a condition can be set to, and what it reads as.
+        ///
+        /// The two are not always the same word. A clash result names the test it came from by
+        /// the host's own id, and a picker offering a column of GUIDs is a picker nobody can use.
+        /// </summary>
+        internal sealed class Choice
+        {
+            /// <summary>Offer a value under its own name.</summary>
+            /// <param name="value">What the condition is set to.</param>
+            /// <param name="said">What the picker calls it, or null to use the value.</param>
+            internal Choice(string value, string? said = null)
+            {
+                Value = value ?? string.Empty;
+                Said = string.IsNullOrWhiteSpace(said) ? Value : said!;
+            }
+
+            /// <summary>What the condition is set to.</summary>
+            internal string Value { get; }
+
+            /// <summary>What the picker calls it.</summary>
+            internal string Said { get; }
+        }
+
         /// <summary>What the field picker calls the entry that asks for a property by name.</summary>
         private const string ByProperty = "A property, by name...";
 
@@ -36,6 +60,7 @@ namespace CamelWorks.UI.Views
         private readonly ResultQuery _root;
         private readonly IReadOnlyList<QueryField> _fields;
         private readonly Action _onChanged;
+        private readonly Func<string, IReadOnlyList<Choice>>? _offers;
 
         /// <summary>
         /// The conditions and brackets drawn as one line rather than as their controls.
@@ -51,10 +76,20 @@ namespace CamelWorks.UI.Views
         /// <param name="root">The search, edited in place.</param>
         /// <param name="check">The check whose results are searched, for the columns it declares.</param>
         /// <param name="onChanged">Called after every edit.</param>
-        internal SearchEditor(ResultQuery root, ICheck? check, Action onChanged)
+        /// <param name="offers">
+        /// The values worth offering for a field, by field id, or null to type every value.
+        ///
+        /// A status, a priority, a party and a test all come from a list the project already
+        /// holds, and typing one by hand is how a rule ends up matching nothing because the word
+        /// was spelt differently. Only the whole-value operators use it: "contains" is a
+        /// fragment, and a picker of whole values is the wrong control for one.
+        /// </param>
+        internal SearchEditor(ResultQuery root, ICheck? check, Action onChanged,
+                              Func<string, IReadOnlyList<Choice>>? offers = null)
         {
             _root = root ?? throw new ArgumentNullException(nameof(root));
             _onChanged = onChanged ?? throw new ArgumentNullException(nameof(onChanged));
+            _offers = offers;
             _fields = ResultFields.For(check);
 
             View = Ui.Stack();
@@ -421,15 +456,17 @@ namespace CamelWorks.UI.Views
                             string.Equals(one.Title, picked, StringComparison.Ordinal));
 
                         term.Field = chosen.Id;
-                        term.Where = chosen.OnElement ? QueryWhere.AnyElement : QueryWhere.Result;
+
+                        term.Where = chosen.Across ? QueryWhere.BetweenElements
+                            : chosen.OnElement ? QueryWhere.AnyElement
+                            : QueryWhere.Result;
                     }
 
                     // The operator has to be one the new field takes: a text field cannot be
                     // "between", and a number field cannot "start with".
                     var offered = ResultFields.Operators(
-                        property ? QueryValue.Text
-                                 : _fields.FirstOrDefault(one => one.Id == term.Field)?.Value ?? QueryValue.Text,
-                        term.Where == QueryWhere.BetweenElements);
+                        property ? null : _fields.FirstOrDefault(one => one.Id == term.Field),
+                        QueryValue.Text, term.Where);
 
                     if (!offered.Contains(term.Op)) term.Op = offered[0];
 
@@ -462,25 +499,31 @@ namespace CamelWorks.UI.Views
             }
 
             // Which element, for the fields that are read from one.
-            if (elemental)
+            // Which element, for the fields that are read from one. A measurement across the
+            // pair offers the one scope it has, rather than a picker with a single entry that
+            // cannot be changed.
+            var scopes = ResultFields.ScopesFor(known);
+
+            if (elemental && scopes.Count > 1)
                 row.Children.Add(Spaced(Ui.Choice(
-                    ResultFields.Scopes.Select(ResultFields.Worded).ToList(),
+                    scopes.Select(ResultFields.Worded).ToList(),
                     ResultFields.Worded(term.Where == QueryWhere.Result
                                         ? QueryWhere.AnyElement : term.Where),
                     picked =>
                     {
-                        term.Where = ResultFields.Scopes.First(one =>
-                            ResultFields.Worded(one) == picked);
+                        term.Where = scopes.First(one => ResultFields.Worded(one) == picked);
 
-                        var offered = ResultFields.Operators(kind, term.IsBetween);
+                        var offered = ResultFields.Operators(known, kind, term.Where);
 
                         if (!offered.Contains(term.Op)) term.Op = offered[0];
 
                         Touched();
                     }, 150)));
+            else if (elemental)
+                row.Children.Add(Spaced(Ui.Line(ResultFields.Worded(scopes[0]), 0.7)));
 
             // How it is compared.
-            var operators = ResultFields.Operators(kind, term.IsBetween);
+            var operators = ResultFields.Operators(known, kind, term.Where);
 
             row.Children.Add(Spaced(Ui.Choice(
                 operators.Select(ResultFields.Worded).ToList(),
@@ -497,14 +540,14 @@ namespace CamelWorks.UI.Views
                 if (QueryTerm.Numeric(term.Op))
                 {
                     row.Children.Add(Spaced(Ui.Text(Said(term.Number),
-                        typed => { term.Number = Read(typed); _onChanged(); }, 90)));
+                        typed => { term.Number = Read(typed); _onChanged(); }, Ui.Wide.Number)));
 
                     if (term.Op == QueryOp.Between)
                     {
                         row.Children.Add(Spaced(Ui.Line("and", 0.7)));
 
                         row.Children.Add(Spaced(Ui.Text(Said(term.Number2),
-                            typed => { term.Number2 = Read(typed); _onChanged(); }, 90)));
+                            typed => { term.Number2 = Read(typed); _onChanged(); }, Ui.Wide.Number)));
                     }
 
                     var unit = known?.Unit;
@@ -514,15 +557,76 @@ namespace CamelWorks.UI.Views
                 }
                 else
                 {
-                    row.Children.Add(Spaced(Ui.Text(term.Text, "Value",
-                        typed => { term.Text = typed; _onChanged(); }, 160)));
+                    var offered = Offered(term);
+
+                    if (offered.Count > 0)
+                        row.Children.Add(Spaced(Ui.Choice(
+                            offered.Select(one => one.Said).ToList(),
+                            Named(offered, term.Text),
+                            picked =>
+                            {
+                                term.Text = offered.First(one => one.Said == picked).Value;
+                                Touched();
+                            }, Ui.Wide.Name)));
+                    else
+                        row.Children.Add(Spaced(Ui.Text(term.Text, "Value",
+                            typed => { term.Text = typed; _onChanged(); }, Ui.Wide.Word)));
                 }
             }
 
             row.Children.Add(Spaced(Dropping(group, node, "Remove this condition")));
 
-            return row;
+            // What the field means, where it needs saying. A measurement taken off the elements
+            // rather than read off a column has limits, and they belong beside the condition
+            // rather than in a manual.
+            if (string.IsNullOrEmpty(known?.Hint)) return row;
+
+            var says = Ui.Small(known!.Hint!);
+
+            says.Margin = new Thickness(30, 0, 0, 6);
+            says.MaxWidth = 460;
+
+            return Ui.Stack(row, says);
         }
+
+        /// <summary>
+        /// The values a condition offers instead of a box to type in, or nothing.
+        ///
+        /// Only for the whole-value operators, and only when the caller supplied a list for the
+        /// field. Whatever the condition already says is kept in the list whether the project
+        /// still offers it or not: a rule written last month against a party who has left must
+        /// not silently become a rule about somebody else.
+        /// </summary>
+        /// <param name="term">The condition.</param>
+        private IReadOnlyList<Choice> Offered(QueryTerm term)
+        {
+            if (_offers == null) return Array.Empty<Choice>();
+            if (term.Op != QueryOp.Is && term.Op != QueryOp.IsNot) return Array.Empty<Choice>();
+
+            var found = _offers(term.Field) ?? Array.Empty<Choice>();
+
+            if (found.Count == 0) return found;
+
+            var said = term.Text;
+
+            if (string.IsNullOrEmpty(said)
+                || found.Any(one => string.Equals(one.Value, said, StringComparison.OrdinalIgnoreCase)))
+                return found;
+
+            var kept = new List<Choice> { new Choice(said!) };
+
+            kept.AddRange(found);
+
+            return kept;
+        }
+
+        /// <summary>What the picker shows for whatever the condition is set to.</summary>
+        /// <param name="offered">The values on offer, which always include the one held.</param>
+        /// <param name="value">What the condition is set to.</param>
+        private static string Named(IReadOnlyList<Choice> offered, string? value) =>
+            offered.FirstOrDefault(one =>
+                string.Equals(one.Value, value, StringComparison.OrdinalIgnoreCase))?.Said
+            ?? offered[0].Said;
 
         /// <summary>Take a condition or a bracket out of its group.</summary>
         /// <param name="group">The group it is in.</param>

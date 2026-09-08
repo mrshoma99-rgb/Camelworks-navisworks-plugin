@@ -45,65 +45,57 @@ namespace CamelWorks.UI.Views
         };
 
         /// <summary>
-        /// Ask for a new clash test and make it.
+        /// The form, to put in the panel beside the list of tests.
+        ///
+        /// In place rather than in a window. A pop-up over a tab that is already a list on the
+        /// left and a settings panel on the right put the form somewhere the list could not be
+        /// read from, and made adding a clash test a different act from adding any other kind of
+        /// test, which is set up in that panel.
         /// </summary>
         /// <param name="seat">The seat this is running in.</param>
         /// <param name="check">The clash check that will hold it.</param>
         /// <param name="named">A name nothing in the document is called yet.</param>
         /// <param name="onMade">Called with the host's id for the test once it exists.</param>
-        public static void New(ISeat seat, ClashCheck check, string named, Action<string> onMade)
+        /// <param name="onDropped">Called when the form is abandoned.</param>
+        public static UIElement Panel(ISeat seat, ClashCheck check, string named,
+                                      Action<string> onMade, Action onDropped)
         {
             if (seat == null) throw new ArgumentNullException(nameof(seat));
             if (check == null) throw new ArgumentNullException(nameof(check));
 
-            new Form(seat, check, named, onMade).Ask();
+            return new Form(seat, check, named, onMade, onDropped).Panel();
         }
-
-        /// <summary>
-        /// The form's fields alone, for the design harness.
-        ///
-        /// The form is a modal window and a harness page is an element, so what the harness draws
-        /// is the body without the frame around it. The same builder, so a field added here appears
-        /// in the picture without anybody remembering to add it twice.
-        /// </summary>
-        /// <param name="seat">The seat this is running in.</param>
-        /// <param name="check">The clash check that would hold it.</param>
-        /// <param name="named">What the test would be called.</param>
-        public static UIElement Drawn(ISeat seat, ClashCheck check, string named) =>
-            new Form(seat ?? throw new ArgumentNullException(nameof(seat)),
-                     check ?? throw new ArgumentNullException(nameof(check)),
-                     named, _ => { }).Body();
 
         // -----------------------------------------------------------------------------------
 
         private sealed class Form
         {
+            /// <summary>How tall a side's list of sources may grow before it scrolls.</summary>
+            private const double ListHeight = 190;
+
             private readonly ISeat _seat;
             private readonly ClashCheck _check;
             private readonly Action<string> _onMade;
+            private readonly Action _onDropped;
             private readonly StackPanel _log = Ui.Stack();
             private readonly StackPanel _body = Ui.Stack();
-
-            private Window? _window;
 
             private string _name;
             private string? _folder;
             private MatrixTest _kind = MatrixTest.Hard;
             private double _tolerance = MatrixOptions.DefaultTolerance;
-            private Pick _a;
-            private Pick _b;
 
-            internal Form(ISeat seat, ClashCheck check, string named, Action<string> onMade)
+            private readonly Chosen _a = new Chosen();
+            private readonly Chosen _b = new Chosen();
+
+            internal Form(ISeat seat, ClashCheck check, string named, Action<string> onMade,
+                          Action onDropped)
             {
                 _seat = seat;
                 _check = check;
                 _onMade = onMade;
+                _onDropped = onDropped;
                 _name = named;
-
-                // The selection is the side somebody most often means when they add one test by
-                // hand: they have just picked the pipes they are arguing about.
-                _a = Pick.Nothing;
-                _b = Pick.Nothing;
             }
 
             private Measure Units => _seat.Profile.Units;
@@ -116,85 +108,52 @@ namespace CamelWorks.UI.Views
                         ? _seat.Clash.LastProblem ?? "This document is open read-only."
                         : null;
 
-            /// <summary>
-            /// A window of its own rather than <see cref="Ui.Configure"/>.
-            ///
-            /// The form redraws itself — picking Duplicate takes the tolerance field away, and
-            /// picking a side rewrites the line under it — and it closes when the host has taken
-            /// the test. A configure page is built once and offers neither.
-            /// </summary>
-            internal void Ask()
+            /// <summary>The form with its own actions, as the Create tab's panel holds it.</summary>
+            internal UIElement Panel()
             {
-                var window = new Window
-                {
-                    Title = "CamelWorks - a new clash test",
-                    Width = 560,
-                    SizeToContent = SizeToContent.Height,
-                    MaxHeight = 700,
-                    MinWidth = 460,
-                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                    ShowInTaskbar = false,
-                };
-
-                _window = window;
-
-                var root = new DockPanel { Margin = new Thickness(16, 14, 16, 14) };
-
-                var foot = new Border
-                {
-                    Margin = new Thickness(0, 8, 0, 0),
-                    Child = Ui.Actions(Ui.Primary("Make the test", Make),
-                                       Ui.Quiet("Cancel", () => window.Close())),
-                };
-
-                DockPanel.SetDock(foot, Dock.Bottom);
-                root.Children.Add(foot);
-
-                DockPanel.SetDock(_log, Dock.Bottom);
-                root.Children.Add(Ui.Loose(_log));
-
-                root.Children.Add(new ScrollViewer
-                {
-                    Content = Ui.Loose(_body),
-                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                });
-
-                var ground = new Border { Child = root };
-
-                ground.Tint(Border.BackgroundProperty, "Bg");
-                window.Content = ground;
-
-                Skin.Apply(window);
-                Shell.HostWindow.Own(window);
-
                 Redraw();
 
-                window.ShowDialog();
+                // Blocked when the form cannot succeed, which it already knew: the same reason
+                // it draws in the notice above was computed and then not asked. A form that
+                // states "No document is open" and offers its primary as available lets somebody
+                // fill in six fields to be told at the press.
+                var blocked = Blocked;
+
+                var make = blocked == null
+                    ? (System.Windows.Controls.Button)Ui.Primary("Make the test", Make)
+                    : Ui.Cannot("Make the test", blocked);
+
+                var drop = Ui.Quiet("Cancel", () => Ui.Safely(_onDropped));
+
+                var foot = Ui.Actions(make, drop);
+
+                foot.Margin = new Thickness(0, 10, 0, 0);
+
+                return Ui.Stack(Ui.Loose(_body), Ui.Loose(_log), foot);
             }
 
-            /// <summary>The fields, drawn once, with the picked sides read back into them.</summary>
+            /// <summary>The fields alone, for the harness.</summary>
             internal UIElement Body() => Build();
 
             private UIElement Build()
             {
                 var blocked = Blocked;
                 var sets = Sets();
-                var models = Named(() => _seat.Models());
+                var models = _seat.ModelNames();
 
                 return Ui.Stack(
                     Bench.Group(string.Empty,
                         Ui.Across(
-                            Sized(Ui.Field("Name", Ui.Text(_name, text => _name = text, 190)), 200),
-                            Sized(Ui.Field("Folder", Ui.Text(_folder ?? string.Empty, "the root",
-                                text => _folder =
-                                    string.IsNullOrWhiteSpace(text) ? null : text, 160)), 170))),
+                            Sized(Ui.Field("Name", Ui.Text(_name, text => _name = text, Ui.Wide.Name)), 200),
+                            Sized(Ui.Field("Folder", Folder()), 190))),
+
                     // The sides first and together. They are the test: the two numbers under them
                     // are what it is judged at, and they can be changed afterwards where the sides
                     // cannot.
                     Bench.Group("What is tested against what",
-                        Side("First side", () => _a, one => _a = one, sets, models, blocked),
-                        Side("Second side", () => _b, one => _b = one, sets, models, blocked)),
+                        Side("First side", _a, sets, models, blocked),
+                        Side("Second side", _b, sets, models, blocked)),
+
                     Bench.Group("How it is judged",
                         Sized(Ui.Field("Kind of test",
                                  Ui.Choice(Kinds.Select(MatrixNaming.Worded).ToList(),
@@ -221,92 +180,160 @@ namespace CamelWorks.UI.Views
                                              + "reported."
                                            : "How far they may overlap before it is reported."),
                                     190)),
+
                     blocked == null ? null : Ui.Note(blocked));
             }
 
             /// <summary>
-            /// One side, as a picker over everything the host can point a test at.
+            /// Which clash folder the test goes in: the ones the document has, or a new one.
             ///
-            /// The same five sources the matrix offers a row, in the same words, because a test
-            /// made here and a test made there are the same object in the same document.
+            /// A box on its own asked somebody to remember and retype a folder name that is on
+            /// the screen behind the form, and a misspelling made a second folder rather than an
+            /// error.
+            /// </summary>
+            private UIElement Folder()
+            {
+                var held = Folders();
+                var offered = new List<string> { Root };
+
+                offered.AddRange(held);
+
+                if (_folder != null && !offered.Contains(_folder, StringComparer.OrdinalIgnoreCase))
+                    offered.Add(_folder);
+
+                offered.Add(NewFolder);
+
+                return Ui.Choice(offered, _folder ?? Root, picked =>
+                {
+                    if (string.Equals(picked, NewFolder, StringComparison.Ordinal))
+                    {
+                        Parts.Ask(_body, "What the new clash folder is called", string.Empty,
+                                  "Use it", said =>
+                        {
+                            var wanted = said.Trim();
+
+                            _folder = wanted.Length == 0 ? null : wanted;
+
+                            Redraw();
+                        });
+
+                        return;
+                    }
+
+                    _folder = string.Equals(picked, Root, StringComparison.Ordinal) ? null : picked;
+
+                    Redraw();
+                }, 190);
+            }
+
+            /// <summary>The clash folders this document already has, named once each.</summary>
+            private IReadOnlyList<string> Folders() => Seated.Folders(_check);
+
+            /// <summary>
+            /// One side: which kind of source it is built from, and which of them.
+            ///
+            /// A list with ticks and a Find box, not a dropdown. Both sides used to be one combo
+            /// each holding the selection, every loaded model and every saved set in one run —
+            /// on a federation that is several hundred lines, unsearchable, and one of them could
+            /// be picked. A side is a discipline and a discipline is several sets.
             /// </summary>
             /// <param name="label">Which side it is.</param>
-            /// <param name="read">What the side is set to.</param>
-            /// <param name="write">Sets it.</param>
+            /// <param name="side">What it is set to, edited in place.</param>
             /// <param name="sets">The document's saved sets.</param>
             /// <param name="models">The models loaded.</param>
             /// <param name="blocked">Why the document cannot be read, or null.</param>
-            private UIElement Side(string label, Func<Pick> read, Action<Pick> write,
-                                   IReadOnlyList<SeatSet> sets, IReadOnlyList<string> models,
-                                   string? blocked)
+            private UIElement Side(string label, Chosen side, IReadOnlyList<SeatSet> sets,
+                                   IReadOnlyList<string> models, string? blocked)
             {
-                var here = read();
-                var offered = new List<string> { Pick.Nothing.Said };
+                var held = Ui.Stack();
 
-                offered.Add(Selection);
-                offered.AddRange(models.Select(one => Model + one));
-                offered.AddRange(sets.Select(one => Set + Full(one)));
+                held.Children.Add(Ui.Eyebrow(label));
 
-                if (!offered.Contains(here.Said, StringComparer.Ordinal)) offered.Add(here.Said);
-
-                var picker = Ui.Choice(offered, here.Said, pick =>
+                var kinds = Ui.Segmented(new[] { FromSets, FromModels, FromSelection },
+                                         side.From, picked =>
                 {
-                    write(Read(pick, sets));
+                    side.From = picked;
                     Redraw();
-                }, 380);
+                });
+
+                held.Children.Add(kinds);
+
+                if (string.Equals(side.From, FromSelection, StringComparison.Ordinal))
+                {
+                    var keys = Seated.Offer(() => _seat.Selected());
+
+                    side.Keys = keys.ToList();
+
+                    held.Children.Add(Ui.Small(keys.Count == 0
+                        ? "Nothing is selected in Navisworks. Select the elements this side is "
+                          + "about, then come back to this line."
+                        : Ui.Count(keys.Count, "element") + ", as selected now. A saved set is "
+                          + "re-read every time the test runs; this list is not."));
+
+                    return Framed(held, blocked);
+                }
+
+                // The shared ticked list: one filter loop, one empty state, one thing to fix.
+                var models_ = string.Equals(side.From, FromModels, StringComparison.Ordinal);
+
+                var lines = models_
+                    ? models.ToList()
+                    : sets.Select(Full).ToList();
+
+                var says = Ui.Small(string.Empty);
+
+                void Said()
+                {
+                    var count = side.Picked.Count;
+
+                    says.Text = count == 0
+                        ? lines.Count == 0 ? string.Empty : "Nothing selected yet."
+                        : count == 1
+                            ? side.Picked[0]
+                            : Ui.Count(count, "of them") + ": " + string.Join(", ", side.Picked);
+                }
+
+                held.Children.Add(Parts.Ticked(lines, side.Has,
+                    (line, on) => { side.Put(line, on); Said(); },
+                    models_ ? "Nothing is loaded." : "This document holds no saved sets.",
+                    () => { side.Picked.Clear(); Said(); }));
+
+                Said();
+
+                held.Children.Add(says);
+
+                return Framed(held, blocked);
+            }
+
+            /// <summary>A side in its own card, greyed with a reason when the document refuses.</summary>
+            /// <param name="held">The side's controls.</param>
+            /// <param name="blocked">Why the document cannot be read, or null.</param>
+            private static UIElement Framed(Panel held, string? blocked)
+            {
+                // Capped like every other field on this form. Left to stretch, a side ran the
+                // width of whatever pane it was put in while the fields above it stopped at 380,
+                // so the two sides read as a different kind of thing from the rest of the form.
+                var card = new Border
+                {
+                    Margin = new Thickness(0, 0, 0, 8),
+                    Padding = new Thickness(10, 9, 10, 10),
+                    CornerRadius = new CornerRadius(8),
+                    BorderThickness = new Thickness(1),
+                    MaxWidth = 520,
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    Child = held,
+                };
+
+                card.Tint(Border.BackgroundProperty, "Card2");
+                card.Tint(Border.BorderBrushProperty, "Bd");
 
                 if (blocked != null)
                 {
-                    picker.IsEnabled = false;
-                    picker.ToolTip = blocked;
+                    card.IsEnabled = false;
+                    card.ToolTip = blocked;
                 }
 
-                return Sized(Ui.Field(label, picker, here.Hint), 380);
-            }
-
-            /// <summary>What a picked line means, as a side.</summary>
-            /// <param name="pick">The line.</param>
-            /// <param name="sets">The document's saved sets, for the one it names.</param>
-            private Pick Read(string pick, IReadOnlyList<SeatSet> sets)
-            {
-                if (string.Equals(pick, Selection, StringComparison.Ordinal))
-                {
-                    // Captured now, not resolved later. "Whatever is selected" is not a thing the
-                    // host stores on a test, so a side made from the selection is the elements
-                    // that were in it at this moment, and the hint says how many.
-                    var keys = Named(() => _seat.Selected()).ToList();
-
-                    return new Pick(Selection, ClashSide.Elements(keys),
-                                    Ui.Count(keys.Count, "element") + ", as selected now. A saved "
-                                    + "set is re-read every run; this is not.");
-                }
-
-                if (pick.StartsWith(Model, StringComparison.Ordinal))
-                {
-                    var scope = pick.Substring(Model.Length);
-
-                    return new Pick(pick, ClashSide.Model(scope), "The whole model.");
-                }
-
-                if (pick.StartsWith(Set, StringComparison.Ordinal))
-                {
-                    var full = pick.Substring(Set.Length);
-
-                    var set = sets.FirstOrDefault(
-                        one => string.Equals(Full(one), full, StringComparison.Ordinal));
-
-                    if (set == null) return Pick.Nothing;
-
-                    return new Pick(pick, ClashSide.Set(set.Name,
-                                                        set.Folder.Length == 0 ? null : set.Folder),
-                                    (set.IsSearch
-                                        ? "A search set: the host re-runs it every time the test "
-                                          + "runs. "
-                                        : "A selection set. ")
-                                    + Ui.Count(set.Members, "element") + " now.");
-                }
-
-                return Pick.Nothing;
+                return card;
             }
 
             /// <summary>Make it, or say why the host would not.</summary>
@@ -314,10 +341,13 @@ namespace CamelWorks.UI.Views
             {
                 _log.Children.Clear();
 
-                if (_a.Side == null || _b.Side == null)
+                var a = Read(_a);
+                var b = Read(_b);
+
+                if (a == null || b == null)
                 {
-                    _log.Children.Add(Ui.Problem("A clash test is between two things. Point both "
-                                                 + "sides at something."));
+                    _log.Children.Add(Ui.Problem("A clash test is between two things. Both sides "
+                                                 + "need something on them."));
                     return;
                 }
 
@@ -327,7 +357,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                var spec = new ClashTestSpec(_name.Trim(), _a.Side, _b.Side,
+                var spec = new ClashTestSpec(_name.Trim(), a, b,
                                              _kind == MatrixTest.Duplicate ? 0 : _tolerance,
                                              _folder, _kind);
 
@@ -341,9 +371,32 @@ namespace CamelWorks.UI.Views
 
                 _seat.Record(ActivityKind.Regroup, "made the clash test " + spec.Name);
 
-                _window?.Close();
-
                 _onMade(made.Value.Id);
+            }
+
+            /// <summary>What one side resolves to, or null when nothing is on it.</summary>
+            /// <param name="side">The side.</param>
+            private ClashSide? Read(Chosen side)
+            {
+                if (string.Equals(side.From, FromSelection, StringComparison.Ordinal))
+                    return side.Keys.Count == 0 ? null : ClashSide.Elements(side.Keys);
+
+                if (side.Picked.Count == 0) return null;
+
+                if (string.Equals(side.From, FromModels, StringComparison.Ordinal))
+                {
+                    var scopes = _seat.ModelNames().Where(side.Has).ToList();
+
+                    return scopes.Count == 0 ? null : ClashSide.Models(scopes);
+                }
+
+                var named = Sets()
+                    .Where(one => side.Has(Full(one)))
+                    .Select(one => new ClashSetName(one.Name,
+                                                    one.Folder.Length == 0 ? null : one.Folder))
+                    .ToList();
+
+                return named.Count == 0 ? null : ClashSide.Sets(named);
             }
 
             /// <summary>Draw the form again, so a change to one field reaches the rest.</summary>
@@ -353,9 +406,11 @@ namespace CamelWorks.UI.Views
                 _body.Children.Add(Ui.Loose(Build()));
             }
 
-            private const string Selection = "What is selected now";
-            private const string Model = "Model · ";
-            private const string Set = "Set · ";
+            private const string FromSets = "Saved sets";
+            private const string FromModels = "Whole models";
+            private const string FromSelection = "What is selected";
+            private const string Root = "The root";
+            private const string NewFolder = "A new folder...";
 
             /// <summary>A set as one line: its folder, then its name.</summary>
             /// <param name="set">The set.</param>
@@ -363,25 +418,7 @@ namespace CamelWorks.UI.Views
                 set.Folder.Length == 0 ? set.Name : set.Folder + " / " + set.Name;
 
             /// <summary>Every saved set the document holds, or none when it will not say.</summary>
-            private IReadOnlyList<SeatSet> Sets() => Named(() => _seat.Sets());
-
-            /// <summary>
-            /// Whatever the document answers, or nothing when it will not: a picker that cannot be
-            /// filled is a picker with nothing in it, never a screen that refuses to open.
-            /// </summary>
-            /// <typeparam name="T">What is being read.</typeparam>
-            /// <param name="supply">Where it comes from.</param>
-            private static IReadOnlyList<T> Named<T>(Func<IReadOnlyList<T>> supply)
-            {
-                try
-                {
-                    return supply();
-                }
-                catch (Exception)
-                {
-                    return Array.Empty<T>();
-                }
-            }
+            private IReadOnlyList<SeatSet> Sets() => _seat.Sets();
 
             /// <summary>A field capped to a readable width, so short fields sit two to a row.</summary>
             /// <param name="field">The field.</param>
@@ -394,28 +431,38 @@ namespace CamelWorks.UI.Views
                 return field;
             }
 
-            /// <summary>One side as the form holds it: what the picker says, and what it means.</summary>
-            private sealed class Pick
+            /// <summary>One side as the form holds it: which kind of source, and which of them.</summary>
+            private sealed class Chosen
             {
-                internal Pick(string said, ClashSide? side, string hint)
+                /// <summary>Which kind of source this side is built from.</summary>
+                internal string From { get; set; } = FromSets;
+
+                /// <summary>The lines ticked, in the order they were ticked.</summary>
+                internal List<string> Picked { get; } = new List<string>();
+
+                /// <summary>The elements, when the side is what was selected.</summary>
+                internal List<Core.Identity.ElementKey> Keys { get; set; } =
+                    new List<Core.Identity.ElementKey>();
+
+                /// <summary>Whether a line is ticked.</summary>
+                /// <param name="said">The line.</param>
+                internal bool Has(string said) =>
+                    Picked.Contains(said, StringComparer.OrdinalIgnoreCase);
+
+                /// <summary>Tick or untick a line.</summary>
+                /// <param name="said">The line.</param>
+                /// <param name="on">True to tick it.</param>
+                internal void Put(string said, bool on)
                 {
-                    Said = said;
-                    Side = side;
-                    Hint = hint;
+                    if (on)
+                    {
+                        if (!Has(said)) Picked.Add(said);
+                        return;
+                    }
+
+                    Picked.RemoveAll(one =>
+                        string.Equals(one, said, StringComparison.OrdinalIgnoreCase));
                 }
-
-                /// <summary>A side pointed at nothing, which is what a new form starts with.</summary>
-                internal static Pick Nothing { get; } =
-                    new Pick("Not set", null, "Pick a set, a model, or what is selected now.");
-
-                /// <summary>The line the picker shows.</summary>
-                internal string Said { get; }
-
-                /// <summary>What it resolves to, or null when it is not set.</summary>
-                internal ClashSide? Side { get; }
-
-                /// <summary>One line under the picker saying what was picked.</summary>
-                internal string Hint { get; }
             }
         }
     }

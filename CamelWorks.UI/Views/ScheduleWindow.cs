@@ -100,7 +100,7 @@ namespace CamelWorks.UI.Views
                 {
                     _mapping.Layout = chosen == Columns ? SetSheetLayout.Columns : SetSheetLayout.Conditions;
                     ShowShape();
-                }, 250);
+                }, Ui.Wide.Phrase);
 
                 return Ui.Field("The sheet is", pick);
             }

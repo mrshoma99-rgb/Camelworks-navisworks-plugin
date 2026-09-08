@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace CamelWorks.Core.Findings
 {
@@ -64,6 +66,21 @@ namespace CamelWorks.Core.Findings
         /// <summary>True when a finding is off somebody's list. The complement of <see cref="IsOpen"/>.</summary>
         /// <param name="status">The status.</param>
         public static bool IsClosed(FindingStatus status) => !IsOpen(status);
+
+        /// <summary>The five statuses, in the lattice's own order.</summary>
+        public static IReadOnlyList<FindingStatus> All { get; } = new[]
+        {
+            FindingStatus.New, FindingStatus.Active, FindingStatus.Reviewed,
+            FindingStatus.Approved, FindingStatus.Resolved,
+        };
+
+        /// <summary>
+        /// The five words, in the same order.
+        ///
+        /// A progression rather than a set, so it is never sorted: alphabetically Approved comes
+        /// before New, which reads as a list nobody thought about.
+        /// </summary>
+        public static IReadOnlyList<string> Names { get; } = All.Select(ToName).ToList();
 
         /// <summary>
         /// True when moving from <paramref name="from"/> to <paramref name="to"/> is a demotion —

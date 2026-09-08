@@ -91,7 +91,7 @@ namespace CamelWorks.UI.Views
                     Bench.Group(string.Empty,
                         Ui.Across(
                             Sized(Ui.Field("Name", Ui.Settled(_run.Name, string.Empty,
-                                name => Keep(_ => _run.Name = name), 190)), 200),
+                                name => Keep(_ => _run.Name = name), Ui.Wide.Name)), 200),
                             Sized(Ui.Field("Folder", Ui.Settled(_run.Folder ?? string.Empty,
                                 string.Empty,
                                 folder => Keep(_ => _run.Folder =
@@ -122,10 +122,9 @@ namespace CamelWorks.UI.Views
                                       + "type the elevation the plan is cut at.")),
                     Bench.Group("What to read",
                         Sized(Ui.Field("Floor from",
-                                 Reading(Ui.Choice(Offered(sides, settings.Floors),
-                                                   settings.Floors,
-                                                   pick => Keep(one => one.Floors = pick),
-                                                   380)),
+                                 Source(Offered(sides, settings.Floors), settings.Floors,
+                                        "What the floor is read from",
+                                        pick => Keep(one => one.Floors = pick), 380),
                                  "A set of floors or slabs. Everything loaded reads the whole "
                                  + "federation at this elevation, and a wall or a duct through the "
                                  + "band projects its outline as though it were floor."),
@@ -136,15 +135,14 @@ namespace CamelWorks.UI.Views
                                       + "cannot run."),
                         Ui.Across(
                             Sized(Ui.Field("Handrails from",
-                                Reading(Ui.Choice(Offered(optional, settings.Handrails),
-                                                  settings.Handrails,
-                                                  pick => Keep(one => one.Handrails = pick),
-                                                  180))), 190),
+                                Source(Offered(optional, settings.Handrails), settings.Handrails,
+                                       "What the handrails are read from",
+                                       pick => Keep(one => one.Handrails = pick), 180)), 190),
                             Sized(Ui.Field("Obstructions from",
-                                Reading(Ui.Choice(Offered(optional, settings.Obstructions),
-                                                  settings.Obstructions,
-                                                  pick => Keep(one => one.Obstructions = pick),
-                                                  180))), 190)),
+                                Source(Offered(optional, settings.Obstructions),
+                                       settings.Obstructions,
+                                       "What the obstructions are read from",
+                                       pick => Keep(one => one.Obstructions = pick), 180)), 190)),
                         settings.HasHandrails
                             ? null
                             : Ui.Note("With no handrails named, every edge over the gap is "
@@ -386,22 +384,16 @@ namespace CamelWorks.UI.Views
                 _onChanged();
             }
 
-            /// <summary>
-            /// A picker whose contents come off the document, greyed with the reason when there is
-            /// no document to read.
-            /// </summary>
-            /// <param name="picker">The picker.</param>
-            private ComboBox Reading(ComboBox picker)
-            {
-                var blocked = Blocked;
+            /// <summary>One source, picked from the shared list.</summary>
+            /// <param name="offered">Everything that could be read from.</param>
+            /// <param name="chosen">What it is read from now.</param>
+            /// <param name="prompt">What the list asks.</param>
+            /// <param name="onPicked">Records the choice.</param>
+            /// <param name="width">How wide the press is.</param>
+            private UIElement Source(IReadOnlyList<string> offered, string chosen, string prompt,
+                                     Action<string> onPicked, double width) =>
+                Parts.Source(_log, offered, chosen, prompt, onPicked, width, Blocked);
 
-                if (blocked == null) return picker;
-
-                picker.IsEnabled = false;
-                picker.ToolTip = blocked;
-
-                return picker;
-            }
 
             /// <summary>One side's list, with whatever it is set to kept in it.</summary>
             /// <param name="offered">What this build offers.</param>
@@ -420,21 +412,7 @@ namespace CamelWorks.UI.Views
             /// answer: a picker that cannot be filled is a picker with nothing in it, never a
             /// screen that refuses to open.
             /// </summary>
-            private List<string> Sets()
-            {
-                try
-                {
-                    return _seat.Sets().Select(set => set.Name)
-                                .Where(name => !string.IsNullOrWhiteSpace(name))
-                                .Distinct(StringComparer.OrdinalIgnoreCase)
-                                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
-                                .ToList();
-                }
-                catch (Exception)
-                {
-                    return new List<string>();
-                }
-            }
+            private IReadOnlyList<string> Sets() => _seat.SetNames();
         }
     }
 }

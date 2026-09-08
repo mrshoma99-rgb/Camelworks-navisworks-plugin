@@ -45,6 +45,31 @@ namespace CamelWorks.Studio
             // engine, and what is drawn is the tab, read, measured by WPF.
             Page("app-clash-manage", "Clash Manager · Manage", 980, () => Managing(false)),
 
+            // The board with the test list folded away, which is how it is worked: choosing a
+            // test is a moment and reading its results is the afternoon. The state where the
+            // columns have the room they need had never been drawn.
+            Page("app-clash-manage-wide", "Clash Manager · Manage, the list folded away", 980,
+                 () => Managing(false, railShut: true)),
+
+            // The board's menus, which a coordinator opens dozens of times a day and which no
+            // picture of this product has ever contained: a menu lives in a popup and a popup
+            // needs a screen. Drawn as their lists, which is what the popups hold.
+            Page("app-clash-menus", "Clash Manager · Manage, the menus", 820, BoardMenus),
+
+            // The keys the results table answers. A shortcuts sheet is the one page where a
+            // mistake is invisible in use - somebody presses the key, nothing happens, and they
+            // stop trusting the rest of the list - so it is drawn rather than assumed.
+            Page("app-clash-keys", "Clash Manager · Manage, the keyboard", 560,
+                 () => new Border { Padding = new Thickness(16), Child = BoardKeys.Drawn() }),
+
+            // The two prose windows behind the Filter and Report tabs' info symbols. Each is
+            // three or four pages of text a coordinator is expected to read once and then know,
+            // and until now the only way to read it was to press the symbol on a licensed seat.
+            Page("app-clash-rules-guide", "Clash Manager · How rules are run", 700,
+                 () => Sheet(CoordinateViews.RulePages())),
+            Page("app-clash-report-guide", "Clash Manager · What goes in each document", 700,
+                 () => Sheet(CoordinateViews.DocumentPages())),
+
             // The same board with the rail's filter panel open: the disciplines, the folders and
             // the naming tokens this read actually holds, drawn as a card over the test list.
             Page("app-clash-finder", "Clash Manager · Manage, the filter panel open", 980,
@@ -112,26 +137,30 @@ namespace CamelWorks.Studio
             // a filter narrowing them and a split that writes a pack per trade. Drawn from the
             // project file rather than a document, so the table and the filter chips can be
             // looked at rather than described from a licensed seat.
-            Page("app-clash-exchange", "Clash Manager · Exchange", 560,
-                 () => new Border
+            Page("app-clash-exchange", "Clash Manager · Exchange", 620,
+                 () => Deck("clash", "exchange", new Border
                  {
                      // Bounded, because the tab is. The surface is a two-pane bench whose body row
                      // is a star, and a star row measured against an unbounded height draws the
                      // whole screen again below itself.
                      Height = 500,
-                     Child = ClashExchangeViews.Drawn(Filed(), "Riverside", Sent()),
-                 }),
+                     Child = ClashExchangeViews.Drawn(Filed(), "Riverside", Sent(), seat: Seated()),
+                 })),
 
             // The other half of the round with nothing chosen, which is the state it opens in and
             // the one an empty screen has to explain rather than merely be blank in. Short,
             // because that state is one card.
-            Page("app-clash-exchange-import", "Clash Manager · Exchange, import", 360,
-                 () => new Border
+            //
+            // Decked, like every other tab page. Drawn as a bare panel this state lost the title
+            // bar and the tab row - 80 pixels of orientation, missing exactly where the user has
+            // least context - and the review recorded that as a defect in the product.
+            Page("app-clash-exchange-import", "Clash Manager · Exchange, import", 420,
+                 () => Deck("clash", "exchange", new Border
                  {
                      Height = 300,
                      Child = ClashExchangeViews.Drawn(Filed(), "Riverside", Sent(),
-                                                      importing: true),
-                 }),
+                                                      importing: true, seat: Seated()),
+                 })),
 
             // The import mode in the state it is used in: two parties' packs read against the
             // board, one clash answered differently by each. The conflict row, the verb that
@@ -142,7 +171,8 @@ namespace CamelWorks.Studio
                  {
                      Height = 500,
                      Child = ClashExchangeViews.Drawn(Filed(), "Riverside", Sent(),
-                                                      importing: true, returned: Returned()),
+                                                      importing: true, returned: Returned(),
+                                                      seat: Seated()),
                  })),
 
             // The Filter tab as a fresh project has it: three sections with nothing in them, the
@@ -178,6 +208,22 @@ namespace CamelWorks.Studio
             Page("app-clash-settings-units", "Clash Manager · Settings, units and distances", 760,
                  () => Deck("clash", "clashsettings",
                             ClashSettingsViews.Drawn(Seated(), ClashSettingsViews.Part.Units))),
+
+            // The other three sections. They were left out of the render set because the scratch
+            // seat draws two of them empty, which is the wrong reason: an empty state is a state,
+            // and the roster can be seeded.
+            Page("app-clash-settings-team", "Clash Manager · Settings, the team", 760,
+                 () => Deck("clash", "clashsettings",
+                            ClashSettingsViews.Drawn(Peopled(), ClashSettingsViews.Part.Team))),
+
+            Page("app-clash-settings-disciplines", "Clash Manager · Settings, disciplines", 620,
+                 () => Deck("clash", "clashsettings",
+                            ClashSettingsViews.Drawn(Seated(),
+                                                     ClashSettingsViews.Part.Disciplines))),
+
+            Page("app-clash-settings-board", "Clash Manager · Settings, the Manage tab", 760,
+                 () => Deck("clash", "clashsettings",
+                            ClashSettingsViews.Drawn(Seated(), ClashSettingsViews.Part.Board))),
 
             // The naming, drawn on each of its panes. This is the surface that decides what the
             // manager can band, filter, sort and renumber by, and every one of those reads a
@@ -249,23 +295,52 @@ namespace CamelWorks.Studio
             Page("app-clash-create-empty", "Clash Manager · Create, no tests yet", 620,
                  () => Creating(null)),
 
-            // The form that makes one clash test. It is a modal in the product, so what is drawn
-            // is its body: the two sides, the kind and the tolerance, with both sides unset, which
-            // is the state it opens in and the one that has to say what to do next.
+            // The form that makes one clash test, as the Create tab's panel holds it: the two
+            // sides, the kind and the tolerance, with both sides unset, which is the state it
+            // opens in and the one that has to say what to do next.
             // Not in the render's default list; named on dispatch.
             Page("app-clash-new", "Clash Manager · A new clash test", 620, NewClash),
         };
+
+        /// <summary>
+        /// The pages of one Ui.Configure window, drawn one under the other.
+        ///
+        /// The window puts them behind a section list; the harness has no window, and stacking
+        /// them under their own names photographs every page in one shot rather than needing one
+        /// page per section.
+        /// </summary>
+        /// <param name="pages">The window's sections.</param>
+        private static UIElement Sheet(Ui.Page[] pages)
+        {
+            var held = Ui.Stack();
+
+            foreach (var page in pages)
+            {
+                held.Children.Add(Ui.Eyebrow(page.Named));
+                held.Children.Add(page.Drawn());
+            }
+
+            return new Border { Padding = new Thickness(16), Child = held };
+        }
 
         /// <summary>The new-clash-test form, as it opens.</summary>
         private static UIElement NewClash()
         {
             var seat = Seated();
-            var clash = seat.Checks.All.OfType<ClashCheck>().First();
+
+            // Built here rather than looked for on the seat. The harness seat has no clash
+            // engine, so it registers no clash check and this page failed on every render with
+            // "sequence contains no elements" — the one page whose whole point is to be looked at
+            // was the one nobody could see.
+            var clash = new ClashCheck(seat.Clash, seat.MetresPerUnit, seat.ClashProblem);
 
             var body = new Border
             {
                 Padding = new Thickness(18, 16, 18, 16),
-                Child = ClashTestViews.Drawn(seat, clash, "Clash 1"),
+                // Panel, not Drawn. Drawn returns the form's body without its footer, so
+                // "Make the test" - the one press this whole form exists for - was in no render
+                // and had never been reviewed.
+                Child = ClashTestViews.Panel(seat, clash, "Clash 1", _ => { }, () => { }),
             };
 
             body.Tint(Border.BackgroundProperty, "Bg");
@@ -313,7 +388,6 @@ namespace CamelWorks.Studio
                 MinimumMetres = 2.1,
                 ToleranceMetres = 0.05,
                 DetectSurfaces = true,
-                Zone = "Level 03",
                 WorstPerPatch = true,
             };
 
@@ -393,14 +467,64 @@ namespace CamelWorks.Studio
         /// and the read is the one the tab's own "Read the results" runs.
         /// </summary>
         /// <param name="panel">Whether the rail's filter panel is open.</param>
-        private static UIElement Managing(bool panel)
+        /// <param name="railShut">True to draw it with the test list folded away.</param>
+        private static UIElement Managing(bool panel, bool railShut = false)
         {
             var seat = Seated();
             var engine = Engined();
 
             Decided(seat, engine);
 
-            return Deck("clash", "manage", ClashManageViews.Drawn(seat, engine, panel));
+            return Deck("clash", "manage",
+                        ClashManageViews.Drawn(seat, engine, panel, railShut));
+        }
+
+        /// <summary>
+        /// Every menu the board opens, side by side as the lists they are.
+        ///
+        /// Not a mock of them: ClashManageViews.Menus builds the tab exactly as the product does
+        /// and hands back the lists it would have put in those popups, so a fault here is a fault
+        /// on the board.
+        /// </summary>
+        private static UIElement BoardMenus()
+        {
+            var seat = Seated();
+            var engine = Engined();
+
+            Decided(seat, engine);
+
+            var held = Ui.Stack();
+
+            foreach (var menu in ClashManageViews.Menus(seat, engine))
+            {
+                var block = Ui.Stack();
+
+                block.Children.Add(Ui.Heading(menu.Name));
+
+                block.Children.Add(menu.Items.Count == 0
+                    ? Ui.Small("This menu is empty in this state.")
+                    : Parts.Drawn(menu.Items));
+
+                var card = new Border
+                {
+                    Padding = new Thickness(12),
+                    Margin = new Thickness(0, 0, 0, 14),
+                    CornerRadius = new CornerRadius(9),
+                    BorderThickness = new Thickness(1),
+                    Child = block,
+                };
+
+                card.Tint(Border.BackgroundProperty, "Card");
+                card.Tint(Border.BorderBrushProperty, "Bd");
+
+                held.Children.Add(card);
+            }
+
+            held.Children.Add(Ui.Small(
+                "The column menu is not here: it wants a particular property column and this "
+                + "board has none, so drawing four and meaning three would be worse."));
+
+            return new Border { Padding = new Thickness(16), Child = held };
         }
 
         /// <summary>
@@ -636,6 +760,107 @@ namespace CamelWorks.Studio
         private static readonly string[] SentLevels = { "L02", "L03", "L04" };
 
         /// <summary>
+        /// What each discipline's elements are called, as a real model names them.
+        ///
+        /// Long enough to be the widest thing on the row, because they are: a board whose element
+        /// names are "Clash1" has never shown what a column of them does to the layout.
+        /// </summary>
+        private static readonly Dictionary<string, string[]> SentElements =
+            new Dictionary<string, string[]>(StringComparer.Ordinal)
+            {
+                ["Mechanical"] = new[]
+                {
+                    "Rectangular Duct: 450x250mm",
+                    "Round Duct: 300mm dia",
+                    "Pipe Types: Chilled Water Flow 100mm",
+                    "Pipe Types: Heating Return 65mm",
+                },
+                ["Structure"] = new[]
+                {
+                    "UB-Universal Beam: 457x191x67UB",
+                    "Concrete-Rectangular Column: 400x400mm",
+                    "Floor: 200mm RC Slab",
+                    "UC-Universal Column: 305x305x97UC",
+                },
+                ["Electrical"] = new[]
+                {
+                    "Cable Tray: 300mm Ladder",
+                    "Conduit: 25mm Galvanised",
+                    "Lighting Fixture: Recessed Troffer 600x600",
+                    "Cable Tray: 600mm Perforated",
+                },
+                ["Architecture"] = new[]
+                {
+                    "Basic Wall: SW-01 Plasterboard 140mm",
+                    "Ceiling: Suspended Grid 600x600",
+                    "Door: Single-Flush 926x2134mm",
+                    "Basic Wall: EW-04 Blockwork 215mm",
+                },
+            };
+
+        /// <summary>
+        /// Which category an element belongs to, as a model records it.
+        ///
+        /// Read off the front of the element's own name, because that is where a model puts it:
+        /// "Rectangular Duct: 450x250mm" is a Duct. The board's filter facets are built from
+        /// these, and a fixture that named the elements but not their categories would have left
+        /// those chips empty in every render — the same fault as the names, one field along.
+        /// </summary>
+        /// <param name="discipline">Which discipline it belongs to.</param>
+        /// <param name="at">Which clash, so it matches the element chosen for the same one.</param>
+        private static string Category(string discipline, int at)
+        {
+            var named = Element(discipline, at);
+            var colon = named.IndexOf(':');
+
+            if (colon <= 0) return discipline;
+
+            var head = named.Substring(0, colon).Trim();
+            var dash = head.IndexOf('-');
+
+            // "UB-Universal Beam" is a Structural Framing member; the code in front of the dash
+            // is the section, not the category.
+            return dash > 0 ? head.Substring(dash + 1).Trim() : head;
+        }
+
+        /// <summary>One element of a discipline, by name.</summary>
+        /// <param name="discipline">Which discipline it belongs to.</param>
+        /// <param name="at">Which clash, so a board carries several of each.</param>
+        private static string Element(string discipline, int at)
+        {
+            if (!SentElements.TryGetValue(discipline, out var named)) return discipline;
+
+            var one = named[Math.Abs(at) % named.Length];
+
+            return one + " [" + (100000 + (Math.Abs(at) * 137) % 800000)
+                                .ToString(CultureInfo.InvariantCulture) + "]";
+        }
+
+        /// <summary>
+        /// How deep one clash is, in model units.
+        ///
+        /// Spread across the bands the board tones against so a column of them shows the tone
+        /// scale rather than one colour: a few clear, a few touching, most inside the tolerance
+        /// and some well past it.
+        /// </summary>
+        /// <param name="at">Which clash.</param>
+        /// <param name="tolerance">The test's tolerance, in metres.</param>
+        private static double Depth(int at, double tolerance)
+        {
+            switch (at % 8)
+            {
+                case 0: return tolerance * 0.4;
+                case 1: return -0.0004;
+                case 2: return -tolerance * 0.3;
+                case 3: return -tolerance * 0.9;
+                case 4: return -tolerance * 1.8;
+                case 5: return -tolerance * 4.2;
+                case 6: return -0.132;
+                default: return -tolerance * 2.6;
+            }
+        }
+
+        /// <summary>
         /// One clash of the board, as the board has it.
         ///
         /// Made here rather than inside <see cref="Sent"/> because the returned packs are written
@@ -699,6 +924,13 @@ namespace CamelWorks.Studio
 
                     engine.Finding(item.Key.A, item.Key.B, item.X, item.Y, item.Z,
                                    Hosted(item.Status));
+
+                    // The two element names and the depth. Without them the board drew its two
+                    // widest columns empty on every row and an em-dash under Overlap, which is
+                    // the board's whole subject missing from every render of it.
+                    engine.Hitting(Element(shape.A, at), Element(shape.B, at + 3),
+                                   Category(shape.A, at), Category(shape.B, at + 3));
+                    engine.Deep(Depth(at, shape.Tolerance));
 
                     var result = "r" + (++results).ToString(CultureInfo.InvariantCulture);
 
@@ -868,6 +1100,49 @@ namespace CamelWorks.Studio
                 Y = at * 2.0,
                 Z = at % 3 * 4.0,
             };
+        }
+
+        /// <summary>
+        /// A seat whose project already names a team.
+        ///
+        /// The Team section reads the roster out of the project file, so on a fresh scratch store
+        /// it draws its empty state and the table, the party column and the active-or-not mark are
+        /// never seen. Six people across four organisations is the size at which the table has to
+        /// hold a name, a role, a company and an address on one row.
+        /// </summary>
+        private static ISeat Peopled()
+        {
+            var seat = Seated();
+            var roster = new TeamRoster();
+
+            roster.Members.Add(new TeamMember("Dana Whitfield", "Northgate Construction",
+                                              "d.whitfield@northgate.example")
+            { Role = "BIM coordinator" });
+
+            roster.Members.Add(new TeamMember("Samir Haddad", "Meridian MEP",
+                                              "s.haddad@meridian.example")
+            { Role = "Mechanical lead" });
+
+            roster.Members.Add(new TeamMember("Priya Raghavan", "Meridian MEP",
+                                              "p.raghavan@meridian.example")
+            { Role = "Electrical lead" });
+
+            roster.Members.Add(new TeamMember("Tom Ellery", "Calder Structures",
+                                              "t.ellery@calder.example")
+            { Role = "Structural engineer" });
+
+            roster.Members.Add(new TeamMember("Anneke Vos", "Vos Architecten",
+                                              "a.vos@vosarchitecten.example")
+            { Role = "Project architect" });
+
+            // Off the job, so the row that is drawn differently is drawn.
+            roster.Members.Add(new TeamMember("Iain Brodie", "Calder Structures",
+                                              "i.brodie@calder.example")
+            { Role = "Setting-out engineer", IsActive = false });
+
+            seat.Store.Section(ProjectStore.ProfileSection).Set("roster", roster.ToJson());
+
+            return seat;
         }
 
         private static ISeat Seated() => new EmptySeat(
@@ -1261,6 +1536,14 @@ namespace CamelWorks.Studio
                 Ui.Field("Smallest surface kept",
                          Ui.Choice(new[] { "0.05 m²", "0.25 m²", "1.0 m²", "4.0 m²", "10.0 m²" },
                                    "0.05 m²", null, 160)),
+                // The screen's second setting, missing from this fixture until the review looked
+                // for it. It is the field most likely to be misread - a 1:5 car-park ramp is
+                // 11.3 degrees, and nothing over the threshold is checked at all - and it had
+                // never appeared in a render.
+                Ui.Field("Steepest surface still walked on",
+                         Ui.Choice(new[] { "3°", "5°", "10°", "12°", "30°" }, "10°", null, 160),
+                         "Anything steeper is a ramp or a roof, and headroom over it is not "
+                         + "measured."),
                 Ui.Check("Prefer elements whose category names a floor", false, null),
                 stairs,
                 Ui.Runner("Find the surfaces", Ui.Stack(), _ => { }, primary: false),

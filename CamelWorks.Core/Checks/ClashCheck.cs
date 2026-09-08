@@ -269,6 +269,54 @@ namespace CamelWorks.Core.Checks
         }
 
         /// <summary>
+        /// Make a copy of an existing test: the same two sides, kind and tolerance, under a new
+        /// name, with no results.
+        ///
+        /// A clash test could not be copied at all — the Create tab said so and sent people to the
+        /// matrix — although the host takes a new test between two sides and this class already
+        /// reads what a test is between. A side the host will not describe is the one case that
+        /// still cannot be copied, because a copy pointed at a side we had to guess at is a
+        /// different test wearing the same name.
+        /// </summary>
+        /// <param name="runId">The host's id for the test to copy.</param>
+        /// <param name="name">What the copy is called.</param>
+        /// <param name="folder">Which clash folder to put it in, or null for the root.</param>
+        /// <param name="problem">Why it could not be copied, or null when it was.</param>
+        /// <returns>The copy as the host now holds it, or null.</returns>
+        public ClashTestInfo? Copy(string runId, string name, string? folder, out string? problem)
+        {
+            var shape = Sides(runId);
+
+            if (shape == null)
+            {
+                problem = _source.LastProblem
+                          ?? "That test is no longer in this document.";
+                return null;
+            }
+
+            var a = Side(shape.SetA, shape.ScopesA);
+            var b = Side(shape.SetB, shape.ScopesB);
+
+            if (a == null || b == null)
+            {
+                problem = "This test is between selections the document will not describe, so it "
+                          + "cannot be copied. Copy it in Clash Detective instead.";
+                return null;
+            }
+
+            return Make(new ClashTestSpec(name, a, b, shape.ToleranceMetres, folder,
+                                          MatrixDiff.Kinded(shape.Kind)), out problem);
+        }
+
+        /// <summary>One side of a copy, or null when the host would not say what it is.</summary>
+        /// <param name="set">The saved set behind it, or null.</param>
+        /// <param name="scopes">The whole models behind it, when it is whole models.</param>
+        private static ClashSide? Side(string? set, IReadOnlyList<string> scopes) =>
+            !string.IsNullOrWhiteSpace(set) ? ClashSide.Set(set!)
+            : scopes.Count > 0 ? ClashSide.Models(scopes)
+            : null;
+
+        /// <summary>
         /// Change what an existing test is judged at, keeping the results it holds.
         ///
         /// The two things the host will change about a test that has already run. Re-pointing its
@@ -300,15 +348,22 @@ namespace CamelWorks.Core.Checks
         /// <summary>
         /// Every clash test in the document, without reading a result.
         ///
-        /// Two host calls per test — the test list, then its two sides — which is what the rail
-        /// costs before anybody presses Read.
+        /// One host call for the list, and one more per test whose shape is not already held.
+        /// The shape was re-read for every test on every call, and the Create tab calls this
+        /// after every edit to any test's settings: on a federation with a hundred and sixty
+        /// tests that is a hundred and sixty test-tree walks and three hundred and twenty
+        /// saved-set lookups per edit, on the thread drawing the screen.
+        ///
+        /// Held is safe because every way the shape can change goes through this class and drops
+        /// its entry — <see cref="Make"/>, <see cref="Retune"/> and <see cref="Read"/> — and the
+        /// settings panel asks <see cref="Sides"/>, which always re-reads.
         /// </summary>
         public IReadOnlyList<CheckRun> Runs()
         {
             var found = new List<CheckRun>();
 
             foreach (var test in _source.Tests())
-                found.Add(Run(test, Shape(test.Id, reread: true)));
+                found.Add(Run(test, Shape(test.Id)));
 
             return found;
         }
@@ -339,6 +394,25 @@ namespace CamelWorks.Core.Checks
                 return new CheckRead(runs, findings, _ => false, notes);
             }
 
+            // What the host counted against what could be described. A result whose two sides
+            // will not both resolve to an element cannot be keyed, and the adapter drops it. That
+            // is a real answer, but a silent one: the board would say "678 results read" over a
+            // test the host says holds nine hundred, and the difference would look like the tool
+            // losing them.
+            var lost = 0;
+            var worst = new List<string>();
+
+            void Counted(ClashTestInfo test, int described)
+            {
+                var missing = test.ResultCount - described;
+
+                if (missing <= 0) return;
+
+                lost += missing;
+
+                if (worst.Count < 3) worst.Add(test.Name);
+            }
+
             if (runIds == null)
             {
                 foreach (var read in _source.ReadEverything(onProgress))
@@ -347,6 +421,8 @@ namespace CamelWorks.Core.Checks
 
                     runs.Add(Run(read.Test, read.Shape));
                     findings.AddRange(Found(read.Test, read.Results));
+
+                    Counted(read.Test, read.Results.Count);
                 }
             }
             else
@@ -372,11 +448,31 @@ namespace CamelWorks.Core.Checks
 
                     runs.Add(Run(test, Shape(test.Id, reread: true)));
                     findings.AddRange(Found(test, results));
+
+                    Counted(test, results.Count);
                 }
             }
 
+            if (lost > 0)
+                notes.Add(Lost(lost, worst));
+
             return new CheckRead(runs, findings, Scope(runs.Select(run => run.Id).ToList()), notes);
         }
+
+        /// <summary>
+        /// What the read could not describe, in one sentence.
+        ///
+        /// Named tests rather than a bare number: on a federation the loss is almost never spread
+        /// evenly, and the test it is concentrated in is the one whose selection needs looking at.
+        /// </summary>
+        /// <param name="lost">How many results the host counted that could not be described.</param>
+        /// <param name="worst">The first few tests it happened in.</param>
+        private static string Lost(int lost, IReadOnlyList<string> worst) =>
+            lost + (lost == 1 ? " result the tests report is not on the board" : " results the "
+                    + "tests report are not on the board")
+            + ", because one of the two items in each could not be identified in the model"
+            + (worst.Count == 0 ? "." : " \u2014 in " + string.Join(", ", worst)
+                                        + (worst.Count < 3 ? "." : " and others."));
 
         /// <summary>
         /// Which held findings a read of these tests speaks for.

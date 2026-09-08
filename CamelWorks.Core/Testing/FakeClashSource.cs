@@ -42,6 +42,9 @@ namespace CamelWorks.Core.Testing
             internal string? SetA { get; set; }
             internal string? SetB { get; set; }
             internal List<FakeResult> Results { get; } = new List<FakeResult>();
+
+            /// <summary>How many results the test reports that it does not hand over.</summary>
+            internal int Unkeyed { get; set; }
         }
 
         /// <summary>One result, as the host holds it.</summary>
@@ -54,6 +57,18 @@ namespace CamelWorks.Core.Testing
 
             internal string Id { get; }
             internal string Name { get; set; } = string.Empty;
+
+            /// <summary>What the first element is called, as the host names it.</summary>
+            internal string? NameA { get; set; }
+
+            /// <summary>What the second element is called.</summary>
+            internal string? NameB { get; set; }
+
+            /// <summary>Which category the first element belongs to.</summary>
+            internal string? CategoryA { get; set; }
+
+            /// <summary>Which category the second element belongs to.</summary>
+            internal string? CategoryB { get; set; }
 
             /// <summary>What each side of this result says under a property, by category and name.</summary>
             internal Dictionary<string, string> Properties { get; } =
@@ -132,6 +147,43 @@ namespace CamelWorks.Core.Testing
             return this;
         }
 
+        /// <summary>Say what the last test added is between, and how it is judged.</summary>
+        /// <param name="setA">The saved set behind the first side, or null when it has none.</param>
+        /// <param name="setB">The saved set behind the second side, or null.</param>
+        /// <param name="toleranceMetres">Its tolerance, in metres.</param>
+        /// <param name="kind">Which kind of test it is.</param>
+        public FakeClashSource Between(string? setA, string? setB, double toleranceMetres = 0.025,
+                                       MatrixTest kind = MatrixTest.Hard)
+        {
+            if (_tests.Count == 0) throw new InvalidOperationException("add a test first");
+
+            var test = _tests[_tests.Count - 1];
+
+            test.SetA = setA;
+            test.SetB = setB;
+            test.ToleranceMetres = toleranceMetres;
+            test.Kind = kind;
+
+            return this;
+        }
+
+        /// <summary>
+        /// Make the last test added report more results than it hands over.
+        ///
+        /// The adapter drops a result whose two elements it cannot identify in the model, but the
+        /// count on the test comes from the host and still includes them, so the two numbers
+        /// disagree. This is how a test reproduces that.
+        /// </summary>
+        /// <param name="many">How many results to report and not hand over.</param>
+        public FakeClashSource Unkeyed(int many)
+        {
+            if (_tests.Count == 0) throw new InvalidOperationException("add a test first");
+
+            _tests[_tests.Count - 1].Unkeyed += many;
+
+            return this;
+        }
+
         /// <summary>
         /// What one side of the last result added says under a property.
         ///
@@ -178,6 +230,41 @@ namespace CamelWorks.Core.Testing
             return this;
         }
 
+        /// <summary>
+        /// What the last result's two elements are called.
+        ///
+        /// The board's two widest columns are these names, and a fake that left them null drew a
+        /// board whose "First item" and "Second item" columns were empty on every row. Every
+        /// judgment made about that screen's layout was made against a board missing the two
+        /// facts it exists to state. The categories go the same way, into the filter facets.
+        /// </summary>
+        /// <param name="a">What the first element is called.</param>
+        /// <param name="b">What the second element is called.</param>
+        /// <param name="categoryA">Which category the first element belongs to, or null.</param>
+        /// <param name="categoryB">Which category the second belongs to, or null.</param>
+        public FakeClashSource Hitting(string? a, string? b,
+                                       string? categoryA = null, string? categoryB = null)
+        {
+            if (_tests.Count == 0) throw new InvalidOperationException("add a test first");
+
+            var test = _tests[_tests.Count - 1];
+
+            if (test.Results.Count == 0) throw new InvalidOperationException("add a result first");
+
+            var result = test.Results[test.Results.Count - 1];
+
+            result.NameA = a;
+            result.NameB = b;
+
+            // The categories with the names, because an element has both and a fake that gives
+            // one and not the other leaves the board's filter facets empty while a real seat
+            // fills them. That is the same defect as the missing names, one field along.
+            result.CategoryA = categoryA;
+            result.CategoryB = categoryB;
+
+            return this;
+        }
+
         // ---- Reading ---------------------------------------------------------------------
 
         /// <inheritdoc />
@@ -203,6 +290,18 @@ namespace CamelWorks.Core.Testing
                 one.Id, one.A, one.B, one.X, one.Y, one.Z, one.Status, one.AssignedTo)
             {
                 Name = one.Name,
+                NameA = one.NameA,
+                NameB = one.NameB,
+                CategoryA = one.CategoryA,
+                CategoryB = one.CategoryB,
+
+                // Derived from the trail rather than left at nought. The real readers carry both,
+                // and a screen that counts comments off a fake reporting none is a screen drawn
+                // without them.
+                CommentCount = one.Comments.Count,
+                LastComment = one.Comments.Count == 0
+                    ? null
+                    : one.Comments[one.Comments.Count - 1].Body,
                 GroupName = one.Group,
                 Comments = one.Comments.ToList(),
                 Distance = one.Distance,
@@ -230,6 +329,8 @@ namespace CamelWorks.Core.Testing
         /// <inheritdoc />
         public ClashTestSides? Sides(string testId)
         {
+            _log.Add("Sides " + testId);
+
             var test = IsAvailable ? Found(testId) : null;
 
             return test == null
@@ -356,8 +457,8 @@ namespace CamelWorks.Core.Testing
             {
                 ToleranceMetres = spec.Tolerance,
                 Kind = spec.Kind,
-                SetA = spec.A?.Name,
-                SetB = spec.B?.Name,
+                SetA = Sided(spec.A),
+                SetB = Sided(spec.B),
             };
 
             _tests.Add(made);
@@ -698,11 +799,18 @@ namespace CamelWorks.Core.Testing
             return wanted.Count * 2;
         }
 
+        /// <summary>What a side is called, as the host would name it back.</summary>
+        /// <param name="side">The side.</param>
+        private static string? Sided(ClashSide? side) =>
+            side == null || side.Named.Count == 0
+                ? null
+                : string.Join(" + ", side.Named.Select(one => one.Name));
+
         // ---- Plumbing ---------------------------------------------------------------------
 
         private static ClashTestInfo Described(FakeTest test) =>
-            new ClashTestInfo(test.Id, test.Name, test.Folder, test.Results.Count,
-                              test.LastRunTicks);
+            new ClashTestInfo(test.Id, test.Name, test.Folder,
+                              test.Results.Count + test.Unkeyed, test.LastRunTicks);
 
         private FakeTest? Found(string? testId) =>
             _tests.FirstOrDefault(one => string.Equals(one.Id, testId,

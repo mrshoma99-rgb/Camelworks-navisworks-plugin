@@ -88,9 +88,9 @@ namespace CamelWorks.UI.Views
         {
             var results = Ui.Stack();
 
-            var scope = Ui.Text(string.Empty, "Level 04 services", null, 220);
-            var signatory = Ui.Text(string.Empty, "who is putting their name to it", null, 180);
-            var release = Ui.Text(string.Empty, "a works order, a drawing number", null, 140);
+            var scope = Ui.Text(string.Empty, "Level 04 services", null, Ui.Wide.Phrase);
+            var signatory = Ui.Text(string.Empty, "who is putting their name to it", null, Ui.Wide.Name);
+            var release = Ui.Text(string.Empty, "a works order, a drawing number", null, Ui.Wide.Word);
 
             results.Children.Add(Bench.Ready(
                 "Records the current position of every element in scope, against a named author.",
@@ -110,7 +110,7 @@ namespace CamelWorks.UI.Views
             return Bench.Surface(
                 Ui.Stack(
                     Bench.Group("What is being frozen",
-                        Ui.Field("Scope", Ui.Choice(choices, _scope, pick => _scope = pick, 220)),
+                        Ui.Field("Scope", Ui.Choice(choices, _scope, pick => _scope = pick, Ui.Wide.Phrase)),
                         Ui.Field("Set", setPicker, "used when the scope is a set"),
                         Ui.Field("Call it", scope, "how the record will read"),
                         Ui.Field("Signed by", signatory),
@@ -245,8 +245,8 @@ namespace CamelWorks.UI.Views
 
             if (missing > 0)
                 results.Children.Add(Ui.Note(Ui.Count(missing, "element")
-                    + " could not be found in the model and are not in the record. They cannot be "
-                    + "reported on later either, which is worth knowing now."));
+                    + " could not be found in the model and are not in the record, so no later "
+                    + "run reports on them."));
 
             session.Record(ActivityKind.Regroup, record.Describe());
 

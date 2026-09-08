@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Checks;
 using CamelWorks.Core.Findings;
@@ -198,5 +199,62 @@ namespace CamelWorks.UI.Views
 
         /// <inheritdoc />
         public IEnumerable<ElementKey> Visible() => Array.Empty<ElementKey>();
+    }
+
+    /// <summary>
+    /// What a screen asks a seat for, asked once here rather than on every panel.
+    ///
+    /// Three of the check panels had their own copy of "ask the document, and answer nothing when
+    /// it will not", each with its own comment saying why. A picker that cannot be filled is a
+    /// picker with nothing in it, never a screen that refuses to open — and that decision belongs
+    /// in one place, so a fourth panel gets it without being told.
+    /// </summary>
+    public static class Seated
+    {
+        /// <summary>
+        /// Whatever the document answers, or nothing when it will not.
+        /// </summary>
+        /// <typeparam name="T">What is being read.</typeparam>
+        /// <param name="supply">Where it comes from.</param>
+        public static IReadOnlyList<T> Offer<T>(Func<IReadOnlyList<T>> supply)
+        {
+            if (supply == null) throw new ArgumentNullException(nameof(supply));
+
+            try
+            {
+                return supply();
+            }
+            catch (Exception)
+            {
+                return Array.Empty<T>();
+            }
+        }
+
+        /// <summary>Every saved set this document holds, or none when it will not say.</summary>
+        /// <param name="seat">The seat.</param>
+        public static IReadOnlyList<SeatSet> Sets(this ISeat seat) =>
+            Offer(() => seat.Sets());
+
+        /// <summary>Every saved set's name, once each, in order.</summary>
+        /// <param name="seat">The seat.</param>
+        public static IReadOnlyList<string> SetNames(this ISeat seat) =>
+            Ui.Listed(Sets(seat).Select(one => one.Name));
+
+        /// <summary>Every loaded model's name, once each, in order.</summary>
+        /// <param name="seat">The seat.</param>
+        public static IReadOnlyList<string> ModelNames(this ISeat seat) =>
+            Ui.Listed(Offer(() => seat.Models()));
+
+        /// <summary>
+        /// The folders a check's tests are filed in, once each, in order.
+        ///
+        /// Off the tests rather than off a list somebody maintains: a clash folder exists because
+        /// a test is in it, and one nothing is in is one the document has forgotten.
+        /// </summary>
+        /// <param name="check">The check.</param>
+        public static IReadOnlyList<string> Folders(ICheck? check) =>
+            check == null
+                ? Array.Empty<string>()
+                : Ui.Listed(Offer(() => check.Runs()).Select(one => one.Folder));
     }
 }

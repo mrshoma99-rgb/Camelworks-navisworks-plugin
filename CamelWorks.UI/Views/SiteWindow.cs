@@ -140,13 +140,13 @@ namespace CamelWorks.UI.Views
                 _basis = _kept.Text("basis", ByWeight) ?? ByWeight;
 
                 _folder = Ui.Text(_kept.Text("folder"), "where the files go",
-                                  text => _kept.Set("folder", text), 260);
+                                  text => _kept.Set("folder", text), Ui.Wide.Phrase);
 
                 _root = Ui.Text(_kept.Text("root"), "a folder relative paths are taken from",
-                                text => _kept.Set("root", text), 260);
+                                text => _kept.Set("root", text), Ui.Wide.Phrase);
 
                 _prefix = Ui.Text(_kept.Text("prefix"), "an address every code goes behind, or nothing",
-                                  text => { _tag.Prefix = text.Trim(); _kept.Set("prefix", text); }, 260);
+                                  text => { _tag.Prefix = text.Trim(); _kept.Set("prefix", text); }, Ui.Wide.Phrase);
 
                 Load();
 
@@ -212,7 +212,7 @@ namespace CamelWorks.UI.Views
                             Bench.Group("Points",
                                 Ui.Field("Point numbers start with",
                                     Ui.Text(_recipe.Prefix, text => _recipe.Prefix =
-                                        string.IsNullOrWhiteSpace(text) ? "SO" : text.Trim(), 100)),
+                                        string.IsNullOrWhiteSpace(text) ? "SO" : text.Trim(), Ui.Wide.Number)),
                                 Ui.Field("Take", PointKinds())));
 
                     case "paperwork":
@@ -484,7 +484,7 @@ namespace CamelWorks.UI.Views
                 {
                     _massProperty = Split(pick);
                     _kept.Set("mass", pick);
-                }, 240);
+                }, Ui.Wide.Phrase);
 
                 picker.IsEnabled = fields.Count > 0;
 
@@ -493,7 +493,7 @@ namespace CamelWorks.UI.Views
                     {
                         _basis = pick;
                         _kept.Set("basis", pick);
-                    }, 240)));
+                    }, Ui.Wide.Phrase)));
 
                 _options.Children.Add(Ui.Field("The mass is in", picker,
                     Chosen.Count == 0
@@ -892,7 +892,7 @@ namespace CamelWorks.UI.Views
                 if (!options.Contains(shown, StringComparer.OrdinalIgnoreCase)) shown = FromMark;
 
                 _options.Children.Add(
-                    Ui.Field("What the code says", Ui.Choice(options, shown, Chose, 260),
+                    Ui.Field("What the code says", Ui.Choice(options, shown, Chose, Ui.Wide.Phrase),
                              "the mark is what a drawing calls it, and needs nothing setting up"));
 
                 _options.Children.Add(
@@ -905,7 +905,7 @@ namespace CamelWorks.UI.Views
                         {
                             _tag.Level = Level(pick);
                             _kept.Set("labelLevel", pick);
-                        }, 200),
+                        }, Ui.Wide.Name),
                         "a label on site gets scuffed; the more it can lose the bigger the code"));
             }
 

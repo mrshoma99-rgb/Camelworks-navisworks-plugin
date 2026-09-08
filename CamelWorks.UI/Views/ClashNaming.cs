@@ -136,7 +136,7 @@ namespace CamelWorks.UI.Views
                                           NamingPane start, FrameworkElement? near,
                                           Action? onTouched,
                                           IReadOnlyList<string>? issued = null) =>
-            Body(book, Held(tests), rename, start, near, onTouched, null, issued);
+            Body(book, Held(tests), rename, start, near, onTouched, null, issued, writes: false);
 
         /// <summary>The tests as lines this window can rename in place.</summary>
         private static List<Line> Held(IReadOnlyList<(string Id, string Name)>? tests) =>
@@ -149,9 +149,15 @@ namespace CamelWorks.UI.Views
         private static UIElement Body(NamingBook book, List<Line> tests,
                                       Func<string, string, bool> rename, NamingPane start,
                                       FrameworkElement? near, Action? onTouched, Action? onDone,
-                                      IReadOnlyList<string>? issued = null)
+                                      IReadOnlyList<string>? issued = null, bool writes = true)
         {
-            var pane = start;
+            // The renumber writes to the Navisworks document the moment it is pressed. Where this
+            // is drawn as a window that is what its own button says it does; where it is drawn as
+            // a section of a Settings tab whose footer says "Save the settings", it is a host
+            // write behind a button promising the opposite. So the Settings tab gets the naming
+            // without it, and the renumber keeps its home on the Manage tab's test menu, beside
+            // the run and the compact - the other two verbs that write to the document at once.
+            var pane = !writes && start == NamingPane.Write ? NamingPane.Tests : start;
 
             // Which pattern card carries the token palette. Held here rather than inside the
             // pane, because the pane is rebuilt on every edit and would put it back on the first.
@@ -194,7 +200,7 @@ namespace CamelWorks.UI.Views
             void Redraw()
             {
                 head.Children.Clear();
-                head.Children.Add(Switcher(pane, said =>
+                head.Children.Add(Switcher(pane, writes, said =>
                 {
                     pane = said == PatternsPane ? NamingPane.Patterns
                         : said == FieldsPane ? NamingPane.Fields
@@ -282,21 +288,27 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>The four panes, as one control.</summary>
-        private static UIElement Switcher(NamingPane pane, Action<string> onChanged)
+        /// <param name="pane">The pane being shown.</param>
+        /// <param name="writes">False where the renumber is not offered.</param>
+        /// <param name="onChanged">Called with the pane picked.</param>
+        private static UIElement Switcher(NamingPane pane, bool writes, Action<string> onChanged)
         {
             var chosen = pane switch
             {
                 NamingPane.Patterns => PatternsPane,
                 NamingPane.Fields => FieldsPane,
-                NamingPane.Write => WritePane,
+                NamingPane.Write when writes => WritePane,
                 _ => TestsPane,
             };
 
             // Fields, then patterns, then which pattern reads which test, then the renumber the
             // other three make possible. The Tests pane shows nothing to assign until a pattern
             // exists, so leading with it opened the window on an empty list.
-            var pick = Ui.Segmented(new[] { FieldsPane, PatternsPane, TestsPane, WritePane },
-                                    chosen, onChanged);
+            var panes = writes
+                ? new[] { FieldsPane, PatternsPane, TestsPane, WritePane }
+                : new[] { FieldsPane, PatternsPane, TestsPane };
+
+            var pick = Ui.Segmented(panes, chosen, onChanged);
 
             if (pick is FrameworkElement held) held.HorizontalAlignment = HorizontalAlignment.Left;
 
@@ -322,7 +334,7 @@ namespace CamelWorks.UI.Views
             var find = string.Empty;
             var list = Ui.Stack();
 
-            var box = Ui.Text(string.Empty, "Find a test", typed => { }, 240);
+            var box = Ui.Find("a test name", typed => { }, Ui.Wide.Phrase);
 
             box.HorizontalAlignment = HorizontalAlignment.Stretch;
 
@@ -662,7 +674,7 @@ namespace CamelWorks.UI.Views
             card.Tint(Border.BackgroundProperty, "Card2");
             card.Tint(Border.BorderBrushProperty, "Bd");
 
-            var box = Ui.Text(patterns[here], MatrixNaming.Default, typed => { }, 240);
+            var box = Ui.Text(patterns[here], MatrixNaming.Default, typed => { }, Ui.Wide.Phrase);
 
             box.HorizontalAlignment = HorizontalAlignment.Stretch;
             box.TextWrapping = TextWrapping.Wrap;
@@ -847,9 +859,10 @@ namespace CamelWorks.UI.Views
         /// <summary>
         /// The fields a pattern's tokens name.
         ///
-        /// Only what a field is called and whether it exists. How a field is filled in — counted
-        /// down the axis, the same on every line — is about a matrix's rows and columns, and is
-        /// set on the matrix's own Fields window rather than here, where there are no rows.
+        /// What a field is called, how it is filled in, and whether it exists. How it is filled
+        /// in used to be set only on the matrix's own Fields window, so a field added here was
+        /// typed line by line whatever it was for and the control that changed that was a window
+        /// away.
         /// </summary>
         private static void Fields(Panel into, NamingBook book, FrameworkElement? near,
                                    Action touch, Action redraw)
@@ -912,6 +925,7 @@ namespace CamelWorks.UI.Views
             var row = new Grid();
 
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
@@ -923,12 +937,28 @@ namespace CamelWorks.UI.Views
 
                 field.Title = said;
                 touch();
-            }, 170);
+            }, Ui.Wide.Name);
 
             title.VerticalAlignment = VerticalAlignment.Center;
 
             Grid.SetColumn(title, 0);
             row.Children.Add(title);
+
+            // How the field is filled in, beside what it is called. Adding one asked for a name
+            // and nothing else, so every field arrived typed line by line whatever it was for,
+            // and the one control that changed that was on another window.
+            var fill = Ui.Choice(Fills.Select(Filled).ToList(), Filled(field.Fill), picked =>
+            {
+                field.Fill = Fills.First(one => Filled(one) == picked);
+                touch();
+            }, 140);
+
+            fill.VerticalAlignment = VerticalAlignment.Center;
+            fill.Margin = new Thickness(10, 0, 0, 0);
+            fill.ToolTip = "How this field gets its value on each line.";
+
+            Grid.SetColumn(fill, 1);
+            row.Children.Add(fill);
 
             var tokens = new TextBlock
             {
@@ -942,7 +972,7 @@ namespace CamelWorks.UI.Views
 
             tokens.Tint(TextBlock.ForegroundProperty, "Muted");
 
-            Grid.SetColumn(tokens, 1);
+            Grid.SetColumn(tokens, 2);
             row.Children.Add(tokens);
 
             if (!field.IsBuiltIn)
@@ -958,7 +988,7 @@ namespace CamelWorks.UI.Views
                 drop.ToolTip = "Remove this field. Patterns that used it stop reading until "
                                + "the token is taken out of them.";
 
-                Grid.SetColumn(drop, 2);
+                Grid.SetColumn(drop, 3);
                 row.Children.Add(drop);
             }
 
@@ -966,6 +996,20 @@ namespace CamelWorks.UI.Views
 
             return card;
         }
+
+        /// <summary>The ways a field can be filled in, in the order the picker offers them.</summary>
+        private static readonly MatrixFill[] Fills =
+            { MatrixFill.ByHand, MatrixFill.Series, MatrixFill.Same };
+
+        /// <summary>How a way of filling a field reads.</summary>
+        /// <param name="fill">The way.</param>
+        private static string Filled(MatrixFill fill) =>
+            fill switch
+            {
+                MatrixFill.Series => "Counted down the axis",
+                MatrixFill.Same => "The same on every line",
+                _ => "Typed line by line",
+            };
 
         /// <summary>The two tokens a field writes, as a pattern carries them.</summary>
         private static string Tokens(MatrixField field)
@@ -1075,41 +1119,23 @@ namespace CamelWorks.UI.Views
 
                 preview.Children.Clear();
 
-                // Every row drawn is accounted for. The count was renames and refusals only, so
-                // a plan of twenty-one tests announced nine and nine and drew twenty-one rows.
-                var same = plan.Count - changing - refused;
-
-                var counts = new List<string> { Ui.Count(plan.Count, "test") };
-
-                counts.Add(changing + " renamed");
-
-                if (same > 0) counts.Add(same + " already right");
-                if (refused > 0) counts.Add(refused + " the naming cannot write");
-
                 var title = Ui.Line("What it would write", 1, true);
 
                 title.Margin = new Thickness(0, 0, 0, 2);
 
                 preview.Children.Add(title);
-                preview.Children.Add(Ui.Small(string.Join("  ·  ", counts)));
 
-                var rows = Ui.Stack();
-
-                rows.Margin = new Thickness(0, 8, 0, 0);
-                rows.Children.Add(Headings());
-
-                foreach (var step in plan.Take(200)) rows.Children.Add(Step(step));
-
-                if (plan.Count > 200)
-                {
-                    var more = Ui.Small("and " + Ui.Count(plan.Count - 200, "more test")
-                                        + ", not drawn here.");
-
-                    more.Margin = new Thickness(0, 6, 0, 0);
-                    rows.Children.Add(more);
-                }
-
-                preview.Children.Add(rows);
+                // Drawn by Ui.Plan, which was generalised from this pane: every row accounted
+                // for, before and after on one line, the refusal written in the row, a skipped
+                // row muted rather than red, and a cap that says how many are left. This is the
+                // surface the primitive is copied from, so it draws it first.
+                preview.Children.Add(Ui.Plan(
+                    plan.Select(step => new Planned(
+                        step.Was,
+                        step.Changes ? step.Now : null,
+                        step.Why != NamingRefusal.None ? NamingWrite.Said(step.Why) : null))
+                        .ToList(),
+                    "test", "renamed", "the naming cannot write"));
 
                 var act = Ui.Primary(changing == 0
                                          ? "Nothing to rename"
@@ -1317,53 +1343,7 @@ namespace CamelWorks.UI.Views
             return row;
         }
 
-        /// <summary>One test's line in the plan: what it is called, and what it would become.</summary>
-        /// <param name="step">The step.</param>
-        private static UIElement Step(NamingStep step)
-        {
-            var arrow = Cell("→", "Faint");
 
-            arrow.HorizontalAlignment = HorizontalAlignment.Center;
-
-            var row = Twin(
-                Cell(step.Was, "Muted"),
-                arrow,
-                Cell(step.Why != NamingRefusal.None
-                         ? NamingWrite.Said(step.Why)
-                         : step.Changes ? step.Now ?? string.Empty : "unchanged",
-                     // Muted, not red. A step this run leaves alone is a row the plan skipped,
-                     // and red is what the product uses for something that went wrong; a preview
-                     // of forty skipped tests read as forty errors.
-                     step.Why != NamingRefusal.None ? "Muted"
-                     : step.Changes ? "Accent" : "Muted"));
-
-            row.Margin = new Thickness(0, 0, 0, 4);
-
-            return row;
-        }
-
-        /// <summary>One name in the plan, trimmed to its column and carried in full on the tip.</summary>
-        /// <param name="said">The text.</param>
-        /// <param name="ink">Which skin colour it takes.</param>
-        private static TextBlock Cell(string said, string ink)
-        {
-            var made = new TextBlock
-            {
-                Text = said,
-                FontSize = 11,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                ToolTip = said.Length == 0 ? null : said,
-            }.Wearing("Body");
-
-            // After the style, which turns wrapping on: with it on, a long name wrapped to a
-            // second line and the trimming never came into it.
-            made.TextWrapping = TextWrapping.NoWrap;
-
-            made.Tint(TextBlock.ForegroundProperty, ink);
-
-            return made;
-        }
 
         /// <summary>
         /// The fields to pick from, numbers first.
@@ -1472,7 +1452,7 @@ namespace CamelWorks.UI.Views
             {
                 how.Start = (typed ?? string.Empty).Trim();
                 onChange();
-            }, 62);
+            }, Ui.Wide.Number);
 
             var step = Ui.Text(how.Step.ToString(CultureInfo.InvariantCulture), "1", typed =>
             {
@@ -1523,7 +1503,7 @@ namespace CamelWorks.UI.Views
             {
                 how.Same = (typed ?? string.Empty).Trim();
                 onChange();
-            }, 150);
+            }, Ui.Wide.Word);
 
             var held = Ui.Field("Value", box, null);
 

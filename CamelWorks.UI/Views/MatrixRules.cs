@@ -154,9 +154,9 @@ namespace CamelWorks.UI.Views
 
             Redraw();
 
-            var sideA = Ui.Choice(folders, Anything, null, 150);
-            var sideB = Ui.Choice(folders, Anything, null, 150);
-            var mark = Ui.Choice(marks, marks.Count > 0 ? marks[0] : null, null, 90);
+            var sideA = Ui.Choice(folders, Anything, null, Ui.Wide.Word);
+            var sideB = Ui.Choice(folders, Anything, null, Ui.Wide.Word);
+            var mark = Ui.Choice(marks, marks.Count > 0 ? marks[0] : null, null, Ui.Wide.Number);
 
             var adding = Ui.Across(
                 sideA,

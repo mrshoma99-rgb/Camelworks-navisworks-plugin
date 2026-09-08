@@ -408,10 +408,10 @@ namespace CamelWorks.UI.Views
             private readonly StackPanel _output = Ui.Stack();
             private readonly StackPanel _preview = Ui.Stack();
 
-            private readonly TextBox _title = Ui.Text("Information requirements", null, 240);
-            private readonly TextBox _version = Ui.Text("1.0", null, 100);
-            private readonly TextBox _author = Ui.Text(string.Empty, "somebody@example.com", null, 200);
-            private readonly TextBox _about = Ui.Text(string.Empty, "what it is for", null, 240);
+            private readonly TextBox _title = Ui.Text("Information requirements", null, Ui.Wide.Phrase);
+            private readonly TextBox _version = Ui.Text("1.0", null, Ui.Wide.Number);
+            private readonly TextBox _author = Ui.Text(string.Empty, "somebody@example.com", null, Ui.Wide.Name);
+            private readonly TextBox _about = Ui.Text(string.Empty, "what it is for", null, Ui.Wide.Phrase);
 
             private Spec? _chosen;
 
@@ -758,11 +758,11 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                var name = Ui.Text(spec.Name, text => { spec.Name = text; }, 260);
-                var identifier = Ui.Text(spec.Identifier, text => spec.Identifier = text, 140);
-                var about = Ui.Text(spec.Description, text => spec.Description = text, 260);
+                var name = Ui.Text(spec.Name, text => { spec.Name = text; }, Ui.Wide.Phrase);
+                var identifier = Ui.Text(spec.Identifier, text => spec.Identifier = text, Ui.Wide.Word);
+                var about = Ui.Text(spec.Description, text => spec.Description = text, Ui.Wide.Phrase);
                 var told = Ui.Text(spec.Instructions, "what to do about a failure",
-                                   text => spec.Instructions = text, 260);
+                                   text => spec.Instructions = text, Ui.Wide.Phrase);
 
                 var versions = new WrapPanel();
 
@@ -859,7 +859,7 @@ namespace CamelWorks.UI.Views
                         ? new[] { Property, Attribute, Classification, Material, PartOf }
                         : new[] { Entity, Scoped, Property, Attribute, Classification, Material, PartOf },
                     row.Kind,
-                    pick => { row.Kind = pick; redraw(); Look(); }, 160);
+                    pick => { row.Kind = pick; redraw(); Look(); }, Ui.Wide.Word);
 
                 var body = new List<UIElement?>();
 
@@ -871,10 +871,10 @@ namespace CamelWorks.UI.Views
                 FrameworkElement first =
                     row.Kind == Scoped
                         ? Ui.Choice(SetChoices(), row.First,
-                                    pick => { row.First = pick; redraw(); Look(); }, 240)
+                                    pick => { row.First = pick; redraw(); Look(); }, Ui.Wide.Phrase)
                     : row.Kind == Property
                         ? Pickers.Tab(row.First, text => { row.First = text; Look(); }, 180)
-                        : (FrameworkElement)Ui.Text(row.First, text => { row.First = text; Look(); }, 180);
+                        : (FrameworkElement)Ui.Text(row.First, text => { row.First = text; Look(); }, Ui.Wide.Name);
 
                 body.Add(row.HasSecond
                     ? Ui.Pair(Ui.Field(row.FirstLabel, first),
@@ -902,27 +902,27 @@ namespace CamelWorks.UI.Views
                 {
                     body.Add(Ui.Field("Through", Ui.Choice(
                         new[] { string.Empty }.Concat(IdsWriter.Relations).ToList(),
-                        row.Relation, pick => { row.Relation = pick; Look(); }, 240),
+                        row.Relation, pick => { row.Relation = pick; Look(); }, Ui.Wide.Phrase),
                         "Left blank, any relationship counts."));
                 }
                 else if (row.Kind != Entity && row.HasValue)
                 {
                     var test = Ui.Choice(new[] { Present, Exactly, OneOf, Matches, Between },
                                          row.Test,
-                                         pick => { row.Test = pick; redraw(); Look(); }, 180);
+                                         pick => { row.Test = pick; redraw(); Look(); }, Ui.Wide.Name);
 
                     body.Add(Ui.Field("Its value", test));
 
                     if (row.Test == Between)
                     {
                         body.Add(Ui.Pair(
-                            Ui.Field("From", Ui.Text(row.Value, text => { row.Value = text; Look(); }, 90)),
-                            Ui.Field("To", Ui.Text(row.Upper, text => { row.Upper = text; Look(); }, 90))));
+                            Ui.Field("From", Ui.Text(row.Value, text => { row.Value = text; Look(); }, Ui.Wide.Number)),
+                            Ui.Field("To", Ui.Text(row.Upper, text => { row.Upper = text; Look(); }, Ui.Wide.Number))));
                     }
                     else if (row.Test != Present)
                     {
                         body.Add(Ui.Field(row.Test == OneOf ? "Any of these" : "Value",
-                            Ui.Text(row.Value, text => { row.Value = text; Look(); }, 240),
+                            Ui.Text(row.Value, text => { row.Value = text; Look(); }, Ui.Wide.Phrase),
                             row.Test == OneOf ? "separated by commas"
                             : row.Test == Matches ? "a regular expression, matched against the whole value"
                             : null));
@@ -931,18 +931,18 @@ namespace CamelWorks.UI.Views
 
                 if (requirement && row.Kind == Property)
                     body.Add(Ui.Field("IFC type", Ui.Text(row.DataType, "IFCLABEL",
-                                                          text => { row.DataType = text; Look(); }, 140),
+                                                          text => { row.DataType = text; Look(); }, Ui.Wide.Word),
                                       "all capitals, and only a hint about units"));
 
                 if (requirement && row.Kind != Entity)
                     body.Add(Ui.Field("It is", Ui.Choice(
                         row.Kind == PartOf ? new[] { Required, Prohibited }
                                            : new[] { Required, Optional, Prohibited },
-                        row.Cardinality, pick => { row.Cardinality = pick; Look(); }, 180)));
+                        row.Cardinality, pick => { row.Cardinality = pick; Look(); }, Ui.Wide.Name)));
 
                 if (requirement)
                     body.Add(Ui.Field("Instruction", Ui.Text(row.Instructions, "optional",
-                                                             text => { row.Instructions = text; Look(); }, 240)));
+                                                             text => { row.Instructions = text; Look(); }, Ui.Wide.Phrase)));
 
                 // A bin, not three words. This sits at the foot of every facet row on a
                 // specification that can carry a dozen of them, and "Remove this row" twelve times

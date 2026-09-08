@@ -53,6 +53,18 @@ namespace CamelWorks.Core.Tests
                 return true;
             }
 
+            public bool Mark(IReadOnlyList<Finding> findings, string path)
+            {
+                if (!Did("mark " + path + " on " + findings.Count)) return false;
+
+                Marked = ClashMarkers.Write(findings, one => "test");
+
+                return true;
+            }
+
+            /// <summary>The geometry the last Mark produced, or null when none was asked for.</summary>
+            internal MarkerMesh? Marked { get; private set; }
+
             /// <summary>What has been attached to an issue, by finding id.</summary>
             internal Dictionary<string, string> Raised { get; } =
                 new Dictionary<string, string>(StringComparer.Ordinal);
@@ -82,6 +94,8 @@ namespace CamelWorks.Core.Tests
 
             public string? IssueOf(Finding finding) =>
                 Written != null && Written.Raised.TryGetValue(finding.Id, out var said) ? said : null;
+
+            public double MetresPerUnit => 1.0;
 
             /// <summary>The writer whose attachments this world reports, or null for none.</summary>
             internal Written? Written { get; set; }
@@ -376,6 +390,53 @@ namespace CamelWorks.Core.Tests
             }
 
             Assert.Empty(writer.Log);
+        }
+
+        [Fact]
+        public void A_rule_writes_a_marker_per_result_it_found()
+        {
+            var board = Board(3);
+            var written = new Written();
+            var world = new Nowhere { Written = written };
+
+            // Two carry a point; the third does not, and is counted rather than dropped.
+            for (var at = 0; at < 2; at++)
+            {
+                board[at].X = at;
+                board[at].Y = 0;
+                board[at].Z = 0;
+            }
+
+            var card = new ClashCard("Mark the lot", Every(), ClashActionKind.Markers)
+            {
+                Value = @"C:\markers.obj",
+            };
+
+            var outcomes = ClashCardRun.Apply(new[] { card }, board, world, written);
+
+            Assert.Equal(3, outcomes[0].Matched);
+            Assert.Equal(3, outcomes[0].Changed);
+            Assert.Contains(@"mark C:\markers.obj on 3", written.Log);
+
+            var mesh = written.Marked;
+
+            Assert.NotNull(mesh);
+            Assert.Equal(2, mesh!.Markers);
+            Assert.Contains(mesh.Warnings, one => one.Contains("no point", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void A_rule_that_says_nowhere_to_write_the_markers_does_not_run()
+        {
+            var written = new Written();
+            var card = new ClashCard("Mark the lot", Every(), ClashActionKind.Markers);
+
+            var outcomes = ClashCardRun.Apply(new[] { card }, Board(2),
+                                              new Nowhere { Written = written }, written);
+
+            Assert.Equal(0, outcomes[0].Changed);
+            Assert.Contains("file to write them to", outcomes[0].Problem, StringComparison.Ordinal);
+            Assert.Empty(written.Log);
         }
     }
 }

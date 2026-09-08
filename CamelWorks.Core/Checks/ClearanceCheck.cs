@@ -259,22 +259,21 @@ namespace CamelWorks.Core.Checks
             // Detection refines the source rather than replacing it. Sweeping the federation and
             // then discarding the set somebody named was the defect docs/CHECKS_PLAN.md section 3.5
             // records: a run scoped to "Level 03 Floors" came back with 412 surfaces from the whole
-            // building, desk tops included. Where the source names nothing narrower, the zone is the
-            // next best scope; only a run that names neither sweeps everything.
+            // building, desk tops included. Only a run that names nothing sweeps everything.
             return WalkableSurfaces.Read(_document, _triangles, Sweeping(settings),
                                          _metresPerUnit, options, diagnostics, onProgress);
         }
 
-        /// <summary>What detection sweeps: the source, else the zone, else the whole document.</summary>
+        /// <summary>
+        /// What detection sweeps: what the run says to search in, else the whole document.
+        ///
+        /// There used to be a zone as well — a second saved set the run was confined to, which
+        /// only ever mattered when the first field was left at everything loaded. Two fields
+        /// naming a set, one of which was consulted only when the other was not.
+        /// </summary>
         /// <param name="settings">The run's settings.</param>
-        private static TraversalScope Sweeping(ClearanceSettings settings)
-        {
-            if (Narrows(settings.Surfaces)) return Scope(settings.Surfaces);
-
-            return string.IsNullOrWhiteSpace(settings.Zone)
-                ? TraversalScope.WholeDocument
-                : TraversalScope.Set(settings.Zone!);
-        }
+        private static TraversalScope Sweeping(ClearanceSettings settings) =>
+            Narrows(settings.Surfaces) ? Scope(settings.Surfaces) : TraversalScope.WholeDocument;
 
         /// <summary>Whether a side's choice names something narrower than the whole document.</summary>
         /// <param name="choice">What the side is set to.</param>
@@ -396,7 +395,6 @@ namespace CamelWorks.Core.Checks
                 return Told(spec, Unavailable ?? "There is nothing to measure.");
 
             var settings = ClearanceSettings.From(spec);
-            var zone = Zone(settings);
 
             var patches = settings.IsDetecting ? Detected(settings, onProgress) : null;
 
@@ -409,24 +407,24 @@ namespace CamelWorks.Core.Checks
 
             var surfaces = settings.IsDetecting
                 ? patches!.Select(patch => Standing(patch)).ToList()
-                : Side(settings.Surfaces, whole, null, zone, onProgress);
+                : Side(settings.Surfaces, whole, null, onProgress);
 
             if (surfaces == null) return Stopped(spec);
 
             // A run that measured nothing is not evidence that yesterday's breaches are fixed, so
-            // it reports what happened and marks nothing absent. An empty zone, a detection that
-            // found no patch and a named set the document no longer holds all land here.
+            // it reports what happened and marks nothing absent. A detection that found no
+            // patch, and a named set the document no longer holds, both land here.
             if (surfaces.Count == 0)
                 return Told(spec,
                             spec.Name + " resolved to no surface to measure from, so nothing was "
-                            + "measured and nothing was marked as fixed. Check the run's surface "
-                            + "side and its zone.");
+                            + "measured and nothing was marked as fixed. Check what the run "
+                            + "searches for walkable surfaces in.");
 
             var already = settings.IsDetecting
                 ? new HashSet<string>(patches!.Select(patch => patch.Source.ToString()), StringComparer.Ordinal)
                 : new HashSet<string>(surfaces.Select(one => one.Id), StringComparer.Ordinal);
 
-            var above = Side(settings.Targets, whole, already, zone, onProgress);
+            var above = Side(settings.Targets, whole, already, onProgress);
 
             if (above == null) return Stopped(spec);
 
@@ -593,32 +591,13 @@ namespace CamelWorks.Core.Checks
             return pieces;
         }
 
-        /// <summary>The keys of the saved set a run is confined to, or null when it is not.</summary>
-        /// <param name="settings">The run's settings.</param>
-        private HashSet<string>? Zone(ClearanceSettings settings)
-        {
-            if (string.IsNullOrWhiteSpace(settings.Zone) || _document == null) return null;
-
-            var inside = new HashSet<string>(StringComparer.Ordinal);
-
-            foreach (var item in _document.Traverse(TraversalScope.Set(settings.Zone!)))
-                inside.Add(item.Key.ToString());
-
-            if (inside.Count == 0)
-                _notes.Add("The zone \"" + settings.Zone + "\" holds nothing this document can "
-                           + "resolve, so this run measured nothing.");
-
-            return inside;
-        }
-
         /// <summary>One side's elements, or null when the walk was stopped.</summary>
         /// <param name="choice">What the side is set to.</param>
         /// <param name="whole">Everything loaded, where the choice needs it.</param>
         /// <param name="exclude">The ids the other side has already taken.</param>
-        /// <param name="zone">The keys the run is confined to, or null.</param>
         /// <param name="onProgress">Called with how many elements have been read.</param>
         private List<Piece>? Side(string choice, List<Piece> whole, HashSet<string>? exclude,
-                                  HashSet<string>? zone, Func<int, bool>? onProgress)
+                                  Func<int, bool>? onProgress)
         {
             List<Piece>? pieces;
 
@@ -643,7 +622,7 @@ namespace CamelWorks.Core.Checks
                 }
             }
 
-            return zone == null ? pieces : pieces.Where(one => zone.Contains(one.Id)).ToList();
+            return pieces;
         }
 
         /// <summary>Whether a side's choice can only be answered by walking the whole document.</summary>

@@ -69,12 +69,12 @@ namespace CamelWorks.UI.Views
                 _kept = ToolMemory.Of(session.Store, "publish.compile");
 
                 _folder = Ui.Text(_kept.Text("out"), "where the files go",
-                                  text => _kept.Set("out", text), 260);
+                                  text => _kept.Set("out", text), Ui.Wide.Phrase);
 
                 _sheet = Ui.Text(_kept.Text("sheet"), "a spreadsheet of paths",
-                                 text => _kept.Set("sheet", text), 260);
+                                 text => _kept.Set("sheet", text), Ui.Wide.Phrase);
 
-                _name = Ui.Text(_kept.Text("name", "Weekly federation"), null, 220);
+                _name = Ui.Text(_kept.Text("name", "Weekly federation"), null, Ui.Wide.Phrase);
 
                 Load();
 
@@ -167,7 +167,7 @@ namespace CamelWorks.UI.Views
 
                 if (names.Count == 0) names.Add(_recipe.Name);
 
-                _picker = Ui.Choice(names, _recipe.Name, Switch, 220);
+                _picker = Ui.Choice(names, _recipe.Name, Switch, Ui.Wide.Phrase);
 
                 return Ui.Stack(
                     Ui.Field("Saved", _picker, "Re-runs next week against whatever the folder holds."),
@@ -432,13 +432,13 @@ namespace CamelWorks.UI.Views
                                           ? CompileMode.Individual
                                           : CompileMode.Combine;
                                       DrawVerdict();
-                                  }, 260)),
+                                  }, Ui.Wide.Phrase)),
                     Ui.Field("Format",
                         Ui.Choice(Compilation.Writable, Chosen(), pick =>
                         {
                             _recipe.Format = pick;
                             DrawVerdict();
-                        }, 120),
+                        }, Ui.Wide.Word),
                         ".nwd holds the geometry; .nwf points at the sources and needs them to stay put"),
                     Ui.Field("Only the newest revision",
                         Ui.Toggle(string.Empty, _recipe.NewestOnly, on =>

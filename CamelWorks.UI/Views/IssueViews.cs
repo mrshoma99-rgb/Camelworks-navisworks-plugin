@@ -249,7 +249,7 @@ namespace CamelWorks.UI.Views
                 _show = new HashSet<string>(Marks.Where(s => s != Settled),
                                             StringComparer.OrdinalIgnoreCase);
 
-                _find = Ui.Text(string.Empty, null, 150);
+                _find = Ui.Text(string.Empty, null, Ui.Wide.Word);
                 _find.TextChanged += (s, e) => Redraw();
             }
 
@@ -361,11 +361,11 @@ namespace CamelWorks.UI.Views
                 var row = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
 
                 row.Children.Add(Ui.Tally("Assigned to"));
-                row.Children.Add(Ui.Choice(people, _who, pick => { _who = pick; Redraw(); }, 150));
+                row.Children.Add(Ui.Choice(people, _who, pick => { _who = pick; Redraw(); }, Ui.Wide.Word));
                 row.Children.Add(new Border { Width = 14 });
 
                 row.Children.Add(Ui.Tally("Type"));
-                row.Children.Add(Ui.Choice(types, _type, pick => { _type = pick; Redraw(); }, 150));
+                row.Children.Add(Ui.Choice(types, _type, pick => { _type = pick; Redraw(); }, Ui.Wide.Word));
                 row.Children.Add(new Border { Width = 14 });
 
                 row.Children.Add(Ui.Tally("Raised by"));
@@ -472,7 +472,7 @@ namespace CamelWorks.UI.Views
 
                 var setTo = Ui.Across(
                     Ui.Tally("Set to"),
-                    Ui.Choice(Marks, _mark, pick => { _mark = pick; Redraw(); }, 120));
+                    Ui.Choice(Marks, _mark, pick => { _mark = pick; Redraw(); }, Ui.Wide.Word));
 
                 _list.Children.Add(Ui.Picking(table, setTo,
                     new Ui.OnPicked("Show {n}", ShowPicked, primary: true),
@@ -525,20 +525,20 @@ namespace CamelWorks.UI.Views
 
                 var says = Ui.Stack();
 
-                var title = Ui.Text(issue.Title, null, 320);
-                var description = Ui.Text(issue.Description ?? string.Empty, null, 320);
+                var title = Ui.Text(issue.Title, null, Ui.Wide.Path);
+                var description = Ui.Text(issue.Description ?? string.Empty, null, Ui.Wide.Path);
                 description.AcceptsReturn = true;
                 description.TextWrapping = TextWrapping.Wrap;
                 description.MinHeight = 60;
 
-                var status = Ui.Choice(Marks, FindingStatusWords.Of(issue.Status), null, 150);
-                var type = Ui.Choice(Types(issue), issue.Type ?? string.Empty, null, 150);
-                var priority = Ui.Choice(PriorityWords(issue), issue.Priority ?? string.Empty, null, 130);
-                var cause = Ui.Choice(Causes(issue), issue.RootCause ?? string.Empty, null, 150);
+                var status = Ui.Choice(Marks, FindingStatusWords.Of(issue.Status), null, Ui.Wide.Word);
+                var type = Ui.Choice(Types(issue), issue.Type ?? string.Empty, null, Ui.Wide.Word);
+                var priority = Ui.Choice(PriorityWords(issue), issue.Priority ?? string.Empty, null, Ui.Wide.Word);
+                var cause = Ui.Choice(Causes(issue), issue.RootCause ?? string.Empty, null, Ui.Wide.Word);
                 var who = Suggesting(Assignees(), issue.AssignedTo);
-                var due = Ui.Text(Due(issue.DueDayNumber) == "—" ? string.Empty : Due(issue.DueDayNumber), null, 130);
-                var level = Ui.Text(Fact(issue, Issue.LevelFact) ?? string.Empty, null, 150);
-                var zone = Ui.Text(Fact(issue, Issue.ZoneFact) ?? string.Empty, null, 150);
+                var due = Ui.Text(Due(issue.DueDayNumber) == "—" ? string.Empty : Due(issue.DueDayNumber), null, Ui.Wide.Word);
+                var level = Ui.Text(Fact(issue, Issue.LevelFact) ?? string.Empty, null, Ui.Wide.Word);
+                var zone = Ui.Text(Fact(issue, Issue.ZoneFact) ?? string.Empty, null, Ui.Wide.Word);
 
                 var facts = Ui.Stack(
                     Ui.Field("Title", title),
@@ -624,7 +624,7 @@ namespace CamelWorks.UI.Views
                 if (issue.Comments.Count == 0)
                     trail.Children.Add(Ui.Small("Nothing said yet."));
 
-                var body = Ui.Text(string.Empty, null, 320);
+                var body = Ui.Text(string.Empty, null, Ui.Wide.Path);
                 body.AcceptsReturn = true;
                 body.TextWrapping = TextWrapping.Wrap;
                 body.MinHeight = 50;
@@ -953,7 +953,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                var text = Ui.Text(string.Empty, null, 240);
+                var text = Ui.Text(string.Empty, null, Ui.Wide.Phrase);
                 var done = Ui.Stack();
 
                 say.Children.Add(Ui.Stack(
@@ -1179,7 +1179,7 @@ namespace CamelWorks.UI.Views
             internal ImportScreen(Session session)
             {
                 _session = session;
-                _path = Ui.Text(string.Empty, null, 190);
+                _path = Ui.Text(string.Empty, null, Ui.Wide.Name);
             }
 
             internal UIElement Build()

@@ -87,7 +87,7 @@ namespace CamelWorks.UI.Views
             private readonly StackPanel _editor = Ui.Stack();
             private readonly StackPanel _results = Ui.Stack();
             private readonly StackPanel _saved = Ui.Stack();
-            private readonly TextBox _name = Ui.Text("New set", null, 220);
+            private readonly TextBox _name = Ui.Text("New set", null, Ui.Wide.Phrase);
 
             private sealed class Condition
             {
@@ -377,7 +377,7 @@ namespace CamelWorks.UI.Views
                         v => { if (Enum.TryParse<SetOperator>(v, out var op)) condition.Operator = op; },
                         150));
 
-                    row.Children.Add(Ui.Text(condition.Value, v => condition.Value = v, 130));
+                    row.Children.Add(Ui.Text(condition.Value, v => condition.Value = v, Ui.Wide.Word));
                 }
 
                 row.Children.Add(Ui.Icon(Glyphs.Close, "Remove this condition",
@@ -643,7 +643,7 @@ namespace CamelWorks.UI.Views
             private UIElement Travel(Session session)
             {
                 var options = new TransferOptions();
-                var note = Ui.Text(string.Empty, "what this scheme is", null, 240);
+                var note = Ui.Text(string.Empty, "what this scheme is", null, Ui.Wide.Phrase);
 
                 var take = Ui.Runner("Take this model's scheme...", _travel, primary: false,
                                      work: job => Take(session, job, note.Text));
@@ -1239,10 +1239,10 @@ namespace CamelWorks.UI.Views
             /// <summary>A new layer: hidden or coloured, over whatever it is pointed at.</summary>
             private UIElement Adder(Session session)
             {
-                var name = Ui.Text("New layer", null, 170);
-                var note = Ui.Text(string.Empty, null, 240);
-                var colour = Ui.Text(string.Empty, null, 90);
-                var transparency = Ui.Text(string.Empty, null, 70);
+                var name = Ui.Text("New layer", null, Ui.Wide.Name);
+                var note = Ui.Text(string.Empty, null, Ui.Wide.Phrase);
+                var colour = Ui.Text(string.Empty, null, Ui.Wide.Number);
+                var transparency = Ui.Text(string.Empty, null, Ui.Wide.Tight);
 
                 var decides = "leave visibility alone";
                 var visibility = Ui.Choice(new[] { "leave visibility alone", "show", "hide" }, decides, v => decides = v);
@@ -1498,8 +1498,8 @@ namespace CamelWorks.UI.Views
             {
                 var recipe = new ViewpointRecipe();
 
-                var pattern = Ui.Text(recipe.Pattern, text => recipe.Pattern = text, 220);
-                var folder = Ui.Text(string.Empty, text => recipe.Folder = text, 160);
+                var pattern = Ui.Text(recipe.Pattern, text => recipe.Pattern = text, Ui.Wide.Phrase);
+                var folder = Ui.Text(string.Empty, text => recipe.Folder = text, Ui.Wide.Word);
 
                 var start = Ui.Text("1", text =>
                 {
@@ -1669,8 +1669,8 @@ namespace CamelWorks.UI.Views
             /// <summary>Renaming and renumbering, in one pattern.</summary>
             private UIElement Rename(Session session)
             {
-                var pattern = Ui.Text("{n}. {name}", null, 200);
-                var start = Ui.Text("1", null, 60);
+                var pattern = Ui.Text("{n}. {name}", null, Ui.Wide.Name);
+                var start = Ui.Text("1", null, Ui.Wide.Tight);
 
                 var run = Ui.Runner("Rename them", _say, primary: false, work: job =>
                 {
@@ -1726,7 +1726,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private UIElement Refolder(Session session)
             {
-                var into = Ui.Text("Coordination", null, 180);
+                var into = Ui.Text("Coordination", null, Ui.Wide.Name);
 
                 var move = Ui.Runner("Move them", _say, primary: false, work: job =>
                 {
@@ -1789,7 +1789,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private UIElement Render(Session session)
             {
-                var into = Ui.Text(SuggestedRenderFolder(session), null, 340);
+                var into = Ui.Text(SuggestedRenderFolder(session), null, Ui.Wide.Path);
                 var size = Ui.Choice(new[] { "1280 x 720", "1920 x 1080", "2560 x 1440" }, "1920 x 1080",
                                      pick => _size = pick);
 
@@ -1940,7 +1940,7 @@ namespace CamelWorks.UI.Views
                 var names = views.Select(v => v.ToString()).ToList();
 
                 var from = names[0];
-                var source = Ui.Choice(names, from, pick => from = pick, 260);
+                var source = Ui.Choice(names, from, pick => from = pick, Ui.Wide.Phrase);
 
                 var copy = Ui.Runner("Copy them across", _say, primary: false, work: job =>
                 {
@@ -2063,8 +2063,8 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private UIElement Walkthrough(Session session)
             {
-                var folder = Ui.Text("Coordination", null, 180);
-                var pattern = Ui.Text("{n}. {group}", null, 200);
+                var folder = Ui.Text("Coordination", null, Ui.Wide.Name);
+                var pattern = Ui.Text("{n}. {group}", null, Ui.Wide.Name);
 
                 var make = Ui.Runner("Save one per group on the board", _say, primary: false, work: job =>
                 {

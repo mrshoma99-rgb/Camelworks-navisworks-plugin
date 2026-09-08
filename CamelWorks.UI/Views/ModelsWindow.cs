@@ -183,8 +183,8 @@ namespace CamelWorks.UI.Views
 
             if (intake.HasPrevious && intake.NothingNew && intake.Missing.Count == 0)
                 results.Children.Add(Ui.Info("Nothing has been republished since the last manifest. "
-                    + "A clash run against exactly these files produces exactly last week's board - "
-                    + "worth knowing before the meeting rather than during it."));
+                    + "A clash run against exactly these files produces exactly last week's "
+                    + "board."));
 
             if (intake.Missing.Count > 0)
                 results.Children.Add(Ui.Note(Ui.Count(intake.Missing.Count, "model")

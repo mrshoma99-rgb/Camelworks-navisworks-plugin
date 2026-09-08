@@ -101,6 +101,197 @@ namespace CamelWorks.UI.Views
             Binding.DoNothing;
     }
 
+    /// <summary>
+    /// One cell of a table, drawn as the status its word names.
+    ///
+    /// Built as a visual for the same reason <see cref="SymbolCell"/> is: the chip is assembled
+    /// once, in the place that owns how a status looks.
+    /// </summary>
+    internal sealed class StatusCell : IValueConverter
+    {
+        /// <summary>Make one.</summary>
+        /// <param name="column">Which of the row's cells holds the status word.</param>
+        internal StatusCell(int column) => Column = column;
+
+        /// <summary>Which of the row's cells holds the status word.</summary>
+        internal int Column { get; }
+
+        /// <inheritdoc />
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (!(value is TableRow row)) return string.Empty;
+
+            var word = row[Column];
+
+            // A cell that is not one of the five words is drawn as it is: a table may mix a
+            // status column with a row that has none, and an empty cell is not an error.
+            return CamelWorks.Core.Findings.FindingStatusLattice.TryParse(word, out var status)
+                ? FindingStatusWords.Chip(status)
+                : (object)new TextBlock
+                {
+                    Text = word,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                };
+        }
+
+        /// <inheritdoc />
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
+            Binding.DoNothing;
+    }
+
+    /// <summary>
+    /// The heading over one band of a table's rows: what they are filed under, and how many.
+    ///
+    /// Built as a visual rather than a factory tree with the values bound, for the reason
+    /// <see cref="SymbolCell"/> is: the folder mark is a path on its own canvas inside a Viewbox
+    /// and <c>Ui.Glyph</c> already assembles that.
+    /// </summary>
+    internal sealed class BandHead : IValueConverter
+    {
+        /// <inheritdoc />
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (!(value is CollectionViewGroup group)) return string.Empty;
+
+            var line = new DockPanel { LastChildFill = true };
+
+            var tally = new TextBlock
+            {
+                Text = group.ItemCount.ToString(CultureInfo.CurrentCulture),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            tally.Wearing("Hint");
+            DockPanel.SetDock(tally, Dock.Right);
+            line.Children.Add(tally);
+
+            line.Children.Add(Ui.Glyph(Glyphs.Folder, 13, "Muted", new Thickness(0, 0, 7, 0)));
+
+            var name = new TextBlock
+            {
+                Text = group.Name as string ?? string.Empty,
+                FontWeight = FontWeights.SemiBold,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            name.Wearing("Hint");
+            line.Children.Add(name);
+
+            var band = new Border
+            {
+                Padding = new Thickness(10, 6, 12, 5),
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                Child = line,
+            };
+
+            band.Tint(Border.BackgroundProperty, "Card2");
+            band.Tint(Border.BorderBrushProperty, "Bd");
+
+            return band;
+        }
+
+        /// <inheritdoc />
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
+            Binding.DoNothing;
+    }
+
+    /// <summary>
+    /// One row of a plan: what it is now, what an action would make of it, and why it would not.
+    /// </summary>
+    public sealed class Planned
+    {
+        /// <summary>Name one row of the plan.</summary>
+        /// <param name="was">What it is called now.</param>
+        /// <param name="becomes">What it would become, or null when nothing would change.</param>
+        /// <param name="refused">Why the action cannot touch it, or null when it can.</param>
+        public Planned(string was, string? becomes = null, string? refused = null)
+        {
+            Was = was ?? string.Empty;
+            Becomes = becomes;
+            Refused = refused;
+        }
+
+        /// <summary>What it is called now.</summary>
+        public string Was { get; }
+
+        /// <summary>What it would become, or null.</summary>
+        public string? Becomes { get; }
+
+        /// <summary>Why the action cannot touch it, or null.</summary>
+        public string? Refused { get; }
+
+        /// <summary>Whether this row would actually change.</summary>
+        public bool Changes => Refused == null && !string.IsNullOrEmpty(Becomes);
+    }
+
+    /// <summary>
+    /// The state a screen is in, when it is in one worth saying.
+    ///
+    /// Four states, and each has one tone. A screen that cannot do its job because the seat will
+    /// not let it is not in the same state as a screen whose results are older than the model.
+    /// </summary>
+    public enum Stand
+    {
+        /// <summary>Something outside this screen has to happen first: a model opened, a pack chosen.</summary>
+        Blocked = 0,
+
+        /// <summary>This edition or licence does not carry part of what the screen does.</summary>
+        Limited = 1,
+
+        /// <summary>Something failed. The screen says what, and what state the data is in.</summary>
+        Wrong = 2,
+
+        /// <summary>What is shown predates what it was read from.</summary>
+        Stale = 3,
+    }
+
+    /// <summary>
+    /// What a field asks of the person filling it in.
+    ///
+    /// Three states rather than two, because "the app fills this in" is a different promise from
+    /// "you may leave this out": a cut elevation taken from a storey is not optional, it is
+    /// already answered, and a box that says neither is a box that has to be guessed at.
+    /// </summary>
+    public enum Need
+    {
+        /// <summary>The field makes no claim. The default, so nothing changes where nobody has said.</summary>
+        Unsaid = 0,
+
+        /// <summary>Has to be filled in before the surface's action can run.</summary>
+        Required = 1,
+
+        /// <summary>The check runs without it.</summary>
+        Optional = 2,
+
+        /// <summary>Filled in from elsewhere, and overwritable by hand.</summary>
+        Automatic = 3,
+    }
+
+    /// <summary>
+    /// Where a screen's edits go, and when.
+    ///
+    /// Stated by the footer rather than by each screen in its own words, because the screens that
+    /// most needed to say it were the ones that said nothing: the panels that write every settled
+    /// keystroke straight into the project file carry no Save button and no mark, so the one
+    /// contract a coordinator cannot guess is the one with no evidence on screen.
+    /// </summary>
+    public enum Keeping
+    {
+        /// <summary>The screen makes no claim. The default, so nothing changes where nobody has said.</summary>
+        Unsaid = 0,
+
+        /// <summary>Written to the project as each change is made.</summary>
+        AsYouGo = 1,
+
+        /// <summary>Held until the footer's action is pressed, and something is waiting.</summary>
+        OnPress = 2,
+
+        /// <summary>Held until the footer's action is pressed, and nothing is waiting.</summary>
+        Settled = 3,
+    }
+
     /// <summary>What a path field is asking for, and therefore which dialog it opens.</summary>
     public enum PathKind
     {
@@ -166,6 +357,14 @@ namespace CamelWorks.UI.Views
         /// table's, not the row's: see <c>Symbolled</c>.
         /// </summary>
         public string? Symbol { get; set; }
+
+        /// <summary>
+        /// The band this row belongs under, or null when the table is not banded.
+        ///
+        /// Read by <c>Filed</c>, which groups the rows on it. Rows carrying the same text sit
+        /// under one heading, so the value is not also worth a column of its own.
+        /// </summary>
+        public string? Filed { get; set; }
 
         /// <summary>Cell text by column. Out-of-range is empty rather than an exception.</summary>
         /// <param name="index">Column index.</param>
@@ -514,6 +713,26 @@ namespace CamelWorks.UI.Views
         // own pre-flight rows had to be rebuilt to work around.
         // -----------------------------------------------------------------------------------
 
+        /// <summary>
+        /// Put one of the skin's two depths on an element.
+        ///
+        /// Five shadows were written by hand in three specs across the sheet and three screens,
+        /// two of them leaving Direction unset, so a dropdown's shadow and a floating panel's fell
+        /// different ways on one screen.
+        /// </summary>
+        /// <param name="element">What to raise.</param>
+        /// <param name="floating">True for a panel over the work, false for a popover.</param>
+        /// <typeparam name="T">Anything that can carry an effect.</typeparam>
+        public static T Raised<T>(this T element, bool floating = false) where T : UIElement
+        {
+            var key = floating ? "Shadow.Floating" : "Shadow.Raised";
+
+            if (Skin.Sheet[key] is System.Windows.Media.Effects.Effect depth)
+                element.Effect = depth;
+
+            return element;
+        }
+
         /// <summary>Bind one property to a palette key, so it repaints when the theme changes.</summary>
         /// <param name="element">What to paint.</param>
         /// <param name="property">Which property.</param>
@@ -553,6 +772,26 @@ namespace CamelWorks.UI.Views
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 2),
             }.Wearing("Head");
+
+        /// <summary>
+        /// A screen's own title, above everything on it.
+        ///
+        /// One step above <see cref="Heading"/>, which titles a card or a pane. The two were the
+        /// same size: the 20px step existed in the sheet with no callers, so the ramp was four
+        /// sizes inside five points and a screen's name carried the same weight as the third
+        /// card down it.
+        /// </summary>
+        /// <param name="text">The title.</param>
+        public static TextBlock Titled(string text) =>
+            new TextBlock
+            {
+                Text = text,
+
+                // As in Heading: the one property whose absence is not cosmetic if the skin
+                // fails to load.
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 2),
+            }.Wearing("Title");
 
         /// <summary>The line under a title that says what the screen is for.</summary>
         /// <param name="text">The line.</param>
@@ -634,6 +873,17 @@ namespace CamelWorks.UI.Views
         /// <param name="text">The label.</param>
         public static TextBlock Eyebrow(string text) =>
             new TextBlock { Text = text ?? string.Empty }.Wearing("Caps");
+
+        /// <summary>
+        /// A group's heading: what the fields under it are for.
+        ///
+        /// Above the labels it governs, not below them. As an eyebrow it was 11px bold against
+        /// 12px labels and 13px values, so the heading was the smallest type in its own group and
+        /// a panel of four groups read as one undifferentiated column.
+        /// </summary>
+        /// <param name="text">The heading.</param>
+        public static TextBlock Grouping(string text) =>
+            new TextBlock { Text = text ?? string.Empty }.Wearing("Section");
 
         /// <summary>A number and its label, for a scoreboard.</summary>
         /// <param name="value">The number, already formatted.</param>
@@ -1491,6 +1741,27 @@ namespace CamelWorks.UI.Views
             Press(caption, onClick, "PrimaryBtn");
 
         /// <summary>
+        /// The primary a screen cannot let anybody press yet, with why on it.
+        ///
+        /// The button alone, for a screen that builds its own footer row: <see cref="Foot"/> reads
+        /// the reason off the primary's tooltip, so the reason has to travel on the button rather
+        /// than beside it. <see cref="Blocked"/> is this in a footer row of its own.
+        /// </summary>
+        /// <param name="caption">What the press would do.</param>
+        /// <param name="why">Why it cannot be pressed. Stated by the footer, not by the caller.</param>
+        public static System.Windows.Controls.Button Cannot(string caption, string why)
+        {
+            var go = new System.Windows.Controls.Button
+            {
+                Content = caption ?? string.Empty,
+                IsEnabled = false,
+                ToolTip = why,
+            };
+
+            return go.Wearing("PrimaryBtn");
+        }
+
+        /// <summary>
         /// The screen's main action as it is drawn when it cannot be pressed: the caption greyed,
         /// and the reason on the same line.
         ///
@@ -1505,16 +1776,7 @@ namespace CamelWorks.UI.Views
         /// <param name="why">Why it cannot be pressed, in the user's terms.</param>
         public static Panel Blocked(string caption, string why)
         {
-            var go = new System.Windows.Controls.Button
-            {
-                Content = caption ?? string.Empty,
-                IsEnabled = false,
-                ToolTip = why,
-            };
-
-            go.Wearing("PrimaryBtn");
-
-            var row = Foot(go);
+            var row = Foot(Cannot(caption, why));
 
             // Inline on a stage rather than in a footer band, so the gap above it is this
             // caller's to set. A footer band has its own padding.
@@ -1547,11 +1809,39 @@ namespace CamelWorks.UI.Views
         /// Drawn hard left, away from the actions, or null on a footer with none.
         /// </param>
         public static Panel Foot(UIElement primary, UIElement? secondary = null,
-                                 UIElement? aside = null)
+                                 UIElement? aside = null) =>
+            Foot(primary, secondary, aside, Keeping.Unsaid);
+
+        /// <summary>
+        /// The same footer, saying where this screen's edits go.
+        ///
+        /// Five surfaces in the clash manager had four save contracts between them and two of
+        /// them said so. A coordinator could edit a clearance height on Create (written as they
+        /// typed, with nothing saying so), a rule on Filter (held until a press) and a status on
+        /// Manage (written, under a Save button that implied otherwise) inside two minutes. The
+        /// line is part of the footer rather than each screen's own sentence, so a screen that
+        /// says nothing is visibly a screen that has not answered.
+        /// </summary>
+        /// <param name="primary">The one action this surface is for.</param>
+        /// <param name="secondary">A second action, or null.</param>
+        /// <param name="aside">Something to sit at the far left, or null.</param>
+        /// <param name="keeping">Where this screen's edits go, and when.</param>
+        public static Panel Foot(UIElement primary, UIElement? secondary, UIElement? aside,
+                                 Keeping keeping)
         {
             if (primary == null) throw new ArgumentNullException(nameof(primary));
 
             var row = new DockPanel { LastChildFill = false };
+
+            var kept = Kept(keeping);
+
+            if (kept != null)
+            {
+                kept.Margin = new Thickness(Gap, 0, 0, 0);
+
+                DockPanel.SetDock(kept, Dock.Left);
+                row.Children.Add(kept);
+            }
 
             if (primary is FrameworkElement main)
             {
@@ -1892,7 +2182,7 @@ namespace CamelWorks.UI.Views
         /// <param name="value">Starting value.</param>
         /// <param name="onChanged">Called on each keystroke.</param>
         /// <param name="width">The narrowest it may be.</param>
-        public static TextBox Text(string? value, Action<string>? onChanged, double width = 180)
+        public static TextBox Text(string? value, Action<string>? onChanged, double width = Wide.Name)
         {
             var box = new TextBox
             {
@@ -1911,13 +2201,80 @@ namespace CamelWorks.UI.Views
         /// <param name="placeholder">What to show while it is empty. An example, not an instruction.</param>
         /// <param name="onChanged">Called on each keystroke.</param>
         /// <param name="width">The narrowest it may be.</param>
-        public static TextBox Text(string? value, string placeholder, Action<string>? onChanged, double width = 180)
+        public static TextBox Text(string? value, string placeholder, Action<string>? onChanged,
+                                   double width = Wide.Name)
         {
             var box = Text(value, onChanged, width);
 
             // The skin's TextBox template shows Tag as the placeholder, so every text field in the
             // product gets one the same way and none of them can drift out of position.
             box.Tag = placeholder;
+            return box;
+        }
+
+        /// <summary>
+        /// How wide a field should be, by what goes in it.
+        ///
+        /// The product used eleven widths across thirty controls - 90, 128, 130, 140, 150, 180,
+        /// 190, 200, 220, 240, 250, 260, 320 - each chosen at its own call site, so three
+        /// dropdowns on one strip were three lengths and none of them related to the length of
+        /// what they held. These five steps are the content classes the product actually has.
+        ///
+        /// The number is a minimum, not a fixed size: a field in a stretching column still fills
+        /// it. The class is about how much can be read at rest.
+        /// </summary>
+        public static class Wide
+        {
+            /// <summary>A single character or a two-digit figure: a symbol, a separator, a floor.</summary>
+            public const double Tight = 70;
+
+            /// <summary>A figure and its unit: 250, 16 mm, 3.</summary>
+            public const double Number = 100;
+
+            /// <summary>One word from a known list: a status, a discipline, a level.</summary>
+            public const double Word = 150;
+
+            /// <summary>A name somebody typed: a test, a person, a saved set.</summary>
+            public const double Name = 200;
+
+            /// <summary>A phrase: a naming pattern, a sentence fragment, a search.</summary>
+            public const double Phrase = 260;
+
+            /// <summary>A file path or a file-name template.</summary>
+            public const double Path = 340;
+        }
+
+        /// <summary>
+        /// A search field: the box that narrows the list under it.
+        ///
+        /// Six screens searched with a plain text box and six different placeholders — "Search",
+        /// "Search tests", "Find a test", "part of a name", "a test or a folder", "search the
+        /// register" — so nothing distinguished a filter from a field you fill in until something
+        /// had been typed. This carries the magnifier inside its own bounds and clears on Escape.
+        ///
+        /// The placeholder is what is being searched, not the word "search": the magnifier says
+        /// that part.
+        /// </summary>
+        /// <param name="placeholder">What can be typed in, e.g. "a test or a folder".</param>
+        /// <param name="onChanged">Called on each keystroke, including on the clear.</param>
+        /// <param name="width">The narrowest it may be.</param>
+        public static TextBox Find(string placeholder, Action<string>? onChanged, double width = Wide.Name)
+        {
+            var box = Text(string.Empty, placeholder, onChanged, width);
+
+            box.Wearing("Find");
+
+            // Escape clears it, because a filter with no way out leaves a list that looks empty
+            // and a box the eye has stopped seeing. Handled, or the key travels on and closes the
+            // window the search is in.
+            box.PreviewKeyDown += (s, e) =>
+            {
+                if (e.Key != Key.Escape || box.Text.Length == 0) return;
+
+                box.Clear();
+                e.Handled = true;
+            };
+
             return box;
         }
 
@@ -1938,7 +2295,7 @@ namespace CamelWorks.UI.Views
         /// <param name="onSettled">Called once, with what the box now holds.</param>
         /// <param name="width">The narrowest it may be.</param>
         public static TextBox Settled(string? value, string placeholder,
-                                      Action<string>? onSettled, double width = 180)
+                                      Action<string>? onSettled, double width = Wide.Name)
         {
             var was = value ?? string.Empty;
             var box = Text(was, placeholder, null, width);
@@ -1978,7 +2335,7 @@ namespace CamelWorks.UI.Views
         /// <param name="onChanged">Called with the new pick.</param>
         /// <param name="width">The narrowest it may be.</param>
         public static ComboBox Choice(IEnumerable<string> options, string? selected,
-                                      Action<string>? onChanged, double width = 170)
+                                      Action<string>? onChanged, double width = Wide.Name)
         {
             var box = new ComboBox
             {
@@ -2130,18 +2487,50 @@ namespace CamelWorks.UI.Views
         /// <param name="label">The label.</param>
         /// <param name="control">The control.</param>
         /// <param name="hint">One line saying what to put in it, or null.</param>
-        public static Panel Field(string label, UIElement control, string? hint)
+        public static Panel Field(string label, UIElement control, string? hint) =>
+            Field(label, control, hint, Need.Unsaid);
+
+        /// <summary>
+        /// A control with its label, an optional line of explanation, and what the field asks of
+        /// the person filling it in.
+        ///
+        /// The last part is the one the product did not have. Nothing was ever marked required,
+        /// the word "optional" appeared once in the whole of Views, and a value filled in from
+        /// somewhere else - a cut elevation taken from a storey - was the same box as one typed by
+        /// hand. So a form could only be learned by pressing its action and reading what it
+        /// refused.
+        /// </summary>
+        /// <param name="label">The label.</param>
+        /// <param name="control">The control.</param>
+        /// <param name="hint">One line saying what to put in it, or null.</param>
+        /// <param name="need">What the field asks of the person filling it in.</param>
+        public static Panel Field(string label, UIElement control, string? hint, Need need)
         {
             var panel = new StackPanel { Margin = new Thickness(0, 0, 0, 10) };
 
             Free(control);
 
-            panel.Children.Add(new TextBlock
+            var head = new DockPanel { Margin = new Thickness(0, 0, 0, 4), LastChildFill = false };
+
+            var name = new TextBlock
             {
                 Text = label,
                 TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 0, 0, 4),
-            }.Wearing("Lbl"));
+                VerticalAlignment = VerticalAlignment.Center,
+            }.Wearing("Lbl");
+
+            DockPanel.SetDock(name, Dock.Left);
+            head.Children.Add(name);
+
+            var asked = Asked(need);
+
+            if (asked != null)
+            {
+                DockPanel.SetDock(asked, Dock.Left);
+                head.Children.Add(asked);
+            }
+
+            panel.Children.Add(head);
 
             // Deliberately not touching the control's alignment. Text and Choice already ask to
             // stretch; Segmented asks not to, because a three-way switch pulled across a whole
@@ -2151,6 +2540,74 @@ namespace CamelWorks.UI.Views
             if (!string.IsNullOrEmpty(hint)) panel.Children.Add(Small(hint!));
 
             return panel;
+        }
+
+        /// <summary>
+        /// The line that says where a screen's edits go, or null when the screen makes no claim.
+        ///
+        /// Separate from <see cref="Foot"/> because several screens build their own footer row and
+        /// would otherwise each write the sentence themselves, which is how four contracts came to
+        /// be worded three ways.
+        /// </summary>
+        /// <param name="keeping">Where this screen's edits go, and when.</param>
+        public static TextBlock? Kept(Keeping keeping)
+        {
+            if (keeping == Keeping.Unsaid) return null;
+
+            var said = Small(keeping == Keeping.AsYouGo
+                ? "Saved as you go"
+                : keeping == Keeping.OnPress
+                    ? "Not saved yet"
+                    : "Saved");
+
+            said.VerticalAlignment = VerticalAlignment.Center;
+
+            said.ToolTip = keeping == Keeping.AsYouGo
+                ? "Every change on this screen is written to the project as it is made."
+                : keeping == Keeping.OnPress
+                    ? "Changes on this screen are held until the action on the right is pressed."
+                    : "Nothing is waiting to be written.";
+
+            if (keeping == Keeping.OnPress) said.Tint(TextBlock.ForegroundProperty, "AmberTx");
+
+            return said;
+        }
+
+        /// <summary>
+        /// The mark that says what a field asks for, or null when it asks nothing in particular.
+        /// </summary>
+        /// <param name="need">What the field asks.</param>
+        private static UIElement? Asked(Need need)
+        {
+            if (need == Need.Unsaid) return null;
+
+            var said = new TextBlock
+            {
+                Text = need == Need.Required ? "Required"
+                     : need == Need.Optional ? "Optional"
+                     : "Automatic",
+                FontSize = 10,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            // Required is the dark neutral, not amber. Amber is the warning tone in this palette,
+            // and a form of six fields would have carried four warnings before anything was wrong.
+            said.Tint(TextBlock.ForegroundProperty,
+                      need == Need.Required ? "Text" : need == Need.Optional ? "Faint" : "BlueTx");
+
+            var mark = new Border { Child = said };
+
+            mark.Wearing(need == Need.Required ? "BadgeReq"
+                       : need == Need.Optional ? "BadgeOpt" : "BadgeAuto");
+
+            mark.ToolTip = need == Need.Required
+                ? "This has to be filled in before the test can run."
+                : need == Need.Optional
+                    ? "The check runs without this."
+                    : "Filled in from elsewhere. Typing over it keeps what you type.";
+
+            return mark;
         }
 
         /// <summary>
@@ -2580,7 +3037,24 @@ namespace CamelWorks.UI.Views
         /// <param name="why">Why there is nothing, or what to try.</param>
         /// <param name="caption">What the way out says, or null for none.</param>
         /// <param name="onClick">The way out.</param>
-        public static UIElement Empty(string what, string why, string? caption, Action? onClick)
+        public static UIElement Empty(string what, string why, string? caption, Action? onClick) =>
+            Empty(what, why, caption, onClick, null, null);
+
+        /// <summary>
+        /// The same, where the screen has two honest ways out rather than one.
+        ///
+        /// A first run of the Create tab is the case: a project's tests are made either one at a
+        /// time or twenty at a time from the matrix, and offering only the first sends every new
+        /// user down the slow road because it is the one with a button.
+        /// </summary>
+        /// <param name="what">What was looked for.</param>
+        /// <param name="why">Why there is nothing, or what to try.</param>
+        /// <param name="caption">What the way out says, or null for none.</param>
+        /// <param name="onClick">The way out.</param>
+        /// <param name="second">What the other way out says, or null for none.</param>
+        /// <param name="onSecond">The other way out.</param>
+        public static UIElement Empty(string what, string why, string? caption, Action? onClick,
+                                      string? second, Action? onSecond)
         {
             var text = Stack(
                 new TextBlock
@@ -2619,6 +3093,10 @@ namespace CamelWorks.UI.Views
             // Centred in whatever it is dropped into, and never wider than a paragraph. Stretched
             // across an empty pane the card read as a banner over content that was not there, and
             // a sentence three feet wide is one nobody reads to the end of.
+            //
+            // Centred vertically as well as horizontally. A pane with nothing in it put the card
+            // against the top edge and left the rest of the screen blank, which on the import tab
+            // was 78% of it.
             var frame = new Border
             {
                 BorderThickness = new Thickness(1),
@@ -2627,16 +3105,34 @@ namespace CamelWorks.UI.Views
                 Margin = new Thickness(0, 16, 0, 4),
                 MaxWidth = 460,
                 HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
                 Child = row,
             };
 
+            // The primary, not a secondary. This is the only thing to do on a screen with nothing
+            // on it, and it was drawn quieter than the disabled press in the footer below it.
             if (caption != null && onClick != null)
-                text.Children.Add(new StackPanel
+            {
+                var ways = new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
                     Margin = new Thickness(0, 10, 0, 0),
-                    Children = { Button(caption, onClick) },
-                });
+                };
+
+                ways.Children.Add(Primary(caption, onClick));
+
+                if (second != null && onSecond != null)
+                {
+                    var other = Quiet(second, onSecond);
+
+                    other.Margin = new Thickness(Gap, 0, 0, 0);
+                    other.VerticalAlignment = VerticalAlignment.Center;
+
+                    ways.Children.Add(other);
+                }
+
+                text.Children.Add(ways);
+            }
 
             frame.Tint(Border.BorderBrushProperty, "Bd");
             frame.Tint(Border.BackgroundProperty, "Card2");
@@ -2662,6 +3158,160 @@ namespace CamelWorks.UI.Views
         /// <param name="message">The note.</param>
         public static UIElement Info(string message) =>
             Banner(message, Glyphs.Info, "BlueBg", "BlueBd", "BlueTx");
+
+        /// <summary>
+        /// What a bulk write would do, drawn before it is done.
+        ///
+        /// Generalised from the rename preview, which is the only surface in the product that
+        /// gets this right, and which every other bulk write needs: applying a returned pack to
+        /// the board, writing an export, setting a status on picked rows.
+        ///
+        /// Seven properties, and each is load-bearing:
+        ///
+        /// - Every affected row is drawn, not only the changing ones, and the counts sum to the
+        ///   total. A preview that lists only changes leaves the reader unable to tell "not
+        ///   listed" from "not considered".
+        /// - Before and after on one line, so the comparison needs no memory and no scrolling.
+        /// - The reason a row is skipped is written in the row, in words.
+        /// - A skipped row is muted, not red: a preview of forty skipped items must not read as
+        ///   forty errors.
+        /// - The caller's action carries the count this returns, so the button says what it will
+        ///   do rather than "Apply".
+        /// - A cap with an explicit remainder line, rather than a silent truncation.
+        /// - Cause and effect near each other: the caller redraws this in place as its settings
+        ///   change.
+        /// </summary>
+        /// <param name="rows">Every row the action would consider, in the order it considers them.</param>
+        /// <param name="unit">What one row is, singular.</param>
+        /// <param name="done">What a changed row has had done to it, past tense.</param>
+        /// <param name="cannot">Why a refused row is refused, as a group.</param>
+        /// <param name="cap">How many rows to draw before saying how many are left.</param>
+        public static UIElement Plan(IReadOnlyList<Planned> rows, string unit, string done,
+                                     string cannot, int cap = 200)
+        {
+            if (rows == null) throw new ArgumentNullException(nameof(rows));
+
+            var changing = rows.Count(one => one.Changes);
+            var refused = rows.Count(one => one.Refused != null);
+            var same = rows.Count - changing - refused;
+
+            var counts = new List<string> { Count(rows.Count, unit), changing + " " + done };
+
+            if (same > 0) counts.Add(same + " already right");
+            if (refused > 0) counts.Add(refused + " " + cannot);
+
+            var held = Stack(Small(string.Join("  ·  ", counts)));
+
+            var drawn = Stack();
+
+            drawn.Margin = new Thickness(0, 8, 0, 0);
+
+            foreach (var row in rows.Take(cap)) drawn.Children.Add(PlannedRow(row));
+
+            if (rows.Count > cap)
+            {
+                var more = Small("and " + Count(rows.Count - cap, "more " + unit)
+                                 + ", not drawn here.");
+
+                more.Margin = new Thickness(0, 6, 0, 0);
+                drawn.Children.Add(more);
+            }
+
+            held.Children.Add(drawn);
+
+            return held;
+        }
+
+        /// <summary>How many rows of a plan would change, for the action's caption.</summary>
+        /// <param name="rows">The plan.</param>
+        public static int Changing(IReadOnlyList<Planned> rows) =>
+            rows == null ? 0 : rows.Count(one => one.Changes);
+
+        /// <summary>One row of a plan: what it is now, an arrow, and what it would become.</summary>
+        /// <param name="row">The row.</param>
+        private static UIElement PlannedRow(Planned row)
+        {
+            var line = new Grid { Margin = new Thickness(0, 0, 0, 4) };
+
+            line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(24) });
+            line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            var was = PlannedCell(row.Was, "Muted");
+
+            var arrow = PlannedCell("→", "Faint");
+
+            arrow.HorizontalAlignment = HorizontalAlignment.Center;
+
+            // Muted for a row this run leaves alone, accent for one it changes. Red is what the
+            // product uses for something that went wrong, and a skipped row is not that.
+            var becomes = PlannedCell(row.Refused ?? (row.Changes ? row.Becomes! : "unchanged"),
+                                      row.Changes ? "Accent" : "Muted");
+
+            Grid.SetColumn(arrow, 1);
+            Grid.SetColumn(becomes, 2);
+
+            line.Children.Add(was);
+            line.Children.Add(arrow);
+            line.Children.Add(becomes);
+
+            return line;
+        }
+
+        /// <summary>One name in a plan, trimmed to its column and carried in full on the tip.</summary>
+        /// <param name="said">The text.</param>
+        /// <param name="ink">Which palette key it takes.</param>
+        private static TextBlock PlannedCell(string said, string ink)
+        {
+            var made = new TextBlock
+            {
+                Text = said,
+                FontSize = 11,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                ToolTip = said.Length == 0 ? null : said,
+            }.Wearing("Body");
+
+            // After the style, which turns wrapping on: with it on, a long name wraps to a second
+            // line and the trimming never comes into it.
+            made.TextWrapping = TextWrapping.NoWrap;
+            made.Tint(TextBlock.ForegroundProperty, ink);
+
+            return made;
+        }
+
+        /// <summary>
+        /// The state a screen is in, said the same way on every screen that is in it.
+        ///
+        /// "No model is open" was rendered five ways across the clash manager: an empty-state card
+        /// on Report, a footer sentence on Create, a yellow strip on the new-clash form, a body
+        /// paragraph on Filter and a red strip at the top of the matrix. Four of the five were
+        /// choosing their own tone, and one of them was an empty-collection component carrying an
+        /// error condition.
+        ///
+        /// The tone comes from the state rather than from the screen, so a licence limit cannot be
+        /// drawn as a failure and a stale board cannot be drawn as a note.
+        /// </summary>
+        /// <param name="stand">Which state the screen is in.</param>
+        /// <param name="says">What is true, in one sentence.</param>
+        /// <param name="caption">What the one thing to do about it is called, or null.</param>
+        /// <param name="onClick">What that thing does.</param>
+        public static UIElement Standing(Stand stand, string says, string? caption = null,
+                                         Action? onClick = null)
+        {
+            var glyph = stand == Stand.Wrong ? Glyphs.Warn
+                      : stand == Stand.Stale ? Glyphs.Clock
+                      : stand == Stand.Limited ? Glyphs.Warn
+                      : Glyphs.Info;
+
+            var bg = stand == Stand.Wrong ? "RedBg" : stand == Stand.Blocked ? "BlueBg" : "AmberBg";
+            var bd = stand == Stand.Wrong ? "RedBd" : stand == Stand.Blocked ? "BlueBd" : "AmberBd";
+            var tx = stand == Stand.Wrong ? "RedTx" : stand == Stand.Blocked ? "BlueTx" : "AmberTx";
+
+            return caption == null || onClick == null
+                ? Banner(says, glyph, bg, bd, tx)
+                : Banner(says, glyph, bg, bd, tx, caption, onClick);
+        }
 
         /// <summary>Background worth having, with the one thing you can do about it.</summary>
         /// <param name="message">The note.</param>
@@ -2888,6 +3538,68 @@ namespace CamelWorks.UI.Views
                 typeof(bool),
                 typeof(Ui),
                 new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.Inherits));
+
+        /// <summary>
+        /// Let the wheel reach this scroller from content that cannot use it.
+        ///
+        /// A table inside a scrolling pane is measured with unbounded height, so its own scroller
+        /// has nothing to scroll — and a WPF scroller with nothing to scroll still marks the wheel
+        /// handled, so the pane never sees it. The Create tab's list of tests did not respond to
+        /// the wheel at all for this reason.
+        ///
+        /// Tunnelling, so it runs before the table's scroller does. Any scroller between the
+        /// pointer and this one that can still move in the direction asked for keeps the wheel:
+        /// a pane whose body scrolls itself is untouched.
+        /// </summary>
+        /// <param name="outer">The pane's scroller.</param>
+        public static void WheelThrough(ScrollViewer outer)
+        {
+            if (outer == null) throw new ArgumentNullException(nameof(outer));
+
+            outer.PreviewMouseWheel += (sender, args) =>
+            {
+                if (args.Handled || args.Delta == 0) return;
+
+                var at = args.OriginalSource as DependencyObject;
+
+                while (at != null && !ReferenceEquals(at, outer))
+                {
+                    if (at is ScrollViewer inner && Moves(inner, args.Delta)) return;
+
+                    at = at is Visual || at is System.Windows.Media.Media3D.Visual3D
+                        ? VisualTreeHelper.GetParent(at)
+                        : LogicalTreeHelper.GetParent(at);
+                }
+
+                outer.ScrollToVerticalOffset(outer.VerticalOffset - args.Delta);
+                args.Handled = true;
+            };
+        }
+
+        /// <summary>Whether a scroller can still move the way the wheel was turned.</summary>
+        /// <param name="inner">The scroller.</param>
+        /// <param name="delta">The wheel, positive when scrolling up.</param>
+        private static bool Moves(ScrollViewer inner, int delta) =>
+            inner.ScrollableHeight > 0
+            && (delta < 0 ? inner.VerticalOffset < inner.ScrollableHeight
+                          : inner.VerticalOffset > 0);
+
+        /// <summary>
+        /// A list of values with the empties, the repeats and the disorder taken out.
+        ///
+        /// Written out thirty-two times across fifteen files, each time as
+        /// <c>Where(non-empty).Distinct(OrdinalIgnoreCase).OrderBy(OrdinalIgnoreCase)</c>, and
+        /// each time a chance to leave one of the three out. Every picker filled from what a
+        /// document or a board actually holds comes through here.
+        /// </summary>
+        /// <param name="values">What was found, in any order, with anything in it.</param>
+        public static IReadOnlyList<string> Listed(IEnumerable<string?>? values) =>
+            (values ?? Array.Empty<string?>())
+                .Where(one => !string.IsNullOrWhiteSpace(one))
+                .Select(one => one!.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(one => one, StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
         /// <summary>Say that this element's tables should fill the height they are given.</summary>
         /// <param name="element">The container.</param>
@@ -3290,6 +4002,68 @@ namespace CamelWorks.UI.Views
             return table;
         }
 
+        /// <summary>
+        /// Put the rows in bands, one per <see cref="TableRow.Filed"/> value, with a heading over
+        /// each saying what it is and how many rows it holds.
+        ///
+        /// A folder printed in a cell is a column, not a folder: on forty tests filed into six
+        /// folders the same six words are printed forty times and the filing has to be read back
+        /// out of them. The caller sorts the rows into band order first — a band is a run of
+        /// adjacent rows, not a query.
+        /// </summary>
+        /// <param name="table">The table.</param>
+        public static ListView Filed(this ListView table)
+        {
+            var grouped = new CollectionViewSource { Source = table.ItemsSource };
+
+            grouped.GroupDescriptions.Add(new PropertyGroupDescription(nameof(TableRow.Filed)));
+
+            table.ItemsSource = grouped.View;
+
+            // Grouping turns virtualisation off unless this says otherwise, and a federation with
+            // six hundred tests is a list that has to stay virtualised.
+            VirtualizingPanel.SetIsVirtualizingWhenGrouping(table, true);
+
+            var head = new FrameworkElementFactory(typeof(ContentPresenter));
+
+            head.SetBinding(ContentPresenter.ContentProperty,
+                            new Binding(".") { Converter = new BandHead() });
+
+            table.GroupStyle.Add(new GroupStyle
+            {
+                HeaderTemplate = new DataTemplate { VisualTree = head },
+            });
+
+            return table;
+        }
+
+        /// <summary>
+        /// Draw one column as the status chip the board draws, rather than as its word.
+        ///
+        /// The same five statuses were three visual languages: filled chips on the Manage rows,
+        /// coloured figures in its counter strip, and plain body text in both of Exchange's
+        /// tables. A coordinator who learns the colours on the board could not use them on the
+        /// tab where the work goes out to a trade.
+        /// </summary>
+        /// <param name="table">The table.</param>
+        /// <param name="column">Which column, from nought. Its cells hold a status word.</param>
+        public static ListView Stated(this ListView table, int column)
+        {
+            if (!(table.View is GridView grid) || column < 0 || column >= grid.Columns.Count)
+                return table;
+
+            var cell = new FrameworkElementFactory(typeof(ContentPresenter));
+
+            cell.SetBinding(ContentPresenter.ContentProperty, new Binding(".")
+            {
+                Converter = new StatusCell(column),
+            });
+
+            grid.Columns[column].CellTemplate = new DataTemplate { VisualTree = cell };
+
+            return table;
+        }
+
         public static ListView Multi(this ListView table)
         {
             table.SelectionMode = SelectionMode.Extended;
@@ -3323,6 +4097,17 @@ namespace CamelWorks.UI.Views
             internal string Name { get; }
 
             internal Func<UIElement> Build { get; }
+
+            /// <summary>How it reads in the section list.</summary>
+            public string Named => Name;
+
+            /// <summary>
+            /// Build the section on its own.
+            ///
+            /// For a harness that has no window to put it in: a Ui.Configure window needs a
+            /// screen, so its pages were the one part of this product no picture could contain.
+            /// </summary>
+            public UIElement Drawn() => Build();
         }
 
         /// <summary>
@@ -3606,8 +4391,7 @@ namespace CamelWorks.UI.Views
 
                     var item = new MenuItem
                     {
-                        Header = here.Caption.Replace("{n}", picked.Count.ToString(
-                            System.Globalization.CultureInfo.InvariantCulture)),
+                        Header = Worded(here.Caption, picked.Count),
                         IsEnabled = picked.Count > 0,
                     };
 
@@ -3858,9 +4642,9 @@ namespace CamelWorks.UI.Views
                 // shape nobody can read.
                 var button = glyph == null
                     ? (here.Primary
-                        ? Primary(here.Caption.Replace("{n}", "0"), () => Verb(here, table, said))
-                        : Quiet(here.Caption.Replace("{n}", "0"), () => Verb(here, table, said)))
-                    : Icon(glyph, here.Caption.Replace("{n}", "0"), () => Verb(here, table, said),
+                        ? Primary(Worded(here.Caption, 0), () => Verb(here, table, said))
+                        : Quiet(Worded(here.Caption, 0), () => Verb(here, table, said)))
+                    : Icon(glyph, Worded(here.Caption, 0), () => Verb(here, table, said),
                            here.Danger ? "RedTx" : "Muted");
 
                 // A destructive verb reads as destructive whether or not it can be drawn. This
@@ -3888,10 +4672,13 @@ namespace CamelWorks.UI.Views
                 var picked = table.SelectedItems.Count;
                 var total = table.Items.Count;
 
+                // "selected", not "picked". The product named one concept four ways - picked,
+                // included, in, selected - and the tick column on some of these tables means
+                // something else entirely, so the two need different words.
                 tally.Text = picked == 0
                     ? Count(total, "row")
                     : picked.ToString(CultureInfo.InvariantCulture)
-                      + " of " + Count(total, "row") + " picked";
+                      + " of " + Count(total, "row") + " selected";
 
                 foreach (var button in buttons)
                 {
@@ -3899,7 +4686,7 @@ namespace CamelWorks.UI.Views
 
                     if (!(button.Tag is string caption)) continue;
 
-                    var worded = caption.Replace("{n}", picked.ToString(CultureInfo.InvariantCulture));
+                    var worded = Worded(caption, picked);
 
                     // An icon keeps its shape and moves the count into the tooltip; a worded
                     // button carries it where it is read, immediately before the press.
@@ -3915,7 +4702,44 @@ namespace CamelWorks.UI.Views
             // already is, and offering both costs nothing.
             table.Menu(verbs.Select(v => new OnMenu(v.Caption, picked => v.Act(picked, said))).ToArray());
 
+            // The table is in what comes back, above its bar. A pane that pins the bar and lets
+            // the rows scroll wants the bar alone, and takes the table back out with Loose — see
+            // Bench.Listed. Handing this whole stack to a docked slot reparents the table into
+            // it, which draws the rows at the foot of an empty pane.
             return Stack(table, bar, said);
+        }
+
+        /// <summary>
+        /// A verb's caption for a given selection.
+        ///
+        /// With rows selected the count goes where it is read, immediately before the press. With
+        /// none it comes out altogether: "Include 0 tests" and "Leave out 0 clashes" read as
+        /// statements about the list rather than as things to do, and four of them on one screen
+        /// was the state Exchange opened in.
+        ///
+        /// A demonstrative left dangling by the removal goes with it, so "Delete these {n}"
+        /// becomes "Delete" rather than "Delete these".
+        /// </summary>
+        /// <param name="caption">The verb's caption, with <c>{n}</c> where the count goes.</param>
+        /// <param name="picked">How many rows are selected.</param>
+        public static string Worded(string caption, int picked)
+        {
+            if (caption == null) return string.Empty;
+
+            if (picked > 0)
+                return caption.Replace("{n}", picked.ToString(CultureInfo.InvariantCulture));
+
+            var said = caption.Replace("{n}", string.Empty);
+
+            // The demonstrative and the double space the count left behind.
+            said = said.Replace(" these ", " ").Replace(" those ", " ");
+            said = said.TrimEnd();
+            if (said.EndsWith(" these", StringComparison.Ordinal)) said = said.Substring(0, said.Length - 6);
+            if (said.EndsWith(" those", StringComparison.Ordinal)) said = said.Substring(0, said.Length - 6);
+
+            while (said.Contains("  ")) said = said.Replace("  ", " ");
+
+            return said.Trim();
         }
 
         /// <summary>
@@ -4176,9 +5000,13 @@ namespace CamelWorks.UI.Views
         /// Whether this is the card's main action. False for a second long-running button on a
         /// card: two primary buttons give the reader no indication which one is intended.
         /// </param>
-        public static Panel Runner(string caption, Panel output, Action<Job> work, bool primary = true)
+        /// <param name="danger">True where the work cannot be undone, so the button is red.</param>
+        /// <param name="confirm">Asked on the press; the work runs only when it answers true.</param>
+        public static Panel Runner(string caption, Panel output, Action<Job> work,
+                                   bool primary = true, bool danger = false,
+                                   Func<bool>? confirm = null)
         {
-            var parts = RunParts(caption, output, work, primary);
+            var parts = RunParts(caption, output, work, primary, danger, confirm);
 
             // The gap belongs to the runner as a whole, not to its button row. It used to sit on
             // the row, which meant a runner placed beside ordinary buttons stood eight pixels
@@ -4206,9 +5034,12 @@ namespace CamelWorks.UI.Views
         /// <param name="output">Where the work writes its result.</param>
         /// <param name="work">The work.</param>
         /// <param name="primary">Whether the button is the screen's main press.</param>
+        /// <param name="danger">True where the work cannot be undone, so the button is red.</param>
+        /// <param name="confirm">Asked on the press; the work runs only when it answers true.</param>
         /// <returns>The button row, and the progress block that folds away when nothing runs.</returns>
         public static RunPair RunParts(string caption, Panel output, Action<Job> work,
-                                   bool primary = true)
+                                   bool primary = true, bool danger = false,
+                                   Func<bool>? confirm = null)
         {
             var status = new TextBlock
             {
@@ -4226,7 +5057,7 @@ namespace CamelWorks.UI.Views
             stop.Wearing("Btn");
 
             var go = new System.Windows.Controls.Button { Content = caption };
-            go.Wearing(primary ? "PrimaryBtn" : "Btn");
+            go.Wearing(danger ? "DangerBtn" : primary ? "PrimaryBtn" : "Btn");
 
             Job? running = null;
             stop.Click += (s, e) =>
@@ -4261,6 +5092,10 @@ namespace CamelWorks.UI.Views
                         + "the moment it finishes."));
                     return;
                 }
+
+                // Asked before anything is cleared or disabled, so a "no" leaves the screen
+                // exactly as it was rather than blanking the last run's result.
+                if (confirm != null && !confirm()) return;
 
                 output.Children.Clear();
 
@@ -4438,16 +5273,40 @@ namespace CamelWorks.UI.Views
             if (count == 1 || string.IsNullOrEmpty(unit)) return unit;
 
             var said = unit.TrimEnd();
+            var trailing = unit.Substring(said.Length);
 
-            if (said.EndsWith("s", StringComparison.OrdinalIgnoreCase)
-                || said.EndsWith("x", StringComparison.OrdinalIgnoreCase)
-                || said.EndsWith("z", StringComparison.OrdinalIgnoreCase)
-                || said.EndsWith("ch", StringComparison.OrdinalIgnoreCase)
-                || said.EndsWith("sh", StringComparison.OrdinalIgnoreCase))
-                return unit + "es";
+            // The last word, not the whole phrase. Units here are often two or three words -
+            // "selected row", "of them" - and suffixing the phrase put the "s" on the wrong word.
+            var space = said.LastIndexOf(' ');
+            var head = space < 0 ? string.Empty : said.Substring(0, space + 1);
+            var tail = space < 0 ? said : said.Substring(space + 1);
 
-            return unit + "s";
+            // Already plural. "of them" is the phrase five screens count with, and the generic
+            // rule wrote "2 of thems" on every one of them.
+            if (Already.Contains(tail)) return unit;
+
+            if (tail.EndsWith("s", StringComparison.OrdinalIgnoreCase)
+                || tail.EndsWith("x", StringComparison.OrdinalIgnoreCase)
+                || tail.EndsWith("z", StringComparison.OrdinalIgnoreCase)
+                || tail.EndsWith("ch", StringComparison.OrdinalIgnoreCase)
+                || tail.EndsWith("sh", StringComparison.OrdinalIgnoreCase))
+                return head + tail + "es" + trailing;
+
+            return head + tail + "s" + trailing;
         }
+
+        /// <summary>
+        /// Words that are already plural, so <see cref="Plural"/> leaves them alone.
+        ///
+        /// Short on purpose: it holds the words this product actually counts with, not an English
+        /// irregular-plural table. A word missing from it gets an "s", which is what happened
+        /// before the list existed.
+        /// </summary>
+        private static readonly HashSet<string> Already =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "them", "these", "those", "others", "people", "children", "men", "women",
+            };
     }
 
     /// <summary>
@@ -4464,6 +5323,9 @@ namespace CamelWorks.UI.Views
 
         /// <summary>A chevron pointing right: a folded section.</summary>
         public const string Right = "M9,6 L15,12 L9,18";
+
+        /// <summary>A chevron pointing left: fold a pane away, go back one.</summary>
+        public const string Left = "M15,6 L9,12 L15,18";
 
         /// <summary>A chevron pointing up.</summary>
         public const string Up = "M6,15 L12,9 L18,15";
@@ -4492,6 +5354,14 @@ namespace CamelWorks.UI.Views
 
         /// <summary>An i in a circle: worth knowing.</summary>
         public const string Info = "M12,3 A9,9 0 1 0 12.01,3 M12,11 L12,16.5 M12,7.5 L12,7.9";
+
+        /// <summary>A keyboard: what the keys do.</summary>
+        public const string Keyboard = "M2.5,6.5 L21.5,6.5 L21.5,17.5 L2.5,17.5 Z "
+                                     + "M6,10 L6.2,10 M9,10 L9.2,10 M12,10 L12.2,10 "
+                                     + "M15,10 L15.2,10 M18,10 L18.2,10 "
+                                     + "M7.5,12.8 L7.7,12.8 M10.5,12.8 L10.7,12.8 "
+                                     + "M13.5,12.8 L13.7,12.8 M16.5,12.8 L16.7,12.8 "
+                                     + "M8,15.3 L16,15.3";
 
         /// <summary>An open box: there is nothing here.</summary>
         public const string Empty = "M4,7.5 L12,3.5 L20,7.5 L20,16.5 L12,20.5 L4,16.5 Z M4,7.5 L12,11.5 L20,7.5 M12,11.5 L12,20.5";

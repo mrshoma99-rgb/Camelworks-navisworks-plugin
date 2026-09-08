@@ -90,6 +90,9 @@ namespace CamelWorks.Core.Project
         /// <summary>What this project calls its priorities, comma separated, most urgent first.</summary>
         public const string Priorities = "coordinate.priorities";
 
+        /// <summary>The discipline words this project uses on top of the ones read from names.</summary>
+        public const string OwnDisciplines = "coordinate.disciplines";
+
         /// <summary>Where levels come from: the model's own, or inferred from geometry.</summary>
         public const string LevelSource = "data.levels";
 
@@ -307,6 +310,16 @@ namespace CamelWorks.Core.Project
         /// <see cref="Project.Priorities.All"/>.
         /// </summary>
         public IReadOnlyList<string> Priorities => Listed(ProfileKeys.Priorities);
+
+        /// <summary>
+        /// The discipline words this project adds to the ones CamelWorks knows.
+        ///
+        /// <see cref="Project.Disciplines.All"/> is what a file name can be read as, and a real
+        /// job has trades no file-name convention covers — a facade package, vertical transport,
+        /// a specialist fit-out. A model can only be put on a discipline that is offered, so
+        /// without this those models could not be filed at all.
+        /// </summary>
+        public IReadOnlyList<string> OwnDisciplines => Listed(ProfileKeys.OwnDisciplines);
 
         private IReadOnlyList<string> Listed(string key) =>
             (Value(key) ?? string.Empty)

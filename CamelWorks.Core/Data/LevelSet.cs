@@ -67,6 +67,14 @@ namespace CamelWorks.Core.Data
         /// at five metres" is stating the building, and nothing the model holds outranks that.
         /// </summary>
         Declared = 4,
+
+        /// <summary>
+        /// The project declares none, so there is one level and everything is on it.
+        ///
+        /// Not a derivation and not a claim about the building: a stand-in that keeps every
+        /// screen that bands by level working on a project nobody has typed storeys into yet.
+        /// </summary>
+        Default = 5,
     }
 
     /// <summary>
@@ -175,12 +183,32 @@ namespace CamelWorks.Core.Data
                 + "numbered: a level called \"Level +3.600\" is honest about being a guess in a way "
                 + "that \"Level 2\" is not.",
 
+            LevelSource.Default =>
+                "This project declares no storeys, so there is one level and everything is on it. "
+                + "Type the building's storeys under Settings, or have them worked out from the "
+                + "model, and every screen that bands by level follows.",
+
             _ => "Nothing loaded carries a grid, a level property, or geometry to infer them from.",
         };
 
         /// <summary>Nothing at all — a model with no levels and no geometry to guess from.</summary>
         public static LevelSet Empty { get; } =
             new LevelSet(Array.Empty<LevelBand>(), 0, 0, LevelSource.None);
+
+        /// <summary>What the one default level is called.</summary>
+        public const string GroundName = "Level 0";
+
+        /// <summary>
+        /// One level that everything is on, for a project that has declared none.
+        ///
+        /// Every height falls in it, a basement included, which is what separates it from a
+        /// declared storey at zero: a declared storey is a statement about the building and
+        /// anything under it is banded as below it, where this is a stand-in and has nothing to
+        /// be below.
+        /// </summary>
+        public static LevelSet Flat { get; } =
+            new LevelSet(new[] { new LevelBand(GroundName, 0, double.PositiveInfinity, false, 0) },
+                         0, 0, LevelSource.Default);
 
         /// <summary>
         /// The levels the model itself declares.
@@ -299,6 +327,10 @@ namespace CamelWorks.Core.Data
         /// </summary>
         public string? LevelAt(double z)
         {
+            // The default level has nothing to be below: it stands in for a project that has
+            // declared no storeys, so everything is on it.
+            if (Source == LevelSource.Default && Bands.Count > 0) return Bands[0].Name;
+
             for (var i = Bands.Count - 1; i >= 0; i--)
                 if (z >= Bands[i].Elevation) return Bands[i].Name;
 
@@ -322,6 +354,9 @@ namespace CamelWorks.Core.Data
         /// </summary>
         public IReadOnlyList<string> Spans(double baseZ, double topZ)
         {
+            if (Source == LevelSource.Default && Bands.Count > 0)
+                return new[] { Bands[0].Name };
+
             var low = Math.Min(baseZ, topZ);
             var high = Math.Max(baseZ, topZ);
 
@@ -340,6 +375,7 @@ namespace CamelWorks.Core.Data
                         LevelSource.Declared => " declared on this project",
                         LevelSource.Grid => " from the coordination grid",
                         LevelSource.Property => " from the models' level property",
+                        LevelSource.Default => ", because this project declares none",
                         _ => " inferred from geometry",
                     };
 

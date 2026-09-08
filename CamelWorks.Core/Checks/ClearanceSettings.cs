@@ -37,7 +37,6 @@ namespace CamelWorks.Core.Checks
         public const string LevelsKey = "levels";
 
         /// <summary>The saved set the run is confined to, or nothing for the whole federation.</summary>
-        public const string ZoneKey = "zone";
 
         /// <summary>Categories kept off the obstruction side, semicolon separated.</summary>
         public const string IgnoreKey = "ignore";
@@ -121,9 +120,6 @@ namespace CamelWorks.Core.Checks
         /// <summary>The levels the run covers. Empty is every level.</summary>
         public IList<string> Levels { get; } = new List<string>();
 
-        /// <summary>The saved set the run is confined to, or null for the whole federation.</summary>
-        public string? Zone { get; set; }
-
         /// <summary>
         /// Categories kept off the obstruction side.
         ///
@@ -198,8 +194,7 @@ namespace CamelWorks.Core.Checks
         public string Between =>
             (DetectSurfaces ? "walkable surfaces in " + Said(Surfaces) : Said(Surfaces))
             + " under " + Said(Targets)
-            + (Levels.Count == 0 ? string.Empty : ", " + string.Join(", ", Levels))
-            + (string.IsNullOrWhiteSpace(Zone) ? string.Empty : ", in " + Zone);
+            + (Levels.Count == 0 ? string.Empty : ", " + string.Join(", ", Levels));
 
         /// <summary>The threshold, worded, as the rail prints it.</summary>
         public string Threshold =>
@@ -224,7 +219,6 @@ namespace CamelWorks.Core.Checks
             settings.Surfaces = Word(spec, SurfacesKey) ?? settings.Surfaces;
             settings.DetectSurfaces = Yes(spec, DetectKey, settings.DetectSurfaces);
             settings.Targets = Word(spec, TargetsKey) ?? settings.Targets;
-            settings.Zone = Word(spec, ZoneKey);
             settings.WorstPerPatch = Yes(spec, WorstKey, settings.WorstPerPatch);
             settings.ExcludeStairs = Yes(spec, StairsKey, settings.ExcludeStairs);
             settings.PreferFloorCategories = Yes(spec, PreferFloorsKey, settings.PreferFloorCategories);
@@ -258,7 +252,6 @@ namespace CamelWorks.Core.Checks
             spec.Settings[DetectKey] = DetectSurfaces ? "true" : "false";
             spec.Settings[TargetsKey] = Targets;
             spec.Settings[LevelsKey] = string.Join(";", Levels);
-            spec.Settings[ZoneKey] = Zone;
             spec.Settings[IgnoreKey] = string.Join(";", Ignore);
             spec.Settings[WorstKey] = WorstPerPatch ? "true" : "false";
             spec.Settings[StairsKey] = ExcludeStairs ? "true" : "false";

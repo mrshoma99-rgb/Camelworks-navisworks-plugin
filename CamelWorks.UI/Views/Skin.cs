@@ -257,10 +257,17 @@ namespace CamelWorks.UI.Views
         /// </summary>
         private static readonly (string Key, string Light, string Dark)[] Palette =
         {
-            ("Accent",      "#0070C0", "#3AA0F0"),
-            ("AccentHover", "#0D83DA", "#5BB3F5"),
-            ("AccentPress", "#005A9C", "#2A8AD6"),
-            ("AccentWash",  "#E6F0FA", "#1F2D3D"),
+            // The BIMCamel web brand blue, and the web's own hover direction: a hovered primary
+            // darkens rather than lightening, so it does not become harder to read than at rest.
+            //
+            // Accent is ink and edges, so it lifts in the dark palette to stay legible on a dark
+            // ground. Hover and press are the primary's plate, which is brand-coloured in both
+            // themes and carries white text, so they are the same dark blue in both: lightening
+            // them for the dark theme would put white on #93C5FD at 1.5:1.
+            ("Accent",      "#2563EB", "#60A5FA"),
+            ("AccentHover", "#1D4ED8", "#1D4ED8"),
+            ("AccentPress", "#1E40AF", "#1E40AF"),
+            ("AccentWash",  "#DBEAFE", "#1E3A5F"),
 
             ("Bg",          "#EEF1F5", "#15171B"),
             ("Pane",        "#F7F8FA", "#1C1F24"),
@@ -278,11 +285,33 @@ namespace CamelWorks.UI.Views
 
             ("Bd",          "#E1E5EA", "#333941"),
             ("BdStrong",    "#CDD3DA", "#3D444D"),
+
+            // The button tier. A secondary button used to be Card2 on a Card - 1.02:1 - so the
+            // only thing separating a press from a text box was one point of font size. It has
+            // its own fill and its own edge now, and a larger radius than a field, so an action
+            // and an input are different shapes before they are read.
+            ("BtnBg",       "#EDF0F4", "#2F353D"),
+            ("BtnBd",       "#C6CDD6", "#454D57"),
+            ("BtnHover",    "#E2E7ED", "#39414A"),
+
+            // The cap a dropdown's chevron sits in. A hairline glyph floating over the value was
+            // the only thing telling a dropdown from a text box; a well with its own edge is
+            // visible without being read, and it reserves the gutter so a long value truncates
+            // before it reaches the arrow.
+            ("Well",        "#EDF1F6", "#333A43"),
+
+            // The keyboard ring. Two of thirteen control templates drew focus at all, and the two
+            // used different geometry - one swapped a border brush, the other added a border and
+            // moved the content under it.
+            ("Focus",       "#2563EB", "#93C5FD"),
             // In light the input is the brightest surface on the panel, which is what makes it
             // read as "type here". In dark it was #1B1E23 inside a #15171B well - 1.07:1, an
             // input visible only by its border. It sits above both the well and the card now.
             ("Field",       "#FFFFFF", "#2B3138"),
-            ("FieldBd",     "#CDD3DA", "#3D444D"),
+            // Darker than Bd and darker than BdStrong, and deliberately so: an editable edge has
+            // to outrank a divider. At #CDD3DA it was the same value as BdStrong, so a text box,
+            // a rule and a button edge were one colour.
+            ("FieldBd",     "#B4BCC7", "#4A525C"),
 
             // The disclosure fill. Dark #1A1D22 on a #1C1F24 pane is 1.02:1 - no surface at
             // all, so a fold on the page read as a hairline while the same fold inside a card
@@ -291,7 +320,6 @@ namespace CamelWorks.UI.Views
             ("NavActive",   "#E6F0FA", "#1F2D3D"),
             ("Hover",       "#0F000000", "#14FFFFFF"),
             ("Press",       "#1A000000", "#24FFFFFF"),
-            ("Veil",        "#B8FFFFFF", "#B81C1F24"),
             ("Track",       "#D8DDE3", "#2E343B"),
             ("Thumb",       "#B4BCC5", "#454C55"),
 
@@ -307,12 +335,10 @@ namespace CamelWorks.UI.Views
             ("RedBd",       "#F3C6C6", "#5C2B2B"),
             ("RedTx",       "#B3261E", "#F08C84"),
 
-            ("BlueBg",      "#E6F0FA", "#152836"),
-            ("BlueBd",      "#BBD8F2", "#274966"),
-            ("BlueTx",      "#0F5FA0", "#7CC0F5"),
+            ("BlueBg",      "#E0F2FE", "#10262F"),
+            ("BlueBd",      "#B6E1F8", "#1F4457"),
+            ("BlueTx",      "#0B6C97", "#67C8EA"),
 
-            ("ConsoleBg",   "#0E1116", "#0A0C10"),
-            ("ConsoleTx",   "#CFE3D5", "#BFE0C8"),
 
             // The two inks for writing on a colour somebody chose. Fixed rather than theme-led,
             // because the colour under them is fixed: a wash that does not change with the theme

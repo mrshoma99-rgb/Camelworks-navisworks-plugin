@@ -108,9 +108,9 @@ namespace CamelWorks.UI.Views
                         _rightModel = names.FirstOrDefault(n => n != _leftModel) ?? names[0];
 
                     panel.Children.Add(Bench.Group("The two models",
-                        Ui.Field("Before", Ui.Choice(names, _leftModel, pick => _leftModel = pick, 240),
+                        Ui.Field("Before", Ui.Choice(names, _leftModel, pick => _leftModel = pick, Ui.Wide.Phrase),
                                  "what you sent, or last week's revision"),
-                        Ui.Field("After", Ui.Choice(names, _rightModel, pick => _rightModel = pick, 240),
+                        Ui.Field("After", Ui.Choice(names, _rightModel, pick => _rightModel = pick, Ui.Wide.Phrase),
                                  "what came back, or this week's"),
                         Ui.Small("The two are paired as counterparts even when their file names do "
                                  + "not match, because you named them. Elements match on GUID, "
@@ -164,7 +164,7 @@ namespace CamelWorks.UI.Views
                     : Settings.Watch == PropertyWatch.None ? "No properties" : "Standard list",
                     pick => Settings.Watch = pick == "Every property" ? PropertyWatch.All
                                           : pick == "No properties" ? PropertyWatch.None
-                                          : PropertyWatch.Standard, 150)),
+                                          : PropertyWatch.Standard, Ui.Wide.Word)),
                 Ui.Field("Match on", Ui.Choice(
                     new[] { "GUID, tree path or shape", "GUID or tree path", "GUID only" },
                     Settings.WeakestRung == KeyRung.InstanceGuid ? "GUID only"
@@ -172,7 +172,7 @@ namespace CamelWorks.UI.Views
                     : "GUID, tree path or shape",
                     pick => Settings.WeakestRung = pick == "GUID only" ? KeyRung.InstanceGuid
                                                  : pick == "GUID or tree path" ? KeyRung.TreePath
-                                                 : KeyRung.Geometry, 200)),
+                                                 : KeyRung.Geometry, Ui.Wide.Name)),
                 Ui.Small("Bounding boxes and properties, not triangles: an element remodelled "
                          + "inside its own box reads as unchanged here. The baseline comparison "
                          + "on the Compare tab is the one that reads triangles."));

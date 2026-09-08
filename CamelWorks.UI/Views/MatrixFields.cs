@@ -517,8 +517,10 @@ namespace CamelWorks.UI.Views
                 + Ui.Count(board.Columns.Count, "column") + " take these fields"
                 + (pinned == 0
                     ? "."
-                    : "  ·  " + Ui.Count(pinned, "of them")
-                      + " keep a value typed by hand, outside these fields."));
+                    // Not Ui.Count: the unit here is a pronoun, and pluralising it wrote
+                    // "2 of thems" on the last line of the screen.
+                    : "  ·  " + pinned.ToString("N0", CultureInfo.InvariantCulture)
+                      + " of them keep a value typed by hand, outside these fields."));
 
             said.TextWrapping = TextWrapping.Wrap;
             said.Margin = new Thickness(0, 8, 0, 0);
@@ -683,7 +685,7 @@ namespace CamelWorks.UI.Views
             {
                 field.Start = (typed ?? string.Empty).Trim();
                 onChange();
-            }, 62);
+            }, Ui.Wide.Number);
 
             var step = Ui.Settled(field.Step.ToString(CultureInfo.InvariantCulture), "1", typed =>
             {
@@ -743,7 +745,7 @@ namespace CamelWorks.UI.Views
             {
                 field.Same = (typed ?? string.Empty).Trim();
                 onChange();
-            }, 150);
+            }, Ui.Wide.Word);
 
             var held = Ui.Field("Value", box, null);
 

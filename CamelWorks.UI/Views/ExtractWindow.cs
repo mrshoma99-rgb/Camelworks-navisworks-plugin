@@ -90,9 +90,9 @@ namespace CamelWorks.UI.Views
                 _kept = ToolMemory.Of(session.Store, "publish.extract");
 
                 _folder = Ui.Text(_kept.Text("folder"), "where the files go",
-                                  text => _kept.Set("folder", text), 260);
+                                  text => _kept.Set("folder", text), Ui.Wide.Phrase);
 
-                _name = Ui.Text(_kept.Text("name", "Extract"), null, 220);
+                _name = Ui.Text(_kept.Text("name", "Extract"), null, Ui.Wide.Phrase);
 
                 Load();
 
@@ -129,7 +129,7 @@ namespace CamelWorks.UI.Views
 
                 var piece = Ui.Stack(
                     Bench.Group(string.Empty,
-                        Ui.Field("Take", Ui.Choice(Axes, Word(_recipe.Axis), Chose, 250)),
+                        Ui.Field("Take", Ui.Choice(Axes, Word(_recipe.Axis), Chose, Ui.Wide.Phrase)),
                         _how),
                     Bench.Group("What that is", _verdict),
                     Bench.Group("This extract", Saved()));
@@ -164,7 +164,7 @@ namespace CamelWorks.UI.Views
 
                 if (names.Count == 0) names.Add(_recipe.Name);
 
-                _picker = Ui.Choice(names, _recipe.Name, Switch, 220);
+                _picker = Ui.Choice(names, _recipe.Name, Switch, Ui.Wide.Phrase);
 
                 return Ui.Stack(
                     Ui.Field("Saved", _picker, "Re-runs against whatever is loaded next revision."),
@@ -333,7 +333,7 @@ namespace CamelWorks.UI.Views
                 _recipe.Named = chosen;
 
                 _how.Children.Add(Ui.Field(label,
-                    Ui.Choice(options, chosen, pick => { _recipe.Named = pick; DrawVerdict(); }, 260)));
+                    Ui.Choice(options, chosen, pick => { _recipe.Named = pick; DrawVerdict(); }, Ui.Wide.Phrase)));
             }
 
             /// <summary>
@@ -426,7 +426,7 @@ namespace CamelWorks.UI.Views
                         _recipe.Value = null;
                         DrawHow();
                         DrawVerdict();
-                    }, 260)));
+                    }, Ui.Wide.Phrase)));
 
                 _how.Children.Add(values);
 
@@ -445,7 +445,7 @@ namespace CamelWorks.UI.Views
                 _recipe.Value = picked;
 
                 values.Children.Add(Ui.Field("Value",
-                    Ui.Choice(choices, picked, pick => { _recipe.Value = pick; DrawVerdict(); }, 260),
+                    Ui.Choice(choices, picked, pick => { _recipe.Value = pick; DrawVerdict(); }, Ui.Wide.Phrase),
                     Ui.Count(choices.Count, "value") + " in the model"));
             }
 
@@ -461,7 +461,7 @@ namespace CamelWorks.UI.Views
                     {
                         _recipe.Reach = Reaching(pick);
                         DrawVerdict();
-                    }, 200)));
+                    }, Ui.Wide.Name)));
 
                 _how.Children.Add(Ui.Actions(
                     Ui.Button("From the selection", () => Box(false)),

@@ -167,20 +167,21 @@ namespace CamelWorks.Nav.Clash
                 if (!Fill(test.SelectionA, spec.A)) return null;
                 if (!Fill(test.SelectionB, spec.B)) return null;
 
-                var root = clash.TestsData.Value.TestsRoot;
-
-                if (root == null)
-                {
-                    LastProblem = "The document's clash tests could not be reached.";
-                    return null;
-                }
-
                 // Use the folder the caller asked for, not the root. The spec has carried a folder
                 // since it was written and this dropped it, so a matrix told to put two hundred
                 // tests in "Matrix" put them all at the top level.
-                var into = Destination(clash, root, spec.Folder);
+                //
+                // Read after the folder is made, never before: making one replaces the tests tree,
+                // and the root fetched beforehand is a handle into the tree it replaced.
+                var into = string.IsNullOrWhiteSpace(spec.Folder)
+                    ? Root(clash)
+                    : Made(clash, spec.Folder!.Trim());
 
-                if (into == null) return null;
+                if (into == null)
+                {
+                    LastProblem = LastProblem ?? "The document's clash tests could not be reached.";
+                    return null;
+                }
 
                 // AddCopy, not Add: the host takes a copy of the test and owns it from then on, so
                 // the object built above is not the one in the document and must not be run.
@@ -807,40 +808,6 @@ namespace CamelWorks.Nav.Clash
             return true;
         }
 
-        /// <summary>
-        /// The folder a test should land in, made if it is not there yet, or the root.
-        /// </summary>
-        /// <param name="clash">The document's clash data.</param>
-        /// <param name="root">Where the tests live.</param>
-        /// <param name="folder">The folder's name, or nothing for the root.</param>
-        private GroupItem? Destination(DocumentClash clash, GroupItem root, string? folder)
-        {
-            if (string.IsNullOrWhiteSpace(folder)) return root;
-
-            var found = FolderIn(root, folder!.Trim());
-
-            if (found == null)
-            {
-                try
-                {
-                    clash.TestsData.TestsAddCopy(
-                        root, new ClashTestFolder { DisplayName = folder.Trim() });
-
-                    found = FolderIn(root, folder.Trim());
-                }
-                catch (Exception e)
-                {
-                    LastProblem = "The host refused to make the folder: " + e.Message;
-                    return null;
-                }
-            }
-
-            if (found == null)
-                LastProblem = "The host accepted the folder but it cannot be found again.";
-
-            return found;
-        }
-
         /// <inheritdoc />
         public bool Retune(string testId, double toleranceMetres, Core.Clash.MatrixTest kind)
         {
@@ -1036,20 +1003,38 @@ namespace CamelWorks.Nav.Clash
             var clash = Writable();
             if (clash == null) return false;
 
-            var root = clash.TestsData.Value.TestsRoot;
+            var wanted = string.IsNullOrWhiteSpace(folder) ? null : folder!.Trim();
 
-            if (root == null)
+            if (Root(clash) == null)
             {
                 LastProblem = "The document's clash tests could not be reached.";
                 return false;
             }
 
-            var destination = Destination(clash, root, folder);
-
-            if (destination == null) return false;
+            // The folder first, once, and nothing held across it. Every edit to the tests data
+            // replaces the tree, so a root, a folder or a test read before an edit is a handle
+            // into the tree that edit replaced: the moves that followed one were applied to
+            // objects the document no longer holds, and the tests stayed where they were.
+            if (wanted != null && Made(clash, wanted) == null) return false;
 
             foreach (var id in testIds ?? Array.Empty<string>())
             {
+                var root = Root(clash);
+
+                if (root == null)
+                {
+                    LastProblem = "The document's clash tests could not be reached.";
+                    return false;
+                }
+
+                var destination = wanted == null ? root : FolderIn(root, wanted);
+
+                if (destination == null)
+                {
+                    LastProblem = "The folder \"" + wanted + "\" is no longer in the document.";
+                    return false;
+                }
+
                 var test = FindTest(clash, id);
                 if (test == null) continue;
 
@@ -1072,6 +1057,49 @@ namespace CamelWorks.Nav.Clash
             }
 
             return true;
+        }
+
+        /// <summary>The document's clash tests root, read fresh, or null when it has none.</summary>
+        /// <param name="clash">The document's clash data.</param>
+        private static GroupItem? Root(DocumentClash clash) => clash.TestsData.Value.TestsRoot;
+
+        /// <summary>
+        /// The folder of this name at the root, making it when the document has none.
+        /// </summary>
+        /// <param name="clash">The document's clash data.</param>
+        /// <param name="folder">What the folder is called.</param>
+        /// <returns>The folder, or null when the host refused to make one.</returns>
+        private ClashTestFolder? Made(DocumentClash clash, string folder)
+        {
+            var root = Root(clash);
+
+            if (root == null)
+            {
+                LastProblem = "The document's clash tests could not be reached.";
+                return null;
+            }
+
+            var found = FolderIn(root, folder);
+
+            if (found != null) return found;
+
+            try
+            {
+                clash.TestsData.TestsAddCopy(root, new ClashTestFolder { DisplayName = folder });
+            }
+            catch (Exception e)
+            {
+                LastProblem = "The host refused to make the folder: " + e.Message;
+                return null;
+            }
+
+            // Re-read: the add replaced the tree, so the folder is looked for in the new one.
+            found = Root(clash) is GroupItem now ? FolderIn(now, folder) : null;
+
+            if (found == null)
+                LastProblem = "The host accepted the folder but it cannot be found again.";
+
+            return found;
         }
 
         /// <inheritdoc />
@@ -2209,6 +2237,11 @@ namespace CamelWorks.Nav.Clash
         /// silently stops covering it. It is also what Clash Detective itself does when a set is
         /// picked by hand, so a test CamelWorks made and one made by hand behave the same way.
         /// </summary>
+        /// <summary>The sets a side names that this document has not got, in one phrase.</summary>
+        /// <param name="missing">What could not be found.</param>
+        private static string Missing(IReadOnlyList<string> missing) =>
+            "The sets " + string.Join(", ", missing);
+
         private bool Fill(ClashSelection selection, ClashSide side)
         {
             switch (side.Kind)
@@ -2236,19 +2269,44 @@ namespace CamelWorks.Nav.Clash
                 case ClashSideKind.Set:
                 {
                     var sets = _document.Document.SelectionSets;
-                    var found = Find(sets.Value, side.Name, side.Path);
+                    var sources = new SelectionSourceCollection();
+                    var missing = new List<string>();
 
-                    if (found == null)
+                    // One source per set, all on the one side. A side is a discipline and a
+                    // discipline is rarely one set; the host's selection takes several sources,
+                    // and each stays a source, so a search set on this side still re-resolves.
+                    foreach (var wanted in side.Named)
                     {
-                        LastProblem = string.IsNullOrEmpty(side.Path)
-                            ? "There is no set called \"" + side.Name + "\" in this document."
-                            : "There is no set called \"" + side.Name + "\" in \"" + side.Path
-                              + "\" any more. It has been renamed, moved or deleted.";
+                        var found = Find(sets.Value, wanted.Name, wanted.Path);
+
+                        if (found == null) { missing.Add(wanted.ToString()); continue; }
+
+                        sources.Add(sets.CreateSelectionSource(found));
+                    }
+
+                    if (sources.Count == 0)
+                    {
+                        LastProblem = missing.Count <= 1
+                            ? "There is no set called \"" + side.Name
+                              + "\" in this document any more. It has been renamed, moved or "
+                              + "deleted."
+                            : "None of the sets this side is built from are in this document any "
+                              + "more: " + string.Join(", ", missing) + ".";
 
                         return false;
                     }
 
-                    var sources = new SelectionSourceCollection { sets.CreateSelectionSource(found) };
+                    // Some resolved and some did not: a test between half of what was asked for
+                    // is a test that reports the wrong thing, so it is refused rather than made.
+                    if (missing.Count > 0)
+                    {
+                        LastProblem = missing.Count == 1
+                            ? "The set \"" + missing[0] + "\" is not in this document any more."
+                            : Missing(missing) + " are not in this document any more.";
+
+                        return false;
+                    }
+
                     selection.Selection.CopyFrom(sources);
                     return true;
                 }
@@ -2464,10 +2522,60 @@ namespace CamelWorks.Nav.Clash
             }
         }
 
+        /// <summary>
+        /// How far to look for something keyable, down and then up.
+        ///
+        /// Small on purpose: this runs twice per clash result, and a federation's clash test holds
+        /// thousands. A composite whose identity is more than a few nodes away from it is not
+        /// going to be found by looking harder.
+        /// </summary>
+        private const int Reach = 8;
+
+        /// <summary>
+        /// The key for one side of a clash, from the item or from the nearest thing to it that
+        /// has one.
+        ///
+        /// The item the host names for a side is not always keyable. On some exports it is a
+        /// composite: a grouping node with no instance guid, no tree path the host will give up
+        /// and no geometry to size, standing over the parts that actually clashed. Keying only
+        /// that node dropped the whole result — and the drop was silent, so a test the host said
+        /// held nine hundred clashes arrived on the board holding forty.
+        ///
+        /// So the composite's own geometry is tried first, then what is above it. A key from a
+        /// parent is a worse answer than a key from the element, and both are better answers than
+        /// losing the clash.
+        /// </summary>
+        /// <param name="item">The side, as the host names it.</param>
         private static ElementKey KeyOf(ModelItem? item)
         {
             if (item == null) return default;
 
+            var key = Keyed(item);
+            if (!key.IsEmpty) return key;
+
+            foreach (var below in Under(item))
+            {
+                key = Keyed(below);
+                if (!key.IsEmpty) return key;
+            }
+
+            var up = Above(item);
+
+            for (var step = 0; up != null && step < Reach; step++)
+            {
+                key = Keyed(up);
+                if (!key.IsEmpty) return key;
+
+                up = Above(up);
+            }
+
+            return default;
+        }
+
+        /// <summary>One item's key, or the empty key where the host will not give one.</summary>
+        /// <param name="item">The item.</param>
+        private static ElementKey Keyed(ModelItem item)
+        {
             try
             {
                 return NavKeys.Of(item);
@@ -2475,6 +2583,85 @@ namespace CamelWorks.Nav.Clash
             catch (Exception)
             {
                 return default;
+            }
+        }
+
+        /// <summary>
+        /// The first few pieces of geometry under an item, nearest first.
+        ///
+        /// Breadth first and capped: the point is to find the thing that clashed, which on a
+        /// composite is a child or a grandchild, not to walk a branch of ten thousand.
+        /// </summary>
+        /// <param name="item">The item.</param>
+        private static IEnumerable<ModelItem> Under(ModelItem item)
+        {
+            var queue = new Queue<ModelItem>();
+
+            queue.Enqueue(item);
+
+            var seen = 0;
+            var opened = 0;
+
+            // Two budgets, not one. The first stops once enough geometry has been offered; the
+            // second stops a composite that holds none at all from walking its whole branch,
+            // which on a federation is what makes this cost per result rather than per model.
+            while (queue.Count > 0 && seen < Reach && opened < Reach * Reach)
+            {
+                var here = queue.Dequeue();
+
+                opened++;
+
+                List<ModelItem> children;
+
+                try
+                {
+                    children = here.Children.ToList();
+                }
+                catch (Exception)
+                {
+                    // A node the host will not open is a leaf as far as this is concerned. One
+                    // awkward node must not cost the result.
+                    continue;
+                }
+
+                foreach (var child in children)
+                {
+                    if (Geometric(child))
+                    {
+                        seen++;
+                        yield return child;
+                    }
+
+                    queue.Enqueue(child);
+                }
+            }
+        }
+
+        /// <summary>Whether an item carries geometry, guarded.</summary>
+        /// <param name="item">The item.</param>
+        private static bool Geometric(ModelItem item)
+        {
+            try
+            {
+                return item.HasGeometry;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>The item above one, or null at the top or where the host will not say.</summary>
+        /// <param name="item">The item.</param>
+        private static ModelItem? Above(ModelItem item)
+        {
+            try
+            {
+                return item.Parent;
+            }
+            catch (Exception)
+            {
+                return null;
             }
         }
 
