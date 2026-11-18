@@ -1534,6 +1534,95 @@ namespace CamelWorks.UI.Views
             if (said) onYes?.Invoke();
         }
 
+        /// <summary>
+        /// Say what is about to happen and offer two ways to do it, or neither.
+        ///
+        /// <see cref="Sure"/> with one more button, for the act whose question is not whether but
+        /// which: copying a stack onto a scene that already holds one can go above what is there or
+        /// take its place, and both are reasonable. Asking is better than picking a default,
+        /// because the wrong default here either silently discards somebody's scheme or silently
+        /// doubles it, and neither announces itself.
+        ///
+        /// Both verbs say what they do rather than "OK" and "Cancel", so the last thing read
+        /// before the press is the act. Closing the window does neither.
+        /// </summary>
+        /// <param name="near">The element this belongs to; the window is owned by the host.</param>
+        /// <param name="prompt">What is about to happen, in full.</param>
+        /// <param name="first">The verb on the first button.</param>
+        /// <param name="second">The verb on the second, which is the primary.</param>
+        /// <param name="onFirst">Called when the first verb is pressed, and not otherwise.</param>
+        /// <param name="onSecond">Called when the second is pressed, and not otherwise.</param>
+        public static void Either(FrameworkElement near, string prompt, string first, string second,
+                                  Action onFirst, Action onSecond)
+        {
+            _ = near;
+
+            var window = new Window
+            {
+                Title = "CamelWorks",
+                SizeToContent = SizeToContent.WidthAndHeight,
+                ResizeMode = ResizeMode.NoResize,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ShowInTaskbar = false,
+            };
+
+            var said = 0;
+
+            var body = new StackPanel { Margin = new Thickness(18, 16, 18, 16), MaxWidth = 460 };
+
+            body.Children.Add(new TextBlock
+            {
+                Text = prompt ?? string.Empty,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 14),
+            }.Wearing("Body"));
+
+            var buttons = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+            };
+
+            var cancel = Ui.Quiet("Cancel", () => window.Close());
+            cancel.MinWidth = 92;
+            buttons.Children.Add(cancel);
+
+            var one = Ui.Button(first, () =>
+            {
+                said = 1;
+                window.Close();
+            });
+
+            one.MinWidth = 92;
+            one.Margin = new Thickness(8, 0, 0, 0);
+            buttons.Children.Add(one);
+
+            var two = Ui.Primary(second, () =>
+            {
+                said = 2;
+                window.Close();
+            });
+
+            two.MinWidth = 92;
+            two.Margin = new Thickness(8, 0, 0, 0);
+            buttons.Children.Add(two);
+
+            body.Children.Add(buttons);
+
+            var ground = new Border { Child = body };
+            ground.Tint(Border.BackgroundProperty, "Bg");
+
+            window.Content = ground;
+
+            Skin.Apply(window);
+            Shell.HostWindow.Own(window);
+
+            window.ShowDialog();
+
+            if (said == 1) onFirst?.Invoke();
+            else if (said == 2) onSecond?.Invoke();
+        }
+
 
         /// <summary>How many entries a list may hold before it is given a box to narrow it.</summary>
         private const int Searchable = 8;

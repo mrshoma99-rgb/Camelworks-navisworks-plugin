@@ -72,6 +72,21 @@ That matters because Navisworks applies an override to a node in the project tre
 under it takes it. One act on a storey is four hundred coloured elements; a row each would be four
 hundred rows and, if you adopted them, four hundred layers.
 
+A reading is kept, so pressing **Scan the model** again is instant. The line above the table says
+when it was taken — "Read 12 min ago, over 230,000 elements" — and **Read it again** re-reads the
+model. The age is there because of what cannot be detected: a model being appended voids every
+reading and CamelWorks notices, writing an override voids one and CamelWorks did the writing, but a
+viewpoint re-saved with different state inside it is invisible — Navisworks records no version or
+timestamp on one. So the age is what protects you, rather than a promise of freshness nobody can
+keep.
+
+**Read this viewpoint** does the same for a saved viewpoint. It asks first, because reading one
+means *applying* it: the view moves and whatever is currently coloured or hidden is replaced, the
+same as clicking it in Navisworks. Nothing can put the scene back afterwards — the host does not
+reliably capture appearance into a new viewpoint, so a saved-and-restored view would return the
+camera and leave the viewpoint's overrides on. Your layer stack is what puts CamelWorks' own state
+back.
+
 - **Select** them — see what they are.
 - **Make them a layer** — adopt the state into the stack, as **one** layer naming the place. The
   model looks exactly as it did; what changed is that the stack now says *why*.

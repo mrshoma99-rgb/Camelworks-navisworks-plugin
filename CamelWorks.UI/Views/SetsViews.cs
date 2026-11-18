@@ -682,6 +682,15 @@ namespace CamelWorks.UI.Views
             private const string DefaultView = "Default 3D view";
 
             /// <summary>
+            /// Readings of the scenes looked at so far, so clicking back to one is instant.
+            ///
+            /// Per screen rather than per session, because it holds items that are handles into the
+            /// document's tree: the cache drops everything when the generation moves, and a cache
+            /// outliving the screen would be one more thing that has to remember to.
+            /// </summary>
+            private readonly SceneCache _cache = new SceneCache();
+
+            /// <summary>
             /// Which scenes hold a stack, said as a line rather than marked on the dropdown.
             ///
             /// The dropdown's entries are built once, when the screen is. Marking "has a stack" on
@@ -965,6 +974,10 @@ namespace CamelWorks.UI.Views
                     _layers.AddRange(StackLibrary.Read(
                         session.Store.Section(ProjectStore.LayersSection), _scene));
 
+                    // The table below describes what no layer accounted for under the stack that
+                    // was on screen a moment ago. Left there it would be read against the new one.
+                    _foreign.Children.Clear();
+
                     Reset(session);
 
                     _results.Children.Clear();
@@ -1003,19 +1016,23 @@ namespace CamelWorks.UI.Views
                     var store = session.Store.Section(ProjectStore.LayersSection);
                     var already = StackLibrary.Read(store, target);
 
-                    // Added to whatever is there rather than replacing it, and on top, because a
-                    // copy that silently replaced a scheme somebody else built is not a copy.
-                    var merged = already.Concat(StackLibrary.Copy(_layers, session.NowTicks)).ToList();
+                    // An empty target has no question to ask. One that already holds a stack does,
+                    // and it is not whether but which: either answer is reasonable, and the wrong
+                    // default silently discards somebody's scheme or silently doubles it.
+                    if (already.Count == 0)
+                    {
+                        Put(session, store, target, id, already, replacing: false);
+                        return;
+                    }
 
-                    StackLibrary.Write(store, target, merged);
-
-                    _results.Children.Add(Ui.Done("Copied " + Ui.Count(_layers.Count, "layer")
-                        + " onto " + id + (already.Count == 0
-                            ? "." : ", above the " + Ui.Count(already.Count, "layer") + " already there.")
-                        + " Press \"Save the stack\" to write it to the project."));
-
-                    session.Record(ActivityKind.Appearance,
-                        "copied " + Ui.Count(_layers.Count, "layer") + " onto " + id);
+                    Parts.Either(_results,
+                        id + " already has " + Ui.Count(already.Count, "layer") + ". Copying "
+                        + Ui.Count(_layers.Count, "layer") + " there can go above what is already "
+                        + "on it, or take its place.",
+                        "Add on top",
+                        "Replace them",
+                        () => Put(session, store, target, id, already, replacing: false),
+                        () => Put(session, store, target, id, already, replacing: true));
                 });
 
                 return Bench.Group("Which scene",
@@ -1023,6 +1040,40 @@ namespace CamelWorks.UI.Views
                     _scenes,
                     Ui.Field("Copy to", destination),
                     copy);
+            }
+
+            /// <summary>Put a copy of the stack on screen onto another scene.</summary>
+            /// <param name="session">The seat.</param>
+            /// <param name="store">The project's layers section.</param>
+            /// <param name="target">The scene's viewpoint id, or null for the default 3D view.</param>
+            /// <param name="id">How that scene reads.</param>
+            /// <param name="already">What the target held before this.</param>
+            /// <param name="replacing">True to take the place of what was there, false to go above it.</param>
+            private void Put(Session session, JsonValue store, string? target, string id,
+                             IReadOnlyList<AppearanceLayer> already, bool replacing)
+            {
+                var copies = StackLibrary.Copy(_layers, session.NowTicks);
+
+                var written = replacing ? copies : already.Concat(copies).ToList();
+
+                StackLibrary.Write(store, target, written);
+
+                _results.Children.Clear();
+
+                _results.Children.Add(Ui.Done("Copied " + Ui.Count(_layers.Count, "layer")
+                    + " onto " + id
+                    + (already.Count == 0
+                        ? "."
+                        : replacing
+                            ? ", in place of the " + Ui.Count(already.Count, "layer") + " that were there."
+                            : ", above the " + Ui.Count(already.Count, "layer") + " already there.")
+                    + " Press \"Save the stack\" to write it to the project."));
+
+                Redraw(session);
+
+                session.Record(ActivityKind.Appearance,
+                    (replacing ? "replaced the stack on " : "copied onto ") + id + " with "
+                    + Ui.Count(_layers.Count, "layer"));
             }
 
             /// <summary>
@@ -1074,6 +1125,8 @@ namespace CamelWorks.UI.Views
 
                     session.View.ClearOverrides(ours);
                     session.View.SetVisible(covered, true);
+
+                    _cache.Forget(SceneCache.LiveScene);
 
                     _results.Children.Add(Ui.Done("Took the stack back off "
                                                   + Ui.Count(ours.Count, "element") + "."));
@@ -1127,6 +1180,10 @@ namespace CamelWorks.UI.Views
                         job.Say("Applying...");
                         Execute(session, plan);
 
+                        // The scene is not what it was read as. The cache cannot see a write; the
+                        // code that did the writing has to say so.
+                        _cache.Forget(SceneCache.LiveScene);
+
                         _results.Children.Add(Ui.Done("Applied."));
                         session.Record(ActivityKind.Appearance, "applied the appearance stack: " + plan.Explain());
                     }
@@ -1156,145 +1213,276 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private UIElement Elsewhere(Session session)
             {
-                var scan = Ui.Runner("Scan the model", _foreign, primary: false, work: job =>
-                {
-                    job.Say("Resolving layers...");
-                    var fold = AppearanceStack.Fold(_layers, new HostResolver(session));
+                // Two presses rather than one. The first uses whatever reading is already kept,
+                // so clicking back to a scene is instant; the second makes it read again, which is
+                // the only honest way to offer a cache whose staleness cannot always be detected.
+                var scan = Ui.Runner("Scan the model", _foreign, primary: false,
+                                     work: job => Look(session, job, again: false));
 
-                    var claimed = new HashSet<ElementKey>();
-
-                    foreach (var element in fold.Elements)
-                        if (!element.IsUntouched) claimed.Add(element.Key);
-
-                    job.Say("Looking through the model...");
-
-                    // The tree, in and out of every node, rather than along its geometry leaves.
-                    //
-                    // The host applies an override to a node and every element under it takes it,
-                    // so a walk of the leaves reports one act as thousands of rows — and adopting
-                    // those made thousands of layers. It is also simply wrong about hiding: hiding
-                    // is recorded on the item it was applied to and inherited without being marked,
-                    // so a leaf inside a hidden storey reports itself visible and a scan of the
-                    // leaves saw a hidden storey as nothing hidden at all.
-                    //
-                    // IViewSession.ScanOrigins walks the tree and reports each state at the level
-                    // it was applied: read, for hiding, and inferred from the subtree for colour,
-                    // which the host stores on geometry and keeps no record of the level for.
-                    var report = session.View.ScanOrigins(
-                        TraversalScope.WholeDocument,
-                        seen => job.Step(seen, "elements looked at"));
-
-                    // A stopped scan is not a scan. Reporting what it got to would put a figure on
-                    // screen that reads as the model's answer and is the model's answer up to
-                    // wherever the user lost patience.
-                    if (report.Stopped || job.IsCancelled) return;
-
-                    var ours = report.Origins.Where(o => claimed.Contains(o.Item.Key)).ToList();
-                    var theirs = report.Origins.Where(o => !claimed.Contains(o.Item.Key)).ToList();
-
-                    _foreign.Children.Add(Ui.Line(
-                        theirs.Count == 0
-                            ? report.Elements.ToString("N0", CultureInfo.InvariantCulture)
-                              + " elements scanned, nothing on them this stack does not account for"
-                            : Ui.Count(theirs.Count, "state") + " no layer accounts for, over "
-                              + report.Elements.ToString("N0", CultureInfo.InvariantCulture)
-                              + " elements", 1, true));
-
-                    if (theirs.Count == 0)
-                    {
-                        _foreign.Children.Add(Ui.Empty("Nothing else is going on.",
-                            "Every element is either untouched or accounted for by a layer above. "
-                            + "That is a real result — the scan ran over the whole federation."));
-                        return;
-                    }
-
-                    var hidden = theirs.Where(o => o.Origin.IsHidden).Sum(o => o.Origin.Covers);
-                    var painted = theirs.Where(o => !o.Origin.IsHidden).Sum(o => o.Origin.Covers);
-
-                    _foreign.Children.Add(Ui.Across(
-                        Ui.Figure(hidden.ToString("N0", CultureInfo.InvariantCulture), "hidden",
-                                  hidden > 0 ? Tone.Warn : Tone.Plain),
-                        Ui.Figure(painted.ToString("N0", CultureInfo.InvariantCulture), "overridden"),
-                        Ui.Figure(ours.Count.ToString("N0", CultureInfo.InvariantCulture), "ours already")));
-
-                    // One row per state, not per place, and the difference is a model nobody can
-                    // read. A storey-level override is one state in one place; four thousand
-                    // elements somebody coloured one at a time is one state in four thousand
-                    // places, and a table with a row each would be useless. Grouped, both are one
-                    // row that says which it is.
-                    //
-                    // Deepest place first inside each group, and groups ordered by their deepest,
-                    // because that is the order the layers have to go in: a state on a deeper node
-                    // must decide its elements before one on a shallower node gets to.
-                    var groups = theirs
-                        .GroupBy(o => Shape(o.Origin), StringComparer.Ordinal)
-                        .Select(g => new Places(g.ToList()))
-                        .OrderByDescending(g => g.Depth)
-                        .ThenByDescending(g => g.Covers)
-                        .ToList();
-
-                    var shown = groups.Take(StateRowCap).ToList();
-                    var rest = groups.Skip(StateRowCap).ToList();
-
-                    var rows = shown.Select(g => new TableRow(g,
-                        g.Where,
-                        g.Origin.Describe(),
-                        g.Covers.ToString("N0", CultureInfo.InvariantCulture),
-                        g.Origin.IsHidden
-                            ? "hidden there, so everything under it is"
-                            : g.Covers > g.Count ? "everything under there is" : string.Empty)
-                    {
-                        Tone = g.Origin.IsHidden ? Tone.Warn : Tone.Plain,
-                    }).ToList();
-
-                    var table = Ui.Table(rows, ("Where", 240), ("State", 150), ("Elements", 80), ("", 0));
-
-                    _foreign.Children.Add(table);
-
-                    // The verbs are on the rows. "Pick a row, then choose what to do with it" was
-                    // a table and a separate row of buttons that did not say what they were aimed
-                    // at, and nothing there worked on more than one state at a time.
-                    _foreign.Children.Add(Ui.Picking(table,
-                        new Ui.OnPicked("Select {n}", (picked, say) =>
-                        {
-                            // The nodes themselves. Selecting a branch selects what is under it,
-                            // which is both what the user means and one call instead of thousands.
-                            var keys = picked.OfType<Places>()
-                                             .SelectMany(g => g.Origins)
-                                             .Select(o => o.Item.Key)
-                                             .ToList();
-
-                            session.Model.Select(keys);
-                            say.Children.Add(Ui.Line("Selected " + Ui.Count(keys.Count, "place") + ".", 0.8));
-                        }),
-                        new Ui.OnPicked("Make {n} a layer", (picked, say) => Adopt(session, picked, say)),
-                        new Ui.OnPicked("Put {n} back", (picked, say) => PutBack(session, picked, say))));
-
-                    if (rest.Count > 0)
-                        _foreign.Children.Add(Ui.Note(
-                            Ui.Count(rest.Count, "further state") + " covering "
-                            + Ui.Count(rest.Sum(g => g.Covers), "element")
-                            + " are counted above but not listed. A model where thousands of "
-                            + "elements each carry their own colour is a painted model, not a "
-                            + "coordination problem, and a table of them would be unreadable."));
-
-                    if (theirs.Any(o => !o.Origin.IsRead))
-                        _foreign.Children.Add(Ui.Note(
-                            "Where a colour or a transparency was applied is not something the host "
-                            + "records: it stores them on the geometry, so an override put on a "
-                            + "storey is pushed down to every element under it and the storey keeps "
-                            + "no note of it. The place shown for one of those is the highest node "
-                            + "whose every element is in that one state, which is what a "
-                            + "storey-level override looks like afterwards. Hiding is different "
-                            + "— the host does record where that was done, and those rows are read "
-                            + "rather than worked out."));
-                });
+                var again = Ui.Runner("Read it again", _foreign, primary: false,
+                                      work: job => Look(session, job, again: true));
 
                 return Ui.Stack(
                     Ui.Eyebrow("What else is going on"),
                     scan,
-                    _foreign);
+                    again,
+                    _foreign,
+                    Viewpoint(session));
             }
+
+            /// <summary>
+            /// Read what a saved viewpoint puts on the model.
+            ///
+            /// Reading one means applying it, and applying it replaces what is coloured and what is
+            /// hidden — exactly what clicking it in Navisworks does. There is no honest way to put
+            /// the scene back afterwards: saving the current view first and restoring it looks like
+            /// the fix, but whether the host captures appearance into a new viewpoint depends on
+            /// its own "Save Hide/Required Attributes" option, which no plug-in controls, so on a
+            /// seat with that off the restore returns the camera and leaves the scene in the
+            /// viewpoint's state — a silent loss of whatever was set up.
+            ///
+            /// So it says the view will move and asks first, and the layer stack above is what puts
+            /// CamelWorks' own state back, which is what a stack is for.
+            /// </summary>
+            private UIElement Viewpoint(Session session)
+            {
+                var views = new List<SavedView>();
+
+                try
+                {
+                    views.AddRange(session.Viewpoints.All());
+                }
+                catch (Exception)
+                {
+                    // A host that will not list its viewpoints leaves this group saying so rather
+                    // than failing the screen it is on.
+                }
+
+                if (views.Count == 0)
+                    return Bench.Group("A saved viewpoint",
+                        Ui.Empty("No saved viewpoints to read.",
+                                 "A viewpoint can carry its own colours and hidden elements. When "
+                                 + "this document has some, reading one lists what it puts on the "
+                                 + "model, the same way the scan above lists what is on it now."));
+
+                var carry = views.Count(v => v.HasOverrides);
+
+                var chosen = views[0].Id;
+                var picker = Ui.Choice(views.Select(v => v.Id).ToList(), chosen,
+                                       v => chosen = v, Ui.Wide.Phrase);
+
+                var read = Ui.Runner("Read this viewpoint", _foreign, primary: false,
+                    work: job => Look(session, job, again: false, viewpoint: chosen),
+                    confirm: () =>
+                    {
+                        var said = false;
+
+                        Parts.Sure(_foreign,
+                                   "Reading a viewpoint applies it, which moves the view and "
+                                   + "replaces what is currently coloured and hidden — the same as "
+                                   + "clicking it in Navisworks. Nothing here can put the scene "
+                                   + "back afterwards: the host does not reliably capture "
+                                   + "appearance into a new viewpoint, so a saved-and-restored "
+                                   + "view would return the camera and leave these overrides on. "
+                                   + "Your layer stack is what puts CamelWorks' own state back.",
+                                   "Read it and move the view",
+                                   () => said = true);
+
+                        return said;
+                    });
+
+                return Bench.Group("A saved viewpoint",
+                    Ui.Field("Which", picker),
+                    read,
+                    Ui.Small(Ui.Count(carry, "of these viewpoints") + " "
+                             + (carry == 1 ? "carries" : "carry")
+                             + " appearance state of its own, out of "
+                             + views.Count.ToString(CultureInfo.InvariantCulture)
+                             + ". Read when this screen opened, so a viewpoint re-saved since is "
+                             + "not counted — the host records no version on one, which is also "
+                             + "why a reading shows when it was taken."));
+            }
+
+            /// <summary>
+            /// Read the scene on screen, using a kept reading when there is one.
+            /// </summary>
+            /// <param name="session">The seat.</param>
+            /// <param name="job">The press, for progress and for Stop.</param>
+            /// <param name="again">True to read the model even when a reading is kept.</param>
+            /// <param name="viewpoint">
+            /// A saved viewpoint to apply and read, or null to read what is on the model now. One
+            /// method for both, because everything after the reading — the figures, the table, the
+            /// verbs on its rows — is the same, and a second copy of it would drift.
+            /// </param>
+            private void Look(Session session, Job job, bool again, string? viewpoint = null)
+            {
+                job.Say("Resolving layers...");
+                var fold = AppearanceStack.Fold(_layers, new HostResolver(session));
+
+                var claimed = new HashSet<ElementKey>();
+
+                foreach (var element in fold.Elements)
+                    if (!element.IsUntouched) claimed.Add(element.Key);
+
+                job.Say("Looking through the model...");
+
+                // The tree, in and out of every node, rather than along its geometry leaves.
+                //
+                // The host applies an override to a node and every element under it takes it,
+                // so a walk of the leaves reports one act as thousands of rows — and adopting
+                // those made thousands of layers. It is also simply wrong about hiding: hiding
+                // is recorded on the item it was applied to and inherited without being marked,
+                // so a leaf inside a hidden storey reports itself visible and a scan of the
+                // leaves saw a hidden storey as nothing hidden at all.
+                //
+                // IViewSession.ScanOrigins walks the tree and reports each state at the level
+                // it was applied: read, for hiding, and inferred from the subtree for colour,
+                // which the host stores on geometry and keeps no record of the level for.
+                // Through the cache, which scans only when it has nothing to hand back. A stopped
+                // scan is never kept and reads as null here: it describes the part of a model
+                // somebody lost patience with, and putting that on screen would read as the
+                // model's answer.
+                // Keyed as the live scene, always, and never as the scene being edited. Those are
+                // two different things: picking a viewpoint in the Editing dropdown chooses whose
+                // stack is on screen and does not move the model, so a reading taken then is a
+                // reading of whatever Navisworks is showing. Filing it under the viewpoint would
+                // hand it back later as that viewpoint's, which it is not. Only reading a
+                // viewpoint — which applies it first — may be filed under one.
+                var reading = viewpoint == null
+                    ? _cache.Read(session.View, SceneCache.LiveScene,
+                                  session.Model.Generation, session.NowTicks, again,
+                                  seen => job.Step(seen, "elements looked at"))
+                    : _cache.ReadViewpoint(session.Viewpoints, session.View, viewpoint,
+                                           session.Model.Generation, session.NowTicks, again,
+                                           seen => job.Step(seen, "elements looked at"));
+
+                if (reading == null)
+                {
+                    // Either the walk was stopped, which says itself, or the host turned the
+                    // viewpoint away - and then only the store knows why.
+                    if (viewpoint != null && !job.IsCancelled)
+                        job.Trouble(session.Viewpoints.LastProblem
+                                    ?? "The host would not go to \"" + viewpoint + "\".");
+
+                    return;
+                }
+
+                if (job.IsCancelled) return;
+
+                if (viewpoint != null)
+                    _foreign.Children.Add(Ui.Line("What \"" + viewpoint + "\" puts on the model.",
+                                                  1, true));
+
+                var report = reading.Report;
+
+                // How old the reading is, every time, not only when it came from the cache. Two of
+                // the three things that can make it wrong are caught by the cache; the third — a
+                // viewpoint re-saved with different state inside it — cannot be detected at all,
+                // because a SavedViewpoint carries no version and no timestamp. So the age is what
+                // protects the reader, and "Read it again" is what acts on it.
+                _foreign.Children.Add(Ui.Line(reading.Describe(session.NowTicks), 0.7));
+
+                var ours = report.Origins.Where(o => claimed.Contains(o.Item.Key)).ToList();
+                var theirs = report.Origins.Where(o => !claimed.Contains(o.Item.Key)).ToList();
+
+                _foreign.Children.Add(Ui.Line(
+                    theirs.Count == 0
+                        ? report.Elements.ToString("N0", CultureInfo.InvariantCulture)
+                          + " elements scanned, nothing on them this stack does not account for"
+                        : Ui.Count(theirs.Count, "state") + " no layer accounts for, over "
+                          + report.Elements.ToString("N0", CultureInfo.InvariantCulture)
+                          + " elements", 1, true));
+
+                if (theirs.Count == 0)
+                {
+                    _foreign.Children.Add(Ui.Empty("Nothing else is going on.",
+                        "Every element is either untouched or accounted for by a layer above. "
+                        + "That is a real result — the scan ran over the whole federation."));
+                    return;
+                }
+
+                var hidden = theirs.Where(o => o.Origin.IsHidden).Sum(o => o.Origin.Covers);
+                var painted = theirs.Where(o => !o.Origin.IsHidden).Sum(o => o.Origin.Covers);
+
+                _foreign.Children.Add(Ui.Across(
+                    Ui.Figure(hidden.ToString("N0", CultureInfo.InvariantCulture), "hidden",
+                              hidden > 0 ? Tone.Warn : Tone.Plain),
+                    Ui.Figure(painted.ToString("N0", CultureInfo.InvariantCulture), "overridden"),
+                    Ui.Figure(ours.Count.ToString("N0", CultureInfo.InvariantCulture), "ours already")));
+
+                // One row per state, not per place, and the difference is a model nobody can
+                // read. A storey-level override is one state in one place; four thousand
+                // elements somebody coloured one at a time is one state in four thousand
+                // places, and a table with a row each would be useless. Grouped, both are one
+                // row that says which it is.
+                //
+                // Deepest place first inside each group, and groups ordered by their deepest,
+                // because that is the order the layers have to go in: a state on a deeper node
+                // must decide its elements before one on a shallower node gets to.
+                var groups = theirs
+                    .GroupBy(o => Shape(o.Origin), StringComparer.Ordinal)
+                    .Select(g => new Places(g.ToList()))
+                    .OrderByDescending(g => g.Depth)
+                    .ThenByDescending(g => g.Covers)
+                    .ToList();
+
+                var shown = groups.Take(StateRowCap).ToList();
+                var rest = groups.Skip(StateRowCap).ToList();
+
+                var rows = shown.Select(g => new TableRow(g,
+                    g.Where,
+                    g.Origin.Describe(),
+                    g.Covers.ToString("N0", CultureInfo.InvariantCulture),
+                    g.Origin.IsHidden
+                        ? "hidden there, so everything under it is"
+                        : g.Covers > g.Count ? "everything under there is" : string.Empty)
+                {
+                    Tone = g.Origin.IsHidden ? Tone.Warn : Tone.Plain,
+                }).ToList();
+
+                var table = Ui.Table(rows, ("Where", 240), ("State", 150), ("Elements", 80), ("", 0));
+
+                _foreign.Children.Add(table);
+
+                // The verbs are on the rows. "Pick a row, then choose what to do with it" was
+                // a table and a separate row of buttons that did not say what they were aimed
+                // at, and nothing there worked on more than one state at a time.
+                _foreign.Children.Add(Ui.Picking(table,
+                    new Ui.OnPicked("Select {n}", (picked, say) =>
+                    {
+                        // The nodes themselves. Selecting a branch selects what is under it,
+                        // which is both what the user means and one call instead of thousands.
+                        var keys = picked.OfType<Places>()
+                                         .SelectMany(g => g.Origins)
+                                         .Select(o => o.Item.Key)
+                                         .ToList();
+
+                        session.Model.Select(keys);
+                        say.Children.Add(Ui.Line("Selected " + Ui.Count(keys.Count, "place") + ".", 0.8));
+                    }),
+                    new Ui.OnPicked("Make {n} a layer", (picked, say) => Adopt(session, picked, say)),
+                    new Ui.OnPicked("Put {n} back", (picked, say) => PutBack(session, picked, say))));
+
+                if (rest.Count > 0)
+                    _foreign.Children.Add(Ui.Note(
+                        Ui.Count(rest.Count, "further state") + " covering "
+                        + Ui.Count(rest.Sum(g => g.Covers), "element")
+                        + " are counted above but not listed. A model where thousands of "
+                        + "elements each carry their own colour is a painted model, not a "
+                        + "coordination problem, and a table of them would be unreadable."));
+
+                if (theirs.Any(o => !o.Origin.IsRead))
+                    _foreign.Children.Add(Ui.Note(
+                        "Where a colour or a transparency was applied is not something the host "
+                        + "records: it stores them on the geometry, so an override put on a "
+                        + "storey is pushed down to every element under it and the storey keeps "
+                        + "no note of it. The place shown for one of those is the highest node "
+                        + "whose every element is in that one state, which is what a "
+                        + "storey-level override looks like afterwards. Hiding is different "
+                        + "— the host does record where that was done, and those rows are read "
+                        + "rather than worked out."));
+            }
+
 
             /// <summary>
             /// Turn each picked place into a layer of this model's own stack.
@@ -1368,6 +1556,8 @@ namespace CamelWorks.UI.Views
                 }
 
                 if (places == 0) return;
+
+                _cache.Forget(SceneCache.LiveScene);
 
                 say.Children.Add(Ui.Line("Reset " + Ui.Count(places, "place") + ", covering "
                     + Ui.Count(elements, "element") + ". Scan again to see what is left.", 0.8));
