@@ -41,8 +41,18 @@ overrides are *document* state: one current appearance, shared by every view. A 
 capture and restore it but does not own it, which is why moving the camera never loses an override
 and why two viewpoints cannot show different overrides at the same time.
 
-So choosing a scene here chooses which stack you are **editing**. Putting it on the model is still
-**Apply the stack** — going to the viewpoint in Navisworks does not apply it for you.
+So choosing a scene here chooses which stack you are **editing**. Putting it on the model is
+**Apply the stack**.
+
+Unless you tick **Apply a scene's stack when I go to its viewpoint**. With that on, arriving at a
+viewpoint loads its stack and puts it on, which is as close to Revit's per-view graphics as this
+host allows. It is off by default, because with it on the model's colours change on every viewpoint
+click — including the ones you make while only looking around.
+
+Two things it will not do. A viewpoint with no stack applies nothing, rather than clearing the model
+— arriving somewhere should not wipe its colours. And if Navisworks cannot say which viewpoint it is
+on, nothing happens, because applying the wrong scene's stack would overwrite a scheme with somebody
+else's.
 
 Each row carries what it does and what can be done to it: a tick to turn it off without losing it,
 arrows to move it up or down, a pencil to **change** it, and a bin. The pencil loads the layer back

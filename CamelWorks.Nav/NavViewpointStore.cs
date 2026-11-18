@@ -28,6 +28,17 @@ namespace CamelWorks.Nav
 
         private string? _problem;
 
+        /// <summary>
+        /// How many of this product's own viewpoint applications are in flight.
+        ///
+        /// A counter rather than a flag because <see cref="CopyOverrides"/> applies two viewpoints
+        /// inside one operation, and a flag cleared by the inner one would let the outer one's
+        /// change through as if the user had made it.
+        /// </summary>
+        private int _applying;
+
+        private Action<string?>? _watcher;
+
         /// <inheritdoc />
         public string? LastProblem => _problem;
 
@@ -92,18 +103,31 @@ namespace CamelWorks.Nav
         {
             if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("a viewpoint needs a name", nameof(name));
 
-            var saved = Try(() =>
-            {
-                // Document.CurrentViewpoint is a Viewpoint, not a SavedViewpoint — the two are
-                // unrelated types, and only SavedViewpoint can go into the collection. So the live
-                // camera is copied and then wrapped, rather than cast.
-                var copy = new SavedViewpoint(Host.CurrentViewpoint.CreateCopy())
-                {
-                    DisplayName = name,
-                };
+            // Ours: adding a viewpoint can make it the current one, and the watcher must not read
+            // that as the user having navigated.
+            _applying++;
 
-                Host.SavedViewpoints.AddCopy(copy);
-            });
+            bool saved;
+
+            try
+            {
+                saved = Try(() =>
+                {
+                    // Document.CurrentViewpoint is a Viewpoint, not a SavedViewpoint — the two are
+                    // unrelated types, and only SavedViewpoint can go into the collection. So the
+                    // live camera is copied and then wrapped, rather than cast.
+                    var copy = new SavedViewpoint(Host.CurrentViewpoint.CreateCopy())
+                    {
+                        DisplayName = name,
+                    };
+
+                    Host.SavedViewpoints.AddCopy(copy);
+                });
+            }
+            finally
+            {
+                _applying--;
+            }
 
             return saved ? new SavedView(PathOf(folder, name), name, folder, false, false) : null;
         }
@@ -119,7 +143,98 @@ namespace CamelWorks.Nav
                 return false;
             }
 
-            return Try(() => Host.SavedViewpoints.CurrentSavedViewpoint = found);
+            // Ours, so the watcher stays quiet for it. A callback here would make a stack applied
+            // on arriving at a viewpoint apply itself again, and again.
+            _applying++;
+
+            try
+            {
+                return Try(() => Host.SavedViewpoints.CurrentSavedViewpoint = found);
+            }
+            finally
+            {
+                _applying--;
+            }
+        }
+
+        /// <inheritdoc />
+        public string? OnViewpoint
+        {
+            get
+            {
+                try
+                {
+                    var current = Host.SavedViewpoints.CurrentSavedViewpoint;
+
+                    if (current == null) return null;
+
+                    var guid = current.Guid;
+
+                    // No identity, no answer. Matching on the display name instead would find the
+                    // wrong viewpoint in any document with two of the same name in two folders,
+                    // and the caller for this applies a stack @ the wrong one is worse than none.
+                    if (guid == Guid.Empty) return null;
+
+                    string? found = null;
+
+                    Walk(Host.SavedViewpoints.ToSavedItemCollection(), null, (item, path) =>
+                    {
+                        if (found == null && item.Guid == guid) found = path;
+                    });
+
+                    return found;
+                }
+                catch (Exception)
+                {
+                    // A host that will not say. Null means do nothing, which is the safe answer.
+                    return null;
+                }
+            }
+        }
+
+        /// <inheritdoc />
+        public void WatchViewpoint(Action<string?>? onWent)
+        {
+            var had = _watcher != null;
+
+            _watcher = onWent;
+
+            try
+            {
+                if (!had && onWent != null)
+                    Host.SavedViewpoints.CurrentSavedViewpointChanged += Went;
+                else if (had && onWent == null)
+                    Host.SavedViewpoints.CurrentSavedViewpointChanged -= Went;
+            }
+            catch (Exception)
+            {
+                // A host that will not let us listen. Dropped rather than left half-subscribed,
+                // so the caller's toggle reads as off and nothing fires.
+                _watcher = null;
+            }
+        }
+
+        private void Went(object sender, EventArgs e)
+        {
+            _ = sender;
+            _ = e;
+
+            // This product applying a viewpoint, not the user going to one.
+            if (_applying > 0) return;
+
+            var watcher = _watcher;
+
+            if (watcher == null) return;
+
+            try
+            {
+                watcher(OnViewpoint);
+            }
+            catch (Exception)
+            {
+                // A handler that throws inside a host event takes the message loop with it in some
+                // versions. Whatever it wanted to do is lost; the host is not.
+            }
         }
 
         /// <summary>
@@ -332,27 +447,41 @@ namespace CamelWorks.Nav
             // moves the camera.
             var camera = target.Viewpoint?.CreateCopy();
 
-            // Restore the source: this is what puts its overrides into the running view, and it is
-            // the only way to get at them — GetAppearanceOverrides reads them but nothing writes
-            // them onto another viewpoint.
-            Host.SavedViewpoints.CurrentSavedViewpoint = source;
+            // Ours, for the whole operation: this applies the source and then captures, so the
+            // watcher must stay quiet across both. A flag cleared by the inner change would let
+            // the outer one through as if the user had navigated.
+            _applying++;
 
-            // Camera back to where the target had it, so this copies the overrides and not the
-            // view. A "copy overrides" that quietly moved the camera would be a different feature.
-            if (camera != null) Host.CurrentViewpoint.CopyFrom(camera);
+            try
+            {
+                // Restore the source: this is what puts its overrides into the running view, and
+                // it is the only way to get them onto another viewpoint — GetAppearanceOverrides
+                // reads a viewpoint's own records, which is what ReadOrigins uses, but nothing
+                // writes them onto a different one.
+                Host.SavedViewpoints.CurrentSavedViewpoint = source;
 
-            var made = Host.SavedViewpoints.CaptureRuntimeOverrides();
+                // Camera back to where the target had it, so this copies the overrides and not the
+                // view. A "copy overrides" that quietly moved the camera would be a different
+                // feature.
+                if (camera != null) Host.CurrentViewpoint.CopyFrom(camera);
 
-            // CaptureRuntimeOverrides rather than ReplaceFromCurrentView: the latter is documented
-            // as updating the viewpoint, redlines and visibility, and says nothing about material
-            // overrides. Half of "copy overrides" is not the feature.
-            if (made == null) return false;
+                var made = Host.SavedViewpoints.CaptureRuntimeOverrides();
 
-            made.DisplayName = name;
+                // CaptureRuntimeOverrides rather than ReplaceFromCurrentView: the latter is
+                // documented as updating the viewpoint, redlines and visibility, and says nothing
+                // about material overrides. Half of "copy overrides" is not the feature.
+                if (made == null) return false;
 
-            // In place, at the same index, so the target keeps its position in the folder.
-            Host.SavedViewpoints.ReplaceWithCopy(parent, index, made);
-            return true;
+                made.DisplayName = name;
+
+                // In place, at the same index, so the target keeps its position in the folder.
+                Host.SavedViewpoints.ReplaceWithCopy(parent, index, made);
+                return true;
+            }
+            finally
+            {
+                _applying--;
+            }
         }
 
         /// <summary>Find or make the folder chain, and hand back the group to add into.</summary>

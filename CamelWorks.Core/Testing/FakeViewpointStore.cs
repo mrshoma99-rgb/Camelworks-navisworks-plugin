@@ -56,6 +56,8 @@ namespace CamelWorks.Core.Testing
         /// <summary>Whether the document refuses viewpoints, as a published NWD does.</summary>
         public bool Refuses { get; set; }
 
+        private Action<string?>? _watcher;
+
         /// <summary>
         /// Define a viewpoint: the nodes it colours, and the nodes it hides.
         ///
@@ -267,6 +269,30 @@ namespace CamelWorks.Core.Testing
 
             _views.Remove(found);
             LastProblem = null;
+
+            return true;
+        }
+
+        /// <inheritdoc />
+        public string? OnViewpoint => LastApplied;
+
+        /// <inheritdoc />
+        public void WatchViewpoint(Action<string?>? onWent) => _watcher = onWent;
+
+        /// <summary>
+        /// The user navigating to a viewpoint, as against this product applying one.
+        ///
+        /// The host tells those apart by suppression: Apply is ours and raises nothing, and a click
+        /// in the viewpoint tree raises the event. The fake has to offer both or a watcher cannot
+        /// be tested at all — and the distinction is the whole reason the watcher is safe, since a
+        /// callback for our own Apply would make auto-applying a loop.
+        /// </summary>
+        /// <param name="viewId">Which viewpoint the user went to.</param>
+        public bool UserWentTo(string viewId)
+        {
+            if (!Apply(viewId)) return false;
+
+            _watcher?.Invoke(OnViewpoint);
 
             return true;
         }

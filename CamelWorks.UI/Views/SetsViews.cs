@@ -724,6 +724,10 @@ namespace CamelWorks.UI.Views
 
                 _layers.AddRange(StackLibrary.Read(session.Store.Section(ProjectStore.LayersSection), _scene));
 
+                // This screen owns the viewpoint watcher from here, whether or not following is
+                // on, which is what detaches whichever screen held it before.
+                Listen(session);
+
                 Redraw(session);
 
                 // The stack is what this tool is, so the stack is the stage: the layers in their
@@ -1035,11 +1039,157 @@ namespace CamelWorks.UI.Views
                         () => Put(session, store, target, id, already, replacing: true));
                 });
 
+                var follow = Ui.Check("Apply a scene's stack when I go to its viewpoint",
+                                      Following(session),
+                                      on => Follow(session, on));
+
                 return Bench.Group("Which scene",
                     Ui.Field("Editing", picker),
                     _scenes,
                     Ui.Field("Copy to", destination),
-                    copy);
+                    copy,
+                    follow,
+                    Ui.Small("Off by default, because with it on the model's colours change every "
+                             + "time you click a viewpoint — including while you are only "
+                             + "navigating. With it off, choosing a scene above chooses which "
+                             + "stack you are editing and \"Apply the stack\" is what puts it on "
+                             + "the model."));
+            }
+
+            /// <summary>The store key the auto-apply choice is kept under.</summary>
+            private const string FollowKey = "follow";
+
+            /// <summary>Whether a scene's stack is applied when the host goes to its viewpoint.</summary>
+            private static bool Following(Session session) =>
+                session.Store.Section(ProjectStore.LayersSection)[FollowKey].AsBool();
+
+            /// <summary>
+            /// Turn following on or off, and start or stop listening for it.
+            ///
+            /// This is the per-view graphics system doing the part Navisworks cannot: the host has
+            /// one appearance for the whole document, so "the graphics follow the view" has to mean
+            /// "something puts this view's graphics on when you arrive at it". That something is
+            /// here.
+            ///
+            /// Off by default and said so on the screen, because with it on the model's colours
+            /// change on every viewpoint click, including the ones somebody makes while only
+            /// looking around. That is the right behaviour for the person who asked for it and a
+            /// surprise for everybody else, which is what a default is for.
+            /// </summary>
+            /// <param name="session">The seat.</param>
+            /// <param name="on">Whether to follow.</param>
+            private void Follow(Session session, bool on)
+            {
+                session.Store.Section(ProjectStore.LayersSection).Set(FollowKey, on);
+
+                Listen(session);
+
+                _results.Children.Clear();
+
+                _results.Children.Add(Ui.Line(
+                    on
+                        ? "Going to a viewpoint will now put its stack on the model. Nothing has "
+                          + "changed yet @ this takes effect on the next viewpoint you go to."
+                        : "Going to a viewpoint no longer changes the model. Use \"Apply the "
+                          + "stack\".", 0.8));
+
+            }
+
+            /// <summary>
+            /// Make this screen the one listening for viewpoint changes, or nothing listen.
+            ///
+            /// Called on every build, not only when the toggle is pressed, and both halves of that
+            /// matter. A project that already had following on has to start listening when the
+            /// screen opens, or the setting is remembered and does nothing. And a screen that has
+            /// been replaced has to stop: the seam keeps one watcher and a later call replaces it,
+            /// so building always calling this is what detaches the previous screen @ otherwise a
+            /// discarded screen keeps writing stacks to the store from fields nobody can see.
+            /// </summary>
+            /// <param name="session">The seat.</param>
+            private void Listen(Session session)
+            {
+                if (!Following(session))
+                {
+                    session.Viewpoints.WatchViewpoint(null);
+                    return;
+                }
+
+                session.Viewpoints.WatchViewpoint(viewId =>
+                {
+                    // Off the host's thread and out of its event, both at once. The callback can
+                    // arrive on any thread and while Navisworks is part way through its own
+                    // handling of the change, and applying overrides from inside that is how a
+                    // plug-in takes the message loop with it.
+                    _stack.Dispatcher.BeginInvoke(
+                        new Action(() => Arrived(session, viewId)),
+                        System.Windows.Threading.DispatcherPriority.Background);
+                });
+            }
+
+            /// <summary>
+            /// The host went to a viewpoint, and following is on: put that scene's stack on.
+            /// </summary>
+            /// <param name="session">The seat.</param>
+            /// <param name="viewId">The viewpoint arrived at, or null when the host could not say.</param>
+            private void Arrived(Session session, string? viewId)
+            {
+                // Null means the host could not identify the viewpoint. Doing nothing is the only
+                // safe answer: applying the default view's stack because the current one could not
+                // be named would overwrite a scene with somebody else's scheme.
+                if (viewId == null) return;
+
+                // Already busy. Ui.Runner refuses a second host operation on top of a live one
+                // for the same reason - two walks of the same document interleaved is not
+                // something the host survives - and an arrival is exactly that second operation.
+                if (Ui.IsBusy) return;
+
+                if (!Following(session)) return;
+
+                var store = session.Store.Section(ProjectStore.LayersSection);
+
+                // Whatever was being edited is written first, as switching scenes by hand does.
+                // An arrival is not a reason to lose an afternoon's work.
+                StackLibrary.Write(store, _scene, _layers);
+
+                _scene = viewId;
+
+                _layers.Clear();
+                _layers.AddRange(StackLibrary.Read(store, _scene));
+
+                _foreign.Children.Clear();
+                _cache.Forget(SceneCache.LiveScene);
+
+                Reset(session);
+
+                _results.Children.Clear();
+
+                if (_layers.Count == 0)
+                {
+                    // No stack for this one, and nothing applied. Clearing the model instead would
+                    // read as "arriving at a viewpoint wipes its colours", which is not following.
+                    _results.Children.Add(Ui.Line("Went to " + viewId + ", which has no stack. "
+                        + "Nothing was applied.", 0.8));
+                    return;
+                }
+
+                var fold = AppearanceStack.Fold(_layers, new HostResolver(session));
+                var current = session.View.ReadAppearance(fold.Elements.Select(e => e.Key).ToList());
+                var plan = AppearancePlanner.Plan(fold, current);
+
+                if (plan.IsEmpty)
+                {
+                    _results.Children.Add(Ui.Line("Went to " + viewId
+                        + ". It already looks the way its stack says it should.", 0.8));
+                    return;
+                }
+
+                Execute(session, plan);
+
+                _results.Children.Add(Ui.Done("Went to " + viewId + " and put its "
+                    + Ui.Count(_layers.Count, "layer") + " on: " + plan.Explain()));
+
+                session.Record(ActivityKind.Appearance,
+                    "applied the stack for " + viewId + " on arriving at it");
             }
 
             /// <summary>Put a copy of the stack on screen onto another scene.</summary>

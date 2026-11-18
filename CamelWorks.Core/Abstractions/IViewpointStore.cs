@@ -82,6 +82,40 @@ namespace CamelWorks.Core.Abstractions
         bool Delete(string viewId);
 
         /// <summary>
+        /// Which saved viewpoint the host is on, or null when it is on none.
+        ///
+        /// Null is also the answer when the host cannot say — a document whose viewpoints carry no
+        /// stable identity, or one that refuses the question. Null has to mean "do nothing" rather
+        /// than "the default view", because the caller for this is a stack being applied
+        /// automatically, and applying the wrong scene's stack is worse than applying none.
+        ///
+        /// Not called Current: checks/validate-nullable-args.py learns which member names are
+        /// nullable strings from declarations across the whole repository, so a `string? Current`
+        /// here would make every unrelated `.Current` in the product look nullable.
+        /// </summary>
+        string? OnViewpoint { get; }
+
+        /// <summary>
+        /// Be told when the host goes to a different saved viewpoint.
+        ///
+        /// One watcher at a time: a second call replaces the first, and null stops watching. That
+        /// is deliberately not a subscribe/unsubscribe pair. A screen is rebuilt whenever its
+        /// surface is, so a pair would need every screen to remember to let go, and the failure
+        /// when one forgets is silent — handlers stack up and a single navigation applies a stack
+        /// several times.
+        ///
+        /// The callback is handed the viewpoint now current, as <see cref="OnViewpoint"/> reports
+        /// it. An implementation must NOT raise it for a viewpoint this product applied itself:
+        /// <see cref="Apply"/> is how a stack gets onto a viewpoint, and a callback for it would
+        /// make auto-applying a loop.
+        ///
+        /// It may arrive on any thread and while the host is mid-operation, so a caller marshals
+        /// to its own thread and does its work after the host's own handling has finished.
+        /// </summary>
+        /// <param name="onWent">What to call, or null to stop.</param>
+        void WatchViewpoint(Action<string?>? onWent);
+
+        /// <summary>
         /// Why the document turned the last write away, or null when it took it.
         ///
         /// Saved viewpoints live in the document, so a published NWD refuses every one of them.

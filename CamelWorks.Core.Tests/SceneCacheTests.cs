@@ -340,6 +340,99 @@ namespace CamelWorks.Core.Tests
             Assert.False(records.Stopped);
         }
 
+        // -----------------------------------------------------------------------------------
+        // Following: a scene's stack going on when the host arrives at its viewpoint
+        // -----------------------------------------------------------------------------------
+
+        [Fact]
+        public void A_watcher_hears_the_user_going_to_a_viewpoint()
+        {
+            var (_, _, views, _) = Model(10);
+
+            views.Define("Looking north");
+            views.Define("Looking south");
+
+            var heard = new List<string?>();
+
+            views.WatchViewpoint(v => heard.Add(v));
+
+            views.UserWentTo("Looking north");
+            views.UserWentTo("Looking south");
+
+            Assert.Equal(new[] { "Looking north", "Looking south" }, heard.ToArray());
+        }
+
+        [Fact]
+        public void A_watcher_does_not_hear_this_product_applying_a_viewpoint()
+        {
+            var (_, _, views, _) = Model(10);
+
+            views.Define("Looking north");
+
+            var heard = 0;
+
+            views.WatchViewpoint(_ => heard++);
+
+            views.Apply("Looking north");
+
+            // The one property that makes following safe. Apply is how a stack gets onto a
+            // viewpoint, so hearing our own Apply would apply the stack again, and again.
+            Assert.Equal(0, heard);
+            Assert.Equal("Looking north", views.OnViewpoint);
+        }
+
+        [Fact]
+        public void A_second_watcher_replaces_the_first_rather_than_joining_it()
+        {
+            var (_, _, views, _) = Model(10);
+
+            views.Define("Looking north");
+
+            var first = 0;
+            var second = 0;
+
+            views.WatchViewpoint(_ => first++);
+            views.WatchViewpoint(_ => second++);
+
+            views.UserWentTo("Looking north");
+
+            // One watcher at a time, so a screen rebuilt ten times does not apply a stack ten
+            // times on the next navigation. A subscribe/unsubscribe pair would need every screen
+            // to remember to let go, and the failure when one forgets is silent.
+            Assert.Equal(0, first);
+            Assert.Equal(1, second);
+        }
+
+        [Fact]
+        public void Nothing_is_heard_once_the_watching_stops()
+        {
+            var (_, _, views, _) = Model(10);
+
+            views.Define("Looking north");
+
+            var heard = 0;
+
+            views.WatchViewpoint(_ => heard++);
+            views.WatchViewpoint(null);
+
+            views.UserWentTo("Looking north");
+
+            Assert.Equal(0, heard);
+        }
+
+        [Fact]
+        public void The_viewpoint_a_seat_is_on_is_none_before_anybody_goes_anywhere()
+        {
+            var (_, _, views, _) = Model(10);
+
+            views.Define("Looking north");
+
+            // Null means do nothing, which is what a stack applied automatically has to do when
+            // the host cannot say which viewpoint it is on: applying the wrong scene's stack
+            // would overwrite a scheme with somebody else's.
+            Assert.Null(views.OnViewpoint);
+        }
+
         [Fact]
         public void The_live_scene_and_a_viewpoint_are_kept_apart()
         {
