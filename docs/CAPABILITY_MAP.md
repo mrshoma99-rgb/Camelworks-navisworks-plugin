@@ -208,6 +208,7 @@ surface each type will be reached through rather than a screen that exists today
 | `AppearanceStack`, `AppearanceLayer`, `AppearancePlan`, `AppearancePlanner`, `AppearanceFold`, `AppearanceProperty`, `ILayerResolver`, `LayerReport`, `LayerStackJson` | Appearance |
 | `AppearanceOrigin`, `OriginScan`, `ScannedOrigin`, `OriginReport` | Appearance — "Scan the model", the table of places something was applied. Replaces `ForeignAppearance`/`ForeignAudit`/`ForeignGroup`, which reported one parent-level override as a row per element under it. |
 | `SceneCache`, `SceneReading` | Appearance — the "Read N min ago" line above a scanned table, and the "Read it again" beside it. Keeps a scan per scene so clicking back to one does not re-walk the federation. |
+| `StackLibrary` | Appearance — the "Which scene" group: the Editing picker, the line listing which scenes hold a stack, and "Copy these layers there". One stack per viewpoint plus the default 3D view, which is the per-view graphics system Navisworks does not have. |
 | `AppearanceTransfer`, `AppearanceSnapshot`, `TransferOptions`, `TransferMatch` | Appearance — "Copy appearance from another model…" (new) |
 | `ViewpointPlanner`, `PlannedView` | Viewpoints |
 

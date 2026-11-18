@@ -669,6 +669,29 @@ namespace CamelWorks.UI.Views
             private System.Windows.Controls.Button? _commit;
 
             /// <summary>
+            /// Which scene's stack is on screen: a viewpoint id, or null for the default 3D view.
+            ///
+            /// Navisworks has no per-view graphics @ its overrides are document state, one current
+            /// appearance shared by every view @ so this is where the per-view behaviour lives. A
+            /// stack belongs to the scene it was built for, and going to that scene is what puts
+            /// it on the model.
+            /// </summary>
+            private string? _scene;
+
+            /// <summary>How the default 3D view reads in the scene picker.</summary>
+            private const string DefaultView = "Default 3D view";
+
+            /// <summary>
+            /// Which scenes hold a stack, said as a line rather than marked on the dropdown.
+            ///
+            /// The dropdown's entries are built once, when the screen is. Marking "has a stack" on
+            /// them would be right until somebody added a layer and wrong from then on, and a
+            /// control that is wrong about the thing it is there to tell you is worse than one that
+            /// does not mention it. This is refilled by every redraw.
+            /// </summary>
+            private readonly StackPanel _scenes = Ui.Stack();
+
+            /// <summary>
             /// The id of the layer being changed, or null when the form would add a new one.
             ///
             /// The id and not the index: the list is reordered from the same rows that edit it, so
@@ -690,7 +713,7 @@ namespace CamelWorks.UI.Views
                 if (session == null)
                     return Bench.Surface(null, null, Ui.Stack(Ui.Empty("No model is open.", Host.NoModel)));
 
-                _layers.AddRange(LayerStackJson.Read(session.Store.Section(ProjectStore.LayersSection)["stack"]));
+                _layers.AddRange(StackLibrary.Read(session.Store.Section(ProjectStore.LayersSection), _scene));
 
                 Redraw(session);
 
@@ -890,6 +913,119 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
+            /// Which scene's stack is on screen, and putting a copy of it on another.
+            ///
+            /// This is the per-view graphics system, and it is provided here because Navisworks has
+            /// none. Revit keeps visibility and graphics on the view: switch view and the graphics
+            /// switch with it. Navisworks' overrides are document state — one current appearance,
+            /// shared by every view — and a saved viewpoint can capture and restore it but does not
+            /// own it. That is why moving the camera never loses an override, and why two
+            /// viewpoints cannot show different overrides at once.
+            ///
+            /// So a stack belongs to the scene it was built for, stored against it, and going to
+            /// that scene is what puts it on the model. The default 3D view is a scene like any
+            /// other and keeps the key the single stack always used, so a project written before
+            /// this opens with its stack intact.
+            ///
+            /// Switching scenes writes the stack on screen before loading the next one. The save
+            /// button is still there for writing the file, but losing a scheme to a dropdown is not
+            /// a thing anybody should have to think about.
+            /// </summary>
+            private UIElement Scenes(Session session)
+            {
+                var names = new List<string> { DefaultView };
+
+                try
+                {
+                    // Every viewpoint, not only the ones that already have a stack: offering only
+                    // those would leave no way to start the first one.
+                    names.AddRange(session.Viewpoints.All().Select(v => v.Id));
+                }
+                catch (Exception)
+                {
+                    // A host that will not list its viewpoints leaves the default view, which is
+                    // the scene somebody is in when they have not chosen one. Not worth an error.
+                }
+
+                var here = _scene ?? DefaultView;
+
+                var picker = Ui.Choice(names, here, id =>
+                {
+                    var wanted = id == DefaultView ? null : id;
+
+                    if (string.Equals(wanted, _scene, StringComparison.Ordinal)) return;
+
+                    // Written before the switch. A dropdown that discarded a scheme somebody spent
+                    // an afternoon on would be the worst control on the screen.
+                    StackLibrary.Write(session.Store.Section(ProjectStore.LayersSection), _scene, _layers);
+
+                    _scene = wanted;
+
+                    _layers.Clear();
+                    _layers.AddRange(StackLibrary.Read(
+                        session.Store.Section(ProjectStore.LayersSection), _scene));
+
+                    Reset(session);
+
+                    _results.Children.Clear();
+                    _results.Children.Add(Ui.Line(
+                        _layers.Count == 0
+                            ? "No layers for " + id + " yet. What you add here belongs to it."
+                            : Ui.Count(_layers.Count, "layer") + " for " + id + ".", 0.8));
+                }, Ui.Wide.Phrase);
+
+                // Defaults to the first viewpoint rather than to the scene on screen, so the
+                // common press is one click. With no viewpoints it is the scene on screen, and the
+                // copy refuses with a reason rather than quietly doubling the stack.
+                var chosen = names.Count > 1 ? names[1] : names[0];
+                var destination = Ui.Choice(names, chosen, v => chosen = v, Ui.Wide.Phrase);
+
+                var copy = Ui.Button("Copy these layers there", () =>
+                {
+                    _results.Children.Clear();
+
+                    if (_layers.Count == 0)
+                    {
+                        _results.Children.Add(Ui.Line("There are no layers here to copy.", 0.8));
+                        return;
+                    }
+
+                    var id = chosen;
+                    var target = id == DefaultView ? null : id;
+
+                    if (string.Equals(target, _scene, StringComparison.Ordinal))
+                    {
+                        _results.Children.Add(Ui.Line("That is the scene these layers are already "
+                            + "on. Pick another one.", 0.8));
+                        return;
+                    }
+
+                    var store = session.Store.Section(ProjectStore.LayersSection);
+                    var already = StackLibrary.Read(store, target);
+
+                    // Added to whatever is there rather than replacing it, and on top, because a
+                    // copy that silently replaced a scheme somebody else built is not a copy.
+                    var merged = already.Concat(StackLibrary.Copy(_layers, session.NowTicks)).ToList();
+
+                    StackLibrary.Write(store, target, merged);
+
+                    _results.Children.Add(Ui.Done("Copied " + Ui.Count(_layers.Count, "layer")
+                        + " onto " + id + (already.Count == 0
+                            ? "." : ", above the " + Ui.Count(already.Count, "layer") + " already there.")
+                        + " Press \"Save the stack\" to write it to the project."));
+
+                    session.Record(ActivityKind.Appearance,
+                        "copied " + Ui.Count(_layers.Count, "layer") + " onto " + id);
+                });
+
+                return Bench.Group("Which scene",
+                    Ui.Field("Editing", picker),
+                    _scenes,
+                    Ui.Field("Copy to", destination),
+                    copy);
+            }
+
+            /// <summary>
             /// The stage: the stack in its precedence, what no layer accounts for, and where every
             /// run — apply, reset, scan, travel — reports.
             /// </summary>
@@ -899,7 +1035,7 @@ namespace CamelWorks.UI.Views
                 {
                     _results.Children.Clear();
 
-                    session.Store.Section(ProjectStore.LayersSection).Set("stack", LayerStackJson.Write(_layers));
+                    StackLibrary.Write(session.Store.Section(ProjectStore.LayersSection), _scene, _layers);
 
                     _results.Children.Add(session.Store.Save()
                         ? Ui.Done("Saved to " + session.Store.Where + ".")
@@ -949,6 +1085,7 @@ namespace CamelWorks.UI.Views
                 });
 
                 return Ui.Stack(
+                    Scenes(session),
                     Ui.Eyebrow("Top of the list wins"),
                     _stack,
                     Ui.Actions(save, reset),
@@ -1277,6 +1414,26 @@ namespace CamelWorks.UI.Views
                     : _layers.FirstOrDefault(l => string.Equals(l.Id, _editingId, StringComparison.Ordinal));
 
                 if (_commit != null) _commit.Content = changing == null ? "Add layer" : "Save changes";
+
+                // Which scenes hold a stack, read from the store each time rather than remembered,
+                // so adding the first layer to a viewpoint shows up here immediately.
+                _scenes.Children.Clear();
+
+                var held = StackLibrary.Scenes(session.Store.Section(ProjectStore.LayersSection))
+                                       .Select(v => v ?? DefaultView)
+                                       .ToList();
+
+                // The scene on screen counts whether or not it has been written yet: its layers
+                // are right there above this line, and saying it has none would read as a bug.
+                var hereNow = _scene ?? DefaultView;
+
+                if (_layers.Count > 0 && !held.Contains(hereNow, StringComparer.Ordinal))
+                    held.Insert(0, hereNow);
+
+                _scenes.Children.Add(Ui.Line(
+                    held.Count == 0
+                        ? "No scene has a stack yet. What you build here belongs to the one chosen above."
+                        : "Scenes with a stack: " + string.Join(", ", held), 0.7));
 
                 if (changing != null)
                 {

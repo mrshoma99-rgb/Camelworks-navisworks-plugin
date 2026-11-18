@@ -25,6 +25,25 @@ That is what makes a federation handed over rather than abandoned.
 
 The stack applies top-down and comes back off in one press.
 
+### One stack per scene
+
+**Which scene** chooses whose stack is on screen: the **Default 3D view**, or any saved viewpoint.
+A line under the picker says which scenes already hold one. Switching writes the stack you were
+looking at before loading the next, so a dropdown cannot lose an afternoon's work.
+
+**Copy to** puts a copy of the stack on another scene, *above* whatever is already there rather
+than replacing it. The copies get fresh ids, so copying the same stack onto a scene twice does not
+leave two layers answering to one name.
+
+This is the per-view graphics system, and CamelWorks provides it because Navisworks does not. Revit
+keeps visibility and graphics on the view — switch view and the graphics switch with it. Navisworks'
+overrides are *document* state: one current appearance, shared by every view. A saved viewpoint can
+capture and restore it but does not own it, which is why moving the camera never loses an override
+and why two viewpoints cannot show different overrides at the same time.
+
+So choosing a scene here chooses which stack you are **editing**. Putting it on the model is still
+**Apply the stack** — going to the viewpoint in Navisworks does not apply it for you.
+
 Each row carries what it does and what can be done to it: a tick to turn it off without losing it,
 arrows to move it up or down, a pencil to **change** it, and a bin. The pencil loads the layer back
 into the form above — its name, what it covers, what it decides about visibility, its colour, its
