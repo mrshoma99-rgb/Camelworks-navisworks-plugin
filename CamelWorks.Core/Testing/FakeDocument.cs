@@ -108,6 +108,19 @@ namespace CamelWorks.Core.Testing
             Record("branch.hide " + string.Join(" / ", treePath));
         }
 
+        /// <summary>Which branches are hidden, for a fake that captures the scene.</summary>
+        public List<string[]> HiddenBranches() =>
+            _hiddenBranches.Select(b => b.Split('\u0000')).ToList();
+
+        /// <summary>Unhide every branch, as applying a viewpoint replaces what is hidden.</summary>
+        public void ShowAllBranches()
+        {
+            if (_hiddenBranches.Count == 0) return;
+
+            _hiddenBranches.Clear();
+            Record("branch.showAll");
+        }
+
         /// <summary>Whether a branch was hidden by <see cref="HideBranch"/>.</summary>
         internal bool IsBranchHidden(IReadOnlyList<string> treePath) =>
             _hiddenBranches.Contains(string.Join("\u0000", treePath));

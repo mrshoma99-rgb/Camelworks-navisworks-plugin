@@ -510,6 +510,10 @@ namespace CamelWorks.Core.Testing
             return new OriginReport(found, scan.Elements, scan.Nodes, false);
         }
 
+        /// <summary>What is coloured right now, for a fake that captures the scene.</summary>
+        public Dictionary<ElementKey, Colour> CurrentColours() =>
+            new Dictionary<ElementKey, Colour>(_colour);
+
         /// <summary>Seed an override CamelWorks did not author, as another tool would leave behind.</summary>
         public void SeedForeignColour(ElementKey key, Colour colour)
         {

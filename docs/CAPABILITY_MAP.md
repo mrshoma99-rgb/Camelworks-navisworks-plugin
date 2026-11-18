@@ -207,6 +207,7 @@ surface each type will be reached through rather than a screen that exists today
 | `Restructure`, `RestructureRecipe`, `RestructureChange`, `RestructureSnapshot`, `LevelTally` | Organise Sets |
 | `AppearanceStack`, `AppearanceLayer`, `AppearancePlan`, `AppearancePlanner`, `AppearanceFold`, `AppearanceProperty`, `ILayerResolver`, `LayerReport`, `LayerStackJson` | Appearance |
 | `AppearanceOrigin`, `OriginScan`, `ScannedOrigin`, `OriginReport` | Appearance — "Scan the model", the table of places something was applied. Replaces `ForeignAppearance`/`ForeignAudit`/`ForeignGroup`, which reported one parent-level override as a row per element under it. |
+| `SceneCache`, `SceneReading` | Appearance — the "Read N min ago" line above a scanned table, and the "Read it again" beside it. Keeps a scan per scene so clicking back to one does not re-walk the federation. |
 | `AppearanceTransfer`, `AppearanceSnapshot`, `TransferOptions`, `TransferMatch` | Appearance — "Copy appearance from another model…" (new) |
 | `ViewpointPlanner`, `PlannedView` | Viewpoints |
 

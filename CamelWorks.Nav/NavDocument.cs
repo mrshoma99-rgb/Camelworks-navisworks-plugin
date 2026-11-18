@@ -285,6 +285,17 @@ namespace CamelWorks.Nav
         private readonly List<NavModelSource> _models = new List<NavModelSource>();
         private bool _indexed;
 
+        /// <summary>
+        /// The whole document's tree in depth-first order, null marking a step back out of a node.
+        ///
+        /// A reference per step, which is two per node. That is real memory on a large federation
+        /// and it is the same order as the element index beside it, bought for the same kind of
+        /// reason: without it, every viewpoint read is a fresh structural walk of the model.
+        /// </summary>
+        private List<ModelItem?>? _tree;
+
+        private int _treeGeneration = -1;
+
         // Set when somebody stopped a build. Cleared with the index, because a document that has
         // changed is a fresh question rather than the one they already answered.
         private bool _indexStopped;
@@ -347,6 +358,8 @@ namespace CamelWorks.Nav
         {
             Generation++;
             _indexed = false;
+            _tree = null;
+            _treeGeneration = -1;
             _indexStopped = false;
             _index.Clear();
             _found.Clear();
@@ -1221,8 +1234,56 @@ namespace CamelWorks.Nav
                     return Flat(HostItemsOf(scope.Keys));
 
                 default:
-                    return Branches(Document.Models.RootItems);
+                    return WholeTree();
             }
+        }
+
+        /// <summary>
+        /// The whole document's tree, walked once per generation and remembered.
+        ///
+        /// The shape of the tree is a property of the document, not of what the elements currently
+        /// look like. Reading a saved viewpoint means applying it and scanning, and clicking along
+        /// a list of viewpoints means doing that again and again @ over a tree that is identical
+        /// every time. The expensive structural part of a walk is asking each node for its children,
+        /// which is a call into the host and a list per node; the appearance is then three property
+        /// reads off nodes already in hand.
+        ///
+        /// So the shape is walked once and the readings are cheap thereafter. This is also what
+        /// makes reading a viewpoint at all reasonable: without it, every viewpoint costs a full
+        /// structural walk of the federation.
+        ///
+        /// Dropped when the generation bumps, beside the element index and for the same reason @
+        /// these are handles into a tree that has been replaced, and holding them across a document
+        /// change is what StaleItemException exists to prevent.
+        /// </summary>
+        private IEnumerable<TreeStep> WholeTree()
+        {
+            if (_tree != null && _treeGeneration == Generation) return Remembered(_tree);
+
+            return BuildWholeTree();
+        }
+
+        private static IEnumerable<TreeStep> Remembered(List<ModelItem?> tree)
+        {
+            foreach (var item in tree)
+                yield return item == null ? TreeStep.Leave() : TreeStep.Enter(item);
+        }
+
+        private IEnumerable<TreeStep> BuildWholeTree()
+        {
+            var built = new List<ModelItem?>();
+
+            foreach (var step in Branches(Document.Models.RootItems))
+            {
+                built.Add(step.Item);
+                yield return step;
+            }
+
+            // Only after the walk has run out, which means only when a caller consumed all of it.
+            // A caller that stopped half way leaves this unset, so the next walk is a real one
+            // rather than a third of a federation being handed back as the document.
+            _tree = built;
+            _treeGeneration = Generation;
         }
 
         /// <summary>Elements with no tree above them, as enter/leave pairs.</summary>
