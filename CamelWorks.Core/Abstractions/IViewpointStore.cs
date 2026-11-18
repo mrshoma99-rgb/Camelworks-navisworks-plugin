@@ -27,6 +27,32 @@ namespace CamelWorks.Core.Abstractions
         /// <summary>Apply a saved viewpoint. This restores its overrides too — see the type remarks.</summary>
         bool Apply(string viewId);
 
+        /// <summary>
+        /// What a saved viewpoint records, read without applying it.
+        ///
+        /// Not a scan, and not the same shape of answer as scanning the live scene, because a
+        /// viewpoint keeps better records than the document does. The document stores a colour on
+        /// the geometry, so applying one to a storey pushes it down to every element and the level
+        /// is recorded nowhere — scanning can only infer it back from the subtree. A viewpoint
+        /// stores the override against the item it was applied to, so the level is the host's own
+        /// answer. Every origin from here is therefore marked as read rather than worked out.
+        ///
+        /// It also costs nothing like a scan. The records are sparse — a list of the nodes that
+        /// carry something — so there is no walk of the federation at all, only a count of what
+        /// sits under each of the few nodes named.
+        ///
+        /// And it moves nothing. Reading a viewpoint by applying it would replace what is currently
+        /// coloured and hidden, and nothing could put that back: whether the host captures
+        /// appearance into a new viewpoint depends on its own "Save Hide/Required Attributes"
+        /// option, which no plug-in controls.
+        /// </summary>
+        /// <param name="viewId">Which viewpoint.</param>
+        /// <returns>
+        /// What it records, or null when the viewpoint is not there or the host would not report
+        /// it, with <see cref="LastProblem"/> saying which.
+        /// </returns>
+        OriginReport? ReadOrigins(string viewId);
+
         /// <summary>Rename a saved viewpoint.</summary>
         bool Rename(string viewId, string newName);
 

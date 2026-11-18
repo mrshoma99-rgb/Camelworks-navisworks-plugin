@@ -108,6 +108,65 @@ namespace CamelWorks.Core.Testing
             Record("branch.hide " + string.Join(" / ", treePath));
         }
 
+        /// <summary>A branch as an item, for a store reporting what a viewpoint hides.</summary>
+        /// <param name="treePath">The branch, from the model down.</param>
+        internal FakeItem? BranchItem(IReadOnlyList<string> treePath)
+        {
+            if (treePath == null || treePath.Count == 0) return null;
+
+            // A leaf whose own path is the branch is the branch; otherwise it is an interior node
+            // and one is made for it, as the tree walk does.
+            var leaf = _items.FirstOrDefault(i => i.TreePath.SequenceEqual(treePath));
+
+            if (leaf != null) return leaf;
+
+            var under = _items.FirstOrDefault(
+                i => i.TreePath.Count > treePath.Count
+                     && i.TreePath.Take(treePath.Count).SequenceEqual(treePath));
+
+            if (under == null) return null;
+
+            var model = (FakeSource)under.Model;
+
+            var key = ElementKey.FromTreePath(model.Scope, model.SourcePath,
+                                              treePath.Select(p => (string?)p).ToArray());
+
+            return new FakeItem(this, key, model, treePath[treePath.Count - 1],
+                                null, null, treePath.ToList(), default, false);
+        }
+
+        /// <summary>The geometry elements under a branch, itself included.</summary>
+        /// <param name="treePath">The branch, from the model down.</param>
+        internal IReadOnlyList<ElementKey> GeometryKeysUnder(IReadOnlyList<string> treePath)
+        {
+            if (treePath == null || treePath.Count == 0) return Array.Empty<ElementKey>();
+
+            return _items.Where(i => i.HasGeometry
+                                     && i.TreePath.Count >= treePath.Count
+                                     && i.TreePath.Take(treePath.Count).SequenceEqual(treePath))
+                         .Select(i => i.Key)
+                         .ToList();
+        }
+
+        /// <summary>An element's tree path, for a capture that only knows its leaves.</summary>
+        /// <param name="key">The element.</param>
+        internal string[] PathOf(ElementKey key)
+        {
+            var item = Find(key);
+            return item == null ? Array.Empty<string>() : item.TreePath.ToArray();
+        }
+
+        /// <summary>How many geometry elements sit under a branch, itself included.</summary>
+        /// <param name="treePath">The branch, from the model down.</param>
+        internal int GeometryUnder(IReadOnlyList<string> treePath)
+        {
+            if (treePath == null || treePath.Count == 0) return 0;
+
+            return _items.Count(i => i.HasGeometry
+                                     && i.TreePath.Count >= treePath.Count
+                                     && i.TreePath.Take(treePath.Count).SequenceEqual(treePath));
+        }
+
         /// <summary>Which branches are hidden, for a fake that captures the scene.</summary>
         public List<string[]> HiddenBranches() =>
             _hiddenBranches.Select(b => b.Split('\u0000')).ToList();

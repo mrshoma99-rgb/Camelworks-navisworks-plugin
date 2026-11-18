@@ -81,6 +81,11 @@ namespace CamelWorks.Core.Appearance
     ///
     /// A stopped scan is never kept. It describes the part of a model somebody lost patience with,
     /// and handing that back later as the answer is the one failure a cache must not have.
+    ///
+    /// A viewpoint's reading is filed under its id and the live scene's under
+    /// <see cref="LiveScene"/>, and neither stands in for the other. A viewpoint is read from its
+    /// own records rather than by being applied, so reading one changes nothing about the live
+    /// scene and leaves its reading alone.
     /// </summary>
     public sealed class SceneCache
     {
@@ -188,49 +193,6 @@ namespace CamelWorks.Core.Appearance
             var report = view.ScanOrigins(TraversalScope.WholeDocument, onProgress);
 
             return Put(key, report, generation, nowTicks);
-        }
-
-        /// <summary>
-        /// A reading of a saved viewpoint: apply it, then read what it put on the model.
-        ///
-        /// Applied even when the reading is already kept, because the two have to agree. The point
-        /// of pressing a viewpoint is to look at it; a table that appeared without the model moving
-        /// would describe a scene that is not on screen.
-        ///
-        /// This is destructive, and deliberately not disguised. Applying a viewpoint replaces what
-        /// is coloured and what is hidden, which is exactly what clicking it in Navisworks does.
-        /// Saving the current view first and restoring it afterwards looks like the fix and is not:
-        /// whether the host captures appearance into a new viewpoint depends on its own
-        /// "Save Hide/Required Attributes" option, so on a seat with that off the restore returns
-        /// the camera and leaves the scene in the viewpoint's state — a silent loss of whatever the
-        /// user had set up. The honest answer is to say the view will move, and to let the layer
-        /// stack be what puts CamelWorks' own state back, which is what a stack is for.
-        /// </summary>
-        /// <param name="views">The viewpoint store.</param>
-        /// <param name="view">The session to scan through.</param>
-        /// <param name="viewId">Which viewpoint.</param>
-        /// <param name="generation">The document generation now.</param>
-        /// <param name="nowTicks">Now, as the session counts it.</param>
-        /// <param name="again">True to scan even when there is a kept reading.</param>
-        /// <param name="onProgress">Running count of elements walked; false stops the walk.</param>
-        /// <returns>
-        /// The reading; null when the viewpoint could not be applied, with the store's
-        /// <see cref="IViewpointStore.LastProblem"/> saying why, or when the walk was stopped.
-        /// </returns>
-        public SceneReading? ReadViewpoint(IViewpointStore views, IViewSession view, string viewId,
-                                           int generation, long nowTicks, bool again,
-                                           Func<int, bool>? onProgress)
-        {
-            if (views == null) throw new ArgumentNullException(nameof(views));
-            if (viewId == null) throw new ArgumentNullException(nameof(viewId));
-
-            if (!views.Apply(viewId)) return null;
-
-            // The live scene is now this viewpoint's. Whatever was read of it before describes
-            // something that is no longer on the model.
-            Forget(LiveScene);
-
-            return Read(view, viewId, generation, nowTicks, again, onProgress);
         }
 
         /// <summary>Drop everything.</summary>

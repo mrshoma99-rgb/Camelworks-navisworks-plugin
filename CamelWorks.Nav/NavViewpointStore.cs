@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Navisworks.Api;
 using CamelWorks.Core.Abstractions;
+using CamelWorks.Core.Appearance;
 
 namespace CamelWorks.Nav
 {
@@ -119,6 +120,140 @@ namespace CamelWorks.Nav
             }
 
             return Try(() => Host.SavedViewpoints.CurrentSavedViewpoint = found);
+        }
+
+        /// <summary>
+        /// What a saved viewpoint records, read without applying it.
+        ///
+        /// The host keeps better records on a viewpoint than it does on the document, and that is
+        /// the whole value of this call. A document override lives on the geometry, so one applied
+        /// to a storey is pushed down to every element under it and the level is recorded nowhere;
+        /// scanning the live scene can only infer the level back from the subtree. A viewpoint
+        /// stores each override against the item it was applied to — MaterialOverride.Item, and
+        /// VisibilityOverrides.Hidden — so the level is the host's own answer, and every origin
+        /// here is marked read rather than worked out.
+        ///
+        /// It is also sparse and moves nothing. The records name only the nodes that carry
+        /// something, so there is no walk of the federation; the only cost is counting the geometry
+        /// under each of those few nodes, which is bounded by their subtrees.
+        /// </summary>
+        /// <param name="viewId">Which viewpoint.</param>
+        public OriginReport? ReadOrigins(string viewId)
+        {
+            var found = Find(viewId);
+
+            if (found == null)
+            {
+                _problem = "There is no saved viewpoint at \"" + viewId + "\".";
+                return null;
+            }
+
+            var origins = new List<ScannedOrigin>();
+            var node = 0;
+
+            try
+            {
+                var hidden = found.GetVisibilityOverrides();
+
+                if (hidden != null)
+                    foreach (ModelItem item in hidden.Hidden)
+                        Add(origins, ref node, item, true, null, null);
+
+                var appearance = found.GetAppearanceOverrides();
+
+                if (appearance != null)
+                    foreach (var over in appearance.MaterialOverrides)
+                    {
+                        if (over == null || over.Item == null) continue;
+
+                        var colour = NavValues.ToColour(over.Color);
+
+                        Add(origins, ref node, over.Item, false, colour, over.Transparency);
+                    }
+            }
+            catch (Exception)
+            {
+                // The host would not report the viewpoint's own records. Said rather than quietly
+                // falling back to applying it and scanning, which would move the view and replace
+                // what is currently coloured - a destructive answer to a read.
+                _problem = "Navisworks would not report what \"" + viewId + "\" records. "
+                         + "Go to the viewpoint yourself and press \"Scan the model\" instead.";
+
+                return null;
+            }
+
+            _problem = null;
+
+            // Deepest first, as a scan reports them, because that is the order layers go in.
+            var ordered = origins.OrderByDescending(o => o.Origin.Depth)
+                                 .ThenByDescending(o => o.Origin.Covers)
+                                 .ToList();
+
+            // Nothing was walked: the records name their own nodes, so there is no element count
+            // to report and nothing that could have been stopped part way.
+            return new OriginReport(ordered, 0, ordered.Count, false);
+        }
+
+        /// <summary>One of a viewpoint's records, as an origin at the node it names.</summary>
+        private void Add(List<ScannedOrigin> origins, ref int node, ModelItem item,
+                         bool hidden, Colour? colour, double? transparency)
+        {
+            if (!(_document.Wrap(item) is IModelItem ours)) return;
+
+            origins.Add(new ScannedOrigin(ours, new AppearanceOrigin(
+                node++, Depth(item), Under(item), hidden, colour, transparency, isRead: true)));
+        }
+
+        /// <summary>How deep a node is, a model root being zero.</summary>
+        private static int Depth(ModelItem item)
+        {
+            var depth = 0;
+
+            try
+            {
+                foreach (var _ in item.Ancestors) depth++;
+            }
+            catch (Exception)
+            {
+                // A node the host will not walk up. Zero reads as a model root, which puts it at
+                // the bottom of the order rather than losing the row.
+            }
+
+            return depth;
+        }
+
+        /// <summary>
+        /// How many geometry elements sit under a node, itself included.
+        ///
+        /// DescendantsAndSelf is a lazy native collection, so this is a walk of that one subtree
+        /// and not of the document. It is paid once per record, and a viewpoint has a handful.
+        /// </summary>
+        private static int Under(ModelItem item)
+        {
+            try
+            {
+                NavDocument.Opened();
+
+                try
+                {
+                    var under = 0;
+
+                    foreach (ModelItem each in item.DescendantsAndSelf)
+                        if (each.HasGeometry) under++;
+
+                    return under;
+                }
+                finally
+                {
+                    NavDocument.Closed();
+                }
+            }
+            catch (Exception)
+            {
+                // A node the host will not open. One is the honest floor: the record names it, so
+                // it is at least itself.
+                return 1;
+            }
         }
 
         /// <inheritdoc />

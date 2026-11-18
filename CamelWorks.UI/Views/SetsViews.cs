@@ -1272,28 +1272,21 @@ namespace CamelWorks.UI.Views
                                        v => chosen = v, Ui.Wide.Phrase);
 
                 var read = Ui.Runner("Read this viewpoint", _foreign, primary: false,
-                    work: job => Look(session, job, again: false, viewpoint: chosen),
-                    confirm: () =>
-                    {
-                        var said = false;
+                    work: job => Look(session, job, again: false, viewpoint: chosen));
 
-                        Parts.Sure(_foreign,
-                                   "Reading a viewpoint applies it, which moves the view and "
-                                   + "replaces what is currently coloured and hidden — the same as "
-                                   + "clicking it in Navisworks. Nothing here can put the scene "
-                                   + "back afterwards: the host does not reliably capture "
-                                   + "appearance into a new viewpoint, so a saved-and-restored "
-                                   + "view would return the camera and leave these overrides on. "
-                                   + "Your layer stack is what puts CamelWorks' own state back.",
-                                   "Read it and move the view",
-                                   () => said = true);
-
-                        return said;
-                    });
+                var again = Ui.Runner("Read it again", _foreign, primary: false,
+                    work: job => Look(session, job, again: true, viewpoint: chosen));
 
                 return Bench.Group("A saved viewpoint",
                     Ui.Field("Which", picker),
                     read,
+                    again,
+                    Ui.Small("Nothing moves: a viewpoint records each override against the item it "
+                             + "was applied to, so this reads its own notes rather than applying "
+                             + "it. That also means the place shown is the host's own answer and "
+                             + "not worked out from the model, which is the one thing a scan of "
+                             + "the live scene cannot manage — the document keeps a colour on the "
+                             + "geometry and no note of the level."),
                     Ui.Small(Ui.Count(carry, "of these viewpoints") + " "
                              + (carry == 1 ? "carries" : "carry")
                              + " appearance state of its own, out of "
@@ -1348,32 +1341,50 @@ namespace CamelWorks.UI.Views
                 // reading of whatever Navisworks is showing. Filing it under the viewpoint would
                 // hand it back later as that viewpoint's, which it is not. Only reading a
                 // viewpoint — which applies it first — may be filed under one.
-                var reading = viewpoint == null
-                    ? _cache.Read(session.View, SceneCache.LiveScene,
-                                  session.Model.Generation, session.NowTicks, again,
-                                  seen => job.Step(seen, "elements looked at"))
-                    : _cache.ReadViewpoint(session.Viewpoints, session.View, viewpoint,
-                                           session.Model.Generation, session.NowTicks, again,
-                                           seen => job.Step(seen, "elements looked at"));
+                SceneReading? reading;
 
-                if (reading == null)
+                if (viewpoint == null)
                 {
-                    // Either the walk was stopped, which says itself, or the host turned the
-                    // viewpoint away - and then only the store knows why.
-                    if (viewpoint != null && !job.IsCancelled)
-                        job.Trouble(session.Viewpoints.LastProblem
-                                    ?? "The host would not go to \"" + viewpoint + "\".");
+                    reading = _cache.Read(session.View, SceneCache.LiveScene,
+                                          session.Model.Generation, session.NowTicks, again,
+                                          seen => job.Step(seen, "elements looked at"));
+                }
+                else
+                {
+                    // Read off the viewpoint's own records rather than by applying it. A viewpoint
+                    // stores each override against the item it was applied to, so this needs no
+                    // walk, moves nothing, and reports the level as the host's own answer instead
+                    // of inferring it. It is also why there is no warning to accept: nothing about
+                    // the scene changes.
+                    var kept = again ? null : _cache.Get(viewpoint, session.Model.Generation);
 
-                    return;
+                    if (kept != null)
+                    {
+                        reading = kept;
+                    }
+                    else
+                    {
+                        var records = session.Viewpoints.ReadOrigins(viewpoint);
+
+                        if (records == null)
+                        {
+                            job.Trouble(session.Viewpoints.LastProblem
+                                        ?? "Navisworks would not report what \"" + viewpoint
+                                           + "\" records.");
+                            return;
+                        }
+
+                        reading = _cache.Put(viewpoint, records, session.Model.Generation,
+                                             session.NowTicks);
+                    }
                 }
 
-                if (job.IsCancelled) return;
-
-                if (viewpoint != null)
-                    _foreign.Children.Add(Ui.Line("What \"" + viewpoint + "\" puts on the model.",
-                                                  1, true));
+                if (reading == null || job.IsCancelled) return;
 
                 var report = reading.Report;
+
+                if (viewpoint != null)
+                    _foreign.Children.Add(Ui.Line("What \"" + viewpoint + "\" records.", 1, true));
 
                 // How old the reading is, every time, not only when it came from the cache. Two of
                 // the three things that can make it wrong are caught by the cache; the third — a

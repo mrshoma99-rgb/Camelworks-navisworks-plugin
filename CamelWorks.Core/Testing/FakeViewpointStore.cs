@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using CamelWorks.Core.Abstractions;
+using CamelWorks.Core.Appearance;
 using CamelWorks.Core.Identity;
 
 namespace CamelWorks.Core.Testing
@@ -56,21 +57,27 @@ namespace CamelWorks.Core.Testing
         public bool Refuses { get; set; }
 
         /// <summary>
-        /// Define a viewpoint and what applying it does to the scene.
+        /// Define a viewpoint: the nodes it colours, and the nodes it hides.
+        ///
+        /// Nodes, named by tree path, and not elements — which is the thing that matters about a
+        /// viewpoint and the reason this fake exists. The host records an override against the item
+        /// it was applied to, so a storey-wide colour is one record naming the storey. Applying it
+        /// then pushes the colour down onto the geometry under that storey, which is why the live
+        /// scene keeps no note of the level and a viewpoint does.
         /// </summary>
         /// <param name="name">What it is called.</param>
-        /// <param name="colours">Elements it colours.</param>
-        /// <param name="hiddenBranches">Branches it hides, each a tree path from the model down.</param>
+        /// <param name="colours">The nodes it colours, each a tree path from the model down.</param>
+        /// <param name="hiddenBranches">The nodes it hides, each a tree path from the model down.</param>
         public SavedView Define(string name,
-                                IReadOnlyDictionary<ElementKey, Colour>? colours = null,
+                                IReadOnlyList<KeyValuePair<string[], Colour>>? colours = null,
                                 IReadOnlyList<string[]>? hiddenBranches = null)
         {
             var view = new View
             {
                 Name = name,
                 Colours = colours == null
-                    ? new Dictionary<ElementKey, Colour>()
-                    : new Dictionary<ElementKey, Colour>(colours.ToDictionary(p => p.Key, p => p.Value)),
+                    ? new List<KeyValuePair<string[], Colour>>()
+                    : colours.ToList(),
                 Hidden = hiddenBranches == null ? new List<string[]>() : hiddenBranches.ToList(),
             };
 
@@ -102,7 +109,15 @@ namespace CamelWorks.Core.Testing
             {
                 Name = name,
                 Folder = folder,
-                Colours = _view.CurrentColours(),
+                // Only what the leaves carry, because that is all the live scene knows: the
+                // level an override was applied at is not recorded on the document. A capture is
+                // therefore flatter than a viewpoint somebody built by hand, which is true of the
+                // host too.
+                Colours = _view.CurrentColours()
+                               .Select(c => new KeyValuePair<string[], Colour>(
+                                   _document.PathOf(c.Key), c.Value))
+                               .Where(c => c.Key.Length > 0)
+                               .ToList(),
                 Hidden = _document.HiddenBranches(),
             };
 
@@ -115,7 +130,7 @@ namespace CamelWorks.Core.Testing
         /// <inheritdoc />
         public bool Apply(string viewId)
         {
-            var found = Find(viewId);
+            var found = FindView(viewId);
 
             if (found == null)
             {
@@ -130,7 +145,11 @@ namespace CamelWorks.Core.Testing
             _view.ClearAllOverrides();
             _document.ShowAllBranches();
 
-            foreach (var pair in found.Colours) _view.SeedForeignColour(pair.Key, pair.Value);
+            // Pushed down onto the geometry under each node, which is what the host does and why
+            // the live scene afterwards carries no note of the level it was applied at.
+            foreach (var pair in found.Colours)
+                foreach (var key in _document.GeometryKeysUnder(pair.Key))
+                    _view.SeedForeignColour(key, pair.Value);
 
             foreach (var branch in found.Hidden) _document.HideBranch(branch);
 
@@ -143,12 +162,65 @@ namespace CamelWorks.Core.Testing
         }
 
         /// <inheritdoc />
+        public OriginReport? ReadOrigins(string viewId)
+        {
+            var found = FindView(viewId);
+
+            if (found == null)
+            {
+                LastProblem = "There is no saved viewpoint at \"" + viewId + "\".";
+                return null;
+            }
+
+            LastProblem = null;
+
+            _document.Record("viewpoint.read " + viewId);
+
+            var origins = new List<ScannedOrigin>();
+            var node = 0;
+
+            // Hidden first, and hidden branches are nodes, so each is one origin covering whatever
+            // sits under it. The host records hiding against the item it was applied to, which is
+            // why this is read rather than rolled up.
+            foreach (var branch in found.Hidden)
+            {
+                var item = _document.BranchItem(branch);
+
+                if (item == null) continue;
+
+                origins.Add(new ScannedOrigin(item, new AppearanceOrigin(
+                    node++, branch.Length - 1, _document.GeometryUnder(branch),
+                    true, null, null, isRead: true)));
+            }
+
+            foreach (var pair in found.Colours)
+            {
+                var item = _document.BranchItem(pair.Key);
+
+                if (item == null) continue;
+
+                origins.Add(new ScannedOrigin(item, new AppearanceOrigin(
+                    node++, pair.Key.Length - 1, _document.GeometryUnder(pair.Key),
+                    false, pair.Value, null, isRead: true)));
+            }
+
+            // Deepest first, as a scan reports them, because that is the order layers go in.
+            var ordered = origins.OrderByDescending(o => o.Origin.Depth)
+                                 .ThenByDescending(o => o.Origin.Covers)
+                                 .ToList();
+
+            // Nothing was walked: a viewpoint's records are sparse and name their own nodes, so
+            // there is no element count to report and nothing to have stopped.
+            return new OriginReport(ordered, 0, ordered.Count, false);
+        }
+
+        /// <inheritdoc />
         public bool Rename(string viewId, string newName)
         {
             if (string.IsNullOrWhiteSpace(newName))
                 throw new ArgumentException("a viewpoint needs a name", nameof(newName));
 
-            var found = Find(viewId);
+            var found = FindView(viewId);
 
             if (found == null) { LastProblem = "No such viewpoint."; return false; }
 
@@ -161,7 +233,7 @@ namespace CamelWorks.Core.Testing
         /// <inheritdoc />
         public string? MoveTo(string viewId, string? folder)
         {
-            var found = Find(viewId);
+            var found = FindView(viewId);
 
             if (found == null) { LastProblem = "No such viewpoint."; return null; }
 
@@ -174,12 +246,12 @@ namespace CamelWorks.Core.Testing
         /// <inheritdoc />
         public bool CopyOverrides(string fromViewId, string toViewId)
         {
-            var from = Find(fromViewId);
-            var to = Find(toViewId);
+            var from = FindView(fromViewId);
+            var to = FindView(toViewId);
 
             if (from == null || to == null) { LastProblem = "No such viewpoint."; return false; }
 
-            to.Colours = new Dictionary<ElementKey, Colour>(from.Colours);
+            to.Colours = from.Colours.ToList();
             to.Hidden = from.Hidden.ToList();
             LastProblem = null;
 
@@ -189,7 +261,7 @@ namespace CamelWorks.Core.Testing
         /// <inheritdoc />
         public bool Delete(string viewId)
         {
-            var found = Find(viewId);
+            var found = FindView(viewId);
 
             if (found == null) { LastProblem = "No such viewpoint."; return false; }
 
@@ -199,7 +271,7 @@ namespace CamelWorks.Core.Testing
             return true;
         }
 
-        private View? Find(string viewId) =>
+        private View? FindView(string viewId) =>
             _views.FirstOrDefault(v => string.Equals(Describe(v).Id, viewId, StringComparison.Ordinal));
 
         private static SavedView Describe(View view) =>
@@ -212,7 +284,8 @@ namespace CamelWorks.Core.Testing
         {
             internal string Name = string.Empty;
             internal string? Folder;
-            internal Dictionary<ElementKey, Colour> Colours = new Dictionary<ElementKey, Colour>();
+            internal List<KeyValuePair<string[], Colour>> Colours =
+                new List<KeyValuePair<string[], Colour>>();
             internal List<string[]> Hidden = new List<string[]>();
         }
     }

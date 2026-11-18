@@ -80,12 +80,15 @@ viewpoint re-saved with different state inside it is invisible — Navisworks re
 timestamp on one. So the age is what protects you, rather than a promise of freshness nobody can
 keep.
 
-**Read this viewpoint** does the same for a saved viewpoint. It asks first, because reading one
-means *applying* it: the view moves and whatever is currently coloured or hidden is replaced, the
-same as clicking it in Navisworks. Nothing can put the scene back afterwards — the host does not
-reliably capture appearance into a new viewpoint, so a saved-and-restored view would return the
-camera and leave the viewpoint's overrides on. Your layer stack is what puts CamelWorks' own state
-back.
+**Read this viewpoint** does the same for a saved viewpoint, and **nothing moves**. A viewpoint
+records each override against the item it was applied to, so this reads its own notes rather than
+applying it: the view stays where it is and whatever you have coloured or hidden stays as it is.
+
+That also makes it a better answer than scanning. For a viewpoint the place shown is the host's own
+record, not something worked out — a storey-wide colour is one entry naming the storey. For the live
+scene the level has to be inferred from the subtree, because the document keeps a colour on the
+geometry and no note of where it was applied. So viewpoint rows never carry the "worked out"
+caveat, and rows from a scan sometimes do.
 
 - **Select** them — see what they are.
 - **Make them a layer** — adopt the state into the stack, as **one** layer naming the place. The

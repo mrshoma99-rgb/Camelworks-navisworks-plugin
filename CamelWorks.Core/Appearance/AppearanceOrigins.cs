@@ -30,8 +30,25 @@ namespace CamelWorks.Core.Appearance
     /// </summary>
     public sealed class AppearanceOrigin
     {
-        internal AppearanceOrigin(int node, int depth, int covers, bool isHidden,
-                                  Colour? colour, double? transparency, bool isRead)
+        /// <summary>
+        /// State the model is in, at the node it was applied to.
+        ///
+        /// Public because the host adapter builds these as well as <see cref="OriginScan"/> does.
+        /// A saved viewpoint records each override against the item it was applied to, so reading
+        /// one produces origins directly, with nothing to infer and nothing to fold — which is why
+        /// those come back with <paramref name="isRead"/> true.
+        /// </summary>
+        /// <param name="node">The walk's number for the node, or the reader's.</param>
+        /// <param name="depth">How deep the node is, a model root being zero.</param>
+        /// <param name="covers">How many geometry elements sit under it, itself included.</param>
+        /// <param name="isHidden">Whether this origin is a hiding.</param>
+        /// <param name="colour">The colour, or null.</param>
+        /// <param name="transparency">The transparency, or null.</param>
+        /// <param name="isRead">
+        /// True when the host recorded the level, false when it was inferred from the subtree.
+        /// </param>
+        public AppearanceOrigin(int node, int depth, int covers, bool isHidden,
+                                Colour? colour, double? transparency, bool isRead)
         {
             Node = node;
             Depth = depth;

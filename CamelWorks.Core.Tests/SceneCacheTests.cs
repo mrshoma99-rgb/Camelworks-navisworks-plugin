@@ -26,6 +26,10 @@ namespace CamelWorks.Core.Tests
 
         private const long Minute = 600_000_000L;
 
+        /// <summary>One node coloured, named the way a viewpoint names it.</summary>
+        private static IReadOnlyList<KeyValuePair<string[], Colour>> One(FakeItem item, Colour colour) =>
+            new[] { new KeyValuePair<string[], Colour>(item.TreePath.ToArray(), colour) };
+
         private static (FakeDocument doc, FakeViewSession view, FakeViewpointStore views,
                         List<FakeItem> items) Model(int parts)
         {
@@ -93,15 +97,15 @@ namespace CamelWorks.Core.Tests
         {
             var (doc, view, views, items) = Model(40);
 
-            views.Define("Looking north", new Dictionary<ElementKey, Colour> { [items[1].Key] = Blue });
-            views.Define("Looking south", new Dictionary<ElementKey, Colour> { [items[2].Key] = Red });
+            views.Define("Looking north", One(items[1], Blue));
+            views.Define("Looking south", One(items[2], Red));
 
             var cache = new SceneCache();
 
             // Two viewpoints rather than the live scene and one, because reading a viewpoint drops
             // the live scene's reading by design -- it replaced it.
-            cache.ReadViewpoint(views, view, "Looking north", doc.Generation, Minute, false, null);
-            cache.ReadViewpoint(views, view, "Looking south", doc.Generation, Minute, false, null);
+            cache.Put("Looking north", views.ReadOrigins("Looking north")!, doc.Generation, Minute);
+            cache.Put("Looking south", views.ReadOrigins("Looking south")!, doc.Generation, Minute);
 
             Assert.Equal(2, cache.Count);
 
@@ -152,43 +156,44 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void Reading_a_viewpoint_applies_it_even_when_the_reading_is_already_kept()
+        public void Reading_a_viewpoint_needs_no_apply_and_is_kept_like_any_other_scene()
         {
             var (doc, view, views, items) = Model(40);
 
-            views.Define("Looking north", new Dictionary<ElementKey, Colour> { [items[1].Key] = Blue });
+            views.Define("Looking north", One(items[1], Blue));
 
             var cache = new SceneCache();
 
-            var first = cache.ReadViewpoint(views, view, "Looking north", doc.Generation, Minute, false, null);
-            Assert.Equal(1, views.Applied);
+            var records = views.ReadOrigins("Looking north")!;
+            var first = cache.Put("Looking north", records, doc.Generation, Minute);
 
-            var second = cache.ReadViewpoint(views, view, "Looking north", doc.Generation, 2 * Minute, false, null);
+            var second = cache.Get("Looking north", doc.Generation);
 
-            // The scan was skipped; the apply was not. A table that appeared without the model
-            // moving would describe a scene that is not on screen.
+            // Kept, and nothing was applied to get it. Reading a viewpoint reads its own records,
+            // so the live scene is untouched and the view has not moved.
             Assert.Same(first, second);
-            Assert.Equal(2, views.Applied);
+            Assert.Equal(0, views.Applied);
         }
 
         [Fact]
-        public void Reading_a_viewpoint_drops_the_live_scenes_reading_because_it_replaced_it()
+        public void Reading_a_viewpoint_leaves_the_live_scenes_reading_alone()
         {
             var (doc, view, views, items) = Model(40);
 
             view.SeedForeignColour(items[0].Key, Red);
-            views.Define("Looking north", new Dictionary<ElementKey, Colour> { [items[1].Key] = Blue });
+            views.Define("Looking north", One(items[1], Blue));
 
             var cache = new SceneCache();
 
             cache.Read(view, SceneCache.LiveScene, doc.Generation, Minute, false, null);
             Assert.NotNull(cache.Get(SceneCache.LiveScene, doc.Generation));
 
-            cache.ReadViewpoint(views, view, "Looking north", doc.Generation, Minute, false, null);
+            cache.Put("Looking north", views.ReadOrigins("Looking north")!, doc.Generation, Minute);
 
-            // Applying a viewpoint replaces what is coloured and what is hidden, so whatever was
-            // read of the live scene describes something no longer on the model.
-            Assert.Null(cache.Get(SceneCache.LiveScene, doc.Generation));
+            // Still there. A viewpoint is read from its own records, so nothing about the live
+            // scene changed and its reading is still of the model.
+            Assert.NotNull(cache.Get(SceneCache.LiveScene, doc.Generation));
+            Assert.Equal(2, cache.Count);
         }
 
         [Fact]
@@ -196,17 +201,18 @@ namespace CamelWorks.Core.Tests
         {
             var (doc, view, views, items) = Model(40);
 
-            // A viewpoint that colours the storey and hides another one.
-            var colours = items.ToDictionary(i => i.Key, _ => Red);
+            // A viewpoint that colours one storey and hides another. Two records, because that
+            // is two acts — the host stores an override against the item it was applied to, so a
+            // storey-wide colour is one entry naming the storey and not forty naming its elements.
+            views.Define("Structure only",
+                         new[] { new KeyValuePair<string[], Colour>(new[] { "ARCH", "Level 03" }, Red) },
+                         new[] { new[] { "ARCH", "Level 04" } });
 
-            views.Define("Structure only", colours, new[] { new[] { "ARCH", "Level 04" } });
+            var records = views.ReadOrigins("Structure only");
 
-            var reading = new SceneCache().ReadViewpoint(views, view, "Structure only",
-                                                         doc.Generation, Minute, false, null);
+            Assert.NotNull(records);
 
-            Assert.NotNull(reading);
-
-            var origins = reading!.Report.Origins;
+            var origins = records!.Origins;
 
             Assert.Equal(2, origins.Count);
 
@@ -226,9 +232,11 @@ namespace CamelWorks.Core.Tests
 
             var cache = new SceneCache();
 
-            Assert.Null(cache.ReadViewpoint(views, view, "Nowhere", doc.Generation, Minute, false, null));
+            Assert.Null(views.ReadOrigins("Nowhere"));
             Assert.Contains("Nowhere", views.LastProblem);
             Assert.Equal(0, views.Applied);
+
+            _ = cache;
         }
 
         [Fact]
@@ -252,12 +260,93 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void A_viewpoints_level_is_read_rather_than_worked_out_from_the_model()
+        {
+            var (doc, _, views, _) = Model(40);
+
+            views.Define("Structure red",
+                         new[] { new KeyValuePair<string[], Colour>(new[] { "ARCH", "Level 03" }, Red) });
+
+            var only = Assert.Single(views.ReadOrigins("Structure red")!.Origins);
+
+            // One record naming the storey, covering its forty elements. This is the thing a scan
+            // of the live scene cannot manage: the document keeps a colour on the geometry and no
+            // note of the level, so scanning has to infer it back from the subtree. A viewpoint
+            // keeps the note, so there is nothing to infer.
+            Assert.Equal("ARCH / Level 03", only.Path);
+            Assert.Equal(40, only.Origin.Covers);
+            Assert.Equal(Red, only.Origin.Colour);
+            Assert.True(only.Origin.IsRead);
+        }
+
+        [Fact]
+        public void A_viewpoint_that_records_forty_separate_acts_reports_forty()
+        {
+            var (_, _, views, items) = Model(40);
+
+            // Nobody coloured the storey: forty elements coloured one at a time, which is forty
+            // records. Rolling them up to the storey would claim an act that did not happen, and
+            // the viewpoint is not guessing - it knows which it was.
+            views.Define("Spotty",
+                         items.Select(i => new KeyValuePair<string[], Colour>(
+                             i.TreePath.ToArray(), Red)).ToList());
+
+            var origins = views.ReadOrigins("Spotty")!.Origins;
+
+            Assert.Equal(40, origins.Count);
+            Assert.All(origins, o => Assert.Equal(1, o.Origin.Covers));
+        }
+
+        [Fact]
+        public void Reading_a_viewpoint_applies_nothing_and_leaves_the_model_as_it_was()
+        {
+            var (doc, view, views, items) = Model(40);
+
+            view.SeedForeignColour(items[0].Key, Red);
+
+            views.Define("Elsewhere",
+                         new[] { new KeyValuePair<string[], Colour>(new[] { "ARCH", "Level 04" }, Blue) },
+                         new[] { new[] { "ARCH", "Level 03" } });
+
+            var records = views.ReadOrigins("Elsewhere");
+
+            Assert.NotNull(records);
+            Assert.Equal(2, records!.Origins.Count);
+
+            // Nothing applied, nothing hidden, and the one override that was on the model before
+            // is still the only one on it. A read that moved the view and replaced what was
+            // coloured would be a destructive answer to a question.
+            Assert.Equal(0, views.Applied);
+            Assert.False(doc.IsBranchHidden(new[] { "ARCH", "Level 03" }));
+
+            var live = Assert.Single(view.ScanAppearance(TraversalScope.WholeDocument, null));
+            Assert.Equal(items[0].Key, live.Key);
+        }
+
+        [Fact]
+        public void A_viewpoints_records_report_no_element_count_because_nothing_was_walked()
+        {
+            var (_, _, views, _) = Model(40);
+
+            views.Define("Structure red",
+                         new[] { new KeyValuePair<string[], Colour>(new[] { "ARCH", "Level 03" }, Red) });
+
+            var records = views.ReadOrigins("Structure red")!;
+
+            // Zero, and not forty-five. The records are sparse and name their own nodes, so there
+            // is no "of N elements scanned" to report — claiming one would describe a walk that
+            // never happened.
+            Assert.Equal(0, records.Elements);
+            Assert.False(records.Stopped);
+        }
+
+        [Fact]
         public void The_live_scene_and_a_viewpoint_are_kept_apart()
         {
             var (doc, view, views, items) = Model(40);
 
             view.SeedForeignColour(items[0].Key, Red);
-            views.Define("Looking north", new Dictionary<ElementKey, Colour> { [items[1].Key] = Blue });
+            views.Define("Looking north", One(items[1], Blue));
 
             var cache = new SceneCache();
 
@@ -265,7 +354,7 @@ namespace CamelWorks.Core.Tests
 
             Assert.True(live.IsLiveScene);
 
-            cache.ReadViewpoint(views, view, "Looking north", doc.Generation, Minute, false, null);
+            cache.Put("Looking north", views.ReadOrigins("Looking north")!, doc.Generation, Minute);
 
             var kept = cache.Get("Looking north", doc.Generation)!;
 
