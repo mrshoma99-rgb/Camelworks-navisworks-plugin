@@ -202,58 +202,51 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void The_audit_reports_the_model_it_walked_and_not_the_rows_it_kept()
+        public void The_report_says_how_much_of_the_model_it_walked_and_not_how_much_it_found()
         {
             var (_, view, items) = Model(5000);
 
             view.SeedForeignColour(items[1].Key, Red);
             view.SeedForeignColour(items[2].Key, Red);
 
-            var walked = 0;
+            var report = view.ScanOrigins(TraversalScope.WholeDocument, null);
 
-            var states = view.ScanAppearance(TraversalScope.WholeDocument,
-                                             seen => { walked = seen; return true; })
-                             .Select(f => f.State)
-                             .ToList();
-
-            var audit = ForeignAppearance.FindInScan(states, null, walked);
-
-            // "2 of 5,000", not "2 of 2". The second reads as a model where everything is
-            // overridden, which is the opposite of what was found.
-            Assert.Equal(5000, audit.Scanned);
-            Assert.Equal(2, audit.Total);
-            Assert.Contains("of 5,000", audit.Explain());
+            // Two places over five thousand elements, and the five thousand has to come from the
+            // walk: what is handed back is only the places, so a count of those would read as a
+            // model where everything is overridden.
+            Assert.Equal(2, report.Origins.Count);
+            Assert.Equal(5000, report.Elements);
+            Assert.False(report.Stopped);
         }
 
         [Fact]
         public void A_clean_model_still_says_how_much_of_it_was_looked_at()
         {
-            var audit = ForeignAppearance.FindInScan(Array.Empty<AppearanceState>(), null, 230000);
+            var (_, view, _) = Model(400);
 
-            Assert.True(audit.IsClean);
+            var report = view.ScanOrigins(TraversalScope.WholeDocument, null);
 
-            // The empty result has to carry the size of the thing that produced it, or "nothing
+            Assert.True(report.IsClean);
+
+            // An empty result has to carry the size of the thing that produced it, or "nothing
             // found" is indistinguishable from "nothing looked at".
-            Assert.Equal(230000, audit.Scanned);
-            Assert.Contains("230,000", audit.Explain());
+            Assert.Equal(400, report.Elements);
         }
 
         [Fact]
-        public void A_total_below_its_own_part_is_corrected_rather_than_reported()
+        public void A_stopped_origin_scan_says_so_rather_than_reporting_part_of_a_model()
         {
-            var keys = Enumerable.Range(0, 4)
-                .Select(i => ElementKey.FromTreePath(
-                    ElementKey.ScopeOf(@"C:\p\A.nwc"), @"C:\p\A.nwc", "e" + i.ToString()))
-                .ToList();
+            var (_, view, items) = Model(400);
 
-            var states = keys.Select(k => new AppearanceState(k, Red, null, false, true)).ToList();
+            foreach (var item in items) view.SeedForeignColour(item.Key, Red);
 
-            // A caller that under-reported its walk. Four of one is the one answer that cannot be
-            // true, so the part wins over the total.
-            var audit = ForeignAppearance.FindInScan(states, null, 1);
+            var report = view.ScanOrigins(TraversalScope.WholeDocument, seen => seen < 10);
 
-            Assert.Equal(4, audit.Scanned);
-            Assert.Equal(4, audit.Total);
+            // A roll-up is only true once the subtree under it has been walked, so a stopped walk
+            // has nothing correct to report. It says that instead of handing back a reading of the
+            // tenth of the model it got through.
+            Assert.True(report.Stopped);
+            Assert.Empty(report.Origins);
         }
     }
 }

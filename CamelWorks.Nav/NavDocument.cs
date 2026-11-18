@@ -1168,6 +1168,148 @@ namespace CamelWorks.Nav
         /// in native code. Here each node's children are read into a list and the host's enumerator
         /// is released immediately, so nothing of the host's is open when a caller pumps.
         /// </summary>
+        /// <summary>
+        /// One step of a walk that keeps the tree's shape: into a node, or back out of one.
+        ///
+        /// A flat walk of the geometry leaves cannot answer where an override was applied, and
+        /// that is the question the Appearance Manager has to answer — the host applies an
+        /// override to a node and every element under it takes it, so a flat walk reports one act
+        /// as a thousand. Going in and coming back out is what lets a reader fold a subtree.
+        /// </summary>
+        internal readonly struct TreeStep
+        {
+            private TreeStep(ModelItem? item)
+            {
+                Item = item;
+            }
+
+            /// <summary>The node being entered, or null on the step that comes back out of one.</summary>
+            public ModelItem? Item { get; }
+
+            /// <summary>Whether this step goes into a node rather than coming back out.</summary>
+            public bool IsEnter => Item != null;
+
+            internal static TreeStep Enter(ModelItem item) => new TreeStep(item);
+
+            internal static TreeStep Leave() => new TreeStep(null);
+        }
+
+        /// <summary>
+        /// The whole tree under a scope, in and out of every node, lazily.
+        ///
+        /// The same pump-safety rule as <see cref="Leaves"/>, and for the same reason: each node's
+        /// children are read into a list and the host's enumerator released before anything is
+        /// yielded, so no collection of the host's is open while a caller reports progress. A
+        /// caller that pumps with a native enumerator open lets Navisworks act on a click that
+        /// mutates the collection under it, which ends the process in native code.
+        ///
+        /// A key scope has no tree to walk — it names elements, not branches — so it yields those
+        /// elements as a flat row of enter/leave pairs.
+        /// </summary>
+        /// <param name="scope">What to walk.</param>
+        internal IEnumerable<TreeStep> WalkTree(TraversalScope scope)
+        {
+            switch (scope.Kind)
+            {
+                case TraversalScopeKind.CurrentSelection:
+                    return Branches(Document.CurrentSelection.SelectedItems);
+
+                case TraversalScopeKind.Set:
+                    return Branches(ItemsOfSet(scope.SetName));
+
+                case TraversalScopeKind.Keys:
+                    return Flat(HostItemsOf(scope.Keys));
+
+                default:
+                    return Branches(Document.Models.RootItems);
+            }
+        }
+
+        /// <summary>Elements with no tree above them, as enter/leave pairs.</summary>
+        private static IEnumerable<TreeStep> Flat(IEnumerable<ModelItem> items)
+        {
+            foreach (var item in items)
+            {
+                yield return TreeStep.Enter(item);
+                yield return TreeStep.Leave();
+            }
+        }
+
+        /// <summary>Depth-first, in and out, with no host enumerator open across a yield.</summary>
+        private static IEnumerable<TreeStep> Branches(IEnumerable<ModelItem> roots)
+        {
+            List<ModelItem> top;
+
+            Walking++;
+
+            try
+            {
+                top = roots.ToList();
+            }
+            finally
+            {
+                Walking--;
+            }
+
+            // A stack of frames rather than recursion, for the reason Leaves gives: the recursive
+            // version held one live host enumerator per level of the tree for the whole walk.
+            var stack = new List<Frame>();
+
+            foreach (var root in top)
+            {
+                yield return TreeStep.Enter(root);
+                stack.Add(new Frame(root));
+
+                while (stack.Count > 0)
+                {
+                    var frame = stack[stack.Count - 1];
+
+                    if (frame.Next >= frame.Children.Count)
+                    {
+                        stack.RemoveAt(stack.Count - 1);
+                        yield return TreeStep.Leave();
+                        continue;
+                    }
+
+                    var child = frame.Children[frame.Next];
+                    frame.Next++;
+
+                    yield return TreeStep.Enter(child);
+                    stack.Add(new Frame(child));
+                }
+            }
+        }
+
+        /// <summary>One node of a tree walk, with its children already in managed memory.</summary>
+        private sealed class Frame
+        {
+            internal Frame(ModelItem item)
+            {
+                Walking++;
+
+                try
+                {
+                    Children = item.Children.ToList();
+                }
+                catch (Exception)
+                {
+                    // A node the host will not open. Treated as a leaf rather than losing the
+                    // branch, as Leaves does: one awkward node must not end a walk of two
+                    // hundred thousand.
+                    Children = new List<ModelItem>();
+                }
+                finally
+                {
+                    Walking--;
+                }
+            }
+
+            internal List<ModelItem> Children { get; }
+
+            /// <summary>Which child comes next.</summary>
+            internal int Next { get; set; }
+        }
+
         private static IEnumerable<ModelItem> Leaves(IEnumerable<ModelItem> roots)
         {
             // Materialised for the same reason: this is usually Document.Models.RootItems, and it

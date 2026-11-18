@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Autodesk.Navisworks.Api;
 using CamelWorks.Core.Abstractions;
+using CamelWorks.Core.Appearance;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Identity;
 
@@ -294,6 +295,94 @@ namespace CamelWorks.Nav
                 yield return new ScannedAppearance(ours,
                     new AppearanceState(ours.Key, colour, transparency, hidden, foreign));
             }
+        }
+
+        /// <summary>
+        /// The levels in the project tree at which states were applied.
+        ///
+        /// Walks in and out of every node rather than along the geometry leaves, because the
+        /// question is where somebody did something and the leaves cannot answer it. Two separate
+        /// reasons, one per kind of state:
+        ///
+        ///   * Hiding is recorded by SetHidden on the item it was given, and descendants inherit
+        ///     it without being marked. So a leaf inside a hidden storey reports itself visible,
+        ///     and a walk of the leaves sees a hidden storey as nothing hidden at all. Walking the
+        ///     tree finds the storey, which is also the level somebody pressed Hide at.
+        ///   * Colour and transparency are stored on geometry, so applying one to a storey pushes
+        ///     it down to every element under it and the storey keeps no record. The level has to
+        ///     be inferred from the subtree, which is what OriginScan does.
+        ///
+        /// Note that this is right whichever way the host answers IsHidden on a descendant of a
+        /// hidden node. If it is per-item, a descendant says false and is not an origin; if it is
+        /// computed up the ancestors, a descendant says true but its ancestor said true first, so
+        /// the fold suppresses it. Either way one act is one row.
+        ///
+        /// A key is built only for the nodes that turn out to be origins — a few dozen on a real
+        /// model — which is the same economy as ScanAppearance and the reason neither of them
+        /// hands out NavModelItem while it walks.
+        /// </summary>
+        /// <param name="scope">What to walk.</param>
+        /// <param name="onProgress">Running count of geometry elements walked; false stops it.</param>
+        /// <exception cref="NotSupportedException">The temporary layer is selected.</exception>
+        public OriginReport ScanOrigins(TraversalScope scope, Func<int, bool>? onProgress)
+        {
+            if (Layer == OverrideLayer.Temporary)
+                throw new NotSupportedException(
+                    "the host cannot report its temporary override layer; read the permanent one instead");
+
+            var scan = new OriginScan();
+
+            // The host's own items, one slot per node walked, so an origin can be turned back into
+            // an element. A reference each: lighter than the list of keys the two-pass scan used to
+            // build for every geometry leaf, which held a string apiece.
+            var nodes = new List<ModelItem>();
+
+            var walked = 0;
+
+            foreach (var step in _document.WalkTree(scope))
+            {
+                if (!step.IsEnter)
+                {
+                    scan.Exit();
+                    continue;
+                }
+
+                var item = step.Item!;
+                var geometry = item.Geometry;
+
+                Colour? colour = null;
+                double? transparency = null;
+
+                if (geometry != null)
+                {
+                    walked++;
+
+                    // Counted and reported per element, as ScanAppearance does, so the bar moves
+                    // and Stop answers for the whole walk.
+                    if (onProgress != null && !onProgress(walked))
+                        return new OriginReport(Array.Empty<ScannedOrigin>(), walked, nodes.Count, true);
+
+                    if (!Same(geometry.PermanentColor, geometry.OriginalColor))
+                        colour = NavValues.ToColour(geometry.PermanentColor);
+
+                    if (geometry.PermanentTransparency > 0)
+                        transparency = geometry.PermanentTransparency;
+                }
+
+                scan.Enter(nodes.Count, geometry != null, item.IsHidden, colour, transparency);
+                nodes.Add(item);
+            }
+
+            var found = new List<ScannedOrigin>();
+
+            foreach (var origin in scan.Origins())
+            {
+                // Here, and only here, is a key built. One per origin.
+                if (_document.Wrap(nodes[origin.Node]) is NavModelItem ours)
+                    found.Add(new ScannedOrigin(ours, origin));
+            }
+
+            return new OriginReport(found, scan.Elements, scan.Nodes, false);
         }
 
         /// <inheritdoc />

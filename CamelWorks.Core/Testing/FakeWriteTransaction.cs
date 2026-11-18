@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using CamelWorks.Core.Abstractions;
+using CamelWorks.Core.Appearance;
 using CamelWorks.Core.Identity;
 
 namespace CamelWorks.Core.Testing
@@ -444,6 +445,69 @@ namespace CamelWorks.Core.Testing
                 yield return new ScannedAppearance(item,
                     new AppearanceState(key, colour, transparency, hidden, foreign));
             }
+        }
+
+        /// <summary>
+        /// The levels at which states were applied, over the tree the fake's paths imply.
+        ///
+        /// Faithful to the host on the asymmetry that matters: a branch hidden with
+        /// <see cref="FakeDocument.HideBranch"/> reports its hiding at the branch and its leaves
+        /// report themselves visible, exactly as Navisworks does, so a caller that only reads the
+        /// leaves sees a hidden storey as nothing hidden. Colour and transparency live on the
+        /// leaves, as the host stores them on geometry, and their level is rolled up rather than
+        /// read.
+        /// </summary>
+        public OriginReport ScanOrigins(TraversalScope scope, Func<int, bool>? onProgress)
+        {
+            if (Layer == OverrideLayer.Temporary)
+                throw new NotSupportedException(
+                    "The temporary layer cannot be read back. Reporting it as empty would claim a " +
+                    "completeness the host does not offer.");
+
+            _document.Record("view.origins " + scope);
+
+            var leaves = _document.Traverse(scope).OfType<FakeItem>().ToList();
+
+            var scan = new OriginScan();
+            var nodes = new List<IModelItem>();
+            var walked = 0;
+            var stopped = false;
+
+            foreach (var step in _document.WalkTree(leaves))
+            {
+                if (!step.IsEnter) { scan.Exit(); continue; }
+
+                var item = step.Item!;
+
+                if (step.HasGeometry)
+                {
+                    walked++;
+
+                    if (onProgress != null && !onProgress(walked)) { stopped = true; break; }
+                }
+
+                var colour = step.HasGeometry && _colour.TryGetValue(item.Key, out var c)
+                    ? (Colour?)c : null;
+
+                var transparency = step.HasGeometry && _transparency.TryGetValue(item.Key, out var t)
+                    ? (double?)t : null;
+
+                // A leaf's own hiding, or a branch's. Never an inherited one: the scan works that
+                // out, because the host does not record it.
+                var hidesHere = step.HidesHere || (step.HasGeometry && item.IsHidden);
+
+                scan.Enter(nodes.Count, step.HasGeometry, hidesHere, colour, transparency);
+                nodes.Add(item);
+            }
+
+            if (stopped)
+                return new OriginReport(Array.Empty<ScannedOrigin>(), walked, nodes.Count, true);
+
+            var found = scan.Origins()
+                            .Select(o => new ScannedOrigin(nodes[o.Node], o))
+                            .ToList();
+
+            return new OriginReport(found, scan.Elements, scan.Nodes, false);
         }
 
         /// <summary>Seed an override CamelWorks did not author, as another tool would leave behind.</summary>

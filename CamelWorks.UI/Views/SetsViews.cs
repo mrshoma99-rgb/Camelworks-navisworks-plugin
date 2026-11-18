@@ -597,6 +597,58 @@ namespace CamelWorks.UI.Views
         /// </summary>
         private sealed class AppearanceScreen
         {
+            /// <summary>
+            /// How many distinct states the table lists before the rest are counted only.
+            ///
+            /// A model where thousands of elements each carry their own colour is a painted model,
+            /// not a coordination problem, and a row each would be a table nobody can read.
+            /// </summary>
+            private const int StateRowCap = 100;
+
+            /// <summary>
+            /// Everywhere one state was applied.
+            ///
+            /// The table's row. A state is the thing a coordinator recognises — "something is red"
+            /// — and where it was applied is what they do about it, so the row is the state and
+            /// carries its places. One storey-level override is one place; four thousand elements
+            /// coloured one at a time is four thousand, and the row says so instead of becoming
+            /// four thousand rows.
+            /// </summary>
+            private sealed class Places
+            {
+                internal Places(IReadOnlyList<ScannedOrigin> origins)
+                {
+                    // Deepest first, so the place shown is the most specific one and adopting the
+                    // row builds its layers in the order the stack needs.
+                    Origins = origins.OrderByDescending(o => o.Origin.Depth)
+                                     .ThenByDescending(o => o.Origin.Covers)
+                                     .ToList();
+                }
+
+                internal IReadOnlyList<ScannedOrigin> Origins { get; }
+
+                /// <summary>Any of them, since they are the same state by construction.</summary>
+                internal AppearanceOrigin Origin => Origins[0].Origin;
+
+                internal int Count => Origins.Count;
+
+                internal int Covers => Origins.Sum(o => o.Origin.Covers);
+
+                internal int Depth => Origins[0].Origin.Depth;
+
+                /// <summary>The place, or how many there are when the state is scattered.</summary>
+                internal string Where =>
+                    Count == 1 ? Origins[0].Path : Ui.Count(Count, "place");
+            }
+
+            /// <summary>What makes two origins the same state. Not where, only what.</summary>
+            private static string Shape(AppearanceOrigin origin) =>
+                (origin.IsHidden ? "h" : "-")
+                + "|" + (origin.Colour == null ? "-" : origin.Colour.Value.ToString())
+                + "|" + (origin.Transparency == null
+                    ? "-"
+                    : origin.Transparency.Value.ToString("F4", CultureInfo.InvariantCulture));
+
             private readonly List<AppearanceLayer> _layers = new List<AppearanceLayer>();
             private readonly StackPanel _stack = Ui.Stack();
             private readonly StackPanel _results = Ui.Stack();
@@ -942,50 +994,49 @@ namespace CamelWorks.UI.Views
             {
                 var scan = Ui.Runner("Scan the model", _foreign, primary: false, work: job =>
                 {
-
                     job.Say("Resolving layers...");
                     var fold = AppearanceStack.Fold(_layers, new HostResolver(session));
 
+                    var claimed = new HashSet<ElementKey>();
+
+                    foreach (var element in fold.Elements)
+                        if (!element.IsUntouched) claimed.Add(element.Key);
+
                     job.Say("Looking through the model...");
 
-                    // One walk, and the appearance read off each element as the walk reaches it.
+                    // The tree, in and out of every node, rather than along its geometry leaves.
                     //
-                    // This used to be two passes: list the federation into keys, then hand the keys
-                    // back to be read. The second pass threw away what the first one was holding and
-                    // asked the host to find each element again, and finding an element by key means
-                    // searching the document — so a federation of two hundred thousand elements
-                    // became two hundred thousand searches of two hundred thousand elements. It did
-                    // not finish, and because a batch of five thousand of those searches is one
-                    // progress call, the bar stopped moving and Stop stopped answering within
-                    // seconds of the press.
+                    // The host applies an override to a node and every element under it takes it,
+                    // so a walk of the leaves reports one act as thousands of rows — and adopting
+                    // those made thousands of layers. It is also simply wrong about hiding: hiding
+                    // is recorded on the item it was applied to and inherited without being marked,
+                    // so a leaf inside a hidden storey reports itself visible and a scan of the
+                    // leaves saw a hidden storey as nothing hidden at all.
                     //
-                    // Now the only elements that cost more than a property read are the ones in some
-                    // state, progress is reported per element so the bar moves and Stop is live
-                    // throughout, and the walked count is carried out separately because what is
-                    // handed back is no longer everything that was looked at.
-                    var walked = 0;
-                    var states = new List<AppearanceState>();
-
-                    foreach (var found in session.View.ScanAppearance(
-                                 TraversalScope.WholeDocument,
-                                 seen =>
-                                 {
-                                     walked = seen;
-                                     return job.Step(seen, "elements looked at");
-                                 }))
-                        states.Add(found.State);
+                    // IViewSession.ScanOrigins walks the tree and reports each state at the level
+                    // it was applied: read, for hiding, and inferred from the subtree for colour,
+                    // which the host stores on geometry and keeps no record of the level for.
+                    var report = session.View.ScanOrigins(
+                        TraversalScope.WholeDocument,
+                        seen => job.Step(seen, "elements looked at"));
 
                     // A stopped scan is not a scan. Reporting what it got to would put a figure on
                     // screen that reads as the model's answer and is the model's answer up to
                     // wherever the user lost patience.
-                    if (job.IsCancelled) return;
+                    if (report.Stopped || job.IsCancelled) return;
 
-                    job.Say("Working out what is not ours...");
-                    var audit = ForeignAppearance.FindInScan(states, fold, walked);
+                    var ours = report.Origins.Where(o => claimed.Contains(o.Item.Key)).ToList();
+                    var theirs = report.Origins.Where(o => !claimed.Contains(o.Item.Key)).ToList();
 
-                    _foreign.Children.Add(Ui.Line(audit.Explain(), 1, true));
+                    _foreign.Children.Add(Ui.Line(
+                        theirs.Count == 0
+                            ? report.Elements.ToString("N0", CultureInfo.InvariantCulture)
+                              + " elements scanned, nothing on them this stack does not account for"
+                            : Ui.Count(theirs.Count, "state") + " no layer accounts for, over "
+                              + report.Elements.ToString("N0", CultureInfo.InvariantCulture)
+                              + " elements", 1, true));
 
-                    if (audit.IsClean)
+                    if (theirs.Count == 0)
                     {
                         _foreign.Children.Add(Ui.Empty("Nothing else is going on.",
                             "Every element is either untouched or accounted for by a layer above. "
@@ -993,22 +1044,46 @@ namespace CamelWorks.UI.Views
                         return;
                     }
 
-                    _foreign.Children.Add(Ui.Across(
-                        Ui.Figure(audit.Hidden.ToString("N0", CultureInfo.InvariantCulture), "hidden",
-                                  audit.Hidden > 0 ? Tone.Warn : Tone.Plain),
-                        Ui.Figure((audit.Total - audit.Hidden).ToString("N0", CultureInfo.InvariantCulture),
-                                  "overridden"),
-                        Ui.Figure(audit.Claimed.ToString("N0", CultureInfo.InvariantCulture), "ours already")));
+                    var hidden = theirs.Where(o => o.Origin.IsHidden).Sum(o => o.Origin.Covers);
+                    var painted = theirs.Where(o => !o.Origin.IsHidden).Sum(o => o.Origin.Covers);
 
-                    var rows = audit.Groups.Select(g => new TableRow(g,
-                        g.Describe(),
-                        g.Keys.Count.ToString("N0", CultureInfo.InvariantCulture),
-                        g.IsHidden ? "you cannot see these" : string.Empty)
+                    _foreign.Children.Add(Ui.Across(
+                        Ui.Figure(hidden.ToString("N0", CultureInfo.InvariantCulture), "hidden",
+                                  hidden > 0 ? Tone.Warn : Tone.Plain),
+                        Ui.Figure(painted.ToString("N0", CultureInfo.InvariantCulture), "overridden"),
+                        Ui.Figure(ours.Count.ToString("N0", CultureInfo.InvariantCulture), "ours already")));
+
+                    // One row per state, not per place, and the difference is a model nobody can
+                    // read. A storey-level override is one state in one place; four thousand
+                    // elements somebody coloured one at a time is one state in four thousand
+                    // places, and a table with a row each would be useless. Grouped, both are one
+                    // row that says which it is.
+                    //
+                    // Deepest place first inside each group, and groups ordered by their deepest,
+                    // because that is the order the layers have to go in: a state on a deeper node
+                    // must decide its elements before one on a shallower node gets to.
+                    var groups = theirs
+                        .GroupBy(o => Shape(o.Origin), StringComparer.Ordinal)
+                        .Select(g => new Places(g.ToList()))
+                        .OrderByDescending(g => g.Depth)
+                        .ThenByDescending(g => g.Covers)
+                        .ToList();
+
+                    var shown = groups.Take(StateRowCap).ToList();
+                    var rest = groups.Skip(StateRowCap).ToList();
+
+                    var rows = shown.Select(g => new TableRow(g,
+                        g.Where,
+                        g.Origin.Describe(),
+                        g.Covers.ToString("N0", CultureInfo.InvariantCulture),
+                        g.Origin.IsHidden
+                            ? "hidden there, so everything under it is"
+                            : g.Covers > g.Count ? "everything under there is" : string.Empty)
                     {
-                        Tone = g.IsHidden ? Tone.Warn : Tone.Plain,
+                        Tone = g.Origin.IsHidden ? Tone.Warn : Tone.Plain,
                     }).ToList();
 
-                    var table = Ui.Table(rows, ("State", 260), ("Elements", 90), ("", 0));
+                    var table = Ui.Table(rows, ("Where", 240), ("State", 150), ("Elements", 80), ("", 0));
 
                     _foreign.Children.Add(table);
 
@@ -1018,22 +1093,37 @@ namespace CamelWorks.UI.Views
                     _foreign.Children.Add(Ui.Picking(table,
                         new Ui.OnPicked("Select {n}", (picked, say) =>
                         {
-                            var keys = picked.OfType<ForeignGroup>().SelectMany(g => g.Keys).ToList();
+                            // The nodes themselves. Selecting a branch selects what is under it,
+                            // which is both what the user means and one call instead of thousands.
+                            var keys = picked.OfType<Places>()
+                                             .SelectMany(g => g.Origins)
+                                             .Select(o => o.Item.Key)
+                                             .ToList();
 
                             session.Model.Select(keys);
-                            say.Children.Add(Ui.Line("Selected " + Ui.Count(keys.Count, "element") + ".", 0.8));
+                            say.Children.Add(Ui.Line("Selected " + Ui.Count(keys.Count, "place") + ".", 0.8));
                         }),
                         new Ui.OnPicked("Make {n} a layer", (picked, say) => Adopt(session, picked, say)),
                         new Ui.OnPicked("Put {n} back", (picked, say) => PutBack(session, picked, say))));
 
-                    if (audit.OtherGroups > 0)
+                    if (rest.Count > 0)
                         _foreign.Children.Add(Ui.Note(
-                            Ui.Count(audit.OtherGroups, "further state") + " covering "
-                            + Ui.Count(audit.OtherElements, "element")
-                            + " are counted above but not listed. A model where thousands of elements "
-                            + "each carry their own colour is a painted model, not a coordination "
-                            + "problem, and a table of them would be unreadable."));
+                            Ui.Count(rest.Count, "further state") + " covering "
+                            + Ui.Count(rest.Sum(g => g.Covers), "element")
+                            + " are counted above but not listed. A model where thousands of "
+                            + "elements each carry their own colour is a painted model, not a "
+                            + "coordination problem, and a table of them would be unreadable."));
 
+                    if (theirs.Any(o => !o.Origin.IsRead))
+                        _foreign.Children.Add(Ui.Note(
+                            "Where a colour or a transparency was applied is not something the host "
+                            + "records: it stores them on the geometry, so an override put on a "
+                            + "storey is pushed down to every element under it and the storey keeps "
+                            + "no note of it. The place shown for one of those is the highest node "
+                            + "whose every element is in that one state, which is what a "
+                            + "storey-level override looks like afterwards. Hiding is different "
+                            + "— the host does record where that was done, and those rows are read "
+                            + "rather than worked out."));
                 });
 
                 return Ui.Stack(
@@ -1042,16 +1132,38 @@ namespace CamelWorks.UI.Views
                     _foreign);
             }
 
-            /// <summary>Turn each picked foreign state into a layer of this model's own stack.</summary>
+            /// <summary>
+            /// Turn each picked place into a layer of this model's own stack.
+            ///
+            /// One layer per place, naming the node — not one per element that ended up in the
+            /// state, which on a storey-level override was thousands of layers and the reason the
+            /// layer list stopped being readable.
+            /// </summary>
             private void Adopt(Session session, IReadOnlyList<object> picked, Panel say)
             {
+                // Shallowest first, because the stack is held bottom-first and the last layer in
+                // it wins. The scan hands them over deepest first, which is the reading order;
+                // this is the applying order, and they are opposites. Get it the wrong way round
+                // and a storey-wide colour sits above the one somebody put on a branch inside it,
+                // which makes the more specific layer cover elements and decide nothing about any
+                // of them - what the stack reports as a dead layer.
+                var ordered = picked.OfType<Places>()
+                                    .OrderBy(g => g.Depth)
+                                    .ToList();
+
                 var made = 0;
 
-                foreach (var group in picked.OfType<ForeignGroup>())
+                foreach (var group in ordered)
                 {
-                    var layer = ForeignAppearance.Adopt(group,
+                    // One layer per state, naming every place it was applied. A group of four
+                    // thousand individually coloured elements is one layer with four thousand
+                    // nodes in it, not four thousand layers - which is the whole complaint this
+                    // answers.
+                    var layer = group.Origin.AsLayer(
+                        group.Origins.Select(o => o.Item.Key).ToList(),
                         "adopted-" + DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture)
-                        + "-" + made.ToString(CultureInfo.InvariantCulture));
+                        + "-" + made.ToString(CultureInfo.InvariantCulture),
+                        group.Where);
 
                     _layers.Add(layer);
                     made++;
@@ -1063,33 +1175,41 @@ namespace CamelWorks.UI.Views
 
                 Redraw(session);
 
-                say.Children.Add(Ui.Line(Ui.Count(made, "layer") + " is now on top of the stack. "
-                    + "The model looks exactly as it did - what changed is that the stack now says "
-                    + "why.", 0.8));
+                say.Children.Add(Ui.Line(Ui.Count(made, "layer") + " is now on top of the stack"
+                    + (made > 1 ? ", the deepest place highest" : string.Empty)
+                    + ". The model looks exactly as it did — what changed is that the stack now "
+                    + "says why.", 0.8));
             }
 
-            /// <summary>Clear somebody else's overrides off each picked state.</summary>
+            /// <summary>Clear somebody else's overrides off each picked place.</summary>
             private void PutBack(Session session, IReadOnlyList<object> picked, Panel say)
             {
-                var cleared = 0;
+                var places = 0;
+                var elements = 0;
 
-                foreach (var group in picked.OfType<ForeignGroup>())
+                foreach (var group in picked.OfType<Places>())
                 {
-                    var keys = group.Keys;
+                    // The nodes, not their descendants. The host clears an override on a node by
+                    // pushing the clear down, exactly as it pushed the override down, so this is
+                    // one call per state rather than one per element - and for a hiding it is the
+                    // only call that works, because the hiding is recorded on the node and nothing
+                    // below it is marked at all.
+                    var keys = group.Origins.Select(o => o.Item.Key).ToList();
 
-                    session.View.ClearOverrides(keys);
-                    if (group.IsHidden) session.View.SetVisible(keys, true);
+                    if (group.Origin.IsHidden) session.View.SetVisible(keys, true);
+                    else session.View.ClearOverrides(keys);
 
-                    cleared += keys.Count;
+                    places += keys.Count;
+                    elements += group.Covers;
                 }
 
-                if (cleared == 0) return;
+                if (places == 0) return;
 
-                say.Children.Add(Ui.Line("Reset " + Ui.Count(cleared, "element")
-                    + ". Scan again to see what is left.", 0.8));
+                say.Children.Add(Ui.Line("Reset " + Ui.Count(places, "place") + ", covering "
+                    + Ui.Count(elements, "element") + ". Scan again to see what is left.", 0.8));
 
                 session.Record(ActivityKind.Appearance,
-                    "reset " + Ui.Count(cleared, "element") + " overridden by another tool");
+                    "reset " + Ui.Count(places, "place") + " overridden by another tool");
             }
 
             private static void Execute(Session session, AppearancePlan plan)

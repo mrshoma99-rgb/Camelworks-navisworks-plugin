@@ -206,7 +206,7 @@ surface each type will be reached through rather than a screen that exists today
 | `SetSchedule`, `SetRow`, `SheetSets`, `SetSheetMapping`, `SetSheetResult` | Sets from a spreadsheet |
 | `Restructure`, `RestructureRecipe`, `RestructureChange`, `RestructureSnapshot`, `LevelTally` | Organise Sets |
 | `AppearanceStack`, `AppearanceLayer`, `AppearancePlan`, `AppearancePlanner`, `AppearanceFold`, `AppearanceProperty`, `ILayerResolver`, `LayerReport`, `LayerStackJson` | Appearance |
-| `ForeignAppearance`, `ForeignAudit`, `ForeignGroup` | Appearance — the amber "not ours" strip |
+| `AppearanceOrigin`, `OriginScan`, `ScannedOrigin`, `OriginReport` | Appearance — "Scan the model", the table of places something was applied. Replaces `ForeignAppearance`/`ForeignAudit`/`ForeignGroup`, which reported one parent-level override as a row per element under it. |
 | `AppearanceTransfer`, `AppearanceSnapshot`, `TransferOptions`, `TransferMatch` | Appearance — "Copy appearance from another model…" (new) |
 | `ViewpointPlanner`, `PlannedView` | Viewpoints |
 
