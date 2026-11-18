@@ -597,9 +597,6 @@ namespace CamelWorks.UI.Views
         /// </summary>
         private sealed class AppearanceScreen
         {
-            /// <summary>How many elements are read from the host in one go while scanning.</summary>
-            private const int ScanChunk = 5000;
-
             private readonly List<AppearanceLayer> _layers = new List<AppearanceLayer>();
             private readonly StackPanel _stack = Ui.Stack();
             private readonly StackPanel _results = Ui.Stack();
@@ -668,29 +665,24 @@ namespace CamelWorks.UI.Views
             {
                 _travel.Children.Clear();
 
-                job.Say("Listing the model...");
+                job.Say("Looking through the model...");
 
-                var keys = new List<ElementKey>();
+                // One walk, as the scan below does, and for the same reason. A scheme is only the
+                // elements that carry something, so the tree path — which this needs and the scan
+                // does not — is read for those and for nothing else: the walk hands the item over
+                // with the reading, so there is nothing to look up again.
+                var states = new List<AppearanceState>();
                 var paths = new Dictionary<ElementKey, string>();
 
-                foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
+                foreach (var found in session.View.ScanAppearance(
+                             TraversalScope.WholeDocument,
+                             seen => job.Step(seen, "elements looked at")))
                 {
-                    if (!job.Step(keys.Count, "elements listed")) return;
-                    if (!item.HasGeometry) continue;
-
-                    keys.Add(item.Key);
-                    paths[item.Key] = string.Join(AppearanceEntry.PathSeparator, item.TreePath);
+                    states.Add(found.State);
+                    paths[found.Key] = string.Join(AppearanceEntry.PathSeparator, found.Item.TreePath);
                 }
 
-                var states = new List<AppearanceState>(keys.Count);
-
-                for (var at = 0; at < keys.Count; at += ScanChunk)
-                {
-                    if (!job.Step(at, keys.Count, "elements read")) return;
-
-                    var chunk = keys.GetRange(at, Math.Min(ScanChunk, keys.Count - at));
-                    states.AddRange(session.View.ReadAppearance(chunk));
-                }
+                if (job.IsCancelled) return;
 
                 var snapshot = AppearanceTransfer.Capture(states, paths);
 
@@ -954,31 +946,42 @@ namespace CamelWorks.UI.Views
                     job.Say("Resolving layers...");
                     var fold = AppearanceStack.Fold(_layers, new HostResolver(session));
 
-                    job.Say("Listing elements...");
+                    job.Say("Looking through the model...");
 
-                    var keys = new List<ElementKey>();
+                    // One walk, and the appearance read off each element as the walk reaches it.
+                    //
+                    // This used to be two passes: list the federation into keys, then hand the keys
+                    // back to be read. The second pass threw away what the first one was holding and
+                    // asked the host to find each element again, and finding an element by key means
+                    // searching the document — so a federation of two hundred thousand elements
+                    // became two hundred thousand searches of two hundred thousand elements. It did
+                    // not finish, and because a batch of five thousand of those searches is one
+                    // progress call, the bar stopped moving and Stop stopped answering within
+                    // seconds of the press.
+                    //
+                    // Now the only elements that cost more than a property read are the ones in some
+                    // state, progress is reported per element so the bar moves and Stop is live
+                    // throughout, and the walked count is carried out separately because what is
+                    // handed back is no longer everything that was looked at.
+                    var walked = 0;
+                    var states = new List<AppearanceState>();
 
-                    foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
-                    {
-                        if (!job.Step(keys.Count, "elements listed")) return;
-                        if (item.HasGeometry) keys.Add(item.Key);
-                    }
+                    foreach (var found in session.View.ScanAppearance(
+                                 TraversalScope.WholeDocument,
+                                 seen =>
+                                 {
+                                     walked = seen;
+                                     return job.Step(seen, "elements looked at");
+                                 }))
+                        states.Add(found.State);
 
-                    // Read in chunks so the Stop button means something. A federation is hundreds of
-                    // thousands of elements and each reading crosses into the host; one call for all
-                    // of them would be a frozen window with no way out of it.
-                    var states = new List<AppearanceState>(keys.Count);
-
-                    for (var at = 0; at < keys.Count; at += ScanChunk)
-                    {
-                        if (!job.Step(at, "elements read")) return;
-
-                        var chunk = keys.GetRange(at, Math.Min(ScanChunk, keys.Count - at));
-                        states.AddRange(session.View.ReadAppearance(chunk));
-                    }
+                    // A stopped scan is not a scan. Reporting what it got to would put a figure on
+                    // screen that reads as the model's answer and is the model's answer up to
+                    // wherever the user lost patience.
+                    if (job.IsCancelled) return;
 
                     job.Say("Working out what is not ours...");
-                    var audit = ForeignAppearance.Find(states, fold);
+                    var audit = ForeignAppearance.FindInScan(states, fold, walked);
 
                     _foreign.Children.Add(Ui.Line(audit.Explain(), 1, true));
 

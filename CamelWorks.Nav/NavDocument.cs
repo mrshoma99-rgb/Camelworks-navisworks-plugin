@@ -724,19 +724,53 @@ namespace CamelWorks.Nav
         /// <inheritdoc />
         public IEnumerable<IModelItem> Traverse(TraversalScope scope)
         {
+            if (scope.Kind == TraversalScopeKind.Keys) return ResolveMany(scope.Keys);
+
+            return Wrap(Walk(scope));
+        }
+
+        /// <summary>
+        /// The same walk as <see cref="Traverse"/>, in the host's own items.
+        ///
+        /// For a reader in this assembly that wants to decide per element whether it cares, before
+        /// anything is built on the element's behalf. <see cref="Traverse"/> hands out
+        /// <see cref="NavModelItem"/>, whose constructor keys the element — a GUID read, or for an
+        /// element the format gave no GUID, a walk up the parent chain or a bounding box. That is
+        /// the right trade for a caller that wants every element it is given, and the wrong one for
+        /// a scan that walks a federation to find the few hundred elements that are not in their
+        /// untouched state: it pays for a key on every element to use one on almost none.
+        ///
+        /// A caller that finds an element it does care about turns it into one of ours with
+        /// <see cref="Wrap(ModelItem)"/>, and pays for the key then.
+        /// </summary>
+        /// <param name="scope">What to walk. A key scope resolves, which is the cost it is.</param>
+        internal IEnumerable<ModelItem> Walk(TraversalScope scope)
+        {
             switch (scope.Kind)
             {
                 case TraversalScopeKind.CurrentSelection:
-                    return Wrap(Leaves(Document.CurrentSelection.SelectedItems));
+                    return Leaves(Document.CurrentSelection.SelectedItems);
 
                 case TraversalScopeKind.Set:
-                    return Wrap(Leaves(ItemsOfSet(scope.SetName)));
+                    return Leaves(ItemsOfSet(scope.SetName));
 
                 case TraversalScopeKind.Keys:
-                    return ResolveMany(scope.Keys);
+                    return HostItemsOf(scope.Keys);
 
                 default:
-                    return Wrap(Leaves(Document.Models.RootItems));
+                    return Leaves(Document.Models.RootItems);
+            }
+        }
+
+        /// <summary>The host items a list of keys names, skipping the ones this document has not got.</summary>
+        private IEnumerable<ModelItem> HostItemsOf(IReadOnlyList<ElementKey>? keys)
+        {
+            if (keys == null) yield break;
+
+            foreach (var key in keys)
+            {
+                var item = Item(key);
+                if (item != null) yield return item;
             }
         }
 
@@ -767,10 +801,16 @@ namespace CamelWorks.Nav
             var collection = new ModelItemCollection();
             if (keys == null) return collection;
 
-            // One key at a time through the same resolver a single verb uses: a GUID is a native
-            // search and costs nothing, and only a key that is not a GUID makes anybody pay for
-            // the index. Ten picked clash results are twenty native searches, which is instant -
-            // where indexing first was a walk of the whole federation before the first of them.
+            // A short list goes one key at a time through the same resolver a single verb uses: a
+            // GUID is a native search and costs nothing, and only a key that is not a GUID makes
+            // anybody pay for the index. Ten picked clash results are twenty native searches,
+            // which is instant — where indexing first was a walk of the whole federation before
+            // the first of them.
+            //
+            // A long list is the other way round, and an appearance stack hands over every element
+            // its layers touch. See IndexForBulk for where the two cross.
+            IndexForBulk(keys.Count);
+
             foreach (var key in keys)
             {
                 var item = Item(key);
@@ -989,6 +1029,44 @@ namespace CamelWorks.Nav
         /// the elements as unresolved, which is the correct outcome of stopping.
         /// </summary>
         public static Action<string, Action<Action<int>, Func<bool>>>? LongWork { get; set; }
+
+        /// <summary>
+        /// How many keys a caller has to be about to resolve before indexing the whole federation
+        /// is the cheaper way to do it.
+        ///
+        /// A key that is an instance GUID resolves through a native search, which is fast and stops
+        /// at the first match — so for a handful of keys, searching beats a full walk by a wide
+        /// margin, and that is the case <see cref="ItemsFor"/> was tuned for. The margin reverses:
+        /// each search still scans a fraction of the federation, so K searches is K times that,
+        /// while the index is one walk however many keys follow it.
+        ///
+        /// Set where it is because the cost of being wrong is asymmetric. Too low, and ten clash
+        /// results pay for a walk they did not need — slow, once, with a progress bar. Too high,
+        /// and applying a stack over fifty thousand elements does fifty thousand searches inside
+        /// one call with nothing on screen, which is the hang this number exists to prevent.
+        /// </summary>
+        private const int BulkResolveThreshold = 250;
+
+        /// <summary>
+        /// Index first, when the caller is about to resolve enough keys to be worth it.
+        ///
+        /// For the callers that take a list rather than a row: applying an appearance stack, reading
+        /// back what a stack covers, colouring a set. Those hand over every element their layers
+        /// touch, and resolving each one separately meant a search of the document per element,
+        /// inside a single call, with no progress and no Stop — which is a frozen Navisworks, not a
+        /// slow one. Indexing instead is one walk, and it reports and can be stopped because
+        /// <see cref="LongWork"/> runs it inside a job.
+        ///
+        /// A no-op below the threshold, once the index exists, and once somebody has declined the
+        /// walk — so the small callers it was written for are unaffected.
+        /// </summary>
+        /// <param name="keys">How many keys are about to be resolved.</param>
+        internal void IndexForBulk(int keys)
+        {
+            if (keys < BulkResolveThreshold) return;
+
+            EnsureIndexed();
+        }
 
         private void EnsureIndexed()
         {

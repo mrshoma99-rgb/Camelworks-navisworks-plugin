@@ -215,6 +215,12 @@ namespace CamelWorks.Nav
             var states = new List<AppearanceState>();
             if (keys == null) return states;
 
+            // Index first when the list is long enough to be worth it. Applying an appearance stack
+            // reads back every element its layers cover, and resolving each of those separately is
+            // a search of the document per element inside one call — no progress, no Stop, and on a
+            // federation a window that stops answering. See NavDocument.IndexForBulk.
+            _document.IndexForBulk(keys.Count);
+
             foreach (var key in keys)
             {
                 var item = _document.Resolve(key) as NavModelItem;
@@ -224,6 +230,70 @@ namespace CamelWorks.Nav
             }
 
             return states;
+        }
+
+        /// <summary>
+        /// Every element in a scope that is not in its untouched state, in one walk.
+        ///
+        /// The reason this is not <see cref="ReadAppearance"/> over a listed federation is that the
+        /// listing and the reading were two passes, and the second one threw away what the first
+        /// one had. Listing gave a key per element; reading resolved each key back to an item, and
+        /// resolving a key that is not an instance GUID means indexing every geometry leaf in the
+        /// document. A quarter of a million elements became a quarter of a million searches and the
+        /// window stopped answering.
+        ///
+        /// So the walk reads the host's own signals off the item it is already holding, and the
+        /// element is only turned into one of ours — which is what keys it — once those signals say
+        /// somebody has done something to it. On a federation where four hundred elements out of
+        /// two hundred thousand carry an override, that is four hundred keys instead of two hundred
+        /// thousand keys and two hundred thousand searches.
+        /// </summary>
+        /// <param name="scope">What to walk.</param>
+        /// <param name="onProgress">Running count of elements walked; false stops the walk.</param>
+        /// <exception cref="NotSupportedException">
+        /// The temporary layer is selected, for the same reason <see cref="ReadAppearance"/>
+        /// refuses it: the host cannot report it, and a scan that silently described the permanent
+        /// layer instead would be wrong about every row it drew.
+        /// </exception>
+        public IEnumerable<ScannedAppearance> ScanAppearance(TraversalScope scope,
+                                                             Func<int, bool>? onProgress)
+        {
+            if (Layer == OverrideLayer.Temporary)
+                throw new NotSupportedException(
+                    "the host cannot report its temporary override layer; read the permanent one instead");
+
+            // Not an iterator itself, so the refusal above arrives at the call and not at the
+            // caller's first foreach — which is where ReadAppearance's arrives.
+            return Scan(scope, onProgress);
+        }
+
+        private IEnumerable<ScannedAppearance> Scan(TraversalScope scope, Func<int, bool>? onProgress)
+        {
+            var walked = 0;
+
+            foreach (var item in _document.Walk(scope))
+            {
+                walked++;
+
+                // After the increment, so the figure is elements walked and not elements walked
+                // before this one; and before the reading, so a model where nothing is overridden
+                // still reports that the scan is running.
+                if (onProgress != null && !onProgress(walked)) yield break;
+
+                if (!Carries(item, out var colour, out var transparency, out var hidden, out var foreign))
+                    continue;
+
+                // Only here, for the elements somebody has actually done something to. Everything
+                // above this line is a property read on an item the walk was holding anyway; this
+                // line is the one that costs, and it now runs hundreds of times instead of
+                // hundreds of thousands.
+                var ours = _document.Wrap(item) as NavModelItem;
+
+                if (ours == null) continue;
+
+                yield return new ScannedAppearance(ours,
+                    new AppearanceState(ours.Key, colour, transparency, hidden, foreign));
+            }
         }
 
         /// <inheritdoc />
@@ -571,11 +641,34 @@ namespace CamelWorks.Nav
 
         private static AppearanceState Read(ElementKey key, ModelItem item)
         {
-            Colour? colour = null;
-            double? transparency = null;
-            var foreign = false;
+            Carries(item, out var colour, out var transparency, out var hidden, out var foreign);
+
+            return new AppearanceState(key, colour, transparency, hidden, foreign);
+        }
+
+        /// <summary>
+        /// What the host says about one element's appearance, and whether that is anything at all.
+        ///
+        /// Separate from <see cref="Read"/> because the scan has to answer "is this element worth a
+        /// key" before it has one, and both callers must read the host the same way. Every signal
+        /// here is a property on an item already in hand: no key, no resolve, no search.
+        /// </summary>
+        /// <param name="item">The host item.</param>
+        /// <param name="colour">The override colour, or null when there is none.</param>
+        /// <param name="transparency">The override transparency, or null when there is none.</param>
+        /// <param name="hidden">Whether the host hides it.</param>
+        /// <param name="foreign">Whether it carries an override, whoever authored it.</param>
+        /// <returns>False when the element is untouched, which on a real model is almost all of them.</returns>
+        private static bool Carries(ModelItem item, out Colour? colour, out double? transparency,
+                                    out bool hidden, out bool foreign)
+        {
+            colour = null;
+            transparency = null;
+            foreign = false;
+            hidden = item.IsHidden;
 
             var geometry = item.Geometry;
+
             if (geometry != null)
             {
                 var permanent = geometry.PermanentColor;
@@ -599,7 +692,7 @@ namespace CamelWorks.Nav
                 }
             }
 
-            return new AppearanceState(key, colour, transparency, item.IsHidden, foreign);
+            return colour != null || transparency != null || hidden;
         }
 
         private static bool Same(Autodesk.Navisworks.Api.Color a, Autodesk.Navisworks.Api.Color b)

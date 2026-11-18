@@ -129,12 +129,45 @@ namespace CamelWorks.Core.Appearance
         /// <summary>How many distinct states are kept before the rest are counted only.</summary>
         public const int DefaultGroupCap = 100;
 
-        /// <summary>Find it.</summary>
+        /// <summary>Find it, over a reading of every element.</summary>
         /// <param name="states">What the document is in, element by element.</param>
         /// <param name="fold">What the stack decides, or null when there is no stack.</param>
         /// <param name="groupCap">How many distinct states to keep.</param>
         public static ForeignAudit Find(IEnumerable<AppearanceState> states, AppearanceFold? fold,
-                                        int groupCap = DefaultGroupCap)
+                                        int groupCap = DefaultGroupCap) =>
+            Find(states, fold, null, groupCap);
+
+        /// <summary>
+        /// Find it, over a reading of only the elements that are in some state.
+        ///
+        /// Its own name rather than another overload of Find: a scanned count and a group cap are
+        /// both a bare int in third place, so the two would be ambiguous at every call site that
+        /// passed one positionally, and the name is also the thing a reader needs to know is
+        /// different about this one.
+        ///
+        /// The overload above counts what it was given, which is right when it was given the whole
+        /// model. A scan that walks a federation and hands back only the elements carrying
+        /// something — which is the only way to walk a federation without the host freezing — knows
+        /// how many it looked at but no longer hands them over, so it says.
+        ///
+        /// Getting this wrong is not a cosmetic matter: "41 of 41 elements carry an appearance no
+        /// layer accounts for" invites somebody to conclude the whole model is overridden, when
+        /// what happened is that 41 of 230,000 were.
+        /// </summary>
+        /// <param name="states">The elements that are in some state. Untouched ones may be absent.</param>
+        /// <param name="fold">What the stack decides, or null when there is no stack.</param>
+        /// <param name="scanned">
+        /// How many elements were looked at, which is not how many were handed over. Below the
+        /// number handed over it is ignored in favour of that, since a total smaller than its own
+        /// part is the one answer that cannot be true.
+        /// </param>
+        /// <param name="groupCap">How many distinct states to keep.</param>
+        public static ForeignAudit FindInScan(IEnumerable<AppearanceState> states, AppearanceFold? fold,
+                                              int scanned, int groupCap = DefaultGroupCap) =>
+            Find(states, fold, (int?)scanned, groupCap);
+
+        private static ForeignAudit Find(IEnumerable<AppearanceState> states, AppearanceFold? fold,
+                                         int? walked, int groupCap)
         {
             if (states == null) throw new ArgumentNullException(nameof(states));
             if (groupCap < 1) throw new ArgumentOutOfRangeException(nameof(groupCap), "the cap must be at least one");
@@ -186,7 +219,11 @@ namespace CamelWorks.Core.Appearance
 
             var tail = ordered.Skip(groupCap).ToList();
 
-            return new ForeignAudit(scanned, claimed, kept, tail.Count, tail.Sum(b => b.Value.Count));
+            // The walked figure when there is one, and never a total below the part of it that was
+            // handed back: a caller that under-reported its walk would otherwise produce "41 of 12".
+            var looked = walked == null ? scanned : Math.Max(walked.Value, scanned);
+
+            return new ForeignAudit(looked, claimed, kept, tail.Count, tail.Sum(b => b.Value.Count));
         }
 
         /// <summary>

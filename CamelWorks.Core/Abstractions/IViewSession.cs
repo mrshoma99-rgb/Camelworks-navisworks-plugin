@@ -82,6 +82,40 @@ namespace CamelWorks.Core.Abstractions
         /// </summary>
         IReadOnlyList<AppearanceState> ReadAppearance(IReadOnlyList<ElementKey> keys);
 
+        /// <summary>
+        /// Every element in a scope that is not in its untouched state, found in one walk.
+        ///
+        /// This exists because the obvious composition of the two calls above is quadratic. Listing
+        /// a federation gives a key per element; handing those keys back to
+        /// <see cref="ReadAppearance"/> makes the implementation resolve each one to the item the
+        /// walk was already holding, and resolving a key means a search of the whole document. Two
+        /// hundred thousand elements is two hundred thousand searches of two hundred thousand
+        /// elements, which is not slow but hung.
+        ///
+        /// So the walk and the reading are one pass, and an implementation reads the host's own
+        /// cheap signals before it builds a key — building a key costs a GUID read, and for an
+        /// element without one a parent-chain walk or a bounding box. On a real model almost
+        /// everything is untouched, so almost nothing needs a key at all.
+        ///
+        /// Three obligations on an implementation:
+        ///
+        ///   * Only what is not <see cref="AppearanceState.IsPristine"/> is yielded. An untouched
+        ///     element is skipped, which is the whole point: the caller gets the sparse set, and
+        ///     <paramref name="onProgress"/> is what tells it how much was looked at.
+        ///   * Lazily, so the caller can stop. Materialising the walk and returning a list would
+        ///     put the freeze back where it was.
+        ///   * The item yielded alongside the reading is the one the walk held, so a caller that
+        ///     also wants a name or a tree path does not resolve it again.
+        ///
+        /// Only the permanent layer can be reported, as for <see cref="ReadAppearance"/>.
+        /// </summary>
+        /// <param name="scope">What to walk.</param>
+        /// <param name="onProgress">
+        /// Called with the running count of elements walked — not elements yielded; false stops the
+        /// walk. The count is a liveness figure and not a total.
+        /// </param>
+        IEnumerable<ScannedAppearance> ScanAppearance(TraversalScope scope, Func<int, bool>? onProgress);
+
         /// <summary>Fit the camera to the given elements, with a context margin in model units.</summary>
         void ZoomTo(IReadOnlyList<ElementKey> keys, double marginMetres);
 
@@ -234,6 +268,36 @@ namespace CamelWorks.Core.Abstractions
 
         /// <summary>True when the element is in its untouched state.</summary>
         public bool IsPristine => Colour == null && Transparency == null && !IsHidden;
+    }
+
+    /// <summary>
+    /// One element a scan found, with the item it was found on.
+    ///
+    /// The item travels with the reading because the scan is the only thing that had it. A caller
+    /// writing an appearance scheme out needs each element's tree path as well as its colour, and
+    /// asking for that path by key afterwards would re-resolve every element the walk just held —
+    /// reintroducing, for the elements that matter, exactly the cost
+    /// <see cref="IViewSession.ScanAppearance"/> exists to remove.
+    /// </summary>
+    public readonly struct ScannedAppearance
+    {
+        /// <summary>Pair a reading with the item it was read from.</summary>
+        /// <param name="item">The item the walk was holding.</param>
+        /// <param name="state">What that element currently looks like.</param>
+        public ScannedAppearance(IModelItem item, AppearanceState state)
+        {
+            Item = item;
+            State = state;
+        }
+
+        /// <summary>The item the walk was holding.</summary>
+        public IModelItem Item { get; }
+
+        /// <summary>What that element currently looks like.</summary>
+        public AppearanceState State { get; }
+
+        /// <summary>The element's key, which is the reading's.</summary>
+        public ElementKey Key => State.Key;
     }
 
     /// <summary>An 8-bit-per-channel colour.</summary>

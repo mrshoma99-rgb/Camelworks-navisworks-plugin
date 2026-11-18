@@ -400,6 +400,52 @@ namespace CamelWorks.Core.Testing
             }).ToList();
         }
 
+        /// <summary>
+        /// Every element in a scope that is not untouched, one walk, lazily.
+        ///
+        /// Faithful to the host on the three things a caller depends on: untouched elements are
+        /// skipped rather than yielded, the progress count is elements walked and not elements
+        /// yielded, and the walk stops when progress says to. A fake that returned everything, or
+        /// that counted only what it yielded, would let a caller pass here and freeze in Navisworks
+        /// — which is the whole reason this seam member exists.
+        /// </summary>
+        public IEnumerable<ScannedAppearance> ScanAppearance(TraversalScope scope,
+                                                             Func<int, bool>? onProgress)
+        {
+            if (Layer == OverrideLayer.Temporary)
+                throw new NotSupportedException(
+                    "The temporary layer cannot be read back. Reporting it as empty would claim a " +
+                    "completeness the host does not offer.");
+
+            _document.Record("view.scan " + scope);
+
+            return Scan(scope, onProgress);
+        }
+
+        private IEnumerable<ScannedAppearance> Scan(TraversalScope scope, Func<int, bool>? onProgress)
+        {
+            var walked = 0;
+
+            foreach (var item in _document.Traverse(scope))
+            {
+                walked++;
+
+                if (onProgress != null && !onProgress(walked)) yield break;
+
+                var key = item.Key;
+                var colour = _colour.TryGetValue(key, out var c) ? (Colour?)c : null;
+                var transparency = _transparency.TryGetValue(key, out var t) ? (double?)t : null;
+                var hidden = item.IsHidden;
+
+                if (colour == null && transparency == null && !hidden) continue;
+
+                var foreign = !_authored.Contains(key);
+
+                yield return new ScannedAppearance(item,
+                    new AppearanceState(key, colour, transparency, hidden, foreign));
+            }
+        }
+
         /// <summary>Seed an override CamelWorks did not author, as another tool would leave behind.</summary>
         public void SeedForeignColour(ElementKey key, Colour colour)
         {
