@@ -25,6 +25,18 @@ That is what makes a federation handed over rather than abandoned.
 
 The stack applies top-down and comes back off in one press.
 
+Each row carries what it does and what can be done to it: a tick to turn it off without losing it,
+arrows to move it up or down, a pencil to **change** it, and a bin. The pencil loads the layer back
+into the form above — its name, what it covers, what it decides about visibility, its colour, its
+transparency and its note — and the button becomes **Save changes**. The layer keeps its place in
+the stack and its id, so nothing that pointed at it stops pointing at it.
+
+"Covers" has two entries that only mean something while you are changing a layer: **Keep what it
+covers** leaves the elements alone, which is what you want when the edit is about a colour, and
+**Add the current selection** widens a layer that names elements. A layer that covers a *rule*
+cannot be widened that way — it already follows whatever the rule matches — and the screen says so
+instead of flattening it into a list and quietly taking the rule away.
+
 ### What somebody else did
 
 A federation is nearly always already coloured or part-hidden by someone. **Scan the model** finds

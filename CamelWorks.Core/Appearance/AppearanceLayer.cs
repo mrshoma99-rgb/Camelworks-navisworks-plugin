@@ -51,6 +51,23 @@ namespace CamelWorks.Core.Appearance
                                 + (list.Count == 1 ? " element" : " elements")));
         }
 
+        /// <summary>
+        /// This target plus some more elements, when it names elements.
+        ///
+        /// Null when it does not — a rule target re-resolves, so "and also these three" cannot be
+        /// added to it without turning it into a list and losing the re-resolving that was the
+        /// reason for choosing a rule. The caller is told rather than having it silently flattened.
+        /// </summary>
+        /// <param name="more">The elements to add.</param>
+        /// <param name="description">How the result reads, or null to let it count itself.</param>
+        public LayerTarget? Plus(IEnumerable<ElementKey> more, string? description = null)
+        {
+            if (more == null) throw new ArgumentNullException(nameof(more));
+            if (ReResolves) return null;
+
+            return Elements(Keys.Concat(more), description);
+        }
+
         /// <summary>Target whatever a set expression matches, re-resolved each time.</summary>
         public static LayerTarget Set(SetExpression expression, string? description = null)
         {
@@ -131,6 +148,35 @@ namespace CamelWorks.Core.Appearance
 
         /// <summary>True when the layer decides nothing at all, and so can only ever be noise.</summary>
         public bool IsEmpty => Visible == null && Colour == null && Transparency == null;
+
+        /// <summary>
+        /// The same layer, renamed or pointed somewhere else.
+        ///
+        /// A copy rather than two settable properties, because the name and the target are the two
+        /// things a fold reads while it runs: a target that changed under a fold would give one
+        /// element's answer from one set of elements and the next element's from another, and the
+        /// report would be of a stack that never existed.
+        ///
+        /// The id is carried over, and that is the point of doing it this way. Explanations name
+        /// the layer that won by its id, and the saved stack is keyed on it — a rename that minted
+        /// a new one would quietly detach the layer from everything already pointing at it, so
+        /// editing a layer would lose its place in the stack it is in.
+        ///
+        /// Everything it decides comes too: this changes which elements a layer covers and what it
+        /// is called, never what it does to them.
+        /// </summary>
+        /// <param name="name">A new name, or null to keep the one it has.</param>
+        /// <param name="target">A new target, or null to keep the one it has.</param>
+        public AppearanceLayer With(string? name = null, LayerTarget? target = null) =>
+            new AppearanceLayer(Id, string.IsNullOrWhiteSpace(name) ? Name : name!.Trim(),
+                                target ?? Target)
+            {
+                IsEnabled = IsEnabled,
+                Visible = Visible,
+                Colour = Colour,
+                Transparency = Transparency,
+                Note = Note,
+            };
 
         /// <summary>What this layer decides about the given property, as display text, or null.</summary>
         public string? ValueOf(AppearanceProperty property) => property switch

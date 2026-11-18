@@ -655,6 +655,33 @@ namespace CamelWorks.UI.Views
             private readonly StackPanel _foreign = Ui.Stack();
             private readonly StackPanel _travel = Ui.Stack();
 
+            // The one form, used to add a layer and to change one. Fields rather than locals so a
+            // row's Edit can load a layer into them: two forms would drift, and the one that drifts
+            // is always the editor, because the adder is the one everybody tries first.
+            private readonly TextBox _name = Ui.Text("New layer", null, Ui.Wide.Name);
+            private readonly TextBox _note = Ui.Text(string.Empty, null, Ui.Wide.Phrase);
+            private readonly TextBox _colour = Ui.Text(string.Empty, null, Ui.Wide.Number);
+            private readonly TextBox _transparency = Ui.Text(string.Empty, null, Ui.Wide.Tight);
+            private readonly StackPanel _editing = Ui.Stack();
+
+            private ComboBox? _visibility;
+            private ComboBox? _covers;
+            private System.Windows.Controls.Button? _commit;
+
+            /// <summary>
+            /// The id of the layer being changed, or null when the form would add a new one.
+            ///
+            /// The id and not the index: the list is reordered from the same rows that edit it, so
+            /// an index captured when Edit was pressed names a different layer by the time Save is.
+            /// </summary>
+            private string? _editingId;
+
+            /// <summary>What the form's "Covers" choice says when it is to be left alone.</summary>
+            private const string KeepCovers = "Keep what it covers";
+
+            /// <summary>What it says to add the selection to what a layer already names.</summary>
+            private const string AddSelection = "Add the current selection";
+
 
             internal UIElement Build()
             {
@@ -1240,6 +1267,23 @@ namespace CamelWorks.UI.Views
             {
                 _stack.Children.Clear();
 
+                // Which thing the form is about to do, said where the person pressing it is
+                // looking. A form that changes a layer while its button says "Add layer" is how
+                // somebody ends up with two layers they wanted one of.
+                _editing.Children.Clear();
+
+                var changing = _editingId == null
+                    ? null
+                    : _layers.FirstOrDefault(l => string.Equals(l.Id, _editingId, StringComparison.Ordinal));
+
+                if (_commit != null) _commit.Content = changing == null ? "Add layer" : "Save changes";
+
+                if (changing != null)
+                {
+                    _editing.Children.Add(Ui.Line("Changing \"" + changing.Name + "\".", 0.85, true));
+                    _editing.Children.Add(Ui.Button("Add a new layer instead", () => Reset(session)));
+                }
+
                 if (_layers.Count == 0)
                 {
                     // The first question on landing is not "what do I add" but "what am I looking
@@ -1277,13 +1321,26 @@ namespace CamelWorks.UI.Views
                     var down = Ui.Icon(Glyphs.Down, "Move this layer down",
                                        () => Move(session, index, -1));
 
-                    var drop = Ui.Icon(Glyphs.Bin, "Remove this layer",
-                                       () => { _layers.RemoveAt(index); Redraw(session); });
+                    var edit = Ui.Icon(Glyphs.Pencil,
+                                       "Change what this layer is called, what it covers and what "
+                                       + "it decides",
+                                       () => Edit(session, layer));
 
-                    foreach (var button in new[] { up, down, drop }) button.MinWidth = 54;
+                    var drop = Ui.Icon(Glyphs.Bin, "Remove this layer", () =>
+                    {
+                        _layers.RemoveAt(index);
+
+                        // The form was showing this one. Left as it was, Save would report that
+                        // the layer has gone; putting it back to adding is the kinder answer.
+                        if (string.Equals(_editingId, layer.Id, StringComparison.Ordinal)) Reset(session);
+                        else Redraw(session);
+                    });
+
+                    foreach (var button in new[] { up, down, edit, drop }) button.MinWidth = 54;
 
                     row.Children.Add(up);
                     row.Children.Add(down);
+                    row.Children.Add(edit);
                     row.Children.Add(drop);
 
                     foreach (var child in row.Children.OfType<FrameworkElement>())
@@ -1360,20 +1417,27 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>A new layer: hidden or coloured, over whatever it is pointed at.</summary>
+            /// <summary>
+            /// The form that makes a layer, and the same form that changes one.
+            ///
+            /// One form for both, because the stack was previously add-only: a layer's colour, its
+            /// transparency, what it decides about visibility, its name and what it covers were all
+            /// fixed at the moment it was made, and the only way to change any of them was to delete
+            /// the layer and build it again — which loses its place in the stack and its note. A
+            /// layers panel you cannot edit is a layers panel you throw away and rebuild.
+            ///
+            /// Two forms would have been less work here and wrong: the second one drifts, and it is
+            /// always the editor that drifts, because the adder is the one everybody tries first.
+            /// </summary>
             private UIElement Adder(Session session)
             {
-                var name = Ui.Text("New layer", null, Ui.Wide.Name);
-                var note = Ui.Text(string.Empty, null, Ui.Wide.Phrase);
-                var colour = Ui.Text(string.Empty, null, Ui.Wide.Number);
-                var transparency = Ui.Text(string.Empty, null, Ui.Wide.Tight);
-
                 var decides = "leave visibility alone";
                 var visibility = Ui.Choice(new[] { "leave visibility alone", "show", "hide" }, decides, v => decides = v);
 
                 var from = "Current selection";
                 var library = SetLibrary.FromJson(session.Store.Section(ProjectStore.SetsSection)["items"]);
 
-                var sources = new List<string> { "Current selection", "Everything" };
+                var sources = new List<string> { KeepCovers, "Current selection", AddSelection, "Everything" };
                 sources.AddRange(library.Sets.Select(s => "Set: " + s.Name));
 
                 // The document's own sets too, whatever tool made them. A coordinator's sets
@@ -1399,58 +1463,84 @@ namespace CamelWorks.UI.Views
 
                 var source = Ui.Choice(sources, from, v => from = v);
 
+                _visibility = visibility;
+                _covers = source;
+
                 var add = Ui.Button("Add layer", () =>
                 {
-                    LayerTarget target;
+                    var editing = _editingId == null
+                        ? null
+                        : _layers.FirstOrDefault(l => string.Equals(l.Id, _editingId, StringComparison.Ordinal));
 
-                    if (from == "Everything")
+                    // The layer being edited was deleted from under the form, which the same rows
+                    // can do. Falling through would silently add a new layer instead of changing
+                    // the one the form is showing.
+                    if (_editingId != null && editing == null)
                     {
-                        target = LayerTarget.Everything();
+                        _results.Children.Clear();
+                        _results.Children.Add(Ui.Line("That layer is no longer in the stack.", 0.8));
+                        Reset(session);
+                        return;
                     }
-                    else if (from.StartsWith("Set: ", StringComparison.Ordinal))
-                    {
-                        var set = library.Sets.FirstOrDefault(
-                            s => string.Equals(s.Name, from.Substring(5), StringComparison.Ordinal));
 
-                        if (set == null) return;
-                        target = LayerTarget.Set(set.Expression, set.Name);
-                    }
-                    else if (from.StartsWith("Navisworks set: ", StringComparison.Ordinal))
-                    {
-                        // A rule target by reference, so the layer follows the set: republish
-                        // the set with more elements in it and the layer covers them too.
-                        var name = from.Substring("Navisworks set: ".Length);
-                        target = LayerTarget.Set(SetExpression.InSet(name, name), name);
-                    }
-                    else
-                    {
-                        var keys = session.Model.SelectedKeys();
+                    // Covers explains every null it gives, on screen, so there is nothing to add
+                    // here and nothing that can go wrong in silence.
+                    var target = Covers(session, from, library, editing);
 
-                        if (keys.Count == 0)
-                        {
-                            _results.Children.Clear();
-                            _results.Children.Add(Ui.Line("Nothing is selected.", 0.8));
-                            return;
-                        }
+                    if (target == null) return;
 
-                        target = LayerTarget.Elements(keys);
+                    var decided = decides == "show" ? true : decides == "hide" ? (bool?)false : null;
+
+                    Colour? painted = Colour.TryParse(_colour.Text, out var parsed)
+                        ? parsed
+                        : (Colour?)null;
+
+                    double? faded =
+                        double.TryParse(_transparency.Text, NumberStyles.Float, CultureInfo.InvariantCulture,
+                                        out var t) && t >= 0 && t <= 1
+                            ? t
+                            : (double?)null;
+
+                    var note = _note.Text.Trim().Length == 0 ? null : _note.Text.Trim();
+
+                    if (editing != null)
+                    {
+                        // In place, at its own index, keeping its id: a layer's place in the stack
+                        // is what decides whether it wins, so editing one must not move it, and
+                        // explanations name the layer that won by its id.
+                        var at = _layers.IndexOf(editing);
+
+                        var changed = editing.With(_name.Text, target);
+
+                        changed.Visible = decided;
+                        changed.Colour = painted;
+                        changed.Transparency = faded;
+                        changed.Note = note;
+
+                        _layers[at] = changed;
+
+                        session.Record(ActivityKind.Appearance, "changed the layer \"" + changed.Name + "\"");
+
+                        Reset(session);
+
+                        _results.Children.Clear();
+                        _results.Children.Add(Ui.Line("Changed \"" + changed.Name
+                            + "\". Press Apply the stack to put it on the model.", 0.8));
+
+                        return;
                     }
 
                     var layer = new AppearanceLayer(
                         "layer-" + (_layers.Count + 1).ToString(CultureInfo.InvariantCulture)
                         + "-" + DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture),
-                        name.Text.Trim().Length == 0 ? "Layer " + (_layers.Count + 1) : name.Text.Trim(),
-                        target)
+                        _name.Text.Trim().Length == 0 ? "Layer " + (_layers.Count + 1) : _name.Text.Trim(),
+                        target!)
                     {
-                        Note = note.Text.Trim().Length == 0 ? null : note.Text.Trim(),
-                        Visible = decides == "show" ? true : decides == "hide" ? (bool?)false : null,
+                        Note = note,
+                        Visible = decided,
+                        Colour = painted,
+                        Transparency = faded,
                     };
-
-                    if (Colour.TryParse(colour.Text, out var parsed)) layer.Colour = parsed;
-
-                    if (double.TryParse(transparency.Text, NumberStyles.Float, CultureInfo.InvariantCulture,
-                                        out var t) && t >= 0 && t <= 1)
-                        layer.Transparency = t;
 
                     // Top of the stack wins, and a layer you just made is the one you are thinking
                     // about — so it goes on top, which in fold order is the end of the list.
@@ -1458,14 +1548,139 @@ namespace CamelWorks.UI.Views
                     Redraw(session);
                 });
 
+                _commit = add;
+
+                Reset(session);
+
                 return Bench.Group("Add a layer",
-                    Ui.Field("Name", name),
+                    _editing,
+                    Ui.Field("Name", _name),
                     Ui.Field("Covers", source),
                     Ui.Field("Visibility", visibility),
-                    Ui.Field("Colour (#rrggbb)", colour),
-                    Ui.Field("Transparency (0-1)", transparency),
-                    Ui.Field("Why", note),
+                    Ui.Field("Colour (#rrggbb)", _colour),
+                    Ui.Field("Transparency (0-1)", _transparency),
+                    Ui.Field("Why", _note),
                     add);
+            }
+
+            /// <summary>
+            /// What the form's "Covers" choice means, or null when it cannot mean anything.
+            ///
+            /// Null is reported on screen here rather than by the caller, because the reason
+            /// differs: nothing is selected, a set has gone from the library, or a rule target was
+            /// asked to take extra elements, which it cannot without ceasing to be a rule.
+            /// </summary>
+            /// <param name="session">The seat.</param>
+            /// <param name="from">The choice.</param>
+            /// <param name="library">The project's sets.</param>
+            /// <param name="editing">The layer being changed, or null when adding one.</param>
+            private LayerTarget? Covers(Session session, string from, SetLibrary library,
+                                        AppearanceLayer? editing)
+            {
+                if (from == KeepCovers)
+                {
+                    if (editing != null) return editing.Target;
+
+                    // Nothing to keep: this is a new layer and has never covered anything. Said,
+                    // because the alternative is a press that does nothing and explains nothing.
+                    _results.Children.Clear();
+                    _results.Children.Add(Ui.Line("A new layer has to cover something. Pick the "
+                        + "current selection, everything, or a set.", 0.8));
+
+                    return null;
+                }
+
+                if (from == "Everything") return LayerTarget.Everything();
+
+                if (from.StartsWith("Set: ", StringComparison.Ordinal))
+                {
+                    var set = library.Sets.FirstOrDefault(
+                        s => string.Equals(s.Name, from.Substring(5), StringComparison.Ordinal));
+
+                    if (set != null) return LayerTarget.Set(set.Expression, set.Name);
+
+                    _results.Children.Clear();
+                    _results.Children.Add(Ui.Line("That set is no longer in the library.", 0.8));
+
+                    return null;
+                }
+
+                if (from.StartsWith("Navisworks set: ", StringComparison.Ordinal))
+                {
+                    // A rule target by reference, so the layer follows the set: republish the set
+                    // with more elements in it and the layer covers them too.
+                    var named = from.Substring("Navisworks set: ".Length);
+                    return LayerTarget.Set(SetExpression.InSet(named, named), named);
+                }
+
+                var keys = session.Model.SelectedKeys();
+
+                if (keys.Count == 0)
+                {
+                    _results.Children.Clear();
+                    _results.Children.Add(Ui.Line("Nothing is selected.", 0.8));
+                    return null;
+                }
+
+                if (from != AddSelection || editing == null) return LayerTarget.Elements(keys);
+
+                var wider = editing.Target.Plus(keys);
+
+                if (wider != null) return wider;
+
+                // A rule target. Flattening it to a list would quietly take away the re-resolving
+                // that was the reason for choosing a rule, so it is refused and said.
+                _results.Children.Clear();
+                _results.Children.Add(Ui.Line("\"" + editing.Name + "\" covers a rule rather than a "
+                    + "list, so it already follows whatever the rule matches. Point it at the "
+                    + "selection instead to replace the rule.", 0.8));
+
+                return null;
+            }
+
+            /// <summary>
+            /// Load a layer into the form, so the row's Edit shows what the layer actually is.
+            /// </summary>
+            /// <param name="session">The seat.</param>
+            /// <param name="layer">The layer to change.</param>
+            private void Edit(Session session, AppearanceLayer layer)
+            {
+                _editingId = layer.Id;
+
+                _name.Text = layer.Name;
+                _note.Text = layer.Note ?? string.Empty;
+
+                _colour.Text = layer.Colour == null ? string.Empty : layer.Colour.Value.ToString();
+
+                _transparency.Text = layer.Transparency == null
+                    ? string.Empty
+                    : layer.Transparency.Value.ToString("0.##", CultureInfo.InvariantCulture);
+
+                if (_visibility != null)
+                    _visibility.SelectedItem = layer.Visible == null ? "leave visibility alone"
+                                             : layer.Visible.Value ? "show" : "hide";
+
+                // Defaults to leaving the target alone, because a layer is usually edited for its
+                // colour and re-pointing it is the rarer, larger change.
+                if (_covers != null) _covers.SelectedItem = KeepCovers;
+
+                Redraw(session);
+            }
+
+            /// <summary>Put the form back to adding a layer, keeping nothing from the last edit.</summary>
+            private void Reset(Session session)
+            {
+                _editingId = null;
+
+                _name.Text = "New layer";
+                _note.Text = string.Empty;
+                _colour.Text = string.Empty;
+                _transparency.Text = string.Empty;
+
+                if (_visibility != null) _visibility.SelectedItem = "leave visibility alone";
+                if (_covers != null) _covers.SelectedItem = "Current selection";
+
+                Redraw(session);
             }
         }
 
