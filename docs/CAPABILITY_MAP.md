@@ -206,7 +206,9 @@ surface each type will be reached through rather than a screen that exists today
 | `SetSchedule`, `SetRow`, `SheetSets`, `SetSheetMapping`, `SetSheetResult` | Sets from a spreadsheet |
 | `Restructure`, `RestructureRecipe`, `RestructureChange`, `RestructureSnapshot`, `LevelTally` | Organise Sets |
 | `AppearanceStack`, `AppearanceLayer`, `AppearancePlan`, `AppearancePlanner`, `AppearanceFold`, `AppearanceProperty`, `ILayerResolver`, `LayerReport`, `LayerStackJson` | Appearance |
-| `ForeignAppearance`, `ForeignAudit`, `ForeignGroup` | Appearance — the amber "not ours" strip |
+| `AppearanceOrigin`, `OriginScan`, `ScannedOrigin`, `OriginReport` | Appearance — "Scan the model", the table of places something was applied. Replaces `ForeignAppearance`/`ForeignAudit`/`ForeignGroup`, which reported one parent-level override as a row per element under it. |
+| `SceneCache`, `SceneReading` | Appearance — "Scan the model" reads through it, "Read it again" forces a re-read, and the line above the table says when the reading was taken. "Read this viewpoint" files its reading under that viewpoint. The age is on screen because a viewpoint re-saved with different state inside it cannot be detected at all. |
+| `StackLibrary` | Appearance — the "Which scene" group: the Editing picker, the line listing which scenes hold a stack, and "Copy these layers there". One stack per viewpoint plus the default 3D view, which is the per-view graphics system Navisworks does not have. |
 | `AppearanceTransfer`, `AppearanceSnapshot`, `TransferOptions`, `TransferMatch` | Appearance — "Copy appearance from another model…" (new) |
 | `ViewpointPlanner`, `PlannedView` | Viewpoints |
 

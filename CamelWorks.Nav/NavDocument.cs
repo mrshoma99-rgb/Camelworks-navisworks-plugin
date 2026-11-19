@@ -285,6 +285,17 @@ namespace CamelWorks.Nav
         private readonly List<NavModelSource> _models = new List<NavModelSource>();
         private bool _indexed;
 
+        /// <summary>
+        /// The whole document's tree in depth-first order, null marking a step back out of a node.
+        ///
+        /// A reference per step, which is two per node. That is real memory on a large federation
+        /// and it is the same order as the element index beside it, bought for the same kind of
+        /// reason: without it, every viewpoint read is a fresh structural walk of the model.
+        /// </summary>
+        private List<ModelItem?>? _tree;
+
+        private int _treeGeneration = -1;
+
         // Set when somebody stopped a build. Cleared with the index, because a document that has
         // changed is a fresh question rather than the one they already answered.
         private bool _indexStopped;
@@ -347,6 +358,8 @@ namespace CamelWorks.Nav
         {
             Generation++;
             _indexed = false;
+            _tree = null;
+            _treeGeneration = -1;
             _indexStopped = false;
             _index.Clear();
             _found.Clear();
@@ -724,19 +737,53 @@ namespace CamelWorks.Nav
         /// <inheritdoc />
         public IEnumerable<IModelItem> Traverse(TraversalScope scope)
         {
+            if (scope.Kind == TraversalScopeKind.Keys) return ResolveMany(scope.Keys);
+
+            return Wrap(Walk(scope));
+        }
+
+        /// <summary>
+        /// The same walk as <see cref="Traverse"/>, in the host's own items.
+        ///
+        /// For a reader in this assembly that wants to decide per element whether it cares, before
+        /// anything is built on the element's behalf. <see cref="Traverse"/> hands out
+        /// <see cref="NavModelItem"/>, whose constructor keys the element — a GUID read, or for an
+        /// element the format gave no GUID, a walk up the parent chain or a bounding box. That is
+        /// the right trade for a caller that wants every element it is given, and the wrong one for
+        /// a scan that walks a federation to find the few hundred elements that are not in their
+        /// untouched state: it pays for a key on every element to use one on almost none.
+        ///
+        /// A caller that finds an element it does care about turns it into one of ours with
+        /// <see cref="Wrap(ModelItem)"/>, and pays for the key then.
+        /// </summary>
+        /// <param name="scope">What to walk. A key scope resolves, which is the cost it is.</param>
+        internal IEnumerable<ModelItem> Walk(TraversalScope scope)
+        {
             switch (scope.Kind)
             {
                 case TraversalScopeKind.CurrentSelection:
-                    return Wrap(Leaves(Document.CurrentSelection.SelectedItems));
+                    return Leaves(Document.CurrentSelection.SelectedItems);
 
                 case TraversalScopeKind.Set:
-                    return Wrap(Leaves(ItemsOfSet(scope.SetName)));
+                    return Leaves(ItemsOfSet(scope.SetName));
 
                 case TraversalScopeKind.Keys:
-                    return ResolveMany(scope.Keys);
+                    return HostItemsOf(scope.Keys);
 
                 default:
-                    return Wrap(Leaves(Document.Models.RootItems));
+                    return Leaves(Document.Models.RootItems);
+            }
+        }
+
+        /// <summary>The host items a list of keys names, skipping the ones this document has not got.</summary>
+        private IEnumerable<ModelItem> HostItemsOf(IReadOnlyList<ElementKey>? keys)
+        {
+            if (keys == null) yield break;
+
+            foreach (var key in keys)
+            {
+                var item = Item(key);
+                if (item != null) yield return item;
             }
         }
 
@@ -767,10 +814,16 @@ namespace CamelWorks.Nav
             var collection = new ModelItemCollection();
             if (keys == null) return collection;
 
-            // One key at a time through the same resolver a single verb uses: a GUID is a native
-            // search and costs nothing, and only a key that is not a GUID makes anybody pay for
-            // the index. Ten picked clash results are twenty native searches, which is instant -
-            // where indexing first was a walk of the whole federation before the first of them.
+            // A short list goes one key at a time through the same resolver a single verb uses: a
+            // GUID is a native search and costs nothing, and only a key that is not a GUID makes
+            // anybody pay for the index. Ten picked clash results are twenty native searches,
+            // which is instant — where indexing first was a walk of the whole federation before
+            // the first of them.
+            //
+            // A long list is the other way round, and an appearance stack hands over every element
+            // its layers touch. See IndexForBulk for where the two cross.
+            IndexForBulk(keys.Count);
+
             foreach (var key in keys)
             {
                 var item = Item(key);
@@ -990,6 +1043,44 @@ namespace CamelWorks.Nav
         /// </summary>
         public static Action<string, Action<Action<int>, Func<bool>>>? LongWork { get; set; }
 
+        /// <summary>
+        /// How many keys a caller has to be about to resolve before indexing the whole federation
+        /// is the cheaper way to do it.
+        ///
+        /// A key that is an instance GUID resolves through a native search, which is fast and stops
+        /// at the first match — so for a handful of keys, searching beats a full walk by a wide
+        /// margin, and that is the case <see cref="ItemsFor"/> was tuned for. The margin reverses:
+        /// each search still scans a fraction of the federation, so K searches is K times that,
+        /// while the index is one walk however many keys follow it.
+        ///
+        /// Set where it is because the cost of being wrong is asymmetric. Too low, and ten clash
+        /// results pay for a walk they did not need — slow, once, with a progress bar. Too high,
+        /// and applying a stack over fifty thousand elements does fifty thousand searches inside
+        /// one call with nothing on screen, which is the hang this number exists to prevent.
+        /// </summary>
+        private const int BulkResolveThreshold = 250;
+
+        /// <summary>
+        /// Index first, when the caller is about to resolve enough keys to be worth it.
+        ///
+        /// For the callers that take a list rather than a row: applying an appearance stack, reading
+        /// back what a stack covers, colouring a set. Those hand over every element their layers
+        /// touch, and resolving each one separately meant a search of the document per element,
+        /// inside a single call, with no progress and no Stop — which is a frozen Navisworks, not a
+        /// slow one. Indexing instead is one walk, and it reports and can be stopped because
+        /// <see cref="LongWork"/> runs it inside a job.
+        ///
+        /// A no-op below the threshold, once the index exists, and once somebody has declined the
+        /// walk — so the small callers it was written for are unaffected.
+        /// </summary>
+        /// <param name="keys">How many keys are about to be resolved.</param>
+        internal void IndexForBulk(int keys)
+        {
+            if (keys < BulkResolveThreshold) return;
+
+            EnsureIndexed();
+        }
+
         private void EnsureIndexed()
         {
             // Indexed once and kept: keying an item is not free, and resolving a thousand-row clash
@@ -1090,6 +1181,196 @@ namespace CamelWorks.Nav
         /// in native code. Here each node's children are read into a list and the host's enumerator
         /// is released immediately, so nothing of the host's is open when a caller pumps.
         /// </summary>
+        /// <summary>
+        /// One step of a walk that keeps the tree's shape: into a node, or back out of one.
+        ///
+        /// A flat walk of the geometry leaves cannot answer where an override was applied, and
+        /// that is the question the Appearance Manager has to answer — the host applies an
+        /// override to a node and every element under it takes it, so a flat walk reports one act
+        /// as a thousand. Going in and coming back out is what lets a reader fold a subtree.
+        /// </summary>
+        internal readonly struct TreeStep
+        {
+            private TreeStep(ModelItem? item)
+            {
+                Item = item;
+            }
+
+            /// <summary>The node being entered, or null on the step that comes back out of one.</summary>
+            public ModelItem? Item { get; }
+
+            /// <summary>Whether this step goes into a node rather than coming back out.</summary>
+            public bool IsEnter => Item != null;
+
+            internal static TreeStep Enter(ModelItem item) => new TreeStep(item);
+
+            internal static TreeStep Leave() => new TreeStep(null);
+        }
+
+        /// <summary>
+        /// The whole tree under a scope, in and out of every node, lazily.
+        ///
+        /// The same pump-safety rule as <see cref="Leaves"/>, and for the same reason: each node's
+        /// children are read into a list and the host's enumerator released before anything is
+        /// yielded, so no collection of the host's is open while a caller reports progress. A
+        /// caller that pumps with a native enumerator open lets Navisworks act on a click that
+        /// mutates the collection under it, which ends the process in native code.
+        ///
+        /// A key scope has no tree to walk — it names elements, not branches — so it yields those
+        /// elements as a flat row of enter/leave pairs.
+        /// </summary>
+        /// <param name="scope">What to walk.</param>
+        internal IEnumerable<TreeStep> WalkTree(TraversalScope scope)
+        {
+            switch (scope.Kind)
+            {
+                case TraversalScopeKind.CurrentSelection:
+                    return Branches(Document.CurrentSelection.SelectedItems);
+
+                case TraversalScopeKind.Set:
+                    return Branches(ItemsOfSet(scope.SetName));
+
+                case TraversalScopeKind.Keys:
+                    return Flat(HostItemsOf(scope.Keys));
+
+                default:
+                    return WholeTree();
+            }
+        }
+
+        /// <summary>
+        /// The whole document's tree, walked once per generation and remembered.
+        ///
+        /// The shape of the tree is a property of the document, not of what the elements currently
+        /// look like. Reading a saved viewpoint means applying it and scanning, and clicking along
+        /// a list of viewpoints means doing that again and again @ over a tree that is identical
+        /// every time. The expensive structural part of a walk is asking each node for its children,
+        /// which is a call into the host and a list per node; the appearance is then three property
+        /// reads off nodes already in hand.
+        ///
+        /// So the shape is walked once and the readings are cheap thereafter. This is also what
+        /// makes reading a viewpoint at all reasonable: without it, every viewpoint costs a full
+        /// structural walk of the federation.
+        ///
+        /// Dropped when the generation bumps, beside the element index and for the same reason @
+        /// these are handles into a tree that has been replaced, and holding them across a document
+        /// change is what StaleItemException exists to prevent.
+        /// </summary>
+        private IEnumerable<TreeStep> WholeTree()
+        {
+            if (_tree != null && _treeGeneration == Generation) return Remembered(_tree);
+
+            return BuildWholeTree();
+        }
+
+        private static IEnumerable<TreeStep> Remembered(List<ModelItem?> tree)
+        {
+            foreach (var item in tree)
+                yield return item == null ? TreeStep.Leave() : TreeStep.Enter(item);
+        }
+
+        private IEnumerable<TreeStep> BuildWholeTree()
+        {
+            var built = new List<ModelItem?>();
+
+            foreach (var step in Branches(Document.Models.RootItems))
+            {
+                built.Add(step.Item);
+                yield return step;
+            }
+
+            // Only after the walk has run out, which means only when a caller consumed all of it.
+            // A caller that stopped half way leaves this unset, so the next walk is a real one
+            // rather than a third of a federation being handed back as the document.
+            _tree = built;
+            _treeGeneration = Generation;
+        }
+
+        /// <summary>Elements with no tree above them, as enter/leave pairs.</summary>
+        private static IEnumerable<TreeStep> Flat(IEnumerable<ModelItem> items)
+        {
+            foreach (var item in items)
+            {
+                yield return TreeStep.Enter(item);
+                yield return TreeStep.Leave();
+            }
+        }
+
+        /// <summary>Depth-first, in and out, with no host enumerator open across a yield.</summary>
+        private static IEnumerable<TreeStep> Branches(IEnumerable<ModelItem> roots)
+        {
+            List<ModelItem> top;
+
+            Walking++;
+
+            try
+            {
+                top = roots.ToList();
+            }
+            finally
+            {
+                Walking--;
+            }
+
+            // A stack of frames rather than recursion, for the reason Leaves gives: the recursive
+            // version held one live host enumerator per level of the tree for the whole walk.
+            var stack = new List<Frame>();
+
+            foreach (var root in top)
+            {
+                yield return TreeStep.Enter(root);
+                stack.Add(new Frame(root));
+
+                while (stack.Count > 0)
+                {
+                    var frame = stack[stack.Count - 1];
+
+                    if (frame.Next >= frame.Children.Count)
+                    {
+                        stack.RemoveAt(stack.Count - 1);
+                        yield return TreeStep.Leave();
+                        continue;
+                    }
+
+                    var child = frame.Children[frame.Next];
+                    frame.Next++;
+
+                    yield return TreeStep.Enter(child);
+                    stack.Add(new Frame(child));
+                }
+            }
+        }
+
+        /// <summary>One node of a tree walk, with its children already in managed memory.</summary>
+        private sealed class Frame
+        {
+            internal Frame(ModelItem item)
+            {
+                Walking++;
+
+                try
+                {
+                    Children = item.Children.ToList();
+                }
+                catch (Exception)
+                {
+                    // A node the host will not open. Treated as a leaf rather than losing the
+                    // branch, as Leaves does: one awkward node must not end a walk of two
+                    // hundred thousand.
+                    Children = new List<ModelItem>();
+                }
+                finally
+                {
+                    Walking--;
+                }
+            }
+
+            internal List<ModelItem> Children { get; }
+
+            /// <summary>Which child comes next.</summary>
+            internal int Next { get; set; }
+        }
+
         private static IEnumerable<ModelItem> Leaves(IEnumerable<ModelItem> roots)
         {
             // Materialised for the same reason: this is usually Document.Models.RootItems, and it

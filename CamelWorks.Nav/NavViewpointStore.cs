@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Navisworks.Api;
 using CamelWorks.Core.Abstractions;
+using CamelWorks.Core.Appearance;
 
 namespace CamelWorks.Nav
 {
@@ -26,6 +27,17 @@ namespace CamelWorks.Nav
         private Document Host => _document.Document;
 
         private string? _problem;
+
+        /// <summary>
+        /// How many of this product's own viewpoint applications are in flight.
+        ///
+        /// A counter rather than a flag because <see cref="CopyOverrides"/> applies two viewpoints
+        /// inside one operation, and a flag cleared by the inner one would let the outer one's
+        /// change through as if the user had made it.
+        /// </summary>
+        private int _applying;
+
+        private Action<string?>? _watcher;
 
         /// <inheritdoc />
         public string? LastProblem => _problem;
@@ -91,18 +103,31 @@ namespace CamelWorks.Nav
         {
             if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("a viewpoint needs a name", nameof(name));
 
-            var saved = Try(() =>
-            {
-                // Document.CurrentViewpoint is a Viewpoint, not a SavedViewpoint — the two are
-                // unrelated types, and only SavedViewpoint can go into the collection. So the live
-                // camera is copied and then wrapped, rather than cast.
-                var copy = new SavedViewpoint(Host.CurrentViewpoint.CreateCopy())
-                {
-                    DisplayName = name,
-                };
+            // Ours: adding a viewpoint can make it the current one, and the watcher must not read
+            // that as the user having navigated.
+            _applying++;
 
-                Host.SavedViewpoints.AddCopy(copy);
-            });
+            bool saved;
+
+            try
+            {
+                saved = Try(() =>
+                {
+                    // Document.CurrentViewpoint is a Viewpoint, not a SavedViewpoint — the two are
+                    // unrelated types, and only SavedViewpoint can go into the collection. So the
+                    // live camera is copied and then wrapped, rather than cast.
+                    var copy = new SavedViewpoint(Host.CurrentViewpoint.CreateCopy())
+                    {
+                        DisplayName = name,
+                    };
+
+                    Host.SavedViewpoints.AddCopy(copy);
+                });
+            }
+            finally
+            {
+                _applying--;
+            }
 
             return saved ? new SavedView(PathOf(folder, name), name, folder, false, false) : null;
         }
@@ -118,7 +143,232 @@ namespace CamelWorks.Nav
                 return false;
             }
 
-            return Try(() => Host.SavedViewpoints.CurrentSavedViewpoint = found);
+            // Ours, so the watcher stays quiet for it. A callback here would make a stack applied
+            // on arriving at a viewpoint apply itself again, and again.
+            _applying++;
+
+            try
+            {
+                return Try(() => Host.SavedViewpoints.CurrentSavedViewpoint = found);
+            }
+            finally
+            {
+                _applying--;
+            }
+        }
+
+        /// <inheritdoc />
+        public string? OnViewpoint
+        {
+            get
+            {
+                try
+                {
+                    var current = Host.SavedViewpoints.CurrentSavedViewpoint;
+
+                    if (current == null) return null;
+
+                    var guid = current.Guid;
+
+                    // No identity, no answer. Matching on the display name instead would find the
+                    // wrong viewpoint in any document with two of the same name in two folders,
+                    // and the caller for this applies a stack @ the wrong one is worse than none.
+                    if (guid == Guid.Empty) return null;
+
+                    string? found = null;
+
+                    Walk(Host.SavedViewpoints.ToSavedItemCollection(), null, (item, path) =>
+                    {
+                        if (found == null && item.Guid == guid) found = path;
+                    });
+
+                    return found;
+                }
+                catch (Exception)
+                {
+                    // A host that will not say. Null means do nothing, which is the safe answer.
+                    return null;
+                }
+            }
+        }
+
+        /// <inheritdoc />
+        public void WatchViewpoint(Action<string?>? onWent)
+        {
+            var had = _watcher != null;
+
+            _watcher = onWent;
+
+            try
+            {
+                if (!had && onWent != null)
+                    Host.SavedViewpoints.CurrentSavedViewpointChanged += Went;
+                else if (had && onWent == null)
+                    Host.SavedViewpoints.CurrentSavedViewpointChanged -= Went;
+            }
+            catch (Exception)
+            {
+                // A host that will not let us listen. Dropped rather than left half-subscribed,
+                // so the caller's toggle reads as off and nothing fires.
+                _watcher = null;
+            }
+        }
+
+        private void Went(object sender, EventArgs e)
+        {
+            _ = sender;
+            _ = e;
+
+            // This product applying a viewpoint, not the user going to one.
+            if (_applying > 0) return;
+
+            var watcher = _watcher;
+
+            if (watcher == null) return;
+
+            try
+            {
+                watcher(OnViewpoint);
+            }
+            catch (Exception)
+            {
+                // A handler that throws inside a host event takes the message loop with it in some
+                // versions. Whatever it wanted to do is lost; the host is not.
+            }
+        }
+
+        /// <summary>
+        /// What a saved viewpoint records, read without applying it.
+        ///
+        /// The host keeps better records on a viewpoint than it does on the document, and that is
+        /// the whole value of this call. A document override lives on the geometry, so one applied
+        /// to a storey is pushed down to every element under it and the level is recorded nowhere;
+        /// scanning the live scene can only infer the level back from the subtree. A viewpoint
+        /// stores each override against the item it was applied to — MaterialOverride.Item, and
+        /// VisibilityOverrides.Hidden — so the level is the host's own answer, and every origin
+        /// here is marked read rather than worked out.
+        ///
+        /// It is also sparse and moves nothing. The records name only the nodes that carry
+        /// something, so there is no walk of the federation; the only cost is counting the geometry
+        /// under each of those few nodes, which is bounded by their subtrees.
+        /// </summary>
+        /// <param name="viewId">Which viewpoint.</param>
+        public OriginReport? ReadOrigins(string viewId)
+        {
+            var found = Find(viewId);
+
+            if (found == null)
+            {
+                _problem = "There is no saved viewpoint at \"" + viewId + "\".";
+                return null;
+            }
+
+            var origins = new List<ScannedOrigin>();
+            var node = 0;
+
+            try
+            {
+                var hidden = found.GetVisibilityOverrides();
+
+                if (hidden != null)
+                    foreach (ModelItem item in hidden.Hidden)
+                        Add(origins, ref node, item, true, null, null);
+
+                var appearance = found.GetAppearanceOverrides();
+
+                if (appearance != null)
+                    foreach (var over in appearance.MaterialOverrides)
+                    {
+                        if (over == null || over.Item == null) continue;
+
+                        var colour = NavValues.ToColour(over.Color);
+
+                        Add(origins, ref node, over.Item, false, colour, over.Transparency);
+                    }
+            }
+            catch (Exception)
+            {
+                // The host would not report the viewpoint's own records. Said rather than quietly
+                // falling back to applying it and scanning, which would move the view and replace
+                // what is currently coloured - a destructive answer to a read.
+                _problem = "Navisworks would not report what \"" + viewId + "\" records. "
+                         + "Go to the viewpoint yourself and press \"Scan the model\" instead.";
+
+                return null;
+            }
+
+            _problem = null;
+
+            // Deepest first, as a scan reports them, because that is the order layers go in.
+            var ordered = origins.OrderByDescending(o => o.Origin.Depth)
+                                 .ThenByDescending(o => o.Origin.Covers)
+                                 .ToList();
+
+            // Nothing was walked: the records name their own nodes, so there is no element count
+            // to report and nothing that could have been stopped part way.
+            return new OriginReport(ordered, 0, ordered.Count, false);
+        }
+
+        /// <summary>One of a viewpoint's records, as an origin at the node it names.</summary>
+        private void Add(List<ScannedOrigin> origins, ref int node, ModelItem item,
+                         bool hidden, Colour? colour, double? transparency)
+        {
+            if (!(_document.Wrap(item) is IModelItem ours)) return;
+
+            origins.Add(new ScannedOrigin(ours, new AppearanceOrigin(
+                node++, Depth(item), Under(item), hidden, colour, transparency, isRead: true)));
+        }
+
+        /// <summary>How deep a node is, a model root being zero.</summary>
+        private static int Depth(ModelItem item)
+        {
+            var depth = 0;
+
+            try
+            {
+                foreach (var _ in item.Ancestors) depth++;
+            }
+            catch (Exception)
+            {
+                // A node the host will not walk up. Zero reads as a model root, which puts it at
+                // the bottom of the order rather than losing the row.
+            }
+
+            return depth;
+        }
+
+        /// <summary>
+        /// How many geometry elements sit under a node, itself included.
+        ///
+        /// DescendantsAndSelf is a lazy native collection, so this is a walk of that one subtree
+        /// and not of the document. It is paid once per record, and a viewpoint has a handful.
+        /// </summary>
+        private static int Under(ModelItem item)
+        {
+            try
+            {
+                NavDocument.Opened();
+
+                try
+                {
+                    var under = 0;
+
+                    foreach (ModelItem each in item.DescendantsAndSelf)
+                        if (each.HasGeometry) under++;
+
+                    return under;
+                }
+                finally
+                {
+                    NavDocument.Closed();
+                }
+            }
+            catch (Exception)
+            {
+                // A node the host will not open. One is the honest floor: the record names it, so
+                // it is at least itself.
+                return 1;
+            }
         }
 
         /// <inheritdoc />
@@ -197,27 +447,41 @@ namespace CamelWorks.Nav
             // moves the camera.
             var camera = target.Viewpoint?.CreateCopy();
 
-            // Restore the source: this is what puts its overrides into the running view, and it is
-            // the only way to get at them — GetAppearanceOverrides reads them but nothing writes
-            // them onto another viewpoint.
-            Host.SavedViewpoints.CurrentSavedViewpoint = source;
+            // Ours, for the whole operation: this applies the source and then captures, so the
+            // watcher must stay quiet across both. A flag cleared by the inner change would let
+            // the outer one through as if the user had navigated.
+            _applying++;
 
-            // Camera back to where the target had it, so this copies the overrides and not the
-            // view. A "copy overrides" that quietly moved the camera would be a different feature.
-            if (camera != null) Host.CurrentViewpoint.CopyFrom(camera);
+            try
+            {
+                // Restore the source: this is what puts its overrides into the running view, and
+                // it is the only way to get them onto another viewpoint — GetAppearanceOverrides
+                // reads a viewpoint's own records, which is what ReadOrigins uses, but nothing
+                // writes them onto a different one.
+                Host.SavedViewpoints.CurrentSavedViewpoint = source;
 
-            var made = Host.SavedViewpoints.CaptureRuntimeOverrides();
+                // Camera back to where the target had it, so this copies the overrides and not the
+                // view. A "copy overrides" that quietly moved the camera would be a different
+                // feature.
+                if (camera != null) Host.CurrentViewpoint.CopyFrom(camera);
 
-            // CaptureRuntimeOverrides rather than ReplaceFromCurrentView: the latter is documented
-            // as updating the viewpoint, redlines and visibility, and says nothing about material
-            // overrides. Half of "copy overrides" is not the feature.
-            if (made == null) return false;
+                var made = Host.SavedViewpoints.CaptureRuntimeOverrides();
 
-            made.DisplayName = name;
+                // CaptureRuntimeOverrides rather than ReplaceFromCurrentView: the latter is
+                // documented as updating the viewpoint, redlines and visibility, and says nothing
+                // about material overrides. Half of "copy overrides" is not the feature.
+                if (made == null) return false;
 
-            // In place, at the same index, so the target keeps its position in the folder.
-            Host.SavedViewpoints.ReplaceWithCopy(parent, index, made);
-            return true;
+                made.DisplayName = name;
+
+                // In place, at the same index, so the target keeps its position in the folder.
+                Host.SavedViewpoints.ReplaceWithCopy(parent, index, made);
+                return true;
+            }
+            finally
+            {
+                _applying--;
+            }
         }
 
         /// <summary>Find or make the folder chain, and hand back the group to add into.</summary>

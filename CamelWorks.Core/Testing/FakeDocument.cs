@@ -28,6 +28,8 @@ namespace CamelWorks.Core.Testing
         private bool _somethingRead;
         private List<ElementKey> _selection = new List<ElementKey>();
 
+        private readonly HashSet<string> _hiddenBranches = new HashSet<string>(StringComparer.Ordinal);
+
         /// <inheritdoc />
         public int Generation { get; private set; } = 1;
 
@@ -85,6 +87,185 @@ namespace CamelWorks.Core.Testing
             var item = new FakeItem(this, key, model, displayName, category, typeName, path, bounds, hasGeometry);
             _items.Add(item);
             return item;
+        }
+
+        /// <summary>
+        /// Hide a branch of the tree, as the host does when somebody hides a parent.
+        ///
+        /// Separate from hiding elements because the host keeps them separate, and the difference
+        /// is the whole reason the origin scan exists: SetHidden records the hiding on the item it
+        /// was given and lets descendants inherit it, so an element inside a hidden parent reports
+        /// itself visible. A fake that could only hide leaves could not reproduce the fault where a
+        /// hidden storey scanned as nothing hidden at all.
+        /// </summary>
+        /// <param name="treePath">The branch, from the model down. Not a leaf's path.</param>
+        public void HideBranch(params string[] treePath)
+        {
+            if (treePath == null || treePath.Length == 0)
+                throw new ArgumentException("a branch needs a path", nameof(treePath));
+
+            _hiddenBranches.Add(string.Join("\u0000", treePath));
+            Record("branch.hide " + string.Join(" / ", treePath));
+        }
+
+        /// <summary>A branch as an item, for a store reporting what a viewpoint hides.</summary>
+        /// <param name="treePath">The branch, from the model down.</param>
+        internal FakeItem? BranchItem(IReadOnlyList<string> treePath)
+        {
+            if (treePath == null || treePath.Count == 0) return null;
+
+            // A leaf whose own path is the branch is the branch; otherwise it is an interior node
+            // and one is made for it, as the tree walk does.
+            var leaf = _items.FirstOrDefault(i => i.TreePath.SequenceEqual(treePath));
+
+            if (leaf != null) return leaf;
+
+            var under = _items.FirstOrDefault(
+                i => i.TreePath.Count > treePath.Count
+                     && i.TreePath.Take(treePath.Count).SequenceEqual(treePath));
+
+            if (under == null) return null;
+
+            var model = (FakeSource)under.Model;
+
+            var key = ElementKey.FromTreePath(model.Scope, model.SourcePath,
+                                              treePath.Select(p => (string?)p).ToArray());
+
+            return new FakeItem(this, key, model, treePath[treePath.Count - 1],
+                                null, null, treePath.ToList(), default, false);
+        }
+
+        /// <summary>The geometry elements under a branch, itself included.</summary>
+        /// <param name="treePath">The branch, from the model down.</param>
+        internal IReadOnlyList<ElementKey> GeometryKeysUnder(IReadOnlyList<string> treePath)
+        {
+            if (treePath == null || treePath.Count == 0) return Array.Empty<ElementKey>();
+
+            return _items.Where(i => i.HasGeometry
+                                     && i.TreePath.Count >= treePath.Count
+                                     && i.TreePath.Take(treePath.Count).SequenceEqual(treePath))
+                         .Select(i => i.Key)
+                         .ToList();
+        }
+
+        /// <summary>An element's tree path, for a capture that only knows its leaves.</summary>
+        /// <param name="key">The element.</param>
+        internal string[] PathOf(ElementKey key)
+        {
+            var item = Find(key);
+            return item == null ? Array.Empty<string>() : item.TreePath.ToArray();
+        }
+
+        /// <summary>How many geometry elements sit under a branch, itself included.</summary>
+        /// <param name="treePath">The branch, from the model down.</param>
+        internal int GeometryUnder(IReadOnlyList<string> treePath)
+        {
+            if (treePath == null || treePath.Count == 0) return 0;
+
+            return _items.Count(i => i.HasGeometry
+                                     && i.TreePath.Count >= treePath.Count
+                                     && i.TreePath.Take(treePath.Count).SequenceEqual(treePath));
+        }
+
+        /// <summary>Which branches are hidden, for a fake that captures the scene.</summary>
+        public List<string[]> HiddenBranches() =>
+            _hiddenBranches.Select(b => b.Split('\u0000')).ToList();
+
+        /// <summary>Unhide every branch, as applying a viewpoint replaces what is hidden.</summary>
+        public void ShowAllBranches()
+        {
+            if (_hiddenBranches.Count == 0) return;
+
+            _hiddenBranches.Clear();
+            Record("branch.showAll");
+        }
+
+        /// <summary>Whether a branch was hidden by <see cref="HideBranch"/>.</summary>
+        internal bool IsBranchHidden(IReadOnlyList<string> treePath) =>
+            _hiddenBranches.Contains(string.Join("\u0000", treePath));
+
+        /// <summary>
+        /// The tree the items' paths imply, walked in and out of every node.
+        ///
+        /// The fake stores items flat with a tree path each, which is enough for everything else
+        /// but says nothing about shape. The origin scan needs the shape, so it is reconstructed
+        /// here: the paths are a trie, and the trie is the tree. Interior nodes get a
+        /// <see cref="FakeItem"/> of their own with no geometry, which is what they are.
+        /// </summary>
+        /// <param name="items">The leaves in scope.</param>
+        internal IEnumerable<FakeTreeStep> WalkTree(IReadOnlyList<FakeItem> items)
+        {
+            var roots = new List<Node>();
+            var byPath = new Dictionary<string, Node>(StringComparer.Ordinal);
+
+            foreach (var item in items)
+            {
+                var path = item.TreePath;
+                List<Node> siblings = roots;
+                Node? parent = null;
+
+                // Every name above the leaf is a branch; the last one is the leaf itself.
+                for (var at = 0; at < path.Count; at++)
+                {
+                    var here = string.Join("\u0000", path.Take(at + 1));
+
+                    if (!byPath.TryGetValue(here, out var node))
+                    {
+                        node = new Node
+                        {
+                            Path = path.Take(at + 1).ToList(),
+                            Model = item.Model,
+                        };
+
+                        byPath[here] = node;
+                        siblings.Add(node);
+                    }
+
+                    if (at == path.Count - 1) node.Leaf = item;
+
+                    parent = node;
+                    siblings = node.Children;
+                }
+
+                _ = parent;
+            }
+
+            foreach (var root in roots)
+                foreach (var step in Steps(root))
+                    yield return step;
+        }
+
+        private IEnumerable<FakeTreeStep> Steps(Node node)
+        {
+            var item = node.Leaf ?? Interior(node);
+
+            yield return new FakeTreeStep(item, node.Leaf != null, IsBranchHidden(node.Path));
+
+            foreach (var child in node.Children)
+                foreach (var step in Steps(child))
+                    yield return step;
+
+            yield return FakeTreeStep.Leave();
+        }
+
+        /// <summary>A branch, as an item. No geometry, because that is what a branch is.</summary>
+        private FakeItem Interior(Node node)
+        {
+            var model = (FakeSource)node.Model;
+
+            var key = ElementKey.FromTreePath(model.Scope, model.SourcePath,
+                                              node.Path.Select(p => (string?)p).ToArray());
+
+            return new FakeItem(this, key, model, node.Path[node.Path.Count - 1],
+                                null, null, node.Path, default, false);
+        }
+
+        private sealed class Node
+        {
+            internal List<string> Path = new List<string>();
+            internal IModelSource Model = null!;
+            internal FakeItem? Leaf;
+            internal readonly List<Node> Children = new List<Node>();
         }
 
         /// <summary>Define a named set.</summary>
@@ -481,5 +662,29 @@ namespace CamelWorks.Core.Testing
             _properties.Remove(category + "/" + name);
 
         internal bool Has(string category, string name) => _properties.ContainsKey(category + "/" + name);
+    }
+    /// <summary>One step of the fake's tree walk: into a node, or back out of one.</summary>
+    public readonly struct FakeTreeStep
+    {
+        internal FakeTreeStep(IModelItem? item, bool hasGeometry, bool hidesHere)
+        {
+            Item = item;
+            HasGeometry = hasGeometry;
+            HidesHere = hidesHere;
+        }
+
+        /// <summary>The node entered, or null on the step that comes back out.</summary>
+        public IModelItem? Item { get; }
+
+        /// <summary>Whether it is a geometry element rather than a branch.</summary>
+        public bool HasGeometry { get; }
+
+        /// <summary>Whether the hiding is recorded on this node rather than inherited.</summary>
+        public bool HidesHere { get; }
+
+        /// <summary>Whether this step goes into a node.</summary>
+        public bool IsEnter => Item != null;
+
+        internal static FakeTreeStep Leave() => new FakeTreeStep(null, false, false);
     }
 }

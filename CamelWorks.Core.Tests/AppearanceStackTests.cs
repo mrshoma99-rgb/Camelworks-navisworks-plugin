@@ -332,5 +332,136 @@ namespace CamelWorks.Core.Tests
 
             Assert.Contains("JG 12/03", layer.Note, StringComparison.Ordinal);
         }
+
+        // -----------------------------------------------------------------------------------
+        // Changing a layer, rather than deleting it and building it again
+        // -----------------------------------------------------------------------------------
+
+        private static ElementKey E(string name) =>
+            ElementKey.FromTreePath(ElementKey.ScopeOf(@"C:\p\A.nwc"), @"C:\p\A.nwc", name);
+
+        [Fact]
+        public void A_changed_layer_keeps_its_id_so_it_keeps_its_place_and_its_explanations()
+        {
+            var first = new AppearanceLayer("layer-1", "Level 03", LayerTarget.Elements(new[] { E("a") }))
+            {
+                Colour = new Colour(200, 30, 30),
+                Transparency = 0.4,
+                Visible = false,
+                Note = "why",
+                IsEnabled = false,
+            };
+
+            var renamed = first.With("Level 03 — structure");
+
+            // The id is what explanations name and what the saved stack is keyed on. A rename that
+            // minted a new one would detach the layer from everything already pointing at it.
+            Assert.Equal("layer-1", renamed.Id);
+            Assert.Equal("Level 03 — structure", renamed.Name);
+
+            // Changing what a layer is called or covers never changes what it does.
+            Assert.Equal(first.Colour, renamed.Colour);
+            Assert.Equal(first.Transparency, renamed.Transparency);
+            Assert.Equal(first.Visible, renamed.Visible);
+            Assert.Equal(first.Note, renamed.Note);
+            Assert.Equal(first.IsEnabled, renamed.IsEnabled);
+        }
+
+        [Fact]
+        public void Changing_a_layer_leaves_the_one_it_came_from_alone()
+        {
+            var target = LayerTarget.Elements(new[] { E("a") });
+            var first = new AppearanceLayer("layer-1", "One", target) { Colour = new Colour(1, 2, 3) };
+
+            var second = first.With("Two", LayerTarget.Elements(new[] { E("b"), E("c") }));
+
+            // A copy, because a target that changed under a fold would answer one element from one
+            // set of elements and the next from another.
+            Assert.Equal("One", first.Name);
+            Assert.Same(target, first.Target);
+            Assert.Equal(2, second.Target.Keys.Count);
+        }
+
+        [Fact]
+        public void Keeping_the_name_or_the_target_is_what_passing_nothing_means()
+        {
+            var first = new AppearanceLayer("layer-1", "One", LayerTarget.Elements(new[] { E("a") }));
+
+            var same = first.With();
+
+            Assert.Equal("One", same.Name);
+            Assert.Same(first.Target, same.Target);
+
+            // Whitespace is not a name. A form whose box was cleared must not leave a layer called
+            // nothing, and the constructor would throw on it.
+            Assert.Equal("One", first.With("   ").Name);
+        }
+
+        [Fact]
+        public void A_listed_target_takes_more_elements()
+        {
+            var target = LayerTarget.Elements(new[] { E("a"), E("b") });
+
+            var wider = target.Plus(new[] { E("c") });
+
+            Assert.NotNull(wider);
+            Assert.Equal(3, wider!.Keys.Count);
+            Assert.False(wider.ReResolves);
+
+            // The one it came from is untouched.
+            Assert.Equal(2, target.Keys.Count);
+        }
+
+        [Fact]
+        public void Adding_an_element_already_covered_does_not_cover_it_twice()
+        {
+            var target = LayerTarget.Elements(new[] { E("a"), E("b") });
+
+            var wider = target.Plus(new[] { E("b"), E("c") })!;
+
+            Assert.Equal(3, wider.Keys.Count);
+        }
+
+        [Fact]
+        public void A_rule_target_refuses_extra_elements_rather_than_quietly_becoming_a_list()
+        {
+            var target = LayerTarget.Set(SetExpression.Everything, "everything");
+
+            // Flattening it would take away the re-resolving that was the reason for choosing a
+            // rule: the layer would stop following the set the next time somebody republished it.
+            Assert.Null(target.Plus(new[] { E("a") }));
+            Assert.True(target.ReResolves);
+        }
+
+        [Fact]
+        public void A_changed_layer_still_folds_at_the_place_it_was_in()
+        {
+            var a = E("a");
+
+            var under = new AppearanceLayer("under", "Everything grey",
+                                            LayerTarget.Elements(new[] { a }))
+            {
+                Colour = new Colour(120, 120, 120),
+            };
+
+            var over = new AppearanceLayer("over", "Level 03 red",
+                                           LayerTarget.Elements(new[] { a }))
+            {
+                Colour = new Colour(200, 30, 30),
+            };
+
+            var layers = new List<AppearanceLayer> { under, over };
+
+            // The edit a user actually makes: that red is wrong, make it blue.
+            layers[1] = over.With();
+            layers[1].Colour = new Colour(30, 30, 200);
+
+            var fold = AppearanceStack.Fold(layers, new FakeResolver(a));
+
+            var element = fold.For(a)!;
+
+            // Still the top layer, still winning, and winning with the new colour.
+            Assert.Equal("#1e1ec8", element.Colour!.Value.ToString());
+        }
     }
 }

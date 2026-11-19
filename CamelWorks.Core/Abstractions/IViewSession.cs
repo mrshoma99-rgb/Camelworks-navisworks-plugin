@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using CamelWorks.Core.Appearance;
 using CamelWorks.Core.Identity;
 
 namespace CamelWorks.Core.Abstractions
@@ -81,6 +82,72 @@ namespace CamelWorks.Core.Abstractions
         /// silently omitting temporary overrides would be worse than the host's own blindness.
         /// </summary>
         IReadOnlyList<AppearanceState> ReadAppearance(IReadOnlyList<ElementKey> keys);
+
+        /// <summary>
+        /// Every element in a scope that is not in its untouched state, found in one walk.
+        ///
+        /// This exists because the obvious composition of the two calls above is quadratic. Listing
+        /// a federation gives a key per element; handing those keys back to
+        /// <see cref="ReadAppearance"/> makes the implementation resolve each one to the item the
+        /// walk was already holding, and resolving a key means a search of the whole document. Two
+        /// hundred thousand elements is two hundred thousand searches of two hundred thousand
+        /// elements, which is not slow but hung.
+        ///
+        /// So the walk and the reading are one pass, and an implementation reads the host's own
+        /// cheap signals before it builds a key — building a key costs a GUID read, and for an
+        /// element without one a parent-chain walk or a bounding box. On a real model almost
+        /// everything is untouched, so almost nothing needs a key at all.
+        ///
+        /// Three obligations on an implementation:
+        ///
+        ///   * Only what is not <see cref="AppearanceState.IsPristine"/> is yielded. An untouched
+        ///     element is skipped, which is the whole point: the caller gets the sparse set, and
+        ///     <paramref name="onProgress"/> is what tells it how much was looked at.
+        ///   * Lazily, so the caller can stop. Materialising the walk and returning a list would
+        ///     put the freeze back where it was.
+        ///   * The item yielded alongside the reading is the one the walk held, so a caller that
+        ///     also wants a name or a tree path does not resolve it again.
+        ///
+        /// Only the permanent layer can be reported, as for <see cref="ReadAppearance"/>.
+        /// </summary>
+        /// <param name="scope">What to walk.</param>
+        /// <param name="onProgress">
+        /// Called with the running count of elements walked — not elements yielded; false stops the
+        /// walk. The count is a liveness figure and not a total.
+        /// </param>
+        IEnumerable<ScannedAppearance> ScanAppearance(TraversalScope scope, Func<int, bool>? onProgress);
+
+        /// <summary>
+        /// The levels in the project tree at which states were applied, rather than the elements
+        /// that ended up in them.
+        ///
+        /// The host applies an override to a node and every element under it takes it, so the
+        /// element-by-element reading above answers "what is this element in" and cannot answer
+        /// "what did somebody do". One act on a storey is four thousand coloured elements; reported
+        /// element by element it is four thousand rows, and adopting it makes a layer holding four
+        /// thousand keys. A dozen such acts and the layer list is unreadable.
+        ///
+        /// The two kinds of state are not alike here, and the difference is the host's:
+        ///
+        ///   * Hiding is recorded on the item it was applied to and inherited by descendants, so
+        ///     the level is readable. It also means the reading above is wrong about hiding: an
+        ///     element inside a hidden parent reports itself visible, so a flat walk of the
+        ///     geometry sees a hidden storey as nothing hidden at all.
+        ///   * Colour and transparency are stored on geometry, so applying one to a parent pushes
+        ///     it to the leaves and the level is recorded nowhere. It is inferred as the highest
+        ///     node whose whole geometry subtree shares one state, and the origin says that it was
+        ///     inferred.
+        ///
+        /// Not lazy, unlike <see cref="ScanAppearance"/>, and it cannot be: a roll-up is only true
+        /// once the subtree under it has been walked, so there is nothing correct to hand over
+        /// early. The walk still reports and can still be stopped, and a stopped walk says so
+        /// rather than handing back a roll-up of the part of the model it got to.
+        /// </summary>
+        /// <param name="scope">What to walk.</param>
+        /// <param name="onProgress">
+        /// Called with the running count of elements walked; false stops the walk.
+        /// </param>
+        OriginReport ScanOrigins(TraversalScope scope, Func<int, bool>? onProgress);
 
         /// <summary>Fit the camera to the given elements, with a context margin in model units.</summary>
         void ZoomTo(IReadOnlyList<ElementKey> keys, double marginMetres);
@@ -234,6 +301,117 @@ namespace CamelWorks.Core.Abstractions
 
         /// <summary>True when the element is in its untouched state.</summary>
         public bool IsPristine => Colour == null && Transparency == null && !IsHidden;
+    }
+
+    /// <summary>
+    /// One element a scan found, with the item it was found on.
+    ///
+    /// The item travels with the reading because the scan is the only thing that had it. A caller
+    /// writing an appearance scheme out needs each element's tree path as well as its colour, and
+    /// asking for that path by key afterwards would re-resolve every element the walk just held —
+    /// reintroducing, for the elements that matter, exactly the cost
+    /// <see cref="IViewSession.ScanAppearance"/> exists to remove.
+    /// </summary>
+    public readonly struct ScannedAppearance
+    {
+        /// <summary>Pair a reading with the item it was read from.</summary>
+        /// <param name="item">The item the walk was holding.</param>
+        /// <param name="state">What that element currently looks like.</param>
+        public ScannedAppearance(IModelItem item, AppearanceState state)
+        {
+            Item = item;
+            State = state;
+        }
+
+        /// <summary>The item the walk was holding.</summary>
+        public IModelItem Item { get; }
+
+        /// <summary>What that element currently looks like.</summary>
+        public AppearanceState State { get; }
+
+        /// <summary>The element's key, which is the reading's.</summary>
+        public ElementKey Key => State.Key;
+    }
+
+    /// <summary>
+    /// One level at which a state was applied, with the tree node it was applied to.
+    ///
+    /// The node travels with the origin because the scan is the only thing that had it, and because
+    /// it is the point of the whole exercise: a layer made from this names the node, so it covers
+    /// whatever is under the node rather than a list of the keys that happened to be under it when
+    /// somebody pressed Scan.
+    /// </summary>
+    public sealed class ScannedOrigin
+    {
+        /// <summary>Pair an origin with its node.</summary>
+        /// <param name="item">The tree node the state was applied to.</param>
+        /// <param name="origin">What was applied, and over how much.</param>
+        public ScannedOrigin(IModelItem item, AppearanceOrigin origin)
+        {
+            Item = item ?? throw new ArgumentNullException(nameof(item));
+            Origin = origin ?? throw new ArgumentNullException(nameof(origin));
+        }
+
+        /// <summary>The tree node the state was applied to.</summary>
+        public IModelItem Item { get; }
+
+        /// <summary>What was applied, and over how much.</summary>
+        public AppearanceOrigin Origin { get; }
+
+        /// <summary>Where the node sits in the tree, for a row that has to read as a place.</summary>
+        public string Path => string.Join(" / ", Item.TreePath);
+
+        /// <inheritdoc />
+        public override string ToString() => Origin.Describe() + " at " + Path;
+    }
+
+    /// <summary>
+    /// What a walk of the tree found, and how much of the tree it got through.
+    ///
+    /// The size of the walk is reported separately from what was found because the two are no
+    /// longer the same number. "41 states" means nothing on its own; "41 states over 230,000
+    /// elements" is the sentence a coordinator needs, and a scan that was stopped must be able to
+    /// say so rather than presenting a third of a federation as the answer.
+    /// </summary>
+    public sealed class OriginReport
+    {
+        /// <summary>Report a finished or stopped walk.</summary>
+        /// <param name="origins">What was found, deepest first.</param>
+        /// <param name="elements">Geometry elements walked.</param>
+        /// <param name="nodes">Tree nodes walked, geometry or not.</param>
+        /// <param name="stopped">True when the walk was stopped before it finished.</param>
+        public OriginReport(IReadOnlyList<ScannedOrigin> origins, int elements, int nodes, bool stopped)
+        {
+            Origins = origins ?? Array.Empty<ScannedOrigin>();
+            Elements = elements;
+            Nodes = nodes;
+            Stopped = stopped;
+        }
+
+        /// <summary>
+        /// What was found, deepest first.
+        ///
+        /// Deepest first because that is the order the layers go in: a layer on a deeper node has
+        /// to decide its elements before one on a shallower node gets to, or the deeper layer
+        /// covers elements and decides nothing about any of them.
+        /// </summary>
+        public IReadOnlyList<ScannedOrigin> Origins { get; }
+
+        /// <summary>How many geometry elements the walk covered.</summary>
+        public int Elements { get; }
+
+        /// <summary>How many tree nodes the walk covered, grouping nodes included.</summary>
+        public int Nodes { get; }
+
+        /// <summary>True when the walk was stopped, so the origins describe part of a model.</summary>
+        public bool Stopped { get; }
+
+        /// <summary>True when nothing in what was walked is in a state somebody set.</summary>
+        public bool IsClean => Origins.Count == 0;
+
+        /// <summary>An empty report, for a seat with no document open.</summary>
+        public static OriginReport Empty { get; } =
+            new OriginReport(Array.Empty<ScannedOrigin>(), 0, 0, false);
     }
 
     /// <summary>An 8-bit-per-channel colour.</summary>
