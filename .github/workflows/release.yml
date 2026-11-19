@@ -251,6 +251,37 @@ jobs:
           native search sets, BCF 2.1 and 3.0, reports, and a node canvas over the same services the
           buttons drive.
 
+          ## Appearance layers
+
+          Navisworks has no per-view graphics. Its overrides are document state - one appearance
+          shared by every view - so a saved viewpoint can capture and restore it but never owns it,
+          and nothing records why anything was hidden. This release is the layer system that gives
+          it one.
+
+          Every change goes through a named layer that says what it decides and why. The stack
+          folds top-down, reports which layer won each property and which were overruled, comes
+          back off in one press, and each row can be turned off, reordered, renamed, re-pointed or
+          edited in place.
+
+          A stack belongs to a scene: the default 3D view, or any saved viewpoint. Copy one onto
+          another scene, and optionally have a scene's stack applied when you arrive at its
+          viewpoint - off by default, since with it on the colours change on every viewpoint click.
+
+          **Scan the model** reports what no layer accounts for, and reports it where it was
+          applied rather than on every element underneath. One override on a storey is one row
+          naming the storey, not four thousand rows. For a hiding the level is read from the host;
+          for a colour the host keeps no note of it, so it is the highest node whose every element
+          shares that state, and the screen says which of the two you are looking at.
+
+          Two faults this fixes outright. Scanning a federation did not finish: the old scan listed
+          every element into a key and then asked the host to find each one again, which is a
+          search of the document per element. And a hidden storey scanned as nothing hidden at all,
+          because the host marks only the item Hide was pressed on and lets everything below it
+          inherit.
+
+          Reading a saved viewpoint moves nothing. A viewpoint records each override against the
+          item it was applied to, so its own notes are read without applying it.
+
           ## Model compare
 
           Navisworks exposes no comparison through its API at all, so this is built from scratch:
