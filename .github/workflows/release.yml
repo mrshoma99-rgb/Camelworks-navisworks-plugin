@@ -139,6 +139,11 @@ jobs:
           $staging = "staging"
           $notes = @()
 
+          # How many companions actually went in. The heading below says "three plug-ins", and
+          # saying it when one of them 404'd is how v0.18.0 shipped notes that contradicted the
+          # list directly under them.
+          $went = 0
+
           $companions = @(
             @{ Name = 'Dyncamelo'; Repo = 'mrshoma99-rgb/dyncamelo'; Asset = 'Dyncamelo-navisworks.zip'; Bundle = 'Dyncamelo.bundle' },
             @{ Name = 'BIMCamel IFC exporter'; Repo = 'mrshoma99-rgb/bimcamel-ifc-exporter'; Asset = 'BIMCamel-ifc-exporter-navisworks.zip'; Bundle = 'BIMCamel.bundle' }
@@ -186,6 +191,7 @@ jobs:
 
               Write-Host "$name $shipped folded in (series $years)"
               $notes += "- **$name** $shipped"
+              $went++
             }
             catch {
               # Named in the release notes rather than swallowed: a release that quietly ships two
@@ -196,8 +202,15 @@ jobs:
           }
 
           Set-Content -Path "companions.md" -Value ($notes -join "`n") -NoNewline
+
+          # CamelWorks itself, plus whichever companions made it. Words rather than a digit,
+          # because the sentence reads as prose.
+          $counted = @('one plug-in', 'two plug-ins', 'three plug-ins', 'four plug-ins')[$went]
+          Add-Content -Path $env:GITHUB_ENV -Value "PLUGINS=$counted"
+
           Write-Host "--- what went in ---"
           Get-Content "companions.md"
+          Write-Host "--- heading will say: $counted ---"
 
       - name: Build the graphical installer (CamelWorksSetup.exe)
         run: |
@@ -242,6 +255,10 @@ jobs:
           # that step never ran, in which case the notes say so rather than showing a blank list.
           $companions = if (Test-Path "companions.md") { Get-Content "companions.md" -Raw }
                         else { "- (companion plug-ins were not folded into this release)" }
+
+          # Set by the fold-in step from what it managed to fetch. The fallback is for a fold-in
+          # that never ran, where naming any number would be a guess.
+          $plugins = if ($env:PLUGINS) { $env:PLUGINS } else { "the plug-ins listed below" }
 
           $notes = @"
           CamelWorks for Autodesk Navisworks 2024-2027 - coordination, data and delivery.
@@ -316,7 +333,7 @@ jobs:
 
           ## What is in this release
 
-          One installer, three plug-ins, one ribbon tab:
+          One installer, $plugins, one ribbon tab:
 
           $companions
 
